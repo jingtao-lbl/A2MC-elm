@@ -1,0 +1,1116 @@
+# =============================================================================
+# FATES Curated Parameter Relationships
+# =============================================================================
+#
+# This file contains manually curated relationships between FATES parameters,
+# mechanisms, and output variables (from extract_monthly_variables_FATES.py). 
+# It complements the auto-extracted parameter
+# metadata from parameter files.
+#
+# Structure:
+#   - categories: Parameter groupings with mechanisms they control
+#   - mechanisms: Key FATES processes with parameter links
+#   - outputs: Output variables affected by parameters
+#   - parameters: Individual parameter relationships
+#
+# Relationship types:
+#   - controls: Parameter directly controls a mechanism
+#   - affects: Parameter affects output variables (directly or indirectly)
+#   - related_to: Parameters often tuned together
+#   - modifies: Parameter modifies another parameter's effect
+#
+# Version: 1.0
+# Last updated: January 2026
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Parameter Categories
+# -----------------------------------------------------------------------------
+categories:
+  cnp:
+    full_name: "Carbon-Nitrogen-Phosphorus"
+    description: "CNP cycling and nutrient uptake parameters"
+    mechanisms:
+      - PID_Controller
+      - Nutrient_Uptake
+      - ECA_Competition
+      - Stoichiometry
+    key_outputs:
+      - FATES_LEAFC
+      - FATES_FROOTC
+      - FATES_STOREC
+      - FATES_PUPTAKE_SZPF
+      - FATES_NUPTAKE_SZPF
+
+  allocation:
+    full_name: "Carbon Allocation"
+    description: "Allocation of carbon to plant organs"
+    mechanisms:
+      - Storage_Allocation
+      - Organ_Priority
+      - Target_Ratios
+    key_outputs:
+      - FATES_L2FR
+      - FATES_STOREC
+      - FATES_LEAFC
+      - FATES_FROOTC
+
+  allometry:
+    full_name: "Allometry"
+    description: "Size-biomass relationships"
+    mechanisms:
+      - DBH_Height
+      - DBH_Biomass
+      - Crown_Allometry
+      - Root_Distribution
+    key_outputs:
+      - FATES_CANOPY_AREA
+      - FATES_LAI
+      - FATES_BIOMASS
+
+  phenology:
+    full_name: "Phenology"
+    description: "Seasonal timing of leaf display"
+    mechanisms:
+      - Cold_Deciduous
+      - Drought_Deciduous
+      - Evergreen
+    key_outputs:
+      - FATES_DAYSINCE_COLDLEAFON
+      - FATES_DAYSINCE_COLDLEAFOFF
+      - FATES_LEAFC
+
+  turnover:
+    full_name: "Turnover"
+    description: "Tissue turnover and longevity"
+    mechanisms:
+      - Leaf_Turnover
+      - Root_Turnover
+      - Background_Mortality
+    key_outputs:
+      - FATES_LEAFC
+      - FATES_FROOTC
+      - FATES_MORTALITY
+
+  mortality:
+    full_name: "Mortality"
+    description: "Plant mortality processes"
+    mechanisms:
+      - Carbon_Starvation
+      - Hydraulic_Failure
+      - Background_Mortality
+      - Fire_Mortality
+    key_outputs:
+      - FATES_MORTALITY_CSTARV_SZPF
+      - FATES_MORTALITY_HYDRAULIC_SZPF
+      - FATES_NPLANT
+
+# -----------------------------------------------------------------------------
+# Mechanisms (Key FATES Processes)
+# -----------------------------------------------------------------------------
+mechanisms:
+  PID_Controller:
+    description: "Proportional-Integral-Derivative controller for C:N:P allocation"
+    code_reference: "FATESPartehMod.F90::CNPAllocate"
+    parameters:
+      - fates_cnp_pid_kp  # Proportional gain
+      - fates_cnp_pid_ki  # Integral gain
+      - fates_cnp_pid_kd  # Derivative gain
+    affects:
+      - FATES_L2FR
+      - FATES_LEAFC
+      - FATES_FROOTC
+    notes: |
+      The PID controller adjusts leaf-to-fine-root ratio based on
+      C:nutrient stoichiometry in storage pool. Higher Kp = more responsive.
+      CAUTION: Responsive allocation can be maladaptive under severe stress.
+
+  ECA_Competition:
+    description: "Equilibrium Chemistry Approximation for nutrient uptake"
+    code_reference: "FatesSoilBGCFluxMod.F90::nutrient_uptake"
+    doc_reference: "Knox et al. 2024 Section 11"
+    parameters:
+      - fates_cnp_vmax_p   # Max P uptake rate
+      - fates_cnp_vmax_nh4 # Max NH4 uptake rate
+      - fates_cnp_vmax_no3 # Max NO3 uptake rate
+      - fates_cnp_km_p     # Half-saturation for P
+    affects:
+      - FATES_PUPTAKE_SZPF
+      - FATES_NUPTAKE_SZPF
+    notes: |
+      ECA is simultaneous competition based on capacitance:
+        Capacitance = root_biomass × vmax × root_distribution
+      NOT sequential (one PFT doesn't "claim first").
+
+  Storage_Allocation:
+    description: "Carbon allocation to storage pool"
+    code_reference: "FATESPartehMod.F90::CNPAllocate"
+    parameters:
+      - fates_alloc_storage_cushion
+      - fates_alloc_store_priority_frac
+    affects:
+      - FATES_STOREC
+      - FATES_NPP
+    notes: |
+      Storage cushion = target storage relative to leaf biomass.
+      Arctic plants may need higher values (2-3) for winter survival.
+
+  Root_Distribution:
+    description: "Vertical distribution of fine roots in soil"
+    code_reference: "FatesAllometryMod.F90::exponential_2p_root_profile"
+    parameters:
+      - fates_allom_fnrt_prof_a  # Shape parameter a
+      - fates_allom_fnrt_prof_b  # Shape parameter b
+    affects:
+      - FATES_PUPTAKE_SZPF  # Via spatial overlap with soil nutrients
+      - FATES_NUPTAKE_SZPF
+    notes: |
+      Higher a,b = more surface-concentrated roots.
+      Root distribution affects ECA capacitance for nutrient competition.
+      IMPORTANT: These control ALL belowground distributions (not just fine roots).
+
+  Cold_Deciduous:
+    description: "Cold-deciduous phenology trigger"
+    code_reference: "EDPhysiologyMod.F90::cold_deciduous_phenology"
+    parameters:
+      - fates_phen_gddthresh_a  # GDD threshold offset
+      - fates_phen_gddthresh_b  # GDD threshold slope (latitude)
+      - fates_phen_gddthresh_c  # GDD threshold slope (chilling)
+      - fates_phen_chilltemp    # Chilling temperature threshold
+      - fates_phen_coldtemp     # Cold temperature threshold
+    affects:
+      - FATES_DAYSINCE_COLDLEAFON
+      - FATES_DAYSINCE_COLDLEAFOFF
+    notes: |
+      GDD threshold formula: GDD_thresh = a + b*lat + c*chilling_days
+
+  Carbon_Starvation:
+    description: "Mortality from depleted carbon storage"
+    code_reference: "EDPhysiologyMod.F90::carbon_starvation_mortality"
+    parameters:
+      - fates_mort_scalar_cstarvation
+      - fates_mort_upthresh_cstarvation
+    affects:
+      - FATES_MORTALITY_CSTARV_SZPF
+    notes: |
+      Triggered when storage C falls below threshold.
+      Lower scalar = less sensitive to starvation.
+
+# -----------------------------------------------------------------------------
+# Output Variables (from extract_monthly_variables_FATES.py)
+# -----------------------------------------------------------------------------
+# Dimension levels:
+#   - site: 1D (time, lndgrid) - gridcell aggregated
+#   - pft: 2D (time, fates_levpft, lndgrid) - by PFT
+#   - szpf: 2D (time, fates_levscpf, lndgrid) - by size-class × PFT
+#   - levgrnd: 2D (time, levgrnd=15, lndgrid) - by soil layer
+#   - levdcmp: 2D (time, levdcmp=15, lndgrid) - by decomposition layer
+#   - levsoi: 2D (time, levsoi=10, lndgrid) - by FATES soil layer
+#   - levelem: 2D (time, fates_levelem=3, lndgrid) - by element (C, N, P)
+# -----------------------------------------------------------------------------
+
+outputs:
+  # =========================================================================
+  # SITE-LEVEL VARIABLES (1D)
+  # =========================================================================
+
+  # --- Phenology ---
+  FATES_TVEG24:
+    long_name: "24-hour mean vegetation temperature"
+    units: "K"
+    dimension: "site"
+    category: "phenology"
+
+  FATES_GDD:
+    long_name: "Growing degree days"
+    units: "degree-day"
+    dimension: "site"
+    category: "phenology"
+    controlled_by:
+      - Cold_Deciduous
+
+  FATES_COLD_STATUS:
+    long_name: "Cold status indicator"
+    units: "unitless"
+    dimension: "site"
+    category: "phenology"
+
+  FATES_NCHILLDAYS:
+    long_name: "Number of chill days"
+    units: "days"
+    dimension: "site"
+    category: "phenology"
+    controlled_by:
+      - Cold_Deciduous
+    key_parameters:
+      - fates_phen_chilltemp
+
+  FATES_NCOLDDAYS:
+    long_name: "Number of cold days"
+    units: "days"
+    dimension: "site"
+    category: "phenology"
+    key_parameters:
+      - fates_phen_coldtemp
+
+  FATES_DAYSINCE_COLDLEAFON:
+    long_name: "Days since cold leaf flush"
+    units: "days"
+    dimension: "site"
+    category: "phenology"
+    controlled_by:
+      - Cold_Deciduous
+    key_parameters:
+      - fates_phen_gddthresh_a
+      - fates_phen_gddthresh_b
+      - fates_phen_gddthresh_c
+      - fates_phen_chilltemp
+
+  FATES_DAYSINCE_COLDLEAFOFF:
+    long_name: "Days since cold leaf drop"
+    units: "days"
+    dimension: "site"
+    category: "phenology"
+    controlled_by:
+      - Cold_Deciduous
+    key_parameters:
+      - fates_phen_coldtemp
+
+  # --- Biomass Pools ---
+  FATES_LAI:
+    long_name: "Leaf area index"
+    units: "m2 m-2"
+    dimension: "site"
+    category: "biomass"
+    controlled_by:
+      - allocation
+      - allometry
+    key_parameters:
+      - fates_leaf_slatop
+      - fates_alloc_storage_cushion
+
+  FATES_VEGC:
+    long_name: "Total vegetation carbon"
+    units: "kg C m-2"
+    dimension: "site"
+    category: "biomass"
+
+  FATES_VEGN:
+    long_name: "Total vegetation nitrogen"
+    units: "kg N m-2"
+    dimension: "site"
+    category: "biomass"
+
+  FATES_VEGP:
+    long_name: "Total vegetation phosphorus"
+    units: "kg P m-2"
+    dimension: "site"
+    category: "biomass"
+
+  FATES_LEAFC:
+    long_name: "Leaf carbon"
+    units: "kg C m-2"
+    dimension: "site"
+    category: "biomass"
+    controlled_by:
+      - allocation
+      - phenology
+      - turnover
+    key_parameters:
+      - fates_alloc_storage_cushion
+      - fates_cnp_pid_kp
+      - fates_turnover_leaf
+
+  FATES_FROOTC:
+    long_name: "Fine root carbon"
+    units: "kg C m-2"
+    dimension: "site"
+    category: "biomass"
+    controlled_by:
+      - allocation
+      - turnover
+      - cnp
+    key_parameters:
+      - fates_alloc_storage_cushion
+      - fates_cnp_pid_kp
+      - fates_turnover_fnrt
+      - fates_allom_l2fr
+
+  FATES_STOREC:
+    long_name: "Storage carbon"
+    units: "kg C m-2"
+    dimension: "site"
+    category: "biomass"
+    controlled_by:
+      - Storage_Allocation
+    key_parameters:
+      - fates_alloc_storage_cushion
+      - fates_alloc_store_priority_frac
+
+  FATES_STOREN:
+    long_name: "Storage nitrogen"
+    units: "kg N m-2"
+    dimension: "site"
+    category: "biomass"
+
+  FATES_STOREP:
+    long_name: "Storage phosphorus"
+    units: "kg P m-2"
+    dimension: "site"
+    category: "biomass"
+
+  FATES_SAPWOODC:
+    long_name: "Sapwood carbon"
+    units: "kg C m-2"
+    dimension: "site"
+    category: "biomass"
+
+  FATES_NFIX_SYM:
+    long_name: "Symbiotic N fixation"
+    units: "kg N m-2 s-1"
+    dimension: "site"
+    category: "nutrient_cycling"
+
+  # --- Carbon Fluxes ---
+  FATES_GPP:
+    long_name: "Gross primary production"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "carbon_flux"
+    controlled_by:
+      - photosynthesis
+      - phenology
+
+  FATES_NPP:
+    long_name: "Net primary production"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "carbon_flux"
+    controlled_by:
+      - photosynthesis
+      - respiration
+
+  FATES_AUTORESP:
+    long_name: "Autotrophic respiration"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "carbon_flux"
+
+  FATES_MAINT_RESP:
+    long_name: "Maintenance respiration"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "carbon_flux"
+
+  FATES_GROWTH_RESP:
+    long_name: "Growth respiration"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "carbon_flux"
+
+  # --- Allocation Fluxes ---
+  FATES_LEAF_ALLOC:
+    long_name: "Allocation to leaves"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "allocation"
+    controlled_by:
+      - PID_Controller
+      - Storage_Allocation
+
+  FATES_FROOT_ALLOC:
+    long_name: "Allocation to fine-roots"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "allocation"
+    controlled_by:
+      - PID_Controller
+      - Storage_Allocation
+
+  FATES_STORE_ALLOC:
+    long_name: "Allocation to storage"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "allocation"
+    controlled_by:
+      - Storage_Allocation
+    key_parameters:
+      - fates_alloc_storage_cushion
+
+  FATES_SEED_ALLOC:
+    long_name: "Allocation to seeds"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "allocation"
+
+  FATES_STEM_ALLOC:
+    long_name: "Allocation to stem"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "allocation"
+
+  FATES_CROOT_ALLOC:
+    long_name: "Allocation to coarse roots"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "allocation"
+
+  # --- Dynamic Allocation State ---
+  FATES_L2FR:
+    long_name: "Leaf to fine root ratio"
+    units: "kg kg-1"
+    dimension: "site"
+    category: "allocation"
+    controlled_by:
+      - PID_Controller
+    key_parameters:
+      - fates_cnp_pid_kp
+      - fates_cnp_pid_ki
+      - fates_cnp_pid_kd
+      - fates_allom_l2fr
+
+  # --- Demographics ---
+  FATES_NPLANT:
+    long_name: "Number of plants per m2"
+    units: "plants m-2"
+    dimension: "site"
+    category: "demographics"
+    controlled_by:
+      - mortality
+      - recruitment
+
+  # --- Nutrient Fluxes ---
+  FATES_PUPTAKE:
+    long_name: "Phosphorus uptake (site total)"
+    units: "kg P m-2 s-1"
+    dimension: "site"
+    category: "nutrient_cycling"
+    controlled_by:
+      - ECA_Competition
+
+  FATES_PEFFLUX:
+    long_name: "Phosphorus efflux"
+    units: "kg P m-2 s-1"
+    dimension: "site"
+    category: "nutrient_cycling"
+
+  # --- Climate (ELM) ---
+  TSA:
+    long_name: "2m air temperature"
+    units: "K"
+    dimension: "site"
+    category: "climate"
+
+  TSOI_10CM:
+    long_name: "Soil temperature in top 10cm"
+    units: "K"
+    dimension: "site"
+    category: "climate"
+
+  SOILWATER_10CM:
+    long_name: "Soil liquid water + ice in top 10cm"
+    units: "kg m-2"
+    dimension: "site"
+    category: "climate"
+
+  H2OSNO:
+    long_name: "Snow water equivalent"
+    units: "mm"
+    dimension: "site"
+    category: "climate"
+
+  SNOW_DEPTH:
+    long_name: "Snow depth"
+    units: "m"
+    dimension: "site"
+    category: "climate"
+
+  # --- Soil P Pools (ELM-BGC) ---
+  LABILEP:
+    long_name: "Labile P (plant-available)"
+    units: "g P m-2"
+    dimension: "site"
+    category: "soil_nutrients"
+    notes: "Only ~0.002% of total soil P; controls P availability"
+
+  SECONDP:
+    long_name: "Secondary mineral P (aged, occluded)"
+    units: "g P m-2"
+    dimension: "site"
+    category: "soil_nutrients"
+    notes: "~98.9% of soil P locked here; controlled by r_desorp/r_adsorp"
+
+  SMINP:
+    long_name: "Soil mineral P (total inorganic)"
+    units: "g P m-2"
+    dimension: "site"
+    category: "soil_nutrients"
+
+  # =========================================================================
+  # PFT-LEVEL VARIABLES (2D: fates_levpft)
+  # =========================================================================
+
+  FATES_LEAFC_PF:
+    long_name: "Leaf carbon by PFT"
+    units: "kg C m-2"
+    dimension: "pft"
+    category: "biomass"
+    controlled_by:
+      - allocation
+      - phenology
+      - turnover
+
+  FATES_FROOTC_PF:
+    long_name: "Fine root carbon by PFT"
+    units: "kg C m-2"
+    dimension: "pft"
+    category: "biomass"
+    controlled_by:
+      - allocation
+      - turnover
+
+  FATES_STOREC_PF:
+    long_name: "Storage carbon by PFT"
+    units: "kg C m-2"
+    dimension: "pft"
+    category: "biomass"
+
+  FATES_GPP_PF:
+    long_name: "GPP by PFT"
+    units: "kg C m-2 s-1"
+    dimension: "pft"
+    category: "carbon_flux"
+
+  FATES_NPP_PF:
+    long_name: "NPP by PFT"
+    units: "kg C m-2 s-1"
+    dimension: "pft"
+    category: "carbon_flux"
+
+  FATES_MORTALITY_CFLUX_PF:
+    long_name: "Mortality carbon flux by PFT"
+    units: "kg C m-2 s-1"
+    dimension: "pft"
+    category: "mortality"
+
+  FATES_MORTALITY_CSTARV_CFLUX_PF:
+    long_name: "Carbon starvation mortality flux by PFT"
+    units: "kg C m-2 s-1"
+    dimension: "pft"
+    category: "mortality"
+    controlled_by:
+      - Carbon_Starvation
+    key_parameters:
+      - fates_mort_scalar_cstarvation
+
+  FATES_MORTALITY_HYDRO_CFLUX_PF:
+    long_name: "Hydraulic mortality flux by PFT"
+    units: "kg C m-2 s-1"
+    dimension: "pft"
+    category: "mortality"
+
+  FATES_L2FR_CANOPY_REC_PF:
+    long_name: "Canopy recruit L2FR by PFT"
+    units: "kg kg-1"
+    dimension: "pft"
+    category: "allocation"
+    notes: "L2FR for new canopy recruits; reflects recent allocation"
+
+  FATES_L2FR_USTORY_REC_PF:
+    long_name: "Understory recruit L2FR by PFT"
+    units: "kg kg-1"
+    dimension: "pft"
+    category: "allocation"
+
+  # =========================================================================
+  # SZPF-LEVEL VARIABLES (2D: fates_levscpf = 13 size × 12 PFT = 156)
+  # =========================================================================
+
+  FATES_LEAFC_SZPF:
+    long_name: "Leaf carbon by size-PFT"
+    units: "kg C m-2"
+    dimension: "szpf"
+    category: "biomass"
+
+  FATES_LEAFN_SZPF:
+    long_name: "Leaf nitrogen by size-PFT"
+    units: "kg N m-2"
+    dimension: "szpf"
+    category: "biomass"
+
+  FATES_LEAFP_SZPF:
+    long_name: "Leaf phosphorus by size-PFT"
+    units: "kg P m-2"
+    dimension: "szpf"
+    category: "biomass"
+
+  FATES_FROOTC_SZPF:
+    long_name: "Fine root carbon by size-PFT"
+    units: "kg C m-2"
+    dimension: "szpf"
+    category: "biomass"
+
+  FATES_FROOTN_SZPF:
+    long_name: "Fine root nitrogen by size-PFT"
+    units: "kg N m-2"
+    dimension: "szpf"
+    category: "biomass"
+
+  FATES_FROOTP_SZPF:
+    long_name: "Fine root phosphorus by size-PFT"
+    units: "kg P m-2"
+    dimension: "szpf"
+    category: "biomass"
+
+  FATES_VEGC_SZPF:
+    long_name: "Total vegetation carbon by size-PFT"
+    units: "kg C m-2"
+    dimension: "szpf"
+    category: "biomass"
+
+  FATES_VEGC_ABOVEGROUND_SZPF:
+    long_name: "Aboveground biomass by size-PFT"
+    units: "kg C m-2"
+    dimension: "szpf"
+    category: "biomass"
+
+  FATES_NPP_SZPF:
+    long_name: "Net primary production by size-PFT"
+    units: "kg C m-2 s-1"
+    dimension: "szpf"
+    category: "carbon_flux"
+
+  FATES_LEAF_ALLOC_SZPF:
+    long_name: "Leaf allocation by size-PFT"
+    units: "kg C m-2 s-1"
+    dimension: "szpf"
+    category: "allocation"
+
+  FATES_FROOT_ALLOC_SZPF:
+    long_name: "Fine root allocation by size-PFT"
+    units: "kg C m-2 s-1"
+    dimension: "szpf"
+    category: "allocation"
+
+  FATES_SEED_ALLOC_SZPF:
+    long_name: "Seed allocation by size-PFT"
+    units: "kg C m-2 s-1"
+    dimension: "szpf"
+    category: "allocation"
+
+  # --- Nutrient Uptake (SZPF) ---
+  FATES_PUPTAKE_SZPF:
+    long_name: "Phosphorus uptake by size-PFT"
+    units: "kg P m-2 s-1"
+    dimension: "szpf"
+    category: "nutrient_cycling"
+    controlled_by:
+      - ECA_Competition
+      - Root_Distribution
+    key_parameters:
+      - fates_cnp_vmax_p
+      - fates_cnp_km_p
+      - fates_allom_fnrt_prof_a
+      - fates_allom_fnrt_prof_b
+
+  FATES_NH4UPTAKE_SZPF:
+    long_name: "NH4 uptake by size-PFT"
+    units: "kg N m-2 s-1"
+    dimension: "szpf"
+    category: "nutrient_cycling"
+    controlled_by:
+      - ECA_Competition
+    key_parameters:
+      - fates_cnp_vmax_nh4
+
+  FATES_NO3UPTAKE_SZPF:
+    long_name: "NO3 uptake by size-PFT"
+    units: "kg N m-2 s-1"
+    dimension: "szpf"
+    category: "nutrient_cycling"
+    controlled_by:
+      - ECA_Competition
+    key_parameters:
+      - fates_cnp_vmax_no3
+
+  FATES_PDEMAND_SZPF:
+    long_name: "Phosphorus demand by size-PFT"
+    units: "kg P m-2 s-1"
+    dimension: "szpf"
+    category: "nutrient_cycling"
+
+  FATES_NDEMAND_SZPF:
+    long_name: "Nitrogen demand by size-PFT"
+    units: "kg N m-2 s-1"
+    dimension: "szpf"
+    category: "nutrient_cycling"
+
+  FATES_PEFFLUX_SZPF:
+    long_name: "Phosphorus efflux by size-PFT"
+    units: "kg P m-2 s-1"
+    dimension: "szpf"
+    category: "nutrient_cycling"
+
+  FATES_NEFFLUX_SZPF:
+    long_name: "Nitrogen efflux by size-PFT"
+    units: "kg N m-2 s-1"
+    dimension: "szpf"
+    category: "nutrient_cycling"
+
+  FATES_NFIX_SYM_SZPF:
+    long_name: "Symbiotic N fixation by size-PFT"
+    units: "kg N m-2 s-1"
+    dimension: "szpf"
+    category: "nutrient_cycling"
+
+  # --- Reproductive Pools (SZPF) ---
+  FATES_REPROC_SZPF:
+    long_name: "Reproductive carbon by size-PFT"
+    units: "kg C m-2"
+    dimension: "szpf"
+    category: "reproduction"
+
+  FATES_REPRON_SZPF:
+    long_name: "Reproductive nitrogen by size-PFT"
+    units: "kg N m-2"
+    dimension: "szpf"
+    category: "reproduction"
+
+  FATES_REPROP_SZPF:
+    long_name: "Reproductive phosphorus by size-PFT"
+    units: "kg P m-2"
+    dimension: "szpf"
+    category: "reproduction"
+
+  # =========================================================================
+  # SOIL LAYER VARIABLES (2D: levdcmp = 15 layers)
+  # =========================================================================
+
+  LABILEP_vr:
+    long_name: "Labile P by layer"
+    units: "g P m-3"
+    dimension: "levdcmp"
+    category: "soil_nutrients"
+    notes: "Plant-available inorganic P"
+
+  SECONDP_vr:
+    long_name: "Secondary mineral P by layer"
+    units: "g P m-3"
+    dimension: "levdcmp"
+    category: "soil_nutrients"
+    notes: "Aged, occluded P"
+
+  SMINP_vr:
+    long_name: "Soil mineral P by layer"
+    units: "g P m-3"
+    dimension: "levdcmp"
+    category: "soil_nutrients"
+
+  SMIN_NH4_vr:
+    long_name: "Soil mineral NH4 by layer"
+    units: "g N m-3"
+    dimension: "levdcmp"
+    category: "soil_nutrients"
+    notes: "Plant-available ammonium"
+
+  SMIN_NO3_vr:
+    long_name: "Soil mineral NO3 by layer"
+    units: "g N m-3"
+    dimension: "levdcmp"
+    category: "soil_nutrients"
+    notes: "Plant-available nitrate"
+
+  F_NIT_vr:
+    long_name: "Nitrification flux by layer"
+    units: "g N m-3 s-1"
+    dimension: "levdcmp"
+    category: "soil_nutrients"
+    notes: "NH4 → NO3 transformation"
+
+  F_DENIT_vr:
+    long_name: "Denitrification flux by layer"
+    units: "g N m-3 s-1"
+    dimension: "levdcmp"
+    category: "soil_nutrients"
+    notes: "NO3 → N2/N2O loss"
+
+  # =========================================================================
+  # ELEMENT-LEVEL VARIABLES (2D: fates_levelem = 3: C, N, P)
+  # =========================================================================
+
+  FATES_SEED_BANK_EL:
+    long_name: "Seed bank mass by element"
+    units: "kg m-2"
+    dimension: "levelem"
+    category: "reproduction"
+    notes: "Element index: 0=C, 1=N, 2=P"
+
+  FATES_SEED_DECAY_EL:
+    long_name: "Seed decay flux by element"
+    units: "kg m-2 s-1"
+    dimension: "levelem"
+    category: "reproduction"
+    key_parameters:
+      - fates_seed_decay
+
+  FATES_SEED_GERM_EL:
+    long_name: "Seed germination by element"
+    units: "kg m-2 s-1"
+    dimension: "levelem"
+    category: "reproduction"
+
+  # =========================================================================
+  # ROOT DISTRIBUTION (2D: levsoi = 10 layers)
+  # =========================================================================
+
+  FATES_FROOTC_SL:
+    long_name: "Fine root carbon by soil layer"
+    units: "kg C m-3"
+    dimension: "levsoi"
+    category: "biomass"
+    controlled_by:
+      - Root_Distribution
+    key_parameters:
+      - fates_allom_fnrt_prof_a
+      - fates_allom_fnrt_prof_b
+    notes: "Volumetric fine root C; affects ECA capacitance spatial overlap"
+
+# -----------------------------------------------------------------------------
+# Individual Parameter Relationships
+# -----------------------------------------------------------------------------
+parameters:
+  # CNP Parameters
+  fates_cnp_pid_kp:
+    category: cnp
+    controls:
+      - PID_Controller
+    affects:
+      - FATES_L2FR
+      - FATES_LEAFC
+      - FATES_FROOTC
+    related_to:
+      - fates_cnp_pid_ki
+      - fates_cnp_pid_kd
+    calibration_notes: |
+      Proportional gain for PID allocation controller.
+      Higher values = more responsive to nutrient stress.
+      CAUTION: Very high values can cause oscillations.
+      Typical range: 1e-6 to 0.01
+
+  fates_cnp_pid_ki:
+    category: cnp
+    controls:
+      - PID_Controller
+    affects:
+      - FATES_L2FR
+    related_to:
+      - fates_cnp_pid_kp
+      - fates_cnp_pid_kd
+    calibration_notes: |
+      Integral gain for PID controller (allocation memory).
+      Helps reduce steady-state error.
+      Typical range: 0 to 0.001
+
+  fates_cnp_pid_kd:
+    category: cnp
+    controls:
+      - PID_Controller
+    affects:
+      - FATES_L2FR
+    related_to:
+      - fates_cnp_pid_kp
+      - fates_cnp_pid_ki
+    calibration_notes: |
+      Derivative gain for PID controller.
+      Dampens rapid changes in allocation.
+      Typical range: 0.01 to 0.5
+
+  fates_cnp_vmax_p:
+    category: cnp
+    controls:
+      - ECA_Competition
+    affects:
+      - FATES_PUPTAKE_SZPF
+      - FATES_FROOTC
+      - FATES_LEAFC
+    related_to:
+      - fates_cnp_km_p
+      - fates_cnp_vmax_ptase
+    calibration_notes: |
+      Maximum P uptake rate per unit fine root.
+      CAUTION: Higher values don't always increase total uptake
+      due to PID feedback (Allocation Paradox).
+      Typical range: 1e-9 to 5e-5
+
+  fates_cnp_vmax_ptase:
+    category: cnp
+    controls:
+      - ECA_Competition
+    affects:
+      - FATES_PUPTAKE_SZPF
+    related_to:
+      - fates_cnp_vmax_p
+    calibration_notes: |
+      Maximum phosphatase production rate.
+      Affects organic P mineralization.
+      Typical range: 1e-9 to 5e-4
+
+  # Allocation Parameters
+  fates_alloc_storage_cushion:
+    category: allocation
+    controls:
+      - Storage_Allocation
+    affects:
+      - FATES_STOREC
+      - FATES_NPP
+      - FATES_LEAFC
+      - FATES_FROOTC
+    related_to:
+      - fates_alloc_store_priority_frac
+    calibration_notes: |
+      Target storage relative to leaf biomass.
+      Higher values = more C reserved for storage.
+      Arctic plants may need 2-3 for winter survival.
+      Typical range: 0.5 to 5.0
+
+  fates_alloc_store_priority_frac:
+    category: allocation
+    controls:
+      - Storage_Allocation
+    affects:
+      - FATES_STOREC
+    related_to:
+      - fates_alloc_storage_cushion
+    calibration_notes: |
+      Fraction of storage demand met before growth.
+      Higher values = storage prioritized over growth.
+      Typical range: 0.5 to 1.0
+
+  fates_allom_l2fr:
+    category: allometry
+    controls:
+      - Target_Ratios
+    affects:
+      - FATES_L2FR
+      - FATES_FROOTC
+    related_to:
+      - fates_cnp_pid_kp
+    calibration_notes: |
+      Target leaf-to-fine-root ratio.
+      PID controller adjusts actual ratio toward this target.
+      Typical range: 0.5 to 3.0
+
+  # Root Distribution Parameters
+  fates_allom_fnrt_prof_a:
+    category: allometry
+    controls:
+      - Root_Distribution
+    affects:
+      - FATES_PUPTAKE_SZPF
+      - FATES_NUPTAKE_SZPF
+    related_to:
+      - fates_allom_fnrt_prof_b
+    calibration_notes: |
+      Root distribution shape parameter a.
+      Higher a = steeper surface decline.
+      Should be calibrated from field data.
+      Typical range: 5 to 25
+
+  fates_allom_fnrt_prof_b:
+    category: allometry
+    controls:
+      - Root_Distribution
+    affects:
+      - FATES_PUPTAKE_SZPF
+      - FATES_NUPTAKE_SZPF
+    related_to:
+      - fates_allom_fnrt_prof_a
+    calibration_notes: |
+      Root distribution shape parameter b.
+      Higher b = more surface-concentrated.
+      Should be calibrated from field data.
+      Typical range: 1 to 20
+
+  # Turnover Parameters
+  fates_turnover_fnrt:
+    category: turnover
+    controls:
+      - Root_Turnover
+    affects:
+      - FATES_FROOTC
+    related_to:
+      - fates_turnover_leaf
+    calibration_notes: |
+      Fine root turnover time (years).
+      Higher values = longer-lived roots = more biomass.
+      Arctic roots may live 3-5+ years.
+      Typical range: 0.5 to 5.0
+
+  fates_turnover_leaf:
+    category: turnover
+    controls:
+      - Leaf_Turnover
+    affects:
+      - FATES_LEAFC
+    related_to:
+      - fates_turnover_fnrt
+    calibration_notes: |
+      Leaf turnover time (years).
+      Note: In latest FATES, split into canopy/understory.
+      Typical range: 0.5 to 3.0
+
+  # Phenology Parameters
+  fates_phen_gddthresh_a:
+    category: phenology
+    controls:
+      - Cold_Deciduous
+    affects:
+      - FATES_DAYSINCE_COLDLEAFON
+    related_to:
+      - fates_phen_gddthresh_b
+      - fates_phen_gddthresh_c
+    calibration_notes: |
+      GDD threshold offset in formula: a + b*lat + c*chill.
+      Shared parameter (not PFT-specific).
+
+  fates_phen_gddthresh_c:
+    category: phenology
+    controls:
+      - Cold_Deciduous
+    affects:
+      - FATES_DAYSINCE_COLDLEAFON
+    related_to:
+      - fates_phen_gddthresh_a
+      - fates_phen_chilltemp
+    calibration_notes: |
+      GDD threshold slope vs chilling days.
+      Negative values = lower threshold with more chilling.
+      Shared parameter (not PFT-specific).
+
+  fates_phen_chilltemp:
+    category: phenology
+    controls:
+      - Cold_Deciduous
+    affects:
+      - FATES_DAYSINCE_COLDLEAFON
+    related_to:
+      - fates_phen_gddthresh_c
+    calibration_notes: |
+      Temperature threshold for chilling accumulation (°C).
+      Days below this temp count as chilling days.
+      Shared parameter (not PFT-specific).
+      Typical range: 0 to 10°C
+
+  # Mortality Parameters
+  fates_mort_scalar_cstarvation:
+    category: mortality
+    controls:
+      - Carbon_Starvation
+    affects:
+      - FATES_MORTALITY_CSTARV_SZPF
+    related_to:
+      - fates_mort_upthresh_cstarvation
+    calibration_notes: |
+      Scalar for carbon starvation mortality rate.
+      Lower values = less sensitive to low storage.
+      Typical range: 0.15 to 1.0

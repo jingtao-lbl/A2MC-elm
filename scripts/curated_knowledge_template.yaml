@@ -1,0 +1,114 @@
+# A2MC Curated Knowledge Template
+# ================================
+#
+# Fill in this file with verified discoveries and failed experiments
+# from your calibration work. This ensures the memory system starts
+# with high-quality, verified knowledge.
+#
+# Usage:
+#   python seed_memory_from_yaml.py --input curated_knowledge.yaml --output ../memory/data
+#
+# Guidelines:
+# - Only include VERIFIED findings (high confidence)
+# - Be specific about mechanisms and parameter names
+# - Include clear "do_not_repeat" warnings for failed approaches
+# - Use confidence scores: 0.95+ for verified, 0.8-0.9 for likely, 0.6-0.8 for uncertain
+
+# ============================================================================
+# DISCOVERIES
+# ============================================================================
+# Mechanistic insights from calibration work
+
+discoveries:
+
+  # Example: Allocation Paradox
+  # - name: allocation_paradox
+  #   description: "Increasing vmax_p causes PID controller to DECREASE root allocation"
+  #   mechanism: |
+  #     Higher P uptake per root -> Higher storage P concentration -> Lower C:P ratio
+  #     -> cx_logratio becomes more negative -> PID controller detects 'excess nutrients
+  #     relative to C' -> PID DECREASES l2fr (shifts allocation away from roots)
+  #     -> Fewer roots produced -> Lower total capacitance -> Less P uptake under
+  #     ECA competition -> Biomass collapses
+  #   affects:
+  #     - froot_pft10
+  #     - leaf_pft10
+  #   parameters_involved:
+  #     - fates_cnp_vmax_p
+  #     - fates_cnp_pid_kp
+  #     - fates_alloc_storage_cushion
+  #   implications:
+  #     - DO NOT simply increase P uptake parameters for PFT#10
+  #     - Must consider PID controller feedback when modifying nutrient parameters
+  #     - Problem is competitive exclusion by PFT#9, not PFT#10 uptake capacity
+  #   do_not_repeat:
+  #     - vmax_p x 10 for PFT#10 alone
+  #   confidence: 0.95
+  #   date_discovered: "2025-12-23"
+  #   references:
+  #     - memory/20251223a_PUptake_Tests_Allocation_Paradox.md
+
+  # YOUR DISCOVERIES HERE:
+  # -----------------------
+
+
+# ============================================================================
+# FAILED EXPERIMENTS
+# ============================================================================
+# Experiments that failed - important for "do not repeat"
+
+failed_experiments:
+
+  # Example: vmax_p 10x test
+  # - id: test3a_vmax_p_10x
+  #   date: "2025-12-23"
+  #   base_case: "2678_phen2675stc3pidfix_turnover5"
+  #   hypothesis: "Increase P uptake capacity for PFT#10 to overcome P starvation"
+  #   modifications:
+  #     - parameter: fates_cnp_vmax_p_10
+  #       old_value: 5.0e-06
+  #       new_value: 5.0e-05
+  #   results:
+  #     froot_pft10:
+  #       expected: 200.0
+  #       actual: 26.60
+  #       change_pct: -78
+  #     leaf_pft10:
+  #       expected: 90.0
+  #       actual: 0.66
+  #       change_pct: -95
+  #   outcome: catastrophic_collapse
+  #   lesson: "Higher vmax_p triggers allocation paradox - PID reduces root allocation when storage P increases"
+  #   repeat_warning: "CATASTROPHIC: Causes 78-95% biomass collapse"
+
+  # YOUR FAILED EXPERIMENTS HERE:
+  # -----------------------------
+
+
+# ============================================================================
+# FAILED APPROACHES
+# ============================================================================
+# General approaches that should NOT be tried again
+
+failed_approaches:
+
+  # Example: vmax_p increase approach
+  # - approach: "Increase vmax_p 10x for single PFT"
+  #   experiment_id: test3a_vmax_p_10x
+  #   why_failed: "Triggers allocation paradox via PID controller feedback"
+  #   severity: catastrophic
+  #   alternatives:
+  #     - "Increase vmax_p moderately (2-3x) with turnover adjustment"
+  #     - "Correct root distribution first to improve spatial P access"
+
+  # Example: MR reduction approach
+  # - approach: "Reduce maintenance respiration by 90%"
+  #   experiment_id: MR_reduction_90pct
+  #   why_failed: "Ecosystem collapse - MR is essential for metabolic function"
+  #   severity: catastrophic
+  #   alternatives:
+  #     - "MR reduction is NOT a viable approach"
+  #     - "Focus on allocation and nutrient uptake instead"
+
+  # YOUR FAILED APPROACHES HERE:
+  # ----------------------------

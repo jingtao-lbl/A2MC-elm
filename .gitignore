@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Environment
+.env
+*.key
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Memory data (user-specific)
+memory/logs/
+memory/gained_knowledge/
+memory/extracted/
+memory/workflow_log.json
+
+# Site-specific data
+use_cases/*/memory/
+use_cases/*/config/*_config.sh
+!use_cases/TEMPLATE/
+
+# Large data files
+*.nc
+*.h5
+*.tar.gz

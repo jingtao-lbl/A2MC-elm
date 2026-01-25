@@ -1,0 +1,25 @@
+# A2MC - Agentic Adaptive Multi-target Calibration
+# RAG system dependencies
+
+# NOTE: Use Python 3.10 for chromadb compatibility
+# Path: /Library/Frameworks/Python.framework/Versions/3.10/bin/python3
+# The homebrew Python 3.12 has PEP 668 restrictions
+
+# Vector store
+chromadb>=0.4.0
+
+# Embeddings
+sentence-transformers>=2.2.0
+
+# Knowledge Graph (GraphRAG Phase 2)
+networkx>=3.0
+
+# LangChain (optional, for advanced text splitting)
+# langchain>=0.1.0
+
+# Data processing
+numpy>=1.20.0
+pyyaml>=6.0
+
+# Anthropic API (for Claude integration)
+anthropic>=0.18.0

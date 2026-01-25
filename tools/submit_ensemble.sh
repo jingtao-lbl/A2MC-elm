@@ -1,0 +1,335 @@
+#!/bin/bash
+# =======================================================================================
+# A2MC Submit Ensemble Script
+#
+# Submits multiple ensemble cases using create_case.sh as the template.
+# Supports parallel submission with configurable batch sizes.
+#
+# Usage:
+#   ./submit_ensemble.sh --start 1 --end 100 [options]
+#
+# Required:
+#   --start NUM           Starting case number
+#   --end NUM             Ending case number
+#
+# Optional (defaults from a2mc_config.sh):
+#   --param-dir DIR       Directory containing parameter files
+#                         (default: $A2MC_PARAM_DIR from config)
+#   --param-pattern PAT   Pattern for param files, {N} = case number
+#                         (default: $A2MC_PARAM_PATTERN from config)
+#   --output-root DIR     Override output directory
+#   --case-prefix PREFIX  Override case name prefix
+#   --case-suffix SUFFIX  Add suffix to case name
+#   --batch-size NUM      Number of cases to submit in parallel (default: 10)
+#   --delay SEC           Seconds between batch submissions (default: 5)
+#   --phases PHASES       Which phases to run (default: "ADSP RGSP TRANS")
+#   --submit              Actually submit (default: just build)
+#   --skip-build          Skip building (use existing builds)
+#   --log-dir DIR         Directory for log files (default: ./logs)
+#   --dry-run             Show what would be done
+#   -h, --help            Show this help
+#
+# Examples:
+#   # Submit Morris ensemble cases 1-100 (uses defaults from a2mc_config.sh)
+#   ./submit_ensemble.sh --start 1 --end 100 --submit
+#
+#   # Submit full 4890-case ensemble with custom batch size
+#   ./submit_ensemble.sh --start 1 --end 4890 --batch-size 50 --submit
+#
+#   # Submit with explicit parameter directory and pattern
+#   ./submit_ensemble.sh --start 1 --end 100 \
+#     --param-dir /path/to/fates_params \
+#     --param-pattern "fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc" \
+#     --submit
+#
+#   # Only submit TRANS phase for cases that already have spinup complete
+#   ./submit_ensemble.sh --start 1 --end 100 --phases TRANS --submit
+#
+#   # Dry run to see what would be submitted
+#   ./submit_ensemble.sh --start 1 --end 10 --dry-run
+#
+# Author: A2MC Framework
+# =======================================================================================
+
+set -e
+
+# Get script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load configuration
+source "${SCRIPT_DIR}/a2mc_config.sh"
+
+# ========================
+# ARGUMENT PARSING
+# ========================
+
+START_NUM=""
+END_NUM=""
+PARAM_DIR="${A2MC_PARAM_DIR:-}"           # Default from config
+PARAM_PATTERN="${A2MC_PARAM_PATTERN:-fates_params_*_En{N}.nc}"  # Default from config
+OUTPUT_ROOT="${A2MC_OUTPUT_ROOT}"
+CASE_PREFIX="${A2MC_ENSEMBLE_PREFIX}"
+CASE_SUFFIX=""
+BATCH_SIZE=10
+DELAY=5
+RUN_PHASES="ADSP RGSP TRANS"
+DO_SUBMIT=false
+SKIP_BUILD=false
+LOG_DIR="./logs"
+DRY_RUN=false
+
+print_usage() {
+    head -50 "$0" | grep -A 100 "^# Usage:" | grep "^#" | sed 's/^# //'
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --start)
+            START_NUM="$2"
+            shift 2
+            ;;
+        --end)
+            END_NUM="$2"
+            shift 2
+            ;;
+        --param-dir)
+            PARAM_DIR="$2"
+            shift 2
+            ;;
+        --param-pattern)
+            PARAM_PATTERN="$2"
+            shift 2
+            ;;
+        --output-root)
+            OUTPUT_ROOT="$2"
+            shift 2
+            ;;
+        --case-prefix)
+            CASE_PREFIX="$2"
+            shift 2
+            ;;
+        --case-suffix)
+            CASE_SUFFIX="$2"
+            shift 2
+            ;;
+        --batch-size)
+            BATCH_SIZE="$2"
+            shift 2
+            ;;
+        --delay)
+            DELAY="$2"
+            shift 2
+            ;;
+        --phases)
+            RUN_PHASES="$2"
+            shift 2
+            ;;
+        --submit)
+            DO_SUBMIT=true
+            shift
+            ;;
+        --skip-build)
+            SKIP_BUILD=true
+            shift
+            ;;
+        --log-dir)
+            LOG_DIR="$2"
+            shift 2
+            ;;
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        -h|--help)
+            print_usage
+            exit 0
+            ;;
+        *)
+            echo "Unknown option: $1"
+            print_usage
+            exit 1
+            ;;
+    esac
+done
+
+# Validate required arguments
+if [ -z "$START_NUM" ] || [ -z "$END_NUM" ]; then
+    echo "ERROR: --start and --end are required"
+    print_usage
+    exit 1
+fi
+
+if [ -z "$PARAM_DIR" ]; then
+    echo "ERROR: --param-dir is required (or set A2MC_PARAM_DIR in a2mc_config.sh)"
+    print_usage
+    exit 1
+fi
+
+if [ ! -d "$PARAM_DIR" ]; then
+    echo "ERROR: Parameter directory not found: $PARAM_DIR"
+    echo "Check A2MC_PARAM_DIR in a2mc_config.sh or use --param-dir"
+    exit 1
+fi
+
+# Create log directory
+mkdir -p "$LOG_DIR"
+
+# ========================
+# SUMMARY
+# ========================
+
+TOTAL_CASES=$((END_NUM - START_NUM + 1))
+NUM_BATCHES=$(( (TOTAL_CASES + BATCH_SIZE - 1) / BATCH_SIZE ))
+
+echo "========================================"
+echo "A2MC Ensemble Submission"
+echo "========================================"
+echo "Cases: ${START_NUM} to ${END_NUM} (${TOTAL_CASES} total)"
+echo "Parameter directory: ${PARAM_DIR}"
+echo "Parameter pattern: ${PARAM_PATTERN}"
+echo "Batch size: ${BATCH_SIZE}"
+echo "Number of batches: ${NUM_BATCHES}"
+echo "Phases: ${RUN_PHASES}"
+echo "Submit: ${DO_SUBMIT}"
+echo "Log directory: ${LOG_DIR}"
+echo "========================================"
+
+if [ "$DRY_RUN" = true ]; then
+    echo "[DRY RUN] Would submit ${TOTAL_CASES} cases in ${NUM_BATCHES} batches"
+    exit 0
+fi
+
+# ========================
+# SUBMISSION FUNCTIONS
+# ========================
+
+# Find parameter file for a given case number
+find_param_file() {
+    local case_num=$1
+    local pattern="${PARAM_PATTERN/\{N\}/${case_num}}"
+
+    # Try direct pattern match
+    local files=(${PARAM_DIR}/${pattern})
+    if [ -f "${files[0]}" ]; then
+        echo "${files[0]}"
+        return 0
+    fi
+
+    # Try with wildcard
+    local files=(${PARAM_DIR}/*En${case_num}*.nc ${PARAM_DIR}/*_${case_num}.nc ${PARAM_DIR}/*_${case_num}_*.nc)
+    for f in "${files[@]}"; do
+        if [ -f "$f" ]; then
+            echo "$f"
+            return 0
+        fi
+    done
+
+    echo ""
+    return 1
+}
+
+# Submit a single case
+submit_case() {
+    local case_num=$1
+    local param_file=$2
+    local log_file="${LOG_DIR}/case_${case_num}.log"
+
+    # Build command
+    local cmd="${SCRIPT_DIR}/create_case.sh"
+    cmd="$cmd --case-num ${case_num}"
+    cmd="$cmd --param-file ${param_file}"
+    cmd="$cmd --output-root ${OUTPUT_ROOT}"
+    cmd="$cmd --case-prefix ${CASE_PREFIX}"
+    cmd="$cmd --phases \"${RUN_PHASES}\""
+
+    if [ -n "$CASE_SUFFIX" ]; then
+        cmd="$cmd --case-suffix ${CASE_SUFFIX}"
+    fi
+
+    if [ "$DO_SUBMIT" = true ]; then
+        cmd="$cmd --submit"
+    fi
+
+    if [ "$SKIP_BUILD" = true ]; then
+        cmd="$cmd --skip-build"
+    fi
+
+    # Run in background with logging
+    echo "Submitting case ${case_num}..."
+    eval "$cmd" > "$log_file" 2>&1 &
+    echo $!
+}
+
+# ========================
+# MAIN SUBMISSION LOOP
+# ========================
+
+echo ""
+echo "Starting ensemble submission..."
+echo ""
+
+TOTAL_SUBMITTED=0
+TOTAL_FAILED=0
+declare -a PIDS
+
+for ((batch=0; batch<NUM_BATCHES; batch++)); do
+    BATCH_START=$((START_NUM + batch * BATCH_SIZE))
+    BATCH_END=$((BATCH_START + BATCH_SIZE - 1))
+    if [ $BATCH_END -gt $END_NUM ]; then
+        BATCH_END=$END_NUM
+    fi
+
+    echo "========================================"
+    echo "Batch $((batch + 1))/${NUM_BATCHES}: Cases ${BATCH_START} to ${BATCH_END}"
+    echo "========================================"
+
+    PIDS=()
+
+    # Submit cases in this batch
+    for ((n=BATCH_START; n<=BATCH_END; n++)); do
+        # Find parameter file
+        PARAM_FILE=$(find_param_file $n)
+
+        if [ -z "$PARAM_FILE" ]; then
+            echo "WARNING: No parameter file found for case ${n}, skipping"
+            TOTAL_FAILED=$((TOTAL_FAILED + 1))
+            continue
+        fi
+
+        # Submit case
+        PID=$(submit_case $n "$PARAM_FILE")
+        PIDS+=($PID)
+        TOTAL_SUBMITTED=$((TOTAL_SUBMITTED + 1))
+
+        # Small delay between submissions within batch
+        sleep 0.5
+    done
+
+    # Wait for batch to complete
+    echo "Waiting for batch ${batch+1} to complete..."
+    for pid in "${PIDS[@]}"; do
+        wait $pid 2>/dev/null || true
+    done
+
+    # Delay between batches
+    if [ $((batch + 1)) -lt $NUM_BATCHES ]; then
+        echo "Pausing ${DELAY}s before next batch..."
+        sleep $DELAY
+    fi
+done
+
+# ========================
+# SUMMARY
+# ========================
+
+echo ""
+echo "========================================"
+echo "Ensemble Submission Complete"
+echo "========================================"
+echo "Total cases submitted: ${TOTAL_SUBMITTED}"
+echo "Total cases failed: ${TOTAL_FAILED}"
+echo "Log directory: ${LOG_DIR}"
+echo ""
+echo "Monitor jobs with: squeue -u $USER"
+echo "Check logs with: tail -f ${LOG_DIR}/case_*.log"
+echo "========================================"
