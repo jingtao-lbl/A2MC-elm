@@ -31,10 +31,13 @@ memory/gained_knowledge/
 memory/extracted/
 memory/workflow_log.json
 
-# Site-specific data
+# Site-specific data (except Kougarok example)
 use_cases/*/memory/
+!use_cases/Kougarok/memory/gained_knowledge/
 use_cases/*/config/*_config.sh
+!use_cases/Kougarok/config/
 !use_cases/TEMPLATE/
+*.bak
 
 # Large data files
 *.nc

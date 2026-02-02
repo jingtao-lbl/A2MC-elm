@@ -1,0 +1,676 @@
+{
+  "version": "1.0",
+  "site": "Kougarok",
+  "description": "Site-specific failed approaches to avoid repeating",
+  "failed_approaches": [
+    {
+      "approach": "Using responsive PID allocation (pid_kp=0.001) to improve PFT#10 biomass",
+      "experiment_id": "20251222a_PFT10_Diagnostic_Findings_Triple_Bottleneck.md",
+      "why_failed": "PID responds to light stress (dominant signal) rather than P stress when total productivity is extremely low, leading to maladaptive leaf allocation that worsens both leaf and root biomass",
+      "severity": "HIGH",
+      "alternatives": [
+        "Fix P starvation first before optimizing allocation strategy",
+        "Sequential targeted parameter modifications rather than allocation optimization"
+      ],
+      "date_added": "2026-01-18T08:20:14.976277"
+    },
+    {
+      "approach": "Applying SPSA optimization directly to underperforming PFTs without mechanistic diagnosis",
+      "experiment_id": "20251222a_PFT10_Diagnostic_Findings_Triple_Bottleneck.md",
+      "why_failed": "SPSA assumes near local optimum but PFT#10 has mechanistic bottlenecks (zero P uptake, wrong turnover) that must be fixed first. Gradient-based optimization fails when applied to wrong parameter set",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Diagnostic-driven refinement workflow",
+        "Sequential bottleneck removal",
+        "Targeted parameter changes based on mechanistic understanding"
+      ],
+      "date_added": "2026-01-18T08:20:14.977182"
+    },
+    {
+      "approach": "Single-variable optimization (Method 1) focusing only on PFT#10 fineroot biomass",
+      "experiment_id": "20251209c_Morris_Optimization_Methods_Results.md",
+      "why_failed": "Achieved high PFT#10 fineroot (80% of target) by suppressing PFT#9 (93% underestimate) and causing massive AGB overshoot (13.7×)",
+      "severity": "HIGH",
+      "alternatives": [
+        "Multi-PFT balanced optimization (Method 2)",
+        "Hybrid parameter modification approach"
+      ],
+      "date_added": "2026-01-18T08:23:08.242818"
+    },
+    {
+      "approach": "mod5-7 parameter modification tests based on mod4 foundation with 90% MR reduction",
+      "experiment_id": "20251209c_Morris_Optimization_Methods_Results.md",
+      "why_failed": "mod4 foundation had ecosystem collapse from 90% maintenance respiration reduction, making all subsequent tests invalid",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "mod8-10 tests from original 3643 baseline",
+        "Hybrid approach from Set #3930"
+      ],
+      "date_added": "2026-01-18T08:23:08.243482"
+    },
+    {
+      "approach": "Equal weighting of all 9 outputs in composite NRMSE (Method 2)",
+      "experiment_id": "20251209c_Morris_Optimization_Methods_Results.md",
+      "why_failed": "Severely underestimates PFT#10 fineroot (9% of target) while achieving good shrub performance",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Weighted NRMSE with PFT#10 emphasis",
+        "Method 1.5 with AGB constraints",
+        "Hybrid parameter modification"
+      ],
+      "date_added": "2026-01-18T08:23:08.244032"
+    },
+    {
+      "approach": "Modifying cross-PFT parameters to help target PFT",
+      "experiment_id": "20251216a_Morris_Sensitivity_Parameter_Analysis.md",
+      "why_failed": "Parameters that help one PFT harm others, creating optimization conflicts",
+      "severity": "HIGH",
+      "alternatives": [
+        "Focus on PFT-specific parameters only",
+        "Multi-objective optimization for compromise values"
+      ],
+      "date_added": "2026-01-18T08:23:37.482665"
+    },
+    {
+      "approach": "Using shared phenology parameters for optimization",
+      "experiment_id": "20251216a_Morris_Sensitivity_Parameter_Analysis.md",
+      "why_failed": "Shared parameters have opposite effects on different PFTs, cannot simultaneously optimize all",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Make phenology parameters PFT-specific",
+        "Accept sub-optimal performance for some PFTs",
+        "Find compromise values"
+      ],
+      "date_added": "2026-01-18T08:23:37.483265"
+    },
+    {
+      "approach": "Using simplified PyModel for phenology calibration",
+      "experiment_id": "20251207c_PhenologyCalibration.md",
+      "why_failed": "Missing cold status state machine logic - GDD accumulated continuously instead of conditionally, causing 31-day MAE vs 2.2-day MAE for full model",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Use full PyModel with complete state machine",
+        "Validate surrogate models thoroughly before calibration"
+      ],
+      "date_added": "2026-01-18T08:24:06.956174"
+    },
+    {
+      "approach": "Morris sampling with num_levels=8 for exponential phenology parameters",
+      "experiment_id": "20251207c_PhenologyCalibration.md",
+      "why_failed": "Grid resolution too coarse - optimal phen_c value fell between grid points, causing all 4,170 parameter combinations to miss optimal phenology",
+      "severity": "HIGH",
+      "alternatives": [
+        "Increase num_levels to 16 or 32 for sensitive parameters",
+        "Follow Morris screening with continuous optimization",
+        "Use adaptive/hierarchical sampling"
+      ],
+      "date_added": "2026-01-18T08:24:06.957050"
+    },
+    {
+      "approach": "Including 2000-2001 in phenology calibration",
+      "experiment_id": "20251207c_PhenologyCalibration.md",
+      "why_failed": "Initialization artifacts from nchilldays=0 startup caused wrong GDD threshold calculations in first two years",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Exclude initialization years from calibration",
+        "Run 1999 spin-up to accumulate proper chilling days",
+        "Use 2002-2019 as calibration period"
+      ],
+      "date_added": "2026-01-18T08:24:06.957866"
+    },
+    {
+      "approach": "Storage cushion hypothesis as primary bottleneck",
+      "experiment_id": "20251208d_LAI_Hypothesis_Testing_Results.md",
+      "why_failed": "Storage cushion creates targets but is irrelevant when NPP is negative - storage is being depleted, not filled. Absolute storage deficit is small (~0.3 g C/m²)",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Focus on making NPP positive first",
+        "Arctic-specific GPP parameterization"
+      ],
+      "date_added": "2026-01-18T08:24:31.309486"
+    },
+    {
+      "approach": "PID controller root over-allocation as primary bottleneck",
+      "experiment_id": "20251208d_LAI_Hypothesis_Testing_Results.md",
+      "why_failed": "PID controller adjusts allocation of positive NPP only. When NPP is negative, PID is not active and allocation fractions become meaningless",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Address negative NPP root cause",
+        "Increase spring GPP capacity"
+      ],
+      "date_added": "2026-01-18T08:24:31.310410"
+    },
+    {
+      "approach": "Nitrogen limitation hypothesis",
+      "experiment_id": "20251208d_LAI_Hypothesis_Testing_Results.md",
+      "why_failed": "N supply (0.67 g N/m²) far exceeds demand (0.002 g N/m²) due to low stoich_nitr_leaf_10 (0.00122). N ratio >1000x sufficient",
+      "severity": "LOW",
+      "alternatives": [
+        "Focus on carbon availability",
+        "Photosynthesis temperature response"
+      ],
+      "date_added": "2026-01-18T08:24:31.311181"
+    },
+    {
+      "approach": "Further reduction of maintenance respiration via maintresp_nonleaf_baserate parameter",
+      "experiment_id": "20251208e_Parameters_At_Bounds_Analysis.md",
+      "why_failed": "Parameter already at lower bound (1.296e-6 gC/gN/s), 49% below default, cannot be reduced further within Morris parameter space",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Temperature-dependent maintenance respiration code modification",
+        "Expand Morris parameter bounds"
+      ],
+      "date_added": "2026-01-18T08:24:56.630868"
+    },
+    {
+      "approach": "Increasing photosynthetic capacity via leaf_slatop_10 parameter",
+      "experiment_id": "20251208e_Parameters_At_Bounds_Analysis.md",
+      "why_failed": "Parameter at lower bound (0.00853 m²/gC), representing thickest possible leaves with minimum photosynthetic area per unit carbon, cannot increase GPP capacity further",
+      "severity": "HIGH",
+      "alternatives": [
+        "Arctic-specific photosynthesis parameterization in code",
+        "Expand upper SLA bounds to allow thinner leaves"
+      ],
+      "date_added": "2026-01-18T08:24:56.631640"
+    },
+    {
+      "approach": "Further phenology optimization via parameter adjustment",
+      "experiment_id": "20251208e_Parameters_At_Bounds_Analysis.md",
+      "why_failed": "Phenology already optimized on Dec 7 with RMSE 4.2 days, Case #3643 parameters very close to optimal values, phenology timing is not the constraint",
+      "severity": "LOW",
+      "alternatives": [
+        "Focus on carbon balance code modifications",
+        "Accept current phenology as adequate"
+      ],
+      "date_added": "2026-01-18T08:24:56.632404"
+    },
+    {
+      "approach": "Changing Arctic reference temperature from 20°C to 10°C",
+      "experiment_id": "20251208f_Code_Modification_Recommendations.md",
+      "why_failed": "At spring temperature T=5°C, changing reference to 10°C increases MR scaling from 0.35 to 0.71, doubling MR and worsening carbon balance",
+      "severity": "HIGH",
+      "alternatives": [
+        "Use lower reference temperature (5°C)",
+        "Implement dormancy mechanism",
+        "Combined dormancy + lower reference approach"
+      ],
+      "date_added": "2026-01-18T08:25:18.408255"
+    },
+    {
+      "approach": "Parameter optimization alone to solve spring carbon starvation",
+      "experiment_id": "20251208f_Code_Modification_Recommendations.md",
+      "why_failed": "maintresp_nonleaf_baserate already at lower bound (1.296e-6, 49% below default) but still produces MR > GPP in spring",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Code modifications for dormancy scaling",
+        "Arctic-specific temperature response",
+        "Enhanced Arctic photosynthesis"
+      ],
+      "date_added": "2026-01-18T08:25:18.409242"
+    },
+    {
+      "approach": "Reduce maintenance respiration by 90% to fix spring MR > GPP problem",
+      "experiment_id": "20251209b_Parameter_Modification_Test_Results.md",
+      "why_failed": "Created ecosystem death spiral - GPP collapsed 58% while MR only reduced 85%, resulting in 52-56% less net carbon available",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Fix allocation hierarchy",
+        "Implement dormancy mechanism",
+        "Fix phenology timing"
+      ],
+      "date_added": "2026-01-18T08:26:04.618090"
+    },
+    {
+      "approach": "Increase storage cushion from collapsed baseline (mod4 foundation)",
+      "experiment_id": "20251209b_Parameter_Modification_Test_Results.md",
+      "why_failed": "Extra carbon went to root over-allocation instead of leaves, making PFT#10 worse (-25% vs -13%)",
+      "severity": "HIGH",
+      "alternatives": [
+        "Start from healthy baseline",
+        "Combine with PID gain reduction"
+      ],
+      "date_added": "2026-01-18T08:26:04.618929"
+    },
+    {
+      "approach": "Parameter tuning to achieve realistic Arctic graminoid biomass",
+      "experiment_id": "20251209b_Parameter_Modification_Test_Results.md",
+      "why_failed": "Even best result (+58% improvement) still produced absolute biomass values too low for realistic Arctic ecosystem",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Code modifications for allocation hierarchy",
+        "Phenology timing fixes",
+        "Dormancy mechanism implementation"
+      ],
+      "date_added": "2026-01-18T08:26:04.619715"
+    },
+    {
+      "approach": "Single replacement pattern for job file generation using 'PtCNPEn' only",
+      "experiment_id": "20251211a_LeafRootOptimization_Workflow.md",
+      "why_failed": "Two different naming patterns exist: 'PtCNPEn' (no underscore) for script names and 'PtCNP_En' (with underscore) for parameter file paths",
+      "severity": "HIGH",
+      "alternatives": [
+        "Use chained replacements to handle both patterns",
+        "Verify all occurrences of replacement strings in different contexts"
+      ],
+      "date_added": "2026-01-18T08:26:26.188749"
+    },
+    {
+      "approach": "Assuming Morris parameter file has header row",
+      "experiment_id": "20251211a_LeafRootOptimization_Workflow.md",
+      "why_failed": "Morris parameter file is pure data array (4170 rows × 138 columns) with NO HEADER, causing off-by-one indexing errors",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Always verify file structure before indexing",
+        "Test indexing on known values",
+        "Use np.loadtxt() without skiprows parameter"
+      ],
+      "date_added": "2026-01-18T08:26:26.189830"
+    },
+    {
+      "approach": "Universal phenology parameter application (mod_phen)",
+      "experiment_id": "20251212b_ModificationSetsEvaluation.md",
+      "why_failed": "Phenology parameters calibrated from Case #561 caused 54% simulation failure rate and 91% performance regression when applied universally to all Morris parameter combinations",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Case-specific phenology calibration",
+        "Adaptive phenology parameters based on Morris parameter regime"
+      ],
+      "date_added": "2026-01-18T08:26:50.915170"
+    },
+    {
+      "approach": "Sequential modification strategy expecting universal improvement",
+      "experiment_id": "20251212b_ModificationSetsEvaluation.md",
+      "why_failed": "The assumption that modifications would universally improve all cases was wrong - best Morris case (Set #2675) got worse with all modifications while best modified case (Set #2678) was only rank #7 in Morris",
+      "severity": "HIGH",
+      "alternatives": [
+        "Parameter space analysis to predict which cases benefit from modifications",
+        "Case-specific modification strategies",
+        "Ensemble approach rather than single best parameter set"
+      ],
+      "date_added": "2026-01-18T08:26:50.916567"
+    },
+    {
+      "approach": "Using Case #561 phenology parameters for modifications",
+      "experiment_id": "20251213a_PhenologyCase2675ModificationsEvaluationResults.md",
+      "why_failed": "Caused 54% simulation failure rate (27/50 cases failed) because phenology was calibrated from a case not representative of successful parameter space",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Use phenology from best Morris case (Case #2675)",
+        "Calibrate phenology from representative successful cases",
+        "Use adaptive phenology calibration for different parameter regimes"
+      ],
+      "date_added": "2026-01-18T08:27:14.410059"
+    },
+    {
+      "approach": "Phenology-only modifications (phen2675)",
+      "experiment_id": "20251213a_PhenologyCase2675ModificationsEvaluationResults.md",
+      "why_failed": "Zero cases appeared in top 10 ranking, indicating phenology alone is insufficient for optimal performance",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Add storage cushion modifications",
+        "Include PID gain adjustments",
+        "Use full modification suite (phen2675stc3pid)"
+      ],
+      "date_added": "2026-01-18T08:27:14.411121"
+    },
+    {
+      "approach": "Single-objective optimization targeting only biomass",
+      "experiment_id": "20251213a_PhenologyCase2675ModificationsEvaluationResults.md",
+      "why_failed": "Creates systematic overestimation of MODIS LAI and GPP by 2-3× while achieving biomass targets",
+      "severity": "HIGH",
+      "alternatives": [
+        "Multi-objective optimization including LAI/GPP",
+        "SLA calibration",
+        "Phenology timing adjustments",
+        "Photosynthetic parameter calibration"
+      ],
+      "date_added": "2026-01-18T08:27:14.412182"
+    },
+    {
+      "approach": "Using Case #561-based phenology modifications across all Morris cases",
+      "experiment_id": "20251213b_Case2675EdgeAnalysis.md",
+      "why_failed": "54% failure rate because phenology was optimized for one parameter regime (low MR, low SLA) and incompatible with diverse Morris parameter combinations",
+      "severity": "HIGH",
+      "alternatives": [
+        "Use phenology from best Morris case (Case #2675)",
+        "Develop parameter-regime-specific phenology modifications"
+      ],
+      "date_added": "2026-01-18T08:27:32.132679"
+    },
+    {
+      "approach": "Single-objective biomass optimization without ecosystem constraints",
+      "experiment_id": "20251213d_Case845DiagnosticAnalysis.md",
+      "why_failed": "Creates 2-3x overestimation of ecosystem LAI and GPP, fails independent MODIS validation",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Multi-objective optimization including LAI/GPP constraints",
+        "Ecosystem-function-first approach with biomass constraints"
+      ],
+      "date_added": "2026-01-18T08:28:01.695336"
+    },
+    {
+      "approach": "Using optimized Case #2678 as baseline for realistic ecosystem modeling",
+      "experiment_id": "20251213d_Case845DiagnosticAnalysis.md",
+      "why_failed": "Despite best biomass NRMSE, it systematically overestimates ecosystem fluxes and fails remote sensing validation",
+      "severity": "HIGH",
+      "alternatives": [
+        "Use Case #845 as baseline with PFT#9 specific modifications",
+        "Hybrid approach balancing biomass and ecosystem function"
+      ],
+      "date_added": "2026-01-18T08:28:01.696214"
+    },
+    {
+      "approach": "Single parameter optimization focusing only on biomass NRMSE",
+      "experiment_id": "20251214a_Case2678vs845_ParameterTradeoff.md",
+      "why_failed": "Creates unrealistic ecosystem function. Case #2678 matches biomass but overestimates MODIS LAI/GPP by 2-3×. Ignores ecosystem-level constraints.",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Multi-objective optimization including MODIS LAI/GPP",
+        "Constrained optimization with ecosystem function limits"
+      ],
+      "date_added": "2026-01-18T08:28:46.728295"
+    },
+    {
+      "approach": "Extreme storage cushion modification (4.4× increase to 3.0)",
+      "experiment_id": "20251214a_Case2678vs845_ParameterTradeoff.md",
+      "why_failed": "Even increasing alloc_storage_cushion_10 from 0.686 to 3.0 (well beyond Morris upper bound of 1.77) still underestimates PFT#10 biomass. Storage alone is insufficient.",
+      "severity": "HIGH",
+      "alternatives": [
+        "Multi-parameter modifications",
+        "Structural model changes",
+        "Review allometry or SLA parameters"
+      ],
+      "date_added": "2026-01-18T08:28:46.729528"
+    },
+    {
+      "approach": "Focusing on L:FR allocation ratios to fix biomass distribution",
+      "experiment_id": "20251214a_Case2678vs845_ParameterTradeoff.md",
+      "why_failed": "L:FR paradox shows allocation ratios don't determine absolute biomass. Total productivity is the bottleneck, not allocation fractions.",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Focus on total productivity parameters",
+        "Optimize survival and storage first"
+      ],
+      "date_added": "2026-01-18T08:28:46.730652"
+    },
+    {
+      "approach": "Attempting to fix Case #2678 with extreme parameter modifications",
+      "experiment_id": "20251214b_Case845_FixPFT9_Strategy.md",
+      "why_failed": "Even with extreme modifications (storage 4.4×, PID 430×), still fails PFT#10 biomass and causes 2-3× MODIS LAI/GPP overestimate due to structural growing season length issues",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Fix Case #845 instead",
+        "Multi-objective optimization",
+        "Model structural changes"
+      ],
+      "date_added": "2026-01-18T08:29:18.950548"
+    },
+    {
+      "approach": "Using all 5 parameter modifications (Exp5) for complete fix",
+      "experiment_id": "20251214b_Case845_FixPFT9_Strategy.md",
+      "why_failed": "Seed supplement parameter causes 21-24% overshoot in LAI/GPP, degrading MODIS match despite improving PFT#9 biomass",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Use Exp3 or Exp4 (3-4 parameters only)",
+        "Reduce seed supplement value",
+        "Focus on survival parameters only"
+      ],
+      "date_added": "2026-01-18T08:29:18.951794"
+    },
+    {
+      "approach": "Modifying ecosystem-level phenology parameters (phen_coldtemp, phen_gddthresh_c)",
+      "experiment_id": "20251214b_Case845_FixPFT9_Strategy.md",
+      "why_failed": "Would affect all PFTs simultaneously and break the MODIS LAI/GPP match that is the main advantage of Case #845",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Use PFT-specific parameters only",
+        "Modify phen_mindaysoff_9 if needed"
+      ],
+      "date_added": "2026-01-18T08:29:18.953027"
+    },
+    {
+      "approach": "Reading evaluation data from combined summary file",
+      "experiment_id": "20251220a_AssembleAllCurrentSimulations4329cases.md",
+      "why_failed": "Summary file didn't contain the detailed biomass data needed for comprehensive evaluation",
+      "severity": "HIGH",
+      "alternatives": [
+        "Extract directly from MAT and NetCDF simulation files",
+        "Use original data sources with proper indexing"
+      ],
+      "date_added": "2026-01-18T08:29:39.001551"
+    },
+    {
+      "approach": "Using arithmetic mean for composite NRMSE calculation",
+      "experiment_id": "20251220a_AssembleAllCurrentSimulations4329cases.md",
+      "why_failed": "Doesn't match the root mean square formula used in other scripts, causing inconsistent rankings",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Use sqrt(mean(NRMSE²)) formula",
+        "Implement proper RMS calculation"
+      ],
+      "date_added": "2026-01-18T08:29:39.002648"
+    },
+    {
+      "approach": "Extracting 845 experiment parameters from NetCDF files",
+      "experiment_id": "20251220a_AssembleAllCurrentSimulations4329cases.md",
+      "why_failed": "NetCDF files only contain results, not the input parameters used for the simulation",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Start with Case #845 Morris parameters and apply documented modifications",
+        "Follow the modification scripts exactly"
+      ],
+      "date_added": "2026-01-18T08:29:39.003636"
+    },
+    {
+      "approach": "Using separate parameter names like fates_stoich_nitr_leaf",
+      "experiment_id": "20251220a_AssembleAllCurrentSimulations4329cases.md",
+      "why_failed": "FATES actually uses 2D arrays fates_stoich_nitr(organ, pft), not separate 1D parameters",
+      "severity": "HIGH",
+      "alternatives": [
+        "Use 2D parameter indexing with organ dimension",
+        "Handle dimension ordering automatically"
+      ],
+      "date_added": "2026-01-18T08:29:39.004620"
+    },
+    {
+      "approach": "Using responsive PID allocation (pid_kp = 0.001) to improve PFT#10 biomass",
+      "experiment_id": "20251222a_PFT10_Diagnostic_Findings_Triple_Bottleneck.md",
+      "why_failed": "PID responded to light stress (dominant signal) rather than P stress when total productivity was extremely low, causing maladaptive leaf allocation and biomass collapse",
+      "severity": "HIGH",
+      "alternatives": [
+        "Fix P starvation first",
+        "Use sequential targeted parameter modification",
+        "Apply SPSA only after bottlenecks resolved"
+      ],
+      "date_added": "2026-01-18T08:30:13.088763"
+    },
+    {
+      "approach": "Applying SPSA optimization directly to allocation parameters",
+      "experiment_id": "20251222a_PFT10_Diagnostic_Findings_Triple_Bottleneck.md",
+      "why_failed": "Cannot optimize allocation strategy until resource availability bottlenecks are fixed. SPSA assumes near local optimum but mechanistic bottlenecks (zero P uptake, wrong turnover) must be addressed first",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Sequential targeted refinement",
+        "Fix P uptake parameters 10-100×",
+        "Correct turnover rate to literature values"
+      ],
+      "date_added": "2026-01-18T08:30:13.090043"
+    },
+    {
+      "approach": "Relying on Morris ensemble to identify all critical parameters",
+      "experiment_id": "20251222a_PFT10_Diagnostic_Findings_Triple_Bottleneck.md",
+      "why_failed": "Morris ensemble missed fates_turnover_fnrt which caused 5× error in turnover rate and systematic 77% underestimation. P uptake parameters were included but all cases still showed zero P uptake",
+      "severity": "HIGH",
+      "alternatives": [
+        "Literature-based parameter priors for Arctic traits",
+        "Post-Morris diagnostic analysis",
+        "Include all critical parameters in sensitivity analysis"
+      ],
+      "date_added": "2026-01-18T08:30:13.091205"
+    },
+    {
+      "approach": "Morris ensemble optimization with original parameter bounds",
+      "experiment_id": "20251222f_Case2678_Parameter_Edge_Analysis.md",
+      "why_failed": "Parameter bounds were too restrictive for PFT#10, particularly for P uptake parameters that needed to be 10-100x higher than Morris upper bounds",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Expand P uptake parameter bounds by 10-100x",
+        "Use SPSA with expanded bounds",
+        "Test P uptake boost in Test 3"
+      ],
+      "date_added": "2026-01-18T08:30:35.955170"
+    },
+    {
+      "approach": "Boost PFT#10 P uptake parameters (vmax_p) by 10× to overcome P limitation",
+      "experiment_id": "20251223a_PUptake_Tests_Allocation_Paradox.md",
+      "why_failed": "Triggered allocation paradox - higher vmax_p caused PID controller to reduce root allocation, decreasing total capacitance and worsening ECA competition performance",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Reduce PFT#9 P uptake capacity",
+        "Modify soil P parameters",
+        "Multi-PFT optimization"
+      ],
+      "date_added": "2026-01-18T08:30:54.595757"
+    },
+    {
+      "approach": "Single-PFT optimization for multi-PFT competitive system",
+      "experiment_id": "20251223a_PUptake_Tests_Allocation_Paradox.md",
+      "why_failed": "Cannot solve zero-sum competition by optimizing one PFT in isolation when nutrients are limiting - competitive exclusion requires multi-PFT approach",
+      "severity": "HIGH",
+      "alternatives": [
+        "Multi-objective calibration framework",
+        "Balance competitive parameters across PFTs"
+      ],
+      "date_added": "2026-01-18T08:30:54.597356"
+    },
+    {
+      "approach": "Making up specific zi depth values as examples (0.0, 0.05, 0.15 meters) without verification",
+      "experiment_id": "20251223d_Root_Distribution_Parameters_Arctic_PFTs.md",
+      "why_failed": "These were fabricated examples presented as facts, following same error pattern of making up values instead of verifying them from actual model configuration",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Describe mathematical relationships without specific values",
+        "Extract actual zi values from model configuration files",
+        "State when values are conceptual examples vs real data"
+      ],
+      "date_added": "2026-01-18T08:31:37.005633"
+    },
+    {
+      "approach": "Unbounded parameter optimization for root distribution calibration",
+      "experiment_id": "20251223e_Root_Profile_Calibration_Kougarok_Data.md",
+      "why_failed": "Optimizer drove parameters to zero for graminoids, resulting in unrealistic uniform distributions",
+      "severity": "HIGH",
+      "alternatives": [
+        "Bounded optimization with L-BFGS-B",
+        "Parameter bounds a,b ∈ [0.1, 20]"
+      ],
+      "date_added": "2026-01-18T08:32:10.041328"
+    },
+    {
+      "approach": "Weighted averaging across cores with irregular depth sampling for 'observed data' visualization",
+      "experiment_id": "20251223e_Root_Profile_Calibration_Kougarok_Data.md",
+      "why_failed": "Created artificial data points that were not raw field measurements, smoothed out subsurface peaks, and distorted actual profile shapes",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Plot raw field observations",
+        "Individual core analysis",
+        "Preserve biological variability"
+      ],
+      "date_added": "2026-01-18T08:32:10.042345"
+    },
+    {
+      "approach": "Fitting exponential formulas to individual graminoid cores with subsurface peaks",
+      "experiment_id": "20251223e_Root_Profile_Calibration_Kougarok_Data.md",
+      "why_failed": "Mathematical impossibility - exponential formulas cannot represent subsurface peaks due to monotonic decrease constraint",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Empirical fractions",
+        "Beta distribution",
+        "Modified exponential with depth offset",
+        "Piecewise linear"
+      ],
+      "date_added": "2026-01-18T08:32:10.043602"
+    },
+    {
+      "approach": "Optimizing plant-side parameters (vmax_p, allocation, turnover) to solve P limitation",
+      "experiment_id": "20251229a_Soil_P_Chemistry_Bottleneck_Discovery.md",
+      "why_failed": "Soil chemistry parameters were fixed, creating fundamental supply limitation that no amount of plant-side optimization can overcome",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Modify soil desorption rates",
+        "Two-stage calibration (soil chemistry then plant traits)",
+        "Include soil parameters in ensemble sampling"
+      ],
+      "date_added": "2026-01-18T08:32:32.577896"
+    },
+    {
+      "approach": "Increasing plant P uptake capacity (vmax_p) by 10× to overcome P limitation",
+      "experiment_id": "20251229a_Soil_P_Chemistry_Bottleneck_Discovery.md",
+      "why_failed": "Soil can't supply P fast enough due to slow desorption rate - like trying to cure thirst by making someone more thirsty when water supply is the problem",
+      "severity": "HIGH",
+      "alternatives": [
+        "Increase desorption rate (r_desorp)",
+        "Decrease adsorption rate (r_adsorp)",
+        "Increase weathering rate (r_weather)"
+      ],
+      "date_added": "2026-01-18T08:32:32.579130"
+    },
+    {
+      "approach": "Aggressive parameter removal using never in top 20 across ANY output, average rank > 100 criteria",
+      "experiment_id": "20251229b_Parameter_Ensemble_Redesign_162params.md",
+      "why_failed": "User feedback indicated most flagged parameters appear important through edge analyses, and cross-PFT principle should be applied",
+      "severity": "HIGH",
+      "alternatives": [
+        "Conservative removal with cross-PFT grouping",
+        "Keep all parameters and add missing ones"
+      ],
+      "date_added": "2026-01-18T08:33:00.658122"
+    },
+    {
+      "approach": "Remove parameters that appear consistently low sensitivity across outputs",
+      "experiment_id": "20251229b_Parameter_Ensemble_Redesign_162params.md",
+      "why_failed": "Cross-PFT effects are pervasive, edge parameters may appear insensitive but are constrained, and context-dependent effects not captured by mean biomass analysis",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Group parameters by base name using cross-PFT principle",
+        "Apply much more conservative removal criteria",
+        "Keep all original parameters"
+      ],
+      "date_added": "2026-01-18T08:33:00.659476"
+    },
+    {
+      "approach": "Wide exploratory bounds [0.1, 30.0] for root distribution parameters",
+      "experiment_id": "20251230a_Parameter_Bounds_Expansion_v3_Finalized.md",
+      "why_failed": "User questioned why not use small changes around calibrated parameters instead of arbitrary wide ranges",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "±50% around field-calibrated values",
+        "Data-constrained bounds"
+      ],
+      "date_added": "2026-01-18T08:33:42.814594"
+    },
+    {
+      "approach": "PFT-specific parameter expansion (expanding only PFT#10 parameters)",
+      "experiment_id": "20251230a_Parameter_Bounds_Expansion_v3_Finalized.md",
+      "why_failed": "User pointed out it's unfair to expand parameters for one PFT but not others - lacks scientific consistency",
+      "severity": "MEDIUM",
+      "alternatives": [
+        "Uniform expansion across all 3 Arctic PFTs",
+        "Cross-PFT consistent bounds"
+      ],
+      "date_added": "2026-01-18T08:33:42.815959"
+    },
+    {
+      "approach": "Initial hypothesis that higher r_desorp would improve P availability",
+      "experiment_id": "20251231a_P_Desorption_Drought_Analysis.md",
+      "why_failed": "Higher r_desorp actually caused ecosystem collapse by creating conditions that led to drought-induced vegetation death and P trapping in litter",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Reduce drought mortality parameters",
+        "Adjust litter decomposition rates",
+        "Modify PID controller response during drought"
+      ],
+      "date_added": "2026-01-18T08:34:17.929975"
+    }
+  ]
+}
