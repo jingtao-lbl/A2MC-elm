@@ -25,13 +25,13 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Memory data (user-specific)
+# Memory data (user-specific, except Kougarok reference)
 memory/logs/
 memory/gained_knowledge/
 memory/extracted/
 memory/workflow_log.json
 
-# Site-specific data (except Kougarok example)
+# Site-specific data (except Kougarok reference example)
 use_cases/*/memory/
 !use_cases/Kougarok/memory/gained_knowledge/
 use_cases/*/config/*_config.sh

@@ -18,20 +18,25 @@ Configuration is read from:
 - tools/config.py (Python interface)
 
 Usage:
-    # Initialize new workflow
-    python orchestrator.py --init --output-dir ./a2mc_output
+    # First, source the config files
+    source a2mc_config.sh
+    source use_cases/Kougarok/config/kougarok_config.sh
 
-    # Run workflow from current state
-    python orchestrator.py --run --state-file workflow_state.json
+    # Run workflow (output-dir auto-detected from config)
+    python orchestrator.py --run
 
     # Resume from checkpoint
     python orchestrator.py --resume --state-file workflow_state.json
+
+    # Start from specific phase
+    python orchestrator.py --run --start-phase exploration
 
 Author: Jing Tao
 Created: January 2026
 """
 
 import os
+import sys
 import json
 import time
 import logging
@@ -203,7 +208,7 @@ class Config:
     """
     # Paths
     state_file: str = "workflow_state.json"
-    output_dir: str = "./a2mc_output"
+    output_dir: str = ""  # Auto-detected from A2MC_USE_CASE_DIR config
     param_bounds_file: str = ""      # Parameter bounds definition
     base_param_file: str = ""        # Base FATES parameter file
     memory_dir: str = ""             # Adaptive memory data directory (default: output_dir/memory/data)
@@ -2288,7 +2293,7 @@ Phase numbers:
                        help="Skip bootstrap validation before running")
     parser.add_argument("--state-file", type=str, default="workflow_state.json")
     parser.add_argument("--output-dir", type=str, default=None,
-                       help="Output directory (default: use_cases/{site}/memory/ or ./a2mc_output)")
+                       help="Output directory (default: auto-detected from A2MC_USE_CASE_DIR)")
     parser.add_argument("--max-iterations", type=int, default=10)
     parser.add_argument("--no-review", action="store_true", help="Skip human review points")
     parser.add_argument("--no-reasoning", action="store_true", help="Disable Claude API")
@@ -2321,11 +2326,19 @@ Phase numbers:
                 output_dir = os.path.join(a2mc_config.USE_CASE_DIR, "memory")
                 logger.info(f"Using site memory directory: {output_dir}")
             else:
-                output_dir = "./a2mc_output"
+                logger.error("A2MC_USE_CASE_DIR not set. Please source the config files first:")
+                logger.error("  source a2mc_config.sh")
+                logger.error("  source use_cases/{site}/config/{site}_config.sh")
+                sys.exit(1)
         except ImportError:
-            output_dir = os.environ.get('A2MC_USE_CASE_DIR', './a2mc_output')
-            if output_dir != './a2mc_output':
-                output_dir = os.path.join(output_dir, "memory")
+            use_case_dir = os.environ.get('A2MC_USE_CASE_DIR')
+            if use_case_dir:
+                output_dir = os.path.join(use_case_dir, "memory")
+            else:
+                logger.error("A2MC_USE_CASE_DIR not set. Please source the config files first:")
+                logger.error("  source a2mc_config.sh")
+                logger.error("  source use_cases/{site}/config/{site}_config.sh")
+                sys.exit(1)
 
     # Create config (values from args override environment/config defaults)
     config = Config(
