@@ -37,8 +37,11 @@ except ImportError:
 # RAG/GraphRAG integration
 try:
     from rag import HybridRetriever
-except ImportError:
+except ImportError as e:
     HybridRetriever = None
+    print(f"Warning: RAG module not available ({e}). RAG context will be disabled.")
+    print("  To enable RAG, install: pip install networkx chromadb sentence-transformers pyyaml")
+    print("  Or use Python 3.10: /Library/Frameworks/Python.framework/Versions/3.10/bin/python3")
 
 logger = logging.getLogger(__name__)
 

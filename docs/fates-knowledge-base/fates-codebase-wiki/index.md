@@ -44,6 +44,9 @@ A comprehensive technical documentation for FATES, covering model architecture, 
 
 ## Key Topics for Calibration
 
+### CNP Calibration Guide
+- **[CNP Calibration Guide](advanced/cnp_calibration_guide.md)** - **START HERE** for CNP calibration: spinup phases, vmax tuning, diagnostics, troubleshooting
+
 ### Parameter System
 - [Parameter System Overview](getting-started/parameter_system.md) - How parameters are loaded and organized
 - [Parameter Management Tools](getting-started/parameter_tools.md) - Python tools for parameter modification

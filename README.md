@@ -191,8 +191,8 @@ module load python
 python -m venv ~/a2mc_env
 source ~/a2mc_env/bin/activate
 
-# Install anthropic and A2MC dependencies
-pip install anthropic numpy pandas netCDF4
+# Install anthropic and A2MC dependencies (including RAG)
+pip install anthropic numpy pandas netCDF4 scipy SALib networkx chromadb sentence-transformers pyyaml
 
 # Set your API key (add to ~/.bashrc for persistence)
 export AI_API_KEY="your-api-key-here"
@@ -500,6 +500,24 @@ evaluation = pipeline.evaluate_against_targets(data)
 
 ---
 
+## Three-Tier FATES Knowledge System
+
+A2MC uses a three-tier architecture for FATES knowledge, ensuring the AI has access via multiple retrieval paths:
+
+| Tier | Location | Format | Purpose |
+|------|----------|--------|---------|
+| **Static Documentation** | `docs/fates-knowledge-base/` | Markdown | Human reference, RAG indexing |
+| **RAG/GraphRAG** | `rag/` | ChromaDB + JSON graph | AI semantic search, graph traversal |
+| **Adaptive Memory** | `memory/gained_knowledge/` | JSON | AI reasoning context, learned discoveries |
+
+**Key resources for CNP calibration:**
+- **START HERE:** `docs/fates-knowledge-base/fates-codebase-wiki/advanced/cnp_calibration_guide.md` (Knox 2026)
+- PID controller: `docs/fates-knowledge-base/fates-codebase-wiki/plant-physiology/parteh/cnp_allocation.md`
+- ECA/RD competition: `docs/fates-knowledge-base/fates-codebase-wiki/advanced/nutrient_competition.md`
+- Nutrient uptake: `docs/fates-knowledge-base/fates-codebase-wiki/plant-physiology/parteh/soil_plant_interface.md`
+
+---
+
 ## Adaptive Memory System
 
 Two-tier knowledge architecture enabling learning across sessions while keeping site-specific knowledge separate.
@@ -587,6 +605,38 @@ The `ReasoningModule` automatically queries memory during:
 - **Hypothesis Generation:** Checks failed approaches to avoid repetition
 - **Refinement:** Extracts lessons and updates memory with new discoveries
 
+### Referencing Knowledge from Similar Sites
+
+When calibrating a new site, you can reference knowledge from existing sites with similar characteristics:
+
+| Your Site Type | Reference Site | Transferable Knowledge |
+|----------------|----------------|------------------------|
+| Arctic/tundra | `use_cases/Kougarok/` | Allocation Paradox, P-limitation dynamics, graminoid-shrub competition |
+| CNP-enabled | `use_cases/Kougarok/` | PID controller behavior, ECA competition, vmax calibration strategies |
+
+**What transfers:** Mechanistic insights, diagnostic patterns, failed approaches to avoid
+**What doesn't transfer:** Exact parameter values (these are site-specific)
+
+```python
+# Reference another site's knowledge
+from memory import MemoryManager
+
+# Load Kougarok knowledge for reference
+kougarok_memory = MemoryManager("use_cases/Kougarok/memory/gained_knowledge")
+
+# Check discoveries relevant to your calibration
+discoveries = kougarok_memory.discoveries.get('discoveries', [])
+for d in discoveries:
+    print(f"- {d['name']}: {d['description'][:80]}...")
+
+# Check failed approaches to avoid
+failed = kougarok_memory.failed_approaches.get('failed_approaches', [])
+for f in failed:
+    print(f"AVOID: {f['approach']}")
+```
+
+**See also:** `use_cases/Kougarok/README.md` → "Reference for Similar Sites" section for detailed applicability guidance.
+
 ### Seeding Memory
 
 To seed memory with curated knowledge:
@@ -631,7 +681,7 @@ cd A2MC
 module load python
 python -m venv ~/a2mc_env
 source ~/a2mc_env/bin/activate
-pip install anthropic netCDF4 numpy scipy SALib pandas
+pip install anthropic netCDF4 numpy scipy SALib pandas networkx chromadb sentence-transformers pyyaml
 
 # 3. Set API key (add to ~/.bashrc for persistence)
 export AI_API_KEY="sk-ant-..."
@@ -883,13 +933,14 @@ A2MC/
 │
 ├── rag/                   # RAG/GraphRAG System (generic FATES knowledge)
 │   ├── loader.py          # Document loading
-│   ├── vector_store.py    # ChromaDB wrapper
-│   ├── knowledge_graph.py # NetworkX graph
+│   ├── vector_store.py    # ChromaDB wrapper (2,122 chunks)
+│   ├── knowledge_graph.py # NetworkX graph (220 nodes, 562 edges)
 │   ├── graph_builder.py   # Build from YAML
 │   ├── hybrid_retriever.py# Combined retrieval
 │   ├── data/
 │   │   └── curated_relationships.yaml  # Knowledge source of truth
-│   └── chroma_db/         # Vector index
+│   ├── chroma_db/         # Vector index
+│   └── fates_knowledge_graph.json  # Serialized graph
 │
 ├── docs/                  # Documentation
 │   └── fates-knowledge-base/  # FATES documentation (official + wiki)
@@ -918,6 +969,12 @@ A2MC/
 
 ## Version History
 
+- **v1.1 (2026-02-02)** - Knowledge system enhancements
+  - Knox 2026 CNP Guidebook integrated into three-tier knowledge system
+  - Knowledge graph expanded: 220 nodes, 562 edges (added RD_Competition, 15+ output variables)
+  - Cross-site knowledge reference documentation added
+  - CNP calibration guide: vmax tuning, PID diagnostics, spinup workflow
+
 - **v1.0 (2026-01-24)** - Initial public release
   - 7-phase calibration workflow with intelligent iteration paths
   - RAG/GraphRAG knowledge retrieval system for FATES
@@ -931,5 +988,6 @@ A2MC/
 ## Contact
 
 **Author:** Jing Tao
+**Email:** jingtao@lbl.gov
 **Project:** NGEE-Arctic ELM-FATES calibration
 **GitHub:** https://github.com/jingtao-lbl/A2MC-elm

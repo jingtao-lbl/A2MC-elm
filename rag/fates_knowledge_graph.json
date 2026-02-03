@@ -56,6 +56,14 @@
     },
     {
       "node_type": "Mechanism",
+      "name": "RD_Competition",
+      "description": "Relative Demand approach for nutrient uptake",
+      "code_location": "FatesSoilBGCFluxMod.F90::nutrient_uptake",
+      "module": "FatesSoilBGCFluxMod.F90",
+      "id": "mechanism:RD_Competition"
+    },
+    {
+      "node_type": "Mechanism",
       "name": "Storage_Allocation",
       "description": "Carbon allocation to storage pool",
       "code_location": "FATESPartehMod.F90::CNPAllocate",
@@ -339,6 +347,126 @@
       "units": "kg kg-1",
       "level": "site",
       "id": "output:FATES_L2FR"
+    },
+    {
+      "node_type": "Output",
+      "name": "FATES_NEP",
+      "description": "Net ecosystem production",
+      "units": "kg C m-2 s-1",
+      "level": "site",
+      "id": "output:FATES_NEP"
+    },
+    {
+      "node_type": "Output",
+      "name": "FATES_NEFFLUX",
+      "description": "Nitrogen efflux (dumped excess N)",
+      "units": "kg N m-2 s-1",
+      "level": "site",
+      "id": "output:FATES_NEFFLUX"
+    },
+    {
+      "node_type": "Output",
+      "name": "FATES_NDEMAND",
+      "description": "Nitrogen demand",
+      "units": "kg N m-2 s-1",
+      "level": "site",
+      "id": "output:FATES_NDEMAND"
+    },
+    {
+      "node_type": "Output",
+      "name": "FATES_PDEMAND",
+      "description": "Phosphorus demand",
+      "units": "kg P m-2 s-1",
+      "level": "site",
+      "id": "output:FATES_PDEMAND"
+    },
+    {
+      "node_type": "Output",
+      "name": "FATES_VEGC_ABOVEGROUND",
+      "description": "Aboveground vegetation carbon",
+      "units": "kg C m-2",
+      "level": "site",
+      "id": "output:FATES_VEGC_ABOVEGROUND"
+    },
+    {
+      "node_type": "Output",
+      "name": "FATES_HET_RESP",
+      "description": "Heterotrophic respiration",
+      "units": "kg C m-2 s-1",
+      "level": "site",
+      "id": "output:FATES_HET_RESP"
+    },
+    {
+      "node_type": "Output",
+      "name": "TOTSOMC",
+      "description": "Total soil organic matter carbon",
+      "units": "g C m-2",
+      "level": "site",
+      "id": "output:TOTSOMC"
+    },
+    {
+      "node_type": "Output",
+      "name": "TOTSOMN",
+      "description": "Total soil organic matter nitrogen",
+      "units": "g N m-2",
+      "level": "site",
+      "id": "output:TOTSOMN"
+    },
+    {
+      "node_type": "Output",
+      "name": "TOTSOMP",
+      "description": "Total soil organic matter phosphorus",
+      "units": "g P m-2",
+      "level": "site",
+      "id": "output:TOTSOMP"
+    },
+    {
+      "node_type": "Output",
+      "name": "TOTLITC",
+      "description": "Total litter carbon",
+      "units": "g C m-2",
+      "level": "site",
+      "id": "output:TOTLITC"
+    },
+    {
+      "node_type": "Output",
+      "name": "TOTLITN",
+      "description": "Total litter nitrogen",
+      "units": "g N m-2",
+      "level": "site",
+      "id": "output:TOTLITN"
+    },
+    {
+      "node_type": "Output",
+      "name": "TOTLITP",
+      "description": "Total litter phosphorus",
+      "units": "g P m-2",
+      "level": "site",
+      "id": "output:TOTLITP"
+    },
+    {
+      "node_type": "Output",
+      "name": "NFIX_TO_SMINN",
+      "description": "N fixation flux to soil mineral N",
+      "units": "g N m-2 s-1",
+      "level": "site",
+      "id": "output:NFIX_TO_SMINN"
+    },
+    {
+      "node_type": "Output",
+      "name": "SMINP_LEACHED",
+      "description": "Soil mineral P leached",
+      "units": "g P m-2 s-1",
+      "level": "site",
+      "id": "output:SMINP_LEACHED"
+    },
+    {
+      "node_type": "Output",
+      "name": "SMIN_NO3_LEACHED",
+      "description": "Soil NO3 leached",
+      "units": "g N m-2 s-1",
+      "level": "site",
+      "id": "output:SMIN_NO3_LEACHED"
     },
     {
       "node_type": "Output",
@@ -1008,6 +1136,402 @@
     },
     {
       "node_type": "Parameter",
+      "name": "fates_cnp_nitr_store_ratio",
+      "pft": null,
+      "category": "cnp",
+      "description": "Target N storage relative to structural N.",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_nitr_store_ratio"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_nitr_store_ratio",
+      "pft": 7,
+      "category": "cnp",
+      "description": "Target N storage relative to structural N. (PFT#7)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_nitr_store_ratio:pft7"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_nitr_store_ratio",
+      "pft": 9,
+      "category": "cnp",
+      "description": "Target N storage relative to structural N. (PFT#9)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_nitr_store_ratio:pft9"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_nitr_store_ratio",
+      "pft": 10,
+      "category": "cnp",
+      "description": "Target N storage relative to structural N. (PFT#10)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_nitr_store_ratio:pft10"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_phos_store_ratio",
+      "pft": null,
+      "category": "cnp",
+      "description": "Target P storage relative to structural P.",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_phos_store_ratio"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_phos_store_ratio",
+      "pft": 7,
+      "category": "cnp",
+      "description": "Target P storage relative to structural P. (PFT#7)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_phos_store_ratio:pft7"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_phos_store_ratio",
+      "pft": 9,
+      "category": "cnp",
+      "description": "Target P storage relative to structural P. (PFT#9)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_phos_store_ratio:pft9"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_phos_store_ratio",
+      "pft": 10,
+      "category": "cnp",
+      "description": "Target P storage relative to structural P. (PFT#10)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_phos_store_ratio:pft10"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_store_ovrflw_frac",
+      "pft": null,
+      "category": "cnp",
+      "description": "Fraction of excess nutrients to overflow storage.",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_store_ovrflw_frac"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_store_ovrflw_frac",
+      "pft": 7,
+      "category": "cnp",
+      "description": "Fraction of excess nutrients to overflow storage. (PFT#7)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_store_ovrflw_frac:pft7"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_store_ovrflw_frac",
+      "pft": 9,
+      "category": "cnp",
+      "description": "Fraction of excess nutrients to overflow storage. (PFT#9)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_store_ovrflw_frac:pft9"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_store_ovrflw_frac",
+      "pft": 10,
+      "category": "cnp",
+      "description": "Fraction of excess nutrients to overflow storage. (PFT#10)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_store_ovrflw_frac:pft10"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_turnover_nitr_retrans",
+      "pft": null,
+      "category": "cnp",
+      "description": "N reabsorption fraction from senescing tissues.",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_turnover_nitr_retrans"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_turnover_nitr_retrans",
+      "pft": 7,
+      "category": "cnp",
+      "description": "N reabsorption fraction from senescing tissues. (PFT#7)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_turnover_nitr_retrans:pft7"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_turnover_nitr_retrans",
+      "pft": 9,
+      "category": "cnp",
+      "description": "N reabsorption fraction from senescing tissues. (PFT#9)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_turnover_nitr_retrans:pft9"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_turnover_nitr_retrans",
+      "pft": 10,
+      "category": "cnp",
+      "description": "N reabsorption fraction from senescing tissues. (PFT#10)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_turnover_nitr_retrans:pft10"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_turnover_phos_retrans",
+      "pft": null,
+      "category": "cnp",
+      "description": "P reabsorption fraction from senescing tissues.",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_turnover_phos_retrans"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_turnover_phos_retrans",
+      "pft": 7,
+      "category": "cnp",
+      "description": "P reabsorption fraction from senescing tissues. (PFT#7)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_turnover_phos_retrans:pft7"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_turnover_phos_retrans",
+      "pft": 9,
+      "category": "cnp",
+      "description": "P reabsorption fraction from senescing tissues. (PFT#9)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_turnover_phos_retrans:pft9"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_turnover_phos_retrans",
+      "pft": 10,
+      "category": "cnp",
+      "description": "P reabsorption fraction from senescing tissues. (PFT#10)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_turnover_phos_retrans:pft10"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_nfix",
+      "pft": null,
+      "category": "cnp",
+      "description": "Symbiotic N fixation fraction (0-1).",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_nfix"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_nfix",
+      "pft": 7,
+      "category": "cnp",
+      "description": "Symbiotic N fixation fraction (0-1). (PFT#7)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_nfix:pft7"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_nfix",
+      "pft": 9,
+      "category": "cnp",
+      "description": "Symbiotic N fixation fraction (0-1). (PFT#9)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_nfix:pft9"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_nfix",
+      "pft": 10,
+      "category": "cnp",
+      "description": "Symbiotic N fixation fraction (0-1). (PFT#10)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_nfix:pft10"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_nh4",
+      "pft": null,
+      "category": "cnp",
+      "description": "Half-saturation constant for NH4 uptake.",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_nh4"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_nh4",
+      "pft": 7,
+      "category": "cnp",
+      "description": "Half-saturation constant for NH4 uptake. (PFT#7)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_nh4:pft7"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_nh4",
+      "pft": 9,
+      "category": "cnp",
+      "description": "Half-saturation constant for NH4 uptake. (PFT#9)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_nh4:pft9"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_nh4",
+      "pft": 10,
+      "category": "cnp",
+      "description": "Half-saturation constant for NH4 uptake. (PFT#10)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_nh4:pft10"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_no3",
+      "pft": null,
+      "category": "cnp",
+      "description": "Half-saturation constant for NO3 uptake.",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_no3"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_no3",
+      "pft": 7,
+      "category": "cnp",
+      "description": "Half-saturation constant for NO3 uptake. (PFT#7)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_no3:pft7"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_no3",
+      "pft": 9,
+      "category": "cnp",
+      "description": "Half-saturation constant for NO3 uptake. (PFT#9)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_no3:pft9"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_no3",
+      "pft": 10,
+      "category": "cnp",
+      "description": "Half-saturation constant for NO3 uptake. (PFT#10)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_no3:pft10"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_p",
+      "pft": null,
+      "category": "cnp",
+      "description": "Half-saturation constant for P uptake.",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_p"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_p",
+      "pft": 7,
+      "category": "cnp",
+      "description": "Half-saturation constant for P uptake. (PFT#7)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_p:pft7"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_p",
+      "pft": 9,
+      "category": "cnp",
+      "description": "Half-saturation constant for P uptake. (PFT#9)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_p:pft9"
+    },
+    {
+      "node_type": "Parameter",
+      "name": "fates_cnp_km_p",
+      "pft": 10,
+      "category": "cnp",
+      "description": "Half-saturation constant for P uptake. (PFT#10)",
+      "units": null,
+      "bounds": null,
+      "code_location": null,
+      "id": "parameter:fates_cnp_km_p:pft10"
+    },
+    {
+      "node_type": "Parameter",
       "name": "fates_alloc_storage_cushion",
       "pft": null,
       "category": "allocation",
@@ -1603,6 +2127,18 @@
     {
       "relation_type": "implemented_in",
       "weight": 1.0,
+      "source": "mechanism:RD_Competition",
+      "target": "module:FatesSoilBGCFluxMod.F90"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "mechanism:RD_Competition",
+      "target": "output:FATES_PUPTAKE_SZPF"
+    },
+    {
+      "relation_type": "implemented_in",
+      "weight": 1.0,
       "source": "mechanism:Storage_Allocation",
       "target": "module:FATESPartehMod.F90"
     },
@@ -1853,6 +2389,222 @@
       "target": "parameter:fates_cnp_vmax_ptase:pft10"
     },
     {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_nitr_store_ratio"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_nitr_store_ratio:pft7"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_nitr_store_ratio:pft9"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_nitr_store_ratio:pft10"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_phos_store_ratio"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_phos_store_ratio:pft7"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_phos_store_ratio:pft9"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_phos_store_ratio:pft10"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_store_ovrflw_frac"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_store_ovrflw_frac:pft7"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_store_ovrflw_frac:pft9"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_store_ovrflw_frac:pft10"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_turnover_nitr_retrans"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_turnover_nitr_retrans:pft7"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_turnover_nitr_retrans:pft9"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_turnover_nitr_retrans:pft10"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_turnover_phos_retrans"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_turnover_phos_retrans:pft7"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_turnover_phos_retrans:pft9"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_turnover_phos_retrans:pft10"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_nfix"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_nfix:pft7"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_nfix:pft9"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_nfix:pft10"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_nh4"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_nh4:pft7"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_nh4:pft9"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_nh4:pft10"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_no3"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_no3:pft7"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_no3:pft9"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_no3:pft10"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_p"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_p:pft7"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_p:pft9"
+    },
+    {
+      "relation_type": "contains",
+      "weight": 1.0,
+      "source": "category:cnp",
+      "target": "parameter:fates_cnp_km_p:pft10"
+    },
+    {
       "relation_type": "belongs_to",
       "weight": 1.0,
       "source": "parameter:fates_cnp_pid_kp:pft7",
@@ -2213,6 +2965,12 @@
       "target": "mechanism:ECA_Competition"
     },
     {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_vmax_p",
+      "target": "mechanism:RD_Competition"
+    },
+    {
       "relation_type": "affects",
       "weight": 1.0,
       "source": "parameter:fates_cnp_vmax_p",
@@ -2229,6 +2987,12 @@
       "weight": 1.0,
       "source": "parameter:fates_cnp_vmax_p",
       "target": "output:FATES_LEAFC"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_vmax_p",
+      "target": "parameter:fates_cnp_km_p"
     },
     {
       "relation_type": "related_to",
@@ -2249,6 +3013,12 @@
       "target": "mechanism:ECA_Competition"
     },
     {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_vmax_p:pft7",
+      "target": "mechanism:RD_Competition"
+    },
+    {
       "relation_type": "affects",
       "weight": 1.0,
       "source": "parameter:fates_cnp_vmax_p:pft7",
@@ -2265,6 +3035,12 @@
       "weight": 1.0,
       "source": "parameter:fates_cnp_vmax_p:pft7",
       "target": "output:FATES_LEAFC"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_vmax_p:pft7",
+      "target": "parameter:fates_cnp_km_p"
     },
     {
       "relation_type": "related_to",
@@ -2285,6 +3061,12 @@
       "target": "mechanism:ECA_Competition"
     },
     {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_vmax_p:pft9",
+      "target": "mechanism:RD_Competition"
+    },
+    {
       "relation_type": "affects",
       "weight": 1.0,
       "source": "parameter:fates_cnp_vmax_p:pft9",
@@ -2306,6 +3088,12 @@
       "relation_type": "related_to",
       "weight": 1.0,
       "source": "parameter:fates_cnp_vmax_p:pft9",
+      "target": "parameter:fates_cnp_km_p"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_vmax_p:pft9",
       "target": "parameter:fates_cnp_vmax_ptase"
     },
     {
@@ -2319,6 +3107,12 @@
       "weight": 1.0,
       "source": "parameter:fates_cnp_vmax_p:pft10",
       "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_vmax_p:pft10",
+      "target": "mechanism:RD_Competition"
     },
     {
       "relation_type": "affects",
@@ -2337,6 +3131,12 @@
       "weight": 1.0,
       "source": "parameter:fates_cnp_vmax_p:pft10",
       "target": "output:FATES_LEAFC"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_vmax_p:pft10",
+      "target": "parameter:fates_cnp_km_p"
     },
     {
       "relation_type": "related_to",
@@ -2432,6 +3232,792 @@
       "relation_type": "related_to",
       "weight": 1.0,
       "source": "parameter:fates_cnp_vmax_ptase:pft10",
+      "target": "parameter:fates_cnp_vmax_p"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio",
+      "target": "output:FATES_STOREN"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio",
+      "target": "parameter:fates_cnp_phos_store_ratio"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio",
+      "target": "parameter:fates_alloc_storage_cushion"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft7",
+      "target": "pft:PFT7"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft7",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft7",
+      "target": "output:FATES_STOREN"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft7",
+      "target": "parameter:fates_cnp_phos_store_ratio"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft7",
+      "target": "parameter:fates_alloc_storage_cushion"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft9",
+      "target": "pft:PFT9"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft9",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft9",
+      "target": "output:FATES_STOREN"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft9",
+      "target": "parameter:fates_cnp_phos_store_ratio"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft9",
+      "target": "parameter:fates_alloc_storage_cushion"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft10",
+      "target": "pft:PFT10"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft10",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft10",
+      "target": "output:FATES_STOREN"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft10",
+      "target": "parameter:fates_cnp_phos_store_ratio"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nitr_store_ratio:pft10",
+      "target": "parameter:fates_alloc_storage_cushion"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio",
+      "target": "output:FATES_STOREP"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio",
+      "target": "parameter:fates_cnp_nitr_store_ratio"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio",
+      "target": "parameter:fates_alloc_storage_cushion"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft7",
+      "target": "pft:PFT7"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft7",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft7",
+      "target": "output:FATES_STOREP"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft7",
+      "target": "parameter:fates_cnp_nitr_store_ratio"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft7",
+      "target": "parameter:fates_alloc_storage_cushion"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft9",
+      "target": "pft:PFT9"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft9",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft9",
+      "target": "output:FATES_STOREP"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft9",
+      "target": "parameter:fates_cnp_nitr_store_ratio"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft9",
+      "target": "parameter:fates_alloc_storage_cushion"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft10",
+      "target": "pft:PFT10"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft10",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft10",
+      "target": "output:FATES_STOREP"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft10",
+      "target": "parameter:fates_cnp_nitr_store_ratio"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_phos_store_ratio:pft10",
+      "target": "parameter:fates_alloc_storage_cushion"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac",
+      "target": "output:FATES_STOREC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac",
+      "target": "output:FATES_NEFFLUX"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac",
+      "target": "output:FATES_PEFFLUX"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft7",
+      "target": "pft:PFT7"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft7",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft7",
+      "target": "output:FATES_STOREC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft7",
+      "target": "output:FATES_NEFFLUX"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft7",
+      "target": "output:FATES_PEFFLUX"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft9",
+      "target": "pft:PFT9"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft9",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft9",
+      "target": "output:FATES_STOREC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft9",
+      "target": "output:FATES_NEFFLUX"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft9",
+      "target": "output:FATES_PEFFLUX"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft10",
+      "target": "pft:PFT10"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft10",
+      "target": "mechanism:Storage_Allocation"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft10",
+      "target": "output:FATES_STOREC"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft10",
+      "target": "output:FATES_NEFFLUX"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_store_ovrflw_frac:pft10",
+      "target": "output:FATES_PEFFLUX"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_nitr_retrans",
+      "target": "output:FATES_STOREN"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_nitr_retrans",
+      "target": "parameter:fates_cnp_turnover_phos_retrans"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_nitr_retrans:pft7",
+      "target": "pft:PFT7"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_nitr_retrans:pft7",
+      "target": "output:FATES_STOREN"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_nitr_retrans:pft7",
+      "target": "parameter:fates_cnp_turnover_phos_retrans"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_nitr_retrans:pft9",
+      "target": "pft:PFT9"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_nitr_retrans:pft9",
+      "target": "output:FATES_STOREN"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_nitr_retrans:pft9",
+      "target": "parameter:fates_cnp_turnover_phos_retrans"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_nitr_retrans:pft10",
+      "target": "pft:PFT10"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_nitr_retrans:pft10",
+      "target": "output:FATES_STOREN"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_nitr_retrans:pft10",
+      "target": "parameter:fates_cnp_turnover_phos_retrans"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_phos_retrans",
+      "target": "output:FATES_STOREP"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_phos_retrans",
+      "target": "parameter:fates_cnp_turnover_nitr_retrans"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_phos_retrans:pft7",
+      "target": "pft:PFT7"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_phos_retrans:pft7",
+      "target": "output:FATES_STOREP"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_phos_retrans:pft7",
+      "target": "parameter:fates_cnp_turnover_nitr_retrans"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_phos_retrans:pft9",
+      "target": "pft:PFT9"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_phos_retrans:pft9",
+      "target": "output:FATES_STOREP"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_phos_retrans:pft9",
+      "target": "parameter:fates_cnp_turnover_nitr_retrans"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_phos_retrans:pft10",
+      "target": "pft:PFT10"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_phos_retrans:pft10",
+      "target": "output:FATES_STOREP"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_turnover_phos_retrans:pft10",
+      "target": "parameter:fates_cnp_turnover_nitr_retrans"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nfix",
+      "target": "output:FATES_NFIX_SYM"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nfix:pft7",
+      "target": "pft:PFT7"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nfix:pft7",
+      "target": "output:FATES_NFIX_SYM"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nfix:pft9",
+      "target": "pft:PFT9"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nfix:pft9",
+      "target": "output:FATES_NFIX_SYM"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nfix:pft10",
+      "target": "pft:PFT10"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nfix:pft10",
+      "target": "output:FATES_NFIX_SYM"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4",
+      "target": "output:FATES_NH4UPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4",
+      "target": "parameter:fates_cnp_km_no3"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft7",
+      "target": "pft:PFT7"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft7",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft7",
+      "target": "output:FATES_NH4UPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft7",
+      "target": "parameter:fates_cnp_km_no3"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft9",
+      "target": "pft:PFT9"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft9",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft9",
+      "target": "output:FATES_NH4UPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft9",
+      "target": "parameter:fates_cnp_km_no3"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft10",
+      "target": "pft:PFT10"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft10",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft10",
+      "target": "output:FATES_NH4UPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_nh4:pft10",
+      "target": "parameter:fates_cnp_km_no3"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3",
+      "target": "output:FATES_NO3UPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3",
+      "target": "parameter:fates_cnp_km_nh4"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft7",
+      "target": "pft:PFT7"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft7",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft7",
+      "target": "output:FATES_NO3UPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft7",
+      "target": "parameter:fates_cnp_km_nh4"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft9",
+      "target": "pft:PFT9"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft9",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft9",
+      "target": "output:FATES_NO3UPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft9",
+      "target": "parameter:fates_cnp_km_nh4"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft10",
+      "target": "pft:PFT10"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft10",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft10",
+      "target": "output:FATES_NO3UPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_no3:pft10",
+      "target": "parameter:fates_cnp_km_nh4"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p",
+      "target": "output:FATES_PUPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p",
+      "target": "parameter:fates_cnp_vmax_p"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft7",
+      "target": "pft:PFT7"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft7",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft7",
+      "target": "output:FATES_PUPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft7",
+      "target": "parameter:fates_cnp_vmax_p"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft9",
+      "target": "pft:PFT9"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft9",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft9",
+      "target": "output:FATES_PUPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft9",
+      "target": "parameter:fates_cnp_vmax_p"
+    },
+    {
+      "relation_type": "belongs_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft10",
+      "target": "pft:PFT10"
+    },
+    {
+      "relation_type": "controls",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft10",
+      "target": "mechanism:ECA_Competition"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft10",
+      "target": "output:FATES_PUPTAKE_SZPF"
+    },
+    {
+      "relation_type": "related_to",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_km_p:pft10",
       "target": "parameter:fates_cnp_vmax_p"
     },
     {

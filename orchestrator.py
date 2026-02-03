@@ -22,11 +22,11 @@ Usage:
     source a2mc_config.sh
     source use_cases/Kougarok/config/kougarok_config.sh
 
-    # Run workflow (output-dir auto-detected from config)
+    # Run workflow (output-dir and state-file auto-detected from config)
     python orchestrator.py --run
 
-    # Resume from checkpoint
-    python orchestrator.py --resume --state-file workflow_state.json
+    # Resume from checkpoint (state-file auto-detected)
+    python orchestrator.py --resume
 
     # Start from specific phase
     python orchestrator.py --run --start-phase exploration
@@ -207,8 +207,8 @@ class Config:
     and the site-specific config) with sensible defaults.
     """
     # Paths
-    state_file: str = "workflow_state.json"
-    output_dir: str = ""  # Auto-detected from A2MC_USE_CASE_DIR config
+    state_file: str = ""   # Auto-detected from A2MC_USE_CASE_DIR config
+    output_dir: str = ""   # Auto-detected from A2MC_USE_CASE_DIR config
     param_bounds_file: str = ""      # Parameter bounds definition
     base_param_file: str = ""        # Base FATES parameter file
     memory_dir: str = ""             # Adaptive memory data directory (default: output_dir/memory/data)
@@ -2249,14 +2249,11 @@ Examples:
   # Bootstrap: validate configuration and dependencies
   python orchestrator.py --bootstrap
 
-  # Initialize new workflow
-  python orchestrator.py --init --output-dir ./a2mc_run1
+  # Run workflow (source configs first, output-dir auto-detected)
+  python orchestrator.py --run
 
-  # Run workflow (with automatic bootstrap check)
-  python orchestrator.py --run --state-file workflow_state.json
-
-  # Resume from checkpoint
-  python orchestrator.py --resume --state-file workflow_state.json
+  # Resume from checkpoint (state file is in site memory folder)
+  python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state.json
 
   # Start from specific phase (accepts number, 'phaseN', or name)
   python orchestrator.py --run --start-phase 1 --start-iteration 2
@@ -2291,7 +2288,8 @@ Phase numbers:
     parser.add_argument("--resume", action="store_true", help="Resume from checkpoint")
     parser.add_argument("--skip-bootstrap", action="store_true",
                        help="Skip bootstrap validation before running")
-    parser.add_argument("--state-file", type=str, default="workflow_state.json")
+    parser.add_argument("--state-file", type=str, default=None,
+                       help="State file path (default: auto-detected from A2MC_USE_CASE_DIR)")
     parser.add_argument("--output-dir", type=str, default=None,
                        help="Output directory (default: auto-detected from A2MC_USE_CASE_DIR)")
     parser.add_argument("--max-iterations", type=int, default=10)
@@ -2316,15 +2314,22 @@ Phase numbers:
 
     args = parser.parse_args()
 
-    # Determine output directory (use site memory if available)
+    # Determine output directory and state file (use site memory if available)
     output_dir = args.output_dir
-    if output_dir is None:
+    state_file = args.state_file
+
+    if output_dir is None or state_file is None:
         # Try to use site-specific memory directory
         try:
             from tools.config import config as a2mc_config
             if a2mc_config.USE_CASE_DIR:
-                output_dir = os.path.join(a2mc_config.USE_CASE_DIR, "memory")
-                logger.info(f"Using site memory directory: {output_dir}")
+                site_memory_dir = os.path.join(a2mc_config.USE_CASE_DIR, "memory")
+                if output_dir is None:
+                    output_dir = site_memory_dir
+                    logger.info(f"Using site memory directory: {output_dir}")
+                if state_file is None:
+                    state_file = os.path.join(site_memory_dir, "workflow_state.json")
+                    logger.info(f"Using site state file: {state_file}")
             else:
                 logger.error("A2MC_USE_CASE_DIR not set. Please source the config files first:")
                 logger.error("  source a2mc_config.sh")
@@ -2333,7 +2338,11 @@ Phase numbers:
         except ImportError:
             use_case_dir = os.environ.get('A2MC_USE_CASE_DIR')
             if use_case_dir:
-                output_dir = os.path.join(use_case_dir, "memory")
+                site_memory_dir = os.path.join(use_case_dir, "memory")
+                if output_dir is None:
+                    output_dir = site_memory_dir
+                if state_file is None:
+                    state_file = os.path.join(site_memory_dir, "workflow_state.json")
             else:
                 logger.error("A2MC_USE_CASE_DIR not set. Please source the config files first:")
                 logger.error("  source a2mc_config.sh")
@@ -2342,7 +2351,7 @@ Phase numbers:
 
     # Create config (values from args override environment/config defaults)
     config = Config(
-        state_file=args.state_file,
+        state_file=state_file,
         output_dir=output_dir,
         max_iterations=args.max_iterations,
         human_review=not args.no_review,

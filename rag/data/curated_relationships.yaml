@@ -112,6 +112,7 @@ mechanisms:
   PID_Controller:
     description: "Proportional-Integral-Derivative controller for C:N:P allocation"
     code_reference: "FATESPartehMod.F90::CNPAllocate"
+    doc_reference: "Knox et al. 2024 CNP Guidebook"
     parameters:
       - fates_cnp_pid_kp  # Proportional gain
       - fates_cnp_pid_ki  # Integral gain
@@ -123,7 +124,12 @@ mechanisms:
     notes: |
       The PID controller adjusts leaf-to-fine-root ratio based on
       C:nutrient stoichiometry in storage pool. Higher Kp = more responsive.
+
       CAUTION: Responsive allocation can be maladaptive under severe stress.
+
+      KNOX 2024 RECOMMENDATION: If FATES_L2FR shows strange behavior
+      (rapid monotonic changes, values < 0.1 or > 10), reduce fates_cnp_pid_kp
+      by 10× to stabilize allocation during calibration.
 
   ECA_Competition:
     description: "Equilibrium Chemistry Approximation for nutrient uptake"
@@ -134,6 +140,8 @@ mechanisms:
       - fates_cnp_vmax_nh4 # Max NH4 uptake rate
       - fates_cnp_vmax_no3 # Max NO3 uptake rate
       - fates_cnp_km_p     # Half-saturation for P
+      - fates_cnp_km_nh4   # Half-saturation for NH4
+      - fates_cnp_km_no3   # Half-saturation for NO3
     affects:
       - FATES_PUPTAKE_SZPF
       - FATES_NUPTAKE_SZPF
@@ -141,6 +149,29 @@ mechanisms:
       ECA is simultaneous competition based on capacitance:
         Capacitance = root_biomass × vmax × root_distribution
       NOT sequential (one PFT doesn't "claim first").
+
+      IMPORTANT: ECA vs RD vmax differences (Knox 2026):
+        - ECA mode: vmax ~10^-7 (stronger source limitation needs larger vmax)
+        - RD mode: vmax ~10^-9 (weaker limitation needs smaller vmax)
+
+      KM guidance: Start with plant KM = decomposer KM. Consider making
+      plant KM larger to prioritize decomposer uptake → more mineralization.
+
+  RD_Competition:
+    description: "Relative Demand approach for nutrient uptake"
+    code_reference: "FatesSoilBGCFluxMod.F90::nutrient_uptake"
+    parameters:
+      - fates_cnp_vmax_nh4
+      - fates_cnp_vmax_no3
+      - fates_cnp_vmax_p
+    affects:
+      - FATES_PUPTAKE_SZPF
+      - FATES_NUPTAKE_SZPF
+    notes: |
+      IMPORTANT: In RD mode, vmax_nh4 and vmax_no3 are ADDED together
+      to compute total N demand. Individual values don't matter, only sum.
+
+      With ECA, each vmax works independently on NH4 and NO3 uptake.
 
   Storage_Allocation:
     description: "Carbon allocation to storage pool"
@@ -468,6 +499,118 @@ outputs:
       - fates_cnp_pid_ki
       - fates_cnp_pid_kd
       - fates_allom_l2fr
+    notes: |
+      CRITICAL DIAGNOSTIC during spinup/calibration (Knox 2026):
+      - Values < 0.1 or > 10: Very suspicious, indicates poor calibration
+      - Rapid monotonic changes: PID over-reacting or N/P issues
+      - Should reach equilibrium differentiated for canopy/understory
+      If unstable: Reduce fates_cnp_pid_kp by 10×
+
+  FATES_NEP:
+    long_name: "Net ecosystem production"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "carbon_flux"
+    notes: |
+      KEY SPINUP TARGET: Should approach ~0 when averaged over decades
+      with stationary climate. Use to determine when equilibrium reached.
+
+  FATES_NEFFLUX:
+    long_name: "Nitrogen efflux (dumped excess N)"
+    units: "kg N m-2 s-1"
+    dimension: "site"
+    category: "nutrient_cycling"
+    notes: |
+      N "dumped" because plant stores are saturated.
+      CALIBRATION USE: If high + low NPP → vmax too high.
+      Target: Very small NEFFLUX with reasonable biomass.
+      Ratio NEFFLUX/NUPTAKE should be small after shock period.
+
+  FATES_NDEMAND:
+    long_name: "Nitrogen demand"
+    units: "kg N m-2 s-1"
+    dimension: "site"
+    category: "nutrient_cycling"
+
+  FATES_PDEMAND:
+    long_name: "Phosphorus demand"
+    units: "kg P m-2 s-1"
+    dimension: "site"
+    category: "nutrient_cycling"
+
+  FATES_VEGC_ABOVEGROUND:
+    long_name: "Aboveground vegetation carbon"
+    units: "kg C m-2"
+    dimension: "site"
+    category: "biomass"
+    notes: "Use for biomass validation against field measurements."
+
+  FATES_HET_RESP:
+    long_name: "Heterotrophic respiration"
+    units: "kg C m-2 s-1"
+    dimension: "site"
+    category: "carbon_flux"
+    notes: "Monitor to ensure decomposition cycle active."
+
+  # Soil diagnostic ratios (compute from these)
+  TOTSOMC:
+    long_name: "Total soil organic matter carbon"
+    units: "g C m-2"
+    dimension: "site"
+    category: "soil_carbon"
+    notes: "Use TOTSOMC/TOTSOMN and TOTSOMC/TOTSOMP to monitor SOM quality."
+
+  TOTSOMN:
+    long_name: "Total soil organic matter nitrogen"
+    units: "g N m-2"
+    dimension: "site"
+    category: "soil_nutrients"
+
+  TOTSOMP:
+    long_name: "Total soil organic matter phosphorus"
+    units: "g P m-2"
+    dimension: "site"
+    category: "soil_nutrients"
+
+  TOTLITC:
+    long_name: "Total litter carbon"
+    units: "g C m-2"
+    dimension: "site"
+    category: "litter"
+    notes: "Use TOTLITC/TOTLITN and TOTLITC/TOTLITP to monitor litter quality."
+
+  TOTLITN:
+    long_name: "Total litter nitrogen"
+    units: "g N m-2"
+    dimension: "site"
+    category: "litter"
+
+  TOTLITP:
+    long_name: "Total litter phosphorus"
+    units: "g P m-2"
+    dimension: "site"
+    category: "litter"
+
+  NFIX_TO_SMINN:
+    long_name: "N fixation flux to soil mineral N"
+    units: "g N m-2 s-1"
+    dimension: "site"
+    category: "nutrient_cycling"
+    notes: "Free-living N fixation. See test_mult in ELM to increase if needed."
+
+  SMINP_LEACHED:
+    long_name: "Soil mineral P leached"
+    units: "g P m-2 s-1"
+    dimension: "site"
+    category: "nutrient_cycling"
+    notes: "Reduce leaching if system struggles to generate nutrients."
+
+  SMIN_NO3_LEACHED:
+    long_name: "Soil NO3 leached"
+    units: "g N m-2 s-1"
+    dimension: "site"
+    category: "nutrient_cycling"
+    notes: "Target to reduce if system struggles to generate N."
 
   # --- Demographics ---
   FATES_NPLANT:
@@ -1114,3 +1257,131 @@ parameters:
       Scalar for carbon starvation mortality rate.
       Lower values = less sensitive to low storage.
       Typical range: 0.15 to 1.0
+
+  # Storage and Stability Parameters (Knox 2026 recommendations)
+  fates_cnp_nitr_store_ratio:
+    category: cnp
+    controls:
+      - Storage_Allocation
+    affects:
+      - FATES_STOREN
+    related_to:
+      - fates_cnp_phos_store_ratio
+      - fates_alloc_storage_cushion
+    calibration_notes: |
+      Target N storage relative to structural N.
+      Higher values = more N stored = more stability.
+      Promotes plant survivability and adaptability.
+
+  fates_cnp_phos_store_ratio:
+    category: cnp
+    controls:
+      - Storage_Allocation
+    affects:
+      - FATES_STOREP
+    related_to:
+      - fates_cnp_nitr_store_ratio
+      - fates_alloc_storage_cushion
+    calibration_notes: |
+      Target P storage relative to structural P.
+      Higher values = more P stored = more stability.
+      Promotes plant survivability and adaptability.
+
+  fates_cnp_store_ovrflw_frac:
+    category: cnp
+    controls:
+      - Storage_Allocation
+    affects:
+      - FATES_STOREC
+      - FATES_NEFFLUX
+      - FATES_PEFFLUX
+    calibration_notes: |
+      Fraction of excess nutrients to overflow storage.
+      Higher values = more overflow to storage = more stability.
+
+  # Retranslocation Parameters
+  fates_cnp_turnover_nitr_retrans:
+    category: cnp
+    controls:
+      - Nutrient_Uptake
+    affects:
+      - FATES_STOREN
+    related_to:
+      - fates_cnp_turnover_phos_retrans
+    calibration_notes: |
+      N reabsorption fraction from senescing tissues.
+      Higher values = more N recycled = less N demand.
+      Use to reduce N limitation if system struggles.
+      Typical range: 0.3 to 0.7
+
+  fates_cnp_turnover_phos_retrans:
+    category: cnp
+    controls:
+      - Nutrient_Uptake
+    affects:
+      - FATES_STOREP
+    related_to:
+      - fates_cnp_turnover_nitr_retrans
+    calibration_notes: |
+      P reabsorption fraction from senescing tissues.
+      Higher values = more P recycled = less P demand.
+      Use to reduce P limitation if system struggles.
+      Typical range: 0.3 to 0.7
+
+  # N Fixation Parameter
+  fates_cnp_nfix:
+    category: cnp
+    controls:
+      - Nutrient_Uptake
+    affects:
+      - FATES_NFIX_SYM
+    calibration_notes: |
+      Symbiotic N fixation fraction (0-1).
+      Set > 0 to make a PFT an N-fixer.
+      Start with 0.1 (10%) if system needs more N.
+      Common for legumes and some shrubs.
+
+  # KM Parameters
+  fates_cnp_km_nh4:
+    category: cnp
+    controls:
+      - ECA_Competition
+    affects:
+      - FATES_NH4UPTAKE_SZPF
+    related_to:
+      - fates_cnp_vmax_nh4
+      - fates_cnp_km_no3
+    calibration_notes: |
+      Half-saturation constant for NH4 uptake.
+      Good starting point: same as decomposer KM.
+      Larger values = less competitive with decomposers.
+      Typical range: 0.1 to 10 gN/m³
+
+  fates_cnp_km_no3:
+    category: cnp
+    controls:
+      - ECA_Competition
+    affects:
+      - FATES_NO3UPTAKE_SZPF
+    related_to:
+      - fates_cnp_vmax_no3
+      - fates_cnp_km_nh4
+    calibration_notes: |
+      Half-saturation constant for NO3 uptake.
+      Good starting point: same as decomposer KM.
+      Larger values = less competitive with decomposers.
+      Typical range: 0.1 to 10 gN/m³
+
+  fates_cnp_km_p:
+    category: cnp
+    controls:
+      - ECA_Competition
+    affects:
+      - FATES_PUPTAKE_SZPF
+    related_to:
+      - fates_cnp_vmax_p
+    calibration_notes: |
+      Half-saturation constant for P uptake.
+      Good starting point: same as decomposer KM.
+      Larger values = prioritize decomposer uptake.
+      Typical range: 0.01 to 1 gP/m³

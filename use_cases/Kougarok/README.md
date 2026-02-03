@@ -174,6 +174,45 @@ echo "Parameters: ${A2MC_N_PARAMS}"
 
 ---
 
+## Reference for Similar Sites
+
+**If you are calibrating another Arctic/tundra site**, the Kougarok knowledge base may be relevant:
+
+| Resource | Location | Contents |
+|----------|----------|----------|
+| **Discoveries** | `memory/gained_knowledge/discoveries.json` | Mechanistic insights (Allocation Paradox, Triple Bottleneck, etc.) |
+| **Failed Approaches** | `memory/gained_knowledge/failed_approaches.json` | What NOT to try |
+| **Key Findings** | This README (Key Discoveries section) | Summary of major lessons |
+| **Phase Logs** | `memory/logs/` | Detailed AI reasoning from each calibration phase |
+
+### Applicability to Other Sites
+
+| Discovery | Likely Applicable To |
+|-----------|---------------------|
+| Allocation Paradox (PID feedback) | Any CNP simulation with nutrient limitation |
+| ECA Competition dynamics | Multi-PFT sites with shared nutrient pools |
+| Soil P Chemistry Bottleneck | P-limited systems (Arctic, tropical weathered soils) |
+| Root Distribution calibration | Sites with field root distribution data |
+| Triple Bottleneck (graminoids) | Arctic/alpine graminoid-shrub competition |
+
+### How to Reference
+
+```python
+from memory import MemoryManager
+
+# Load Kougarok knowledge for reference
+kougarok_memory = MemoryManager("use_cases/Kougarok/memory/gained_knowledge")
+
+# Check discoveries relevant to your calibration
+discoveries = kougarok_memory.discoveries.get('discoveries', [])
+for d in discoveries:
+    print(f"- {d['name']}: {d['description'][:80]}...")
+```
+
+**Note:** Site-specific parameter VALUES (e.g., "vmax_p = 2.5e-10 worked for Kougarok") may not transfer directly. The MECHANISMS and LESSONS are more transferable than exact numbers.
+
+---
+
 ## References
 
 - NGEE-Arctic project data archive
