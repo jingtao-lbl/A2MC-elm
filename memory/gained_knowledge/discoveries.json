@@ -1,0 +1,141 @@
+{
+  "_comment": "Generic FATES discoveries - applies to all sites",
+  "_schema_version": "1.0",
+  "_last_updated": "2026-02-02",
+  "_source": "Knox 2026 CNP Guidebook + A2MC calibration experience",
+
+  "discoveries": [
+    {
+      "id": "eca_vs_rd_vmax_ranges",
+      "name": "ECA vs RD Mode vmax Ranges",
+      "description": "ECA and RD modes require fundamentally different vmax parameter ranges due to different source limitation functions",
+      "mechanism": "ECA has stronger source limitation, so larger vmax values (~10^-7) are needed. RD has weaker limitation, so smaller vmax (~10^-9) works.",
+      "affects": ["fates_cnp_vmax_nh4", "fates_cnp_vmax_no3", "fates_cnp_vmax_p"],
+      "discovered_by": "Ryan Knox",
+      "confidence": 0.95,
+      "source": "Knox 2026 CNP Guidebook",
+      "actionable": true,
+      "action": "When switching between ECA and RD modes, adjust vmax by ~2 orders of magnitude"
+    },
+    {
+      "id": "rd_mode_vmax_additive",
+      "name": "RD Mode NH4/NO3 vmax Are Additive",
+      "description": "In RD mode, vmax_nh4 and vmax_no3 are added together for total N demand calculation",
+      "mechanism": "RD scheme wants a single N demand, so it adds vmax_nh4 + vmax_no3. Individual values don't matter, only their sum. ECA works independently on each.",
+      "affects": ["fates_cnp_vmax_nh4", "fates_cnp_vmax_no3"],
+      "discovered_by": "Ryan Knox",
+      "confidence": 0.95,
+      "source": "Knox 2026 CNP Guidebook",
+      "actionable": true,
+      "action": "For RD mode, only tune the sum of vmax_nh4 + vmax_no3, not individual values"
+    },
+    {
+      "id": "l2fr_diagnostic_thresholds",
+      "name": "FATES_L2FR Diagnostic Thresholds",
+      "description": "FATES_L2FR values outside 0.1-10 range indicate poor calibration or strange dynamics",
+      "mechanism": "L2FR is leaf-to-fineroot target ratio. Very low (<0.1) or high (>10) values are physiologically unrealistic and signal PID instability or nutrient problems.",
+      "affects": ["FATES_L2FR", "FATES_LEAFC", "FATES_FROOTC"],
+      "discovered_by": "Ryan Knox",
+      "confidence": 0.95,
+      "source": "Knox 2026 CNP Guidebook",
+      "actionable": true,
+      "action": "If L2FR < 0.1 or > 10, investigate nutrient supply and consider reducing fates_cnp_pid_kp by 10×"
+    },
+    {
+      "id": "pid_kp_reduction_stabilization",
+      "name": "PID Kp Reduction for Stabilization",
+      "description": "Reducing fates_cnp_pid_kp by 10× can stabilize unstable L2FR dynamics during calibration",
+      "mechanism": "High Kp causes aggressive allocation adjustments that can become oscillatory or monotonically unstable. Lower Kp dampens response.",
+      "affects": ["fates_cnp_pid_kp", "FATES_L2FR"],
+      "discovered_by": "Ryan Knox",
+      "confidence": 0.90,
+      "source": "Knox 2026 CNP Guidebook",
+      "actionable": true,
+      "action": "If L2FR shows rapid/monotonic changes, reduce fates_cnp_pid_kp by 10×"
+    },
+    {
+      "id": "ad_spinup_start_year",
+      "name": "AD Spinup Must Start at Year 0001",
+      "description": "Accelerated decomposition (AD) spinup simulations must start at year 0001 or they won't work correctly",
+      "mechanism": "Carbon AD mode has internal assumptions about simulation start year. Starting at other years breaks the AD algorithm.",
+      "affects": ["RUN_STARTDATE"],
+      "discovered_by": "Ryan Knox",
+      "confidence": 1.0,
+      "source": "Knox 2026 CNP Guidebook",
+      "actionable": true,
+      "action": "Always set RUN_STARTDATE='0001-01-01' for AD spinup"
+    },
+    {
+      "id": "storage_promotes_stability",
+      "name": "Higher Storage Parameters Promote Stability",
+      "description": "Increasing C/N/P storage parameters promotes plant stability, survivability, and adaptability",
+      "mechanism": "Larger storage pools buffer against nutrient stress and seasonal variation. Plants can draw on reserves during unfavorable periods.",
+      "affects": ["fates_cnp_nitr_store_ratio", "fates_cnp_phos_store_ratio", "fates_alloc_storage_cushion", "fates_cnp_store_ovrflw_frac"],
+      "discovered_by": "Ryan Knox",
+      "confidence": 0.90,
+      "source": "Knox 2026 CNP Guidebook",
+      "actionable": true,
+      "action": "Increase storage parameters if plants show stress-related instability"
+    },
+    {
+      "id": "eca_km_decomposer_starting_point",
+      "name": "ECA KM Starting Point from Decomposers",
+      "description": "Good starting values for plant KM are same as or larger than decomposer KM values",
+      "mechanism": "Using plant KM >= decomposer KM prioritizes decomposer uptake, which keeps decomposition cycle active and mineralizes more nutrients.",
+      "affects": ["fates_cnp_km_nh4", "fates_cnp_km_no3", "fates_cnp_km_p"],
+      "discovered_by": "Ryan Knox",
+      "confidence": 0.85,
+      "source": "Knox 2026 CNP Guidebook",
+      "actionable": true,
+      "action": "Start with plant KM = decomposer KM, or make plant KM larger"
+    },
+    {
+      "id": "nefflux_calibration_indicator",
+      "name": "NEFFLUX as Calibration Indicator",
+      "description": "FATES_NEFFLUX indicates N 'dumped' due to saturated stores - key diagnostic for vmax calibration",
+      "mechanism": "High NEFFLUX with low biomass/NPP means vmax is too high. Target: small NEFFLUX with reasonable biomass.",
+      "affects": ["FATES_NEFFLUX", "fates_cnp_vmax_nh4", "fates_cnp_vmax_no3"],
+      "discovered_by": "Ryan Knox",
+      "confidence": 0.90,
+      "source": "Knox 2026 CNP Guidebook",
+      "actionable": true,
+      "action": "Binary search vmax until NEFFLUX is small AND biomass is reasonable"
+    },
+    {
+      "id": "nep_spinup_target",
+      "name": "NEP as Spinup Equilibrium Target",
+      "description": "FATES_NEP approaching zero (decade average) indicates spinup equilibrium reached",
+      "mechanism": "NEP = NPP - heterotrophic respiration. At equilibrium with stationary climate, NEP should average to ~0 over decades.",
+      "affects": ["FATES_NEP"],
+      "discovered_by": "Ryan Knox",
+      "confidence": 0.95,
+      "source": "Knox 2026 CNP Guidebook",
+      "actionable": true,
+      "action": "Continue spinup until decade-averaged FATES_NEP ≈ 0"
+    },
+    {
+      "id": "decomp_efolding_nutrient_availability",
+      "name": "Decomposition E-Folding Depth Controls Nutrient Availability",
+      "description": "Increasing decomp_depth_efolding strengthens decomposition cycle and generates more nutrient availability",
+      "mechanism": "Deeper decomposition means more SOM decomposition, releasing more mineralized N and P. Trade-off: reduces soil C and shifts 14C profile.",
+      "affects": ["decomp_depth_efolding", "LABILEP", "SMIN_NH4_vr", "SMIN_NO3_vr"],
+      "discovered_by": "Ryan Knox",
+      "confidence": 0.90,
+      "source": "Knox 2026 CNP Guidebook",
+      "actionable": true,
+      "action": "Increase decomp_depth_efolding (ELM parameter) if system struggles to generate nutrients"
+    },
+    {
+      "id": "litter_som_quality_monitoring",
+      "name": "Monitor Litter/SOM C:N:P Ratios for Nutrient Spiral",
+      "description": "Rising C:N or C:P ratios in litter/SOM indicate nutrient spiral that needs intervention",
+      "mechanism": "If C:N or C:P ratios increase significantly, less nutrients are mineralized per unit decomposition, creating positive feedback.",
+      "affects": ["TOTLITC", "TOTLITN", "TOTLITP", "TOTSOMC", "TOTSOMN", "TOTSOMP"],
+      "discovered_by": "Ryan Knox",
+      "confidence": 0.85,
+      "source": "Knox 2026 CNP Guidebook",
+      "actionable": true,
+      "action": "Track TOTLITC/TOTLITN and TOTSOMC/TOTSOMN - if increasing, need more heterotrophic respiration"
+    }
+  ]
+}
