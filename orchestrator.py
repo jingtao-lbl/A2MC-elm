@@ -1593,7 +1593,7 @@ Please provide:
 Keep your analysis concise (3-4 sentences per section)."""
 
         try:
-            response = self.reasoning._call_claude(prompt, max_tokens=1500)
+            response = self.reasoning.query(prompt, max_tokens=1500)
             return response
         except Exception as e:
             # Fallback to rule-based summary
