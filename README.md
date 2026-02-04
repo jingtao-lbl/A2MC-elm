@@ -605,6 +605,40 @@ The `ReasoningModule` automatically queries memory during:
 - **Hypothesis Generation:** Checks failed approaches to avoid repetition
 - **Refinement:** Extracts lessons and updates memory with new discoveries
 
+### Knowledge Integration in AI Prompts
+
+When A2MC performs diagnosis or generates hypotheses, three knowledge sources are combined into the Claude API prompt:
+
+| Source | Content | Role |
+|--------|---------|------|
+| **RAG/GraphRAG** | FATES + ELM documentation (3,914 chunks) | General knowledge - "how does the PID controller work?" |
+| **Adaptive Memory** | Discoveries, failed approaches, parameter insights | Learned knowledge - "what failed before? what worked?" |
+| **Task Data** | Results, targets, sensitivity rankings | Current context - "what are we trying to calibrate?" |
+
+**Prompt Structure (in order):**
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  ## FATES Knowledge Base Context (RAG/GraphRAG)             │
+│  [Vector search results from docs + Graph traversal]        │
+│                                                             │
+│  ## Adaptive Memory Context                                 │
+│  [Relevant discoveries, FAILED APPROACHES - DO NOT REPEAT]  │
+│                                                             │
+│  ## Current Data                                            │
+│  [Simulation results, validation targets, sensitivity]      │
+│                                                             │
+│  ## Task Instructions + Response Format                     │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Safeguard:** The system explicitly marks failed approaches with "DO NOT REPEAT" and instructs Claude to avoid proposing them unless there's strong justification.
+
+**No strict priority** - the sources serve complementary roles:
+- RAG provides the "textbook" knowledge (how FATES mechanisms work)
+- Memory provides the "experience" (what we learned from previous iterations)
+- Both inform the AI's reasoning about the current task data
+
 ### Referencing Knowledge from Similar Sites
 
 When calibrating a new site, you can reference knowledge from existing sites with similar characteristics:
@@ -931,9 +965,9 @@ A2MC/
 │   ├── extracted/         # Generic extracted lessons (YAML)
 │   └── workflow_log.json  # Master workflow status
 │
-├── rag/                   # RAG/GraphRAG System (generic FATES knowledge)
+├── rag/                   # RAG/GraphRAG System (FATES + ELM knowledge)
 │   ├── loader.py          # Document loading
-│   ├── vector_store.py    # ChromaDB wrapper (2,122 chunks)
+│   ├── vector_store.py    # ChromaDB wrapper (3,914 chunks)
 │   ├── knowledge_graph.py # NetworkX graph (220 nodes, 562 edges)
 │   ├── graph_builder.py   # Build from YAML
 │   ├── hybrid_retriever.py# Combined retrieval
