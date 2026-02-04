@@ -19,6 +19,19 @@ from .retriever import FATESRetriever
 from .knowledge_graph import FATESKnowledgeGraph
 from .graph_builder import build_fates_graph, load_graph
 
+# Compute A2MC root directory from module location
+# rag/ is directly under A2MC/, so parent of this file's directory is A2MC root
+_RAG_DIR = Path(__file__).parent.resolve()
+_A2MC_ROOT = _RAG_DIR.parent
+
+
+def _resolve_path(path: str, base: Path = _A2MC_ROOT) -> str:
+    """Resolve a path relative to A2MC root if it's not absolute."""
+    p = Path(path)
+    if p.is_absolute():
+        return str(p)
+    return str(base / p)
+
 
 class HybridRetriever:
     """
@@ -43,6 +56,12 @@ class HybridRetriever:
             graph_path: Path to saved knowledge graph (JSON)
             auto_build: Auto-build indexes if missing
         """
+        # Resolve paths relative to A2MC root (handles running from any directory)
+        knowledge_base_path = _resolve_path(knowledge_base_path)
+        vector_persist_dir = _resolve_path(vector_persist_dir)
+        if graph_path:
+            graph_path = _resolve_path(graph_path)
+
         self.kb_path = knowledge_base_path
         self.graph_path = graph_path
 

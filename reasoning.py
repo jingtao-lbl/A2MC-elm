@@ -190,10 +190,16 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
         if use_rag and HybridRetriever is not None:
             try:
                 self.rag_retriever = HybridRetriever(auto_build=False)
-                logger.info("RAG/GraphRAG retriever initialized")
+                logger.info("RAG/GraphRAG retriever initialized successfully")
             except Exception as e:
+                import traceback
                 logger.warning(f"Could not initialize RAG retriever: {e}")
+                logger.warning(f"RAG initialization traceback:\n{traceback.format_exc()}")
+                print(f"Warning: RAG initialization failed: {e}")
                 self.rag_retriever = None
+        elif use_rag and HybridRetriever is None:
+            logger.warning("RAG requested but HybridRetriever not available (import failed)")
+            print("Warning: RAG requested but HybridRetriever import failed. Check dependencies.")
 
         memory_status = "with memory" if memory else "without memory"
         rag_status = "with RAG" if self.rag_retriever else "without RAG"
