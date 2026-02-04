@@ -1,28 +1,40 @@
 """
-RAG Retriever for FATES knowledge base.
+RAG Retriever for knowledge bases.
 
 Provides high-level interface for retrieving relevant context
-from the FATES documentation during AI-assisted calibration.
+from documentation during AI-assisted calibration.
+
+Supports multiple knowledge bases:
+- FATES: docs/fates-knowledge-base/
+- ELM: docs/elm-knowledge-base/
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
-from .loader import load_all_documents, chunk_documents
+from .loader import (
+    load_all_documents,
+    load_knowledge_base,
+    load_multiple_knowledge_bases,
+    chunk_documents,
+    DEFAULT_KNOWLEDGE_BASES
+)
 from .vector_store import FATESVectorStore
 
 
 class FATESRetriever:
     """
-    RAG retriever for FATES documentation.
+    RAG retriever for knowledge base documentation.
 
     Combines document loading, chunking, and vector search
     to provide relevant context for calibration tasks.
+
+    Supports single or multiple knowledge bases.
     """
 
     def __init__(
         self,
-        knowledge_base_path: str = "docs/fates-knowledge-base",
+        knowledge_base_path: Union[str, list[str]] = None,
         persist_dir: str = "rag/chroma_db",
         auto_build: bool = False
     ):
@@ -30,11 +42,23 @@ class FATESRetriever:
         Initialize the retriever.
 
         Args:
-            knowledge_base_path: Path to the FATES knowledge base directory
+            knowledge_base_path: Path(s) to knowledge base directory(ies).
+                                 Can be a single path string or list of paths.
+                                 If None, uses DEFAULT_KNOWLEDGE_BASES.
             persist_dir: Directory for ChromaDB persistence
             auto_build: If True, automatically build index if empty
         """
-        self.kb_path = knowledge_base_path
+        # Handle default and normalize to list
+        if knowledge_base_path is None:
+            self.kb_paths = DEFAULT_KNOWLEDGE_BASES
+        elif isinstance(knowledge_base_path, str):
+            self.kb_paths = [knowledge_base_path]
+        else:
+            self.kb_paths = knowledge_base_path
+
+        # Keep single path for backward compatibility
+        self.kb_path = self.kb_paths[0] if len(self.kb_paths) == 1 else self.kb_paths
+
         self.persist_dir = persist_dir
         self.vector_store = FATESVectorStore(persist_dir=persist_dir)
         self._indexed = self.vector_store.collection.count() > 0
@@ -45,16 +69,21 @@ class FATESRetriever:
 
     def build_index(self, chunk_size: int = 1000, chunk_overlap: int = 200):
         """
-        Build the vector index from the knowledge base.
+        Build the vector index from the knowledge base(s).
 
         Args:
             chunk_size: Target size for document chunks
             chunk_overlap: Overlap between chunks
         """
-        print(f"Building index from: {self.kb_path}")
-
-        # Load all documents
-        docs = load_all_documents(self.kb_path)
+        # Load documents from all knowledge bases
+        if len(self.kb_paths) == 1:
+            print(f"Building index from: {self.kb_paths[0]}")
+            docs = load_knowledge_base(self.kb_paths[0])
+        else:
+            print(f"Building index from {len(self.kb_paths)} knowledge bases:")
+            for path in self.kb_paths:
+                print(f"  - {path}")
+            docs = load_multiple_knowledge_bases(self.kb_paths)
 
         if not docs:
             print("Warning: No documents found!")

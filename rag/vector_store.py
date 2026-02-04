@@ -95,7 +95,8 @@ class FATESVectorStore:
                     'source': c['source'],
                     'type': c['type'],
                     'title': c.get('title', ''),
-                    'format': c.get('format', 'unknown')
+                    'format': c.get('format', 'unknown'),
+                    'kb_source': c.get('kb_source', '')  # Knowledge base source
                 }
                 for c in batch
             ]
@@ -185,6 +186,7 @@ class FATESVectorStore:
                     'source': meta.get('source', ''),
                     'type': meta.get('type', ''),
                     'title': meta.get('title', ''),
+                    'kb_source': meta.get('kb_source', ''),  # Knowledge base source
                     'distance': dist,
                     'relevance': 1 - dist  # Convert distance to relevance score
                 })

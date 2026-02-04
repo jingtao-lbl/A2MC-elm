@@ -43,7 +43,15 @@ Usage:
 """
 
 # Phase 1: Vector RAG
-from .loader import load_markdown_files, load_rst_files, chunk_documents, load_all_documents
+from .loader import (
+    load_markdown_files,
+    load_rst_files,
+    chunk_documents,
+    load_all_documents,
+    load_knowledge_base,
+    load_multiple_knowledge_bases,
+    DEFAULT_KNOWLEDGE_BASES
+)
 from .vector_store import FATESVectorStore
 from .retriever import FATESRetriever, create_retriever
 
@@ -67,6 +75,9 @@ __all__ = [
     'load_rst_files',
     'chunk_documents',
     'load_all_documents',
+    'load_knowledge_base',
+    'load_multiple_knowledge_bases',
+    'DEFAULT_KNOWLEDGE_BASES',
     'FATESVectorStore',
     'FATESRetriever',
     'create_retriever',

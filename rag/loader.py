@@ -1,8 +1,12 @@
 """
-Document loader for FATES knowledge base.
+Document loader for knowledge bases.
 
-Loads and chunks Markdown and RST files from the knowledge base
+Loads and chunks Markdown and RST files from knowledge bases
 for indexing in the vector store.
+
+Supports multiple knowledge bases:
+- FATES: docs/fates-knowledge-base/
+- ELM: docs/elm-knowledge-base/
 """
 
 import re
@@ -323,6 +327,132 @@ def load_all_documents(knowledge_base_path: str) -> list[dict]:
 
     print(f"Total documents loaded: {len(all_docs)}")
     return all_docs
+
+
+def load_knowledge_base(knowledge_base_path: str, kb_name: str = None) -> list[dict]:
+    """
+    Load documents from a knowledge base with flexible structure.
+
+    Supports knowledge bases with structures like:
+    - {kb_name}-codebase-wiki/  (markdown files)
+    - {kb_name}-official-docs/ or {kb_name}-technical-docs/ (markdown/rst files)
+
+    Args:
+        knowledge_base_path: Path to knowledge base directory
+        kb_name: Name of knowledge base (e.g., 'fates', 'elm').
+                 If None, inferred from directory name.
+
+    Returns:
+        List of document dictionaries
+    """
+    base = Path(knowledge_base_path)
+    all_docs = []
+
+    if not base.exists():
+        print(f"Warning: Knowledge base path does not exist: {knowledge_base_path}")
+        return all_docs
+
+    # Infer kb_name from directory if not provided
+    if kb_name is None:
+        dir_name = base.name.lower()
+        if '-knowledge-base' in dir_name:
+            kb_name = dir_name.replace('-knowledge-base', '')
+        else:
+            kb_name = dir_name
+
+    print(f"\nLoading {kb_name.upper()} knowledge base from: {knowledge_base_path}")
+
+    # Look for codebase wiki (various naming conventions)
+    wiki_patterns = [
+        f"{kb_name}-codebase-wiki",
+        f"{kb_name}_codebase_wiki",
+        "codebase-wiki",
+        "wiki"
+    ]
+    for pattern in wiki_patterns:
+        wiki_path = base / pattern
+        if wiki_path.exists():
+            wiki_docs = load_markdown_files(str(wiki_path))
+            # Tag documents with knowledge base source
+            for doc in wiki_docs:
+                doc['kb_source'] = kb_name
+            print(f"  Loaded {len(wiki_docs)} documents from {pattern}/")
+            all_docs.extend(wiki_docs)
+            break
+
+    # Look for official/technical docs (various naming conventions)
+    docs_patterns = [
+        f"{kb_name}-official-docs",
+        f"{kb_name}-technical-docs",
+        "official-docs",
+        "technical-docs",
+        "docs"
+    ]
+    for pattern in docs_patterns:
+        docs_path = base / pattern
+        if docs_path.exists():
+            # Load markdown files
+            md_docs = load_markdown_files(str(docs_path))
+            for doc in md_docs:
+                doc['kb_source'] = kb_name
+            if md_docs:
+                print(f"  Loaded {len(md_docs)} markdown files from {pattern}/")
+                all_docs.extend(md_docs)
+
+            # Load RST files (check for docs/source subdirectory)
+            rst_path = docs_path / "docs" / "source"
+            if rst_path.exists():
+                rst_docs = load_rst_files(str(rst_path))
+                for doc in rst_docs:
+                    doc['kb_source'] = kb_name
+                if rst_docs:
+                    print(f"  Loaded {len(rst_docs)} RST files from {pattern}/docs/source/")
+                    all_docs.extend(rst_docs)
+            break
+
+    # Load index.md from root if exists
+    index_path = base / "index.md"
+    if index_path.exists():
+        with open(index_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        all_docs.append({
+            'content': content,
+            'source': 'index.md',
+            'type': 'general',
+            'title': f'{kb_name.upper()} Knowledge Base Index',
+            'format': 'markdown',
+            'kb_source': kb_name
+        })
+
+    print(f"  Total from {kb_name.upper()}: {len(all_docs)} documents")
+    return all_docs
+
+
+def load_multiple_knowledge_bases(knowledge_base_paths: list[str]) -> list[dict]:
+    """
+    Load documents from multiple knowledge bases.
+
+    Args:
+        knowledge_base_paths: List of paths to knowledge base directories
+
+    Returns:
+        Combined list of document dictionaries from all knowledge bases
+    """
+    all_docs = []
+
+    for kb_path in knowledge_base_paths:
+        docs = load_knowledge_base(kb_path)
+        all_docs.extend(docs)
+
+    print(f"\n=== Total documents from all knowledge bases: {len(all_docs)} ===")
+    return all_docs
+
+
+# Default knowledge bases for A2MC
+DEFAULT_KNOWLEDGE_BASES = [
+    "docs/fates-knowledge-base",
+    "docs/elm-knowledge-base",
+]
 
 
 if __name__ == "__main__":

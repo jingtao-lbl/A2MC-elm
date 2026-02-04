@@ -13,11 +13,12 @@ The hybrid approach provides:
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from .retriever import FATESRetriever
 from .knowledge_graph import FATESKnowledgeGraph
 from .graph_builder import build_fates_graph, load_graph
+from .loader import DEFAULT_KNOWLEDGE_BASES
 
 # Compute A2MC root directory from module location
 # rag/ is directly under A2MC/, so parent of this file's directory is A2MC root
@@ -42,7 +43,7 @@ class HybridRetriever:
 
     def __init__(
         self,
-        knowledge_base_path: str = "docs/fates-knowledge-base",
+        knowledge_base_path: Union[str, list[str]] = None,
         vector_persist_dir: str = "rag/chroma_db",
         graph_path: Optional[str] = "rag/fates_knowledge_graph.json",
         auto_build: bool = True
@@ -51,23 +52,32 @@ class HybridRetriever:
         Initialize the hybrid retriever.
 
         Args:
-            knowledge_base_path: Path to knowledge base directory
+            knowledge_base_path: Path(s) to knowledge base directory(ies).
+                                 Can be a single path string or list of paths.
+                                 If None, uses DEFAULT_KNOWLEDGE_BASES (FATES + ELM).
             vector_persist_dir: ChromaDB persistence directory
             graph_path: Path to saved knowledge graph (JSON)
             auto_build: Auto-build indexes if missing
         """
-        # Resolve paths relative to A2MC root (handles running from any directory)
-        knowledge_base_path = _resolve_path(knowledge_base_path)
+        # Handle default and resolve paths
+        if knowledge_base_path is None:
+            kb_paths = [_resolve_path(p) for p in DEFAULT_KNOWLEDGE_BASES]
+        elif isinstance(knowledge_base_path, str):
+            kb_paths = [_resolve_path(knowledge_base_path)]
+        else:
+            kb_paths = [_resolve_path(p) for p in knowledge_base_path]
+
         vector_persist_dir = _resolve_path(vector_persist_dir)
         if graph_path:
             graph_path = _resolve_path(graph_path)
 
-        self.kb_path = knowledge_base_path
+        self.kb_paths = kb_paths
+        self.kb_path = kb_paths[0] if len(kb_paths) == 1 else kb_paths  # backward compat
         self.graph_path = graph_path
 
-        # Initialize vector retriever
+        # Initialize vector retriever with multiple knowledge bases
         self.vector_retriever = FATESRetriever(
-            knowledge_base_path=knowledge_base_path,
+            knowledge_base_path=kb_paths,
             persist_dir=vector_persist_dir,
             auto_build=auto_build
         )
