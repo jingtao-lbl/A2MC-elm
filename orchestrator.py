@@ -1797,19 +1797,33 @@ Diagnosis Summary:
         - Hypothesis objects with parameter modifications
         - Experimental design specifications
         """
-        logger.info("Generating hypotheses...")
+        # Check if hypothesis already exists for this iteration (e.g., resuming after checkpoint)
+        existing_hypothesis = None
+        if self.state.hypotheses:
+            last_hyp = self.state.hypotheses[-1]
+            # Check if last hypothesis was generated in this iteration
+            if last_hyp.get('iteration', None) == self.state.iteration or (
+                self.state.diagnoses and len(self.state.hypotheses) >= len(self.state.diagnoses)
+            ):
+                existing_hypothesis = last_hyp
+                logger.info("Hypothesis already generated for this iteration (resuming from checkpoint)")
 
-        latest_diagnosis = self.state.diagnoses[-1] if self.state.diagnoses else {}
-
-        # Use Claude API for hypothesis generation (if available)
-        if self.reasoning:
-            logger.info("Using Claude API for hypothesis generation...")
-            hypothesis = self._generate_hypothesis_with_claude(latest_diagnosis)
+        if existing_hypothesis:
+            hypothesis = existing_hypothesis
         else:
-            logger.info("Using rule-based hypothesis generation...")
-            hypothesis = self._generate_hypothesis_rule_based(latest_diagnosis)
+            logger.info("Generating hypotheses...")
 
-        self.state.hypotheses.append(hypothesis)
+            latest_diagnosis = self.state.diagnoses[-1] if self.state.diagnoses else {}
+
+            # Use Claude API for hypothesis generation (if available)
+            if self.reasoning:
+                logger.info("Using Claude API for hypothesis generation...")
+                hypothesis = self._generate_hypothesis_with_claude(latest_diagnosis)
+            else:
+                logger.info("Using rule-based hypothesis generation...")
+                hypothesis = self._generate_hypothesis_rule_based(latest_diagnosis)
+
+            self.state.hypotheses.append(hypothesis)
 
         # Log hypothesis
         logger.info(f"Hypothesis generated:")
@@ -1818,9 +1832,12 @@ Diagnosis Summary:
         logger.info(f"  Parameters: {len(hypothesis.get('parameters_to_test', []))}")
 
         # Log to phase logger
+        log_path = None
         if self._phase_logger:
             try:
                 self._phase_logger.set_iteration(self.state.iteration)
+                # Handle both Claude-generated (parameters) and rule-based (parameters_to_test) field names
+                raw_params = hypothesis.get('parameters', hypothesis.get('parameters_to_test', []))
                 params_to_modify = [
                     {
                         'name': p.get('name', ''),
@@ -1828,16 +1845,18 @@ Diagnosis Summary:
                         'proposed': p.get('proposed', ''),
                         'rationale': p.get('rationale', '')
                     }
-                    for p in hypothesis.get('parameters_to_test', [])
+                    for p in raw_params
                 ]
+                # AI reasoning is in 'mechanism' field (Claude) or 'reasoning' field (fallback)
+                ai_reasoning = hypothesis.get('mechanism', '') or hypothesis.get('reasoning', '')
                 log_path = self._phase_logger.log_hypothesis(
                     title=f"Iteration_{self.state.iteration}_{hypothesis.get('name', 'Hypothesis')}",
                     hypothesis_name=hypothesis.get('name', 'Unknown'),
                     mechanism=hypothesis.get('mechanism', ''),
                     parameters_to_modify=params_to_modify,
-                    ai_reasoning=hypothesis.get('reasoning', ''),
-                    design_type=hypothesis.get('experimental_design', 'cumulative'),
-                    expected_outcomes={'expectation': hypothesis.get('expected_outcome', '')},
+                    ai_reasoning=ai_reasoning,
+                    design_type=hypothesis.get('design_type', hypothesis.get('experimental_design', 'cumulative')),
+                    expected_outcomes=hypothesis.get('expected_outcomes', {'expectation': hypothesis.get('expected_outcome', '')}),
                     confidence=hypothesis.get('confidence', 0),
                     metadata={
                         'iteration': self.state.iteration,
@@ -1847,6 +1866,32 @@ Diagnosis Summary:
                 logger.info(f"  Phase log written: {log_path}")
             except Exception as e:
                 logger.warning(f"Could not write hypothesis log: {e}")
+
+        # Human review checkpoint - key handoff before HPC testing
+        if self.config.human_review:
+            raw_params = hypothesis.get('parameters', hypothesis.get('parameters_to_test', []))
+            param_summary = "\n".join([
+                f"    {p.get('name', '?')}: {p.get('current', '?')} → {p.get('proposed', '?')}"
+                for p in raw_params
+            ]) or "    (none specified)"
+            self._human_review_checkpoint(
+                phase="HYPOTHESIS",
+                summary=f"""
+Hypothesis: {hypothesis.get('name', 'Unknown')}
+  Design: {hypothesis.get('design_type', hypothesis.get('experimental_design', 'N/A'))}
+  Confidence: {hypothesis.get('confidence', 0):.2f}
+
+  Parameter modifications:
+{param_summary}
+
+  Expected outcome: {hypothesis.get('expected_outcomes', hypothesis.get('expected_outcome', 'N/A'))}
+""",
+                next_phase="TESTING",
+                options={
+                    'c': 'Continue to testing phase',
+                    'q': 'Quit workflow (state saved - review hypothesis log and run HPC experiments manually)',
+                }
+            )
 
         # Transition to TESTING
         self.state.record_phase_transition(
@@ -2147,6 +2192,29 @@ Diagnosis Summary:
                 logger.info(f"  Phase log written: {log_path}")
             except Exception as e:
                 logger.warning(f"Could not write refinement log: {e}")
+
+        # Human review checkpoint before iteration decision
+        if self.config.human_review:
+            next_action_desc = (
+                "CONVERGE (all targets met!)" if best_targets_met >= total_targets
+                else f"ITERATE (progress: {best_targets_met}/{total_targets})"
+                if best_targets_met > (self.state.best_experiment or {}).get("results", {}).get("targets_met", 0)
+                else f"REVISE HYPOTHESIS (no improvement: {best_targets_met}/{total_targets})"
+            )
+            self._human_review_checkpoint(
+                phase="REFINEMENT",
+                summary=f"""
+Refinement Summary:
+  - Best experiment: {best_exp.get('name', 'N/A') if best_exp else 'N/A'}
+  - Targets met: {best_targets_met}/{total_targets}
+  - Recommended action: {next_action_desc}
+""",
+                next_phase="NEXT ITERATION" if best_targets_met < total_targets else "CONVERGED",
+                options={
+                    'c': f'Continue ({next_action_desc})',
+                    'q': 'Quit workflow (state saved)',
+                }
+            )
 
         # Decision logic
         if best_targets_met >= total_targets:
