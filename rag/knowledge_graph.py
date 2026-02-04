@@ -568,7 +568,9 @@ class FATESKnowledgeGraph:
         Args:
             path: Output file path
         """
-        data = nx.node_link_data(self.graph)
+        # Use edges="links" for compatibility across NetworkX versions
+        # (NetworkX 3.x changed default from "links" to "edges")
+        data = nx.node_link_data(self.graph, edges="links")
         with open(path, 'w') as f:
             json.dump(data, f, indent=2, default=str)
         print(f"Graph saved to: {path}")
@@ -582,7 +584,9 @@ class FATESKnowledgeGraph:
         """
         with open(path, 'r') as f:
             data = json.load(f)
-        self.graph = nx.node_link_graph(data)
+        # Use edges="links" for compatibility across NetworkX versions
+        # (NetworkX 3.x changed default from "links" to "edges")
+        self.graph = nx.node_link_graph(data, edges="links")
 
         # Rebuild index
         self._node_index = {}
