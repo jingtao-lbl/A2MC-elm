@@ -1306,79 +1306,89 @@ class CalibrationOrchestrator:
         - Target success/failure matrix
         - Conflict analysis (if multi-objective)
         """
-        n_sims = self.config.total_ensemble
-        logger.info(f"Screening {n_sims} cases against validation targets...")
-
-        targets = self.config.targets
-
-        # Try to load screening results from configured location
-        try:
-            from tools.config import config as a2mc_config
-            results_dir = Path(a2mc_config.ENSEMBLE_OUTPUT)
-            results_file = results_dir / "screening_results.txt"
-        except ImportError:
-            results_file = Path("")
-
-        if results_file.exists():
-            logger.info(f"Loading existing screening results: {results_file}")
-            screening_data = self._load_screening_results(results_file)
+        # Check if screening already completed (e.g., resuming after checkpoint)
+        screening_data = self.state.screening_data
+        if screening_data and screening_data.get("n_cases_evaluated", 0) > 0:
+            logger.info("Screening already completed (resuming from checkpoint)")
         else:
-            # Run screening analysis
-            logger.info("Running new screening analysis...")
-            screening_data = self._perform_screening(targets)
+            n_sims = self.config.total_ensemble
+            logger.info(f"Screening {n_sims} cases against validation targets...")
 
-        self.state.screening_data = screening_data
+            targets = self.config.targets
 
-        # Log key findings
+            # Try to load screening results from configured location
+            try:
+                from tools.config import config as a2mc_config
+                results_dir = Path(a2mc_config.ENSEMBLE_OUTPUT)
+                results_file = results_dir / "screening_results.txt"
+            except ImportError:
+                results_file = Path("")
+
+            if results_file.exists():
+                logger.info(f"Loading existing screening results: {results_file}")
+                screening_data = self._load_screening_results(results_file)
+            else:
+                # Run screening analysis
+                logger.info("Running new screening analysis...")
+                screening_data = self._perform_screening(targets)
+
+            self.state.screening_data = screening_data
+
+            # Log key findings
+            n_cases = screening_data.get("n_cases_evaluated", 0)
+            best_case = screening_data.get("best_case", {})
+            targets_met = best_case.get("targets_met", 0)
+
+            logger.info(f"Screening complete:")
+            logger.info(f"  Cases evaluated: {n_cases}")
+            logger.info(f"  Best case: #{best_case.get('case_id', 'N/A')}")
+            logger.info(f"  Targets met: {targets_met}/8")
+
+            # Critical finding
+            if targets_met < 8:
+                logger.info(f"  CRITICAL: 0/{n_cases} cases achieve all targets")
+                logger.info(f"  → Proceeding to DIAGNOSIS phase")
+
+            # Generate AI reasoning for screening results
+            ai_reasoning = ""
+            if self.config.use_reasoning and self.reasoning:
+                try:
+                    logger.info("Generating AI analysis of screening results...")
+                    ai_reasoning = self._generate_screening_analysis(screening_data)
+                    logger.info("  AI analysis complete")
+                except Exception as e:
+                    logger.warning(f"Could not generate AI screening analysis: {e}")
+                    ai_reasoning = f"*AI analysis failed: {e}*"
+
+            # Log to phase logger
+            if self._phase_logger:
+                try:
+                    self._phase_logger.set_iteration(self.state.iteration)
+                    log_path = self._phase_logger.log_screening(
+                        title=f"Iteration_{self.state.iteration}_Screening",
+                        n_sets_evaluated=n_cases,
+                        best_cost=best_case.get('composite_rmsre', float('inf')),
+                        top_sets=[c.get('case_num', 0) for c in screening_data.get('best_cases', [])[:10]],
+                        ai_reasoning=ai_reasoning,
+                        target_performance=screening_data.get('target_performance', {}),
+                        key_findings=[
+                            f"Best case: #{best_case.get('case_id', 'N/A')}",
+                            f"Targets met: {targets_met}/8",
+                            f"Cases evaluated: {n_cases}"
+                        ],
+                        metadata={
+                            'iteration': self.state.iteration,
+                            'n_simulations': self.config.total_ensemble
+                        }
+                    )
+                    logger.info(f"  Phase log written: {log_path}")
+                except Exception as e:
+                    logger.warning(f"Could not write screening log: {e}")
+
+        # Extract summary for checkpoint display
         n_cases = screening_data.get("n_cases_evaluated", 0)
         best_case = screening_data.get("best_case", {})
         targets_met = best_case.get("targets_met", 0)
-
-        logger.info(f"Screening complete:")
-        logger.info(f"  Cases evaluated: {n_cases}")
-        logger.info(f"  Best case: #{best_case.get('case_id', 'N/A')}")
-        logger.info(f"  Targets met: {targets_met}/8")
-
-        # Critical finding
-        if targets_met < 8:
-            logger.info(f"  CRITICAL: 0/{n_cases} cases achieve all targets")
-            logger.info(f"  → Proceeding to DIAGNOSIS phase")
-
-        # Generate AI reasoning for screening results
-        ai_reasoning = ""
-        if self.config.use_reasoning and self.reasoning:
-            try:
-                logger.info("Generating AI analysis of screening results...")
-                ai_reasoning = self._generate_screening_analysis(screening_data)
-                logger.info("  AI analysis complete")
-            except Exception as e:
-                logger.warning(f"Could not generate AI screening analysis: {e}")
-                ai_reasoning = f"*AI analysis failed: {e}*"
-
-        # Log to phase logger
-        if self._phase_logger:
-            try:
-                self._phase_logger.set_iteration(self.state.iteration)
-                log_path = self._phase_logger.log_screening(
-                    title=f"Iteration_{self.state.iteration}_Screening",
-                    n_sets_evaluated=n_cases,
-                    best_cost=best_case.get('composite_rmsre', float('inf')),
-                    top_sets=[c.get('case_num', 0) for c in screening_data.get('best_cases', [])[:10]],
-                    ai_reasoning=ai_reasoning,
-                    target_performance=screening_data.get('target_performance', {}),
-                    key_findings=[
-                        f"Best case: #{best_case.get('case_id', 'N/A')}",
-                        f"Targets met: {targets_met}/8",
-                        f"Cases evaluated: {n_cases}"
-                    ],
-                    metadata={
-                        'iteration': self.state.iteration,
-                        'n_simulations': self.config.total_ensemble
-                    }
-                )
-                logger.info(f"  Phase log written: {log_path}")
-            except Exception as e:
-                logger.warning(f"Could not write screening log: {e}")
 
         # Human review checkpoint after screening
         if self.config.human_review:
@@ -1396,7 +1406,7 @@ Screening Summary:
 {'ALL TARGETS MET - Ready for convergence!' if targets_met >= 8 else 'Not all targets met - proceeding to diagnosis.'}
 
 Review the screening log at:
-  {log_path if 'log_path' in dir() else 'use_cases/{site}/memory/logs/phase2_screening/'}
+  use_cases/{{site}}/memory/logs/phase2_screening/
 """,
                 next_phase="DIAGNOSIS",
                 options={
@@ -1628,63 +1638,75 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
         - Structured Diagnosis object
         - Mechanistic hypotheses for testing
         """
-        logger.info("Diagnosing calibration failures...")
+        # Check if diagnosis already exists for this iteration (e.g., resuming after checkpoint)
+        existing_diagnosis = None
+        if self.state.diagnoses:
+            last_diag = self.state.diagnoses[-1]
+            if last_diag.get('iteration') == self.state.iteration:
+                existing_diagnosis = last_diag
+                logger.info("Diagnosis already completed for this iteration (resuming from checkpoint)")
 
-        screening_data = self.state.screening_data
-        exploration_data = self.state.exploration_data
-
-        # Prepare data for Claude reasoning
-        diagnosis_input = {
-            "screening_results": screening_data,
-            "sensitivity_rankings": exploration_data.get("sensitivity_rankings", {}),
-            "targets": asdict(self.config.targets),
-            "iteration": self.state.iteration
-        }
-
-        # Use Claude API for diagnosis (if available)
-        if self.reasoning:
-            logger.info("Using Claude API for diagnosis...")
-            diagnosis = self._diagnose_with_claude(diagnosis_input)
+        if existing_diagnosis:
+            diagnosis = existing_diagnosis
         else:
-            logger.info("Claude API not available, using rule-based diagnosis...")
-            diagnosis = self._diagnose_rule_based(diagnosis_input)
+            logger.info("Diagnosing calibration failures...")
 
-        self.state.diagnoses.append(diagnosis)
+            screening_data = self.state.screening_data
+            exploration_data = self.state.exploration_data
 
-        # Log diagnosis
-        logger.info(f"Diagnosis complete:")
-        logger.info(f"  Failing targets: {diagnosis.get('failing_targets', [])}")
-        logger.info(f"  Likely causes: {len(diagnosis.get('likely_causes', []))}")
-        logger.info(f"  Confidence: {diagnosis.get('confidence', 0):.2f}")
+            # Prepare data for Claude reasoning
+            diagnosis_input = {
+                "screening_results": screening_data,
+                "sensitivity_rankings": exploration_data.get("sensitivity_rankings", {}),
+                "targets": asdict(self.config.targets),
+                "iteration": self.state.iteration
+            }
 
-        # Log to phase logger
-        if self._phase_logger:
-            try:
-                self._phase_logger.set_iteration(self.state.iteration)
-                log_path = self._phase_logger.log_diagnosis(
-                    title=f"Iteration_{self.state.iteration}_Diagnosis",
-                    failing_targets=diagnosis.get('failing_targets', []),
-                    likely_causes=diagnosis.get('likely_causes', []),
-                    ai_reasoning=diagnosis.get('reasoning', ''),
-                    parameter_recommendations=diagnosis.get('parameter_recommendations', []),
-                    cross_pft_conflicts=diagnosis.get('cross_pft_conflicts', []),
-                    confidence=diagnosis.get('confidence', 0),
-                    context_used={
-                        'memory': self._memory is not None,
-                        'rag': self.reasoning.rag_retriever is not None if self.reasoning else False,
-                        'experiments': len(self.state.experiments) > 0
-                    },
-                    metadata={
-                        'iteration': self.state.iteration,
-                        'screening_data_summary': {
-                            'best_case': self.state.screening_data.get('best_case', {}),
-                            'n_cases': self.state.screening_data.get('n_cases_evaluated', 0)
+            # Use Claude API for diagnosis (if available)
+            if self.reasoning:
+                logger.info("Using Claude API for diagnosis...")
+                diagnosis = self._diagnose_with_claude(diagnosis_input)
+            else:
+                logger.info("Claude API not available, using rule-based diagnosis...")
+                diagnosis = self._diagnose_rule_based(diagnosis_input)
+
+            self.state.diagnoses.append(diagnosis)
+
+            # Log diagnosis
+            logger.info(f"Diagnosis complete:")
+            logger.info(f"  Failing targets: {diagnosis.get('failing_targets', [])}")
+            logger.info(f"  Likely causes: {len(diagnosis.get('likely_causes', []))}")
+            logger.info(f"  Confidence: {diagnosis.get('confidence', 0):.2f}")
+
+            # Log to phase logger
+            log_path = None
+            if self._phase_logger:
+                try:
+                    self._phase_logger.set_iteration(self.state.iteration)
+                    log_path = self._phase_logger.log_diagnosis(
+                        title=f"Iteration_{self.state.iteration}_Diagnosis",
+                        failing_targets=diagnosis.get('failing_targets', []),
+                        likely_causes=diagnosis.get('likely_causes', []),
+                        ai_reasoning=diagnosis.get('reasoning', ''),
+                        parameter_recommendations=diagnosis.get('parameter_recommendations', []),
+                        cross_pft_conflicts=diagnosis.get('cross_pft_conflicts', []),
+                        confidence=diagnosis.get('confidence', 0),
+                        context_used={
+                            'memory': self._memory is not None,
+                            'rag': self.reasoning.rag_retriever is not None if self.reasoning else False,
+                            'experiments': len(self.state.experiments) > 0
+                        },
+                        metadata={
+                            'iteration': self.state.iteration,
+                            'screening_data_summary': {
+                                'best_case': self.state.screening_data.get('best_case', {}),
+                                'n_cases': self.state.screening_data.get('n_cases_evaluated', 0)
+                            }
                         }
-                    }
-                )
-                logger.info(f"  Phase log written: {log_path}")
-            except Exception as e:
-                logger.warning(f"Could not write diagnosis log: {e}")
+                    )
+                    logger.info(f"  Phase log written: {log_path}")
+                except Exception as e:
+                    logger.warning(f"Could not write diagnosis log: {e}")
 
         # Human review checkpoint
         if self.config.human_review:
@@ -1696,9 +1718,6 @@ Diagnosis Summary:
   - Likely causes: {len(diagnosis.get('likely_causes', []))}
   - Confidence: {diagnosis.get('confidence', 0):.2f}
   - Parameter recommendations: {len(diagnosis.get('parameter_recommendations', []))}
-
-Review the diagnosis log at:
-  {log_path if log_path else 'use_cases/{site}/memory/logs/phase3_diagnosis/'}
 """,
                 next_phase="HYPOTHESIS",
                 options={
