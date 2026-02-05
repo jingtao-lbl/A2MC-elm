@@ -16,7 +16,7 @@ Integrates with MemoryManager for adaptive learning.
 import os
 import json
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, fields
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -229,6 +229,54 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             logger.error(f"Claude API error: {e}")
             raise
 
+    def _load_template_schema(self, template_name: str) -> str:
+        """Load JSON output schema from a reasoning template file.
+
+        Reads the template and extracts the ```json ... ``` block from
+        the '## JSON Output Schema' section.
+
+        Args:
+            template_name: Filename in templates/reasoning/ (e.g., 'phase3_diagnosis_template.md')
+
+        Returns:
+            JSON schema string, or empty string if not found
+        """
+        from pathlib import Path
+        template_path = Path(__file__).parent / "templates" / "reasoning" / template_name
+        if not template_path.exists():
+            logger.debug(f"Template not found: {template_path}")
+            return ""
+        try:
+            content = template_path.read_text()
+            # Find the JSON Output Schema section
+            schema_marker = "## JSON Output Schema"
+            idx = content.find(schema_marker)
+            if idx == -1:
+                return ""
+            # Extract the ```json ... ``` block after the marker
+            section = content[idx:]
+            json_start = section.find("```json")
+            if json_start == -1:
+                return ""
+            json_start += len("```json")
+            json_end = section.find("```", json_start)
+            if json_end == -1:
+                return ""
+            return section[json_start:json_end].strip()
+        except Exception as e:
+            logger.warning(f"Failed to load template schema from {template_name}: {e}")
+            return ""
+
+    @staticmethod
+    def _extract_json(response: str) -> dict:
+        """Extract JSON from a Claude response, handling markdown wrapping."""
+        json_str = response.strip()
+        if json_str.startswith("```"):
+            json_str = json_str.split("```")[1]
+            if json_str.startswith("json"):
+                json_str = json_str[4:]
+        return json.loads(json_str)
+
     def _get_rag_context(self,
                          parameters: List[str] = None,
                          outputs: List[str] = None,
@@ -350,13 +398,25 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
 ## Sensitivity Rankings (top parameters by importance)
 {json.dumps(sensitivity_rankings, indent=2)}
 
-## Task
-Diagnose why calibration is failing. Consider:
-1. Which specific targets are failing and by what magnitude?
-2. What are the mechanistic causes based on FATES model structure?
-3. Which parameters from sensitivity rankings should be prioritized?
-4. Are there cross-PFT conflicts (shared parameters affecting multiple PFTs differently)?
-5. What insights from the knowledge base context (if provided) are relevant?
+## Diagnostic Process (follow these steps)
+1. **Classify severity** for each failing target:
+   - CRITICAL: >50% error, blocks progress
+   - HIGH: 30-50% error, significant impact
+   - MEDIUM: 20-30% error, needs attention
+   - LOW: <20% error, within acceptable range
+
+2. **Form 4-6 hypotheses BEFORE deep analysis.** Each hypothesis should:
+   - State a specific FATES mechanism (PID_Controller, ECA_Competition, Storage_Allocation, etc.)
+   - Predict which targets it affects
+   - Be testable with parameter modifications
+
+3. **For each hypothesis, present evidence FOR and AGAINST** using quantitative data from the results and sensitivity rankings.
+
+4. **Rank root causes** by confidence and evidence strength.
+
+5. **Provide a conceptual model** (ASCII diagram) showing the causal chain from root cause to failing targets.
+
+6. Consider cross-PFT conflicts and shared parameter effects.
 
 IMPORTANT: If the knowledge base shows failed approaches, DO NOT recommend those approaches.
 
@@ -366,6 +426,31 @@ Return a JSON object with this structure:
 {{
     "iteration": {iteration},
     "failing_targets": ["target1", "target2"],
+    "severity_breakdown": {{
+        "critical": ["targets with >50% error"],
+        "high": ["targets with 30-50% error"],
+        "medium": ["targets with 20-30% error"],
+        "low": ["targets with <20% error"]
+    }},
+    "hypotheses": [
+        {{
+            "id": "H1",
+            "statement": "Specific mechanism hypothesis",
+            "mechanism": "FATES_Mechanism_Name",
+            "evidence_for": ["Quantitative evidence supporting this"],
+            "evidence_against": ["Evidence contradicting this"],
+            "confidence": 0.8
+        }}
+    ],
+    "root_causes": [
+        {{
+            "rank": 1,
+            "cause": "Root cause description",
+            "mechanism": "FATES_Mechanism_Name",
+            "confidence": 0.85,
+            "affected_targets": ["target1", "target2"]
+        }}
+    ],
     "likely_causes": [
         "Mechanistic explanation 1",
         "Mechanistic explanation 2"
@@ -375,14 +460,18 @@ Return a JSON object with this structure:
             "parameter": "param_name",
             "current_issue": "why this is a problem",
             "suggested_direction": "increase/decrease",
-            "priority": 1
+            "priority": 1,
+            "caution": "potential side effects"
         }}
+    ],
+    "key_insights": [
+        "Named insight (e.g., Triple Bottleneck Pattern)"
     ],
     "cross_pft_conflicts": [
         "Description of any shared parameter conflicts"
     ],
     "confidence": 0.85,
-    "reasoning": "Brief explanation of the diagnosis logic"
+    "reasoning": "Summary of diagnosis logic including conceptual model"
 }}
 ```
 
@@ -390,16 +479,11 @@ Respond ONLY with the JSON object, no additional text."""
 
         response = self.query(prompt)
 
-        # Parse response
+        # Parse response — filter to Diagnosis dataclass fields
         try:
-            # Extract JSON from response (handle potential markdown wrapping)
-            json_str = response.strip()
-            if json_str.startswith("```"):
-                json_str = json_str.split("```")[1]
-                if json_str.startswith("json"):
-                    json_str = json_str[4:]
-            data = json.loads(json_str)
-            return Diagnosis(**data)
+            data = self._extract_json(response)
+            known = {f.name for f in fields(Diagnosis)}
+            return Diagnosis(**{k: v for k, v in data.items() if k in known})
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse diagnosis response: {e}")
             logger.error(f"Response was: {response}")
@@ -465,25 +549,41 @@ Respond ONLY with the JSON object, no additional text."""
 ## Previous Experiments (avoid repeating these)
 {json.dumps(previous_experiments, indent=2)}
 
-## Task
-Generate a specific, testable hypothesis with:
-1. A clear mechanistic name (e.g., "PFT9 Mortality Trap", "Nutrient Limitation Bottleneck")
-2. A mechanistic explanation of why this would improve calibration
-3. Specific parameters to modify with current and proposed values
-4. Recommended experimental design (cumulative for sequential mechanisms, factorial for interacting parameters)
-5. Quantitative expected outcomes for each target
+## Hypothesis Generation Process (follow these steps)
+
+1. **Consider at least 3 possible hypotheses** before selecting the best one for testing.
+   For each, briefly note the mechanism, expected effect, and risk level.
+
+2. **Select the BEST hypothesis** based on:
+   - Highest expected impact on failing targets
+   - Strongest mechanistic evidence from diagnosis
+   - Lowest risk of cross-PFT degradation
+   - Not previously failed (check failed approaches above)
+
+3. **Assess risk** for the selected hypothesis:
+   - LOW: PFT-specific parameter, well-understood mechanism
+   - MEDIUM: Shared parameter or partial evidence
+   - HIGH: Novel mechanism, potential for cascading effects
+
+4. **Include what WON'T work** based on memory and reasoning.
+
+5. **Name potential discoveries** to watch for during testing:
+   - Allocation Paradox: uptake increase causes PID reallocation that reduces total growth
+   - Mortality Trap: parameter change triggers carbon starvation mortality
+   - Compensation Effect: one PFT gains at another's expense
 
 ## Design Guidelines
 - Use CUMULATIVE design when mechanisms are sequential (A → B → C)
 - Use FACTORIAL design when parameters may interact (P × N synergy)
 - Only modify PFT-specific parameters to avoid cross-PFT conflicts
 - Propose values within physically realistic bounds
+- Include parameter bounds (min/max) and sensitivity rank where known
 
 ## Response Format
 Return a JSON object with this structure:
 ```json
 {{
-    "name": "Hypothesis Name",
+    "name": "Hypothesis Name (memorable, mechanistic)",
     "mechanism": "Detailed mechanistic explanation",
     "parameters": [
         {{
@@ -491,7 +591,9 @@ Return a JSON object with this structure:
             "pft": 9,
             "current": 0.787,
             "proposed": 0.30,
-            "rationale": "Why this change should help"
+            "rationale": "Why this change should help",
+            "bounds": [0.1, 1.0],
+            "sensitivity_rank": 3
         }}
     ],
     "design_type": "cumulative",
@@ -503,7 +605,22 @@ Return a JSON object with this structure:
         "leaf_pft9_within_20pct": true,
         "no_degradation_other_pfts": true
     }},
-    "confidence": 0.75
+    "confidence": 0.75,
+    "risk_level": "low",
+    "potential_discoveries": [
+        {{
+            "name": "Discovery Name",
+            "signature": "What to look for in results",
+            "action_if_observed": "What to do if discovered"
+        }}
+    ],
+    "wont_work": [
+        {{
+            "approach": "Approach that won't work",
+            "why_fails": "Mechanistic reason",
+            "alternative": "Better approach"
+        }}
+    ]
 }}
 ```
 
@@ -511,14 +628,11 @@ Respond ONLY with the JSON object."""
 
         response = self.query(prompt)
 
+        # Parse response — filter to Hypothesis dataclass fields
         try:
-            json_str = response.strip()
-            if json_str.startswith("```"):
-                json_str = json_str.split("```")[1]
-                if json_str.startswith("json"):
-                    json_str = json_str[4:]
-            data = json.loads(json_str)
-            return Hypothesis(**data)
+            data = self._extract_json(response)
+            known = {f.name for f in fields(Hypothesis)}
+            return Hypothesis(**{k: v for k, v in data.items() if k in known})
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse hypothesis response: {e}")
             raise
@@ -584,12 +698,7 @@ Respond ONLY with the JSON array."""
         response = self.query(prompt)
 
         try:
-            json_str = response.strip()
-            if json_str.startswith("```"):
-                json_str = json_str.split("```")[1]
-                if json_str.startswith("json"):
-                    json_str = json_str[4:]
-            data = json.loads(json_str)
+            data = self._extract_json(response)
             return [Experiment(**exp) for exp in data]
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse experiments response: {e}")
@@ -634,19 +743,54 @@ Respond ONLY with the JSON array."""
 ## Targets
 {json.dumps(targets, indent=2)}
 
-## Task
-Analyze the results and provide:
-1. Which targets improved, stayed same, or degraded?
-2. Was the hypothesis confirmed, partially confirmed, or rejected?
-3. What mechanistic insights can we draw?
-4. What should be the next step?
+## Interpretation Process (follow these steps)
+
+1. **Expected vs Actual comparison**: For each target, classify as:
+   - CONFIRMED: result matches expected outcome (within 20%)
+   - PARTIAL: result moves in right direction but less than expected
+   - REJECTED: result moves in wrong direction or no change
+
+2. **Cross-PFT impact analysis**: Did modifications for one PFT affect others?
+   Create a mental table: PFT x Target showing improvement/degradation.
+
+3. **Named discovery detection**: Watch for these known patterns:
+   - Allocation Paradox: uptake increase causes PID to reallocate away from roots
+   - Mortality Trap: parameter change triggers carbon starvation cascade
+   - Compensation Effect: gains in one PFT come at another's expense
+   - Storage Depletion: short-term improvement followed by long-term decline
+
+4. **Next step recommendation**: Based on hypothesis status, recommend:
+   - CONFIRMED → continue to convergence or test next hypothesis
+   - PARTIAL → refine hypothesis with adjusted parameters
+   - REJECTED → return to diagnosis with new insights
 
 ## Response Format
 ```json
 {{
     "targets_improved": ["target1"],
     "targets_degraded": [],
-    "hypothesis_status": "partially_confirmed",
+    "hypothesis_status": "confirmed|partial|rejected",
+    "expected_vs_actual": [
+        {{
+            "target": "target_name",
+            "expected": 80.0,
+            "actual": 68.0,
+            "status": "PARTIAL",
+            "improvement_pct": 52
+        }}
+    ],
+    "cross_pft_impact": {{
+        "affected_pfts": ["PFT10"],
+        "degraded": false,
+        "notes": "No cross-PFT degradation observed"
+    }},
+    "discoveries": [
+        {{
+            "name": "Discovery Name",
+            "description": "What was discovered",
+            "confidence": 0.9
+        }}
+    ],
     "insights": [
         "Mechanistic insight 1",
         "Mechanistic insight 2"
@@ -665,12 +809,7 @@ Respond ONLY with the JSON object."""
         response = self.query(prompt)
 
         try:
-            json_str = response.strip()
-            if json_str.startswith("```"):
-                json_str = json_str.split("```")[1]
-                if json_str.startswith("json"):
-                    json_str = json_str[4:]
-            return json.loads(json_str)
+            return self._extract_json(response)
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse interpretation response: {e}")
             raise
@@ -724,16 +863,29 @@ Modifications: {json.dumps(experiment.get('modifications', []), indent=2)}
 ## Outcome
 {outcome}
 
-## Task
-Extract lessons from this experiment. Consider:
-1. What mechanistic insight does this reveal about FATES behavior?
-2. Is this a significant discovery that should be recorded for future reference?
-3. If the experiment failed, should this approach be added to a "do not repeat" list?
+## Lesson Extraction Process (follow these steps)
 
-A DISCOVERY should be recorded if:
-- The result reveals a non-obvious mechanism (e.g., feedback loops, parameter interactions)
-- The result contradicts expectations in an informative way
-- The insight would help prevent future mistakes
+1. **Parameter category analysis**: Classify each modified parameter:
+   - Allocation (PID, storage cushion, leaf-to-froot ratio)
+   - Nutrient uptake (vmax_p, vmax_nh4, vmax_no3, ECA parameters)
+   - Storage (store_ratio, storage_cushion)
+   - Mortality (cstarvation scalar, hydraulic parameters)
+   - Phenology (GDD threshold, chilling)
+
+2. **Identify fundamental constraints**: What does this experiment reveal about
+   the model's structural limitations? E.g., "Cannot increase vmax_p > 2x
+   without storage buffer" or "PID Kp must be < 0.4 for stressed PFTs"
+
+3. **Mechanism synthesis (before/after understanding)**:
+   - Before this experiment, we thought: ...
+   - After this experiment, we now understand: ...
+
+4. **Is this a significant discovery?** A DISCOVERY should be recorded if:
+   - The result reveals a non-obvious mechanism (feedback loops, parameter interactions)
+   - The result contradicts expectations in an informative way
+   - The insight would help prevent future mistakes
+
+5. **If failed, should this approach be added to "do not repeat" list?**
 
 ## Response Format
 ```json
@@ -769,12 +921,7 @@ Respond ONLY with the JSON object."""
         response = self.query(prompt)
 
         try:
-            json_str = response.strip()
-            if json_str.startswith("```"):
-                json_str = json_str.split("```")[1]
-                if json_str.startswith("json"):
-                    json_str = json_str[4:]
-            result = json.loads(json_str)
+            result = self._extract_json(response)
 
             # Auto-record to memory if available
             if self.memory:
@@ -904,18 +1051,52 @@ Respond ONLY with the JSON object."""
 
 {f"## Sensitivity Rankings{chr(10)}{json.dumps(sensitivity_rankings, indent=2)}" if sensitivity_rankings else ""}
 
-## Task
-Analyze the screening results to identify:
+## Screening Analysis Process (follow these steps)
 
-1. **Error Patterns**: Which targets fail most often? Are failures correlated?
-2. **Success Patterns**: What do the top 10 cases have in common?
-3. **PFT Trade-offs**: Do improvements in one PFT come at the cost of another?
-4. **Priority Targets**: Which targets should diagnosis focus on?
-5. **Potential Mechanisms**: What FATES mechanisms might explain the patterns?
+1. **PFT-by-PFT performance summary**: For each PFT, report:
+   - Number of cases within observational uncertainty
+   - Median error direction (overestimated vs underestimated)
+   - Quality assessment (GOOD / MODERATE / POOR / CRITICAL)
+
+2. **Target bias pattern analysis**: For each target, classify:
+   - Bias direction: UNDEREST (model too low) / OVEREST (model too high) / near_target
+   - Bias consistency: how consistent is the direction across all parameter sets?
+
+3. **Edge parameter identification**: Flag parameters at sampling bounds
+   in top cases. These suggest the model "wants" values outside the tested range.
+
+4. **Error Patterns**: Which targets fail most often? Are failures correlated?
+5. **Success Patterns**: What do the top 10 cases have in common?
+6. **PFT Trade-offs**: Do improvements in one PFT come at the cost of another?
+7. **Priority Targets**: Which targets should diagnosis focus on?
+8. **Potential Mechanisms**: What FATES mechanisms might explain the patterns?
 
 ## Response Format
 ```json
 {{
+    "pft_performance": {{
+        "PFT_ID": {{
+            "name": "PFT name",
+            "cases_within_uncertainty": 123,
+            "median_error": -0.45,
+            "quality": "POOR|MODERATE|GOOD|CRITICAL"
+        }}
+    }},
+    "target_bias": {{
+        "target_name": {{
+            "bias": -0.46,
+            "type": "UNDEREST|OVEREST|near_target",
+            "consistency": 0.92
+        }}
+    }},
+    "edge_parameters": [
+        {{
+            "parameter": "param_name",
+            "pft": 10,
+            "at_bound": "upper|lower",
+            "implication": "Model wants higher/lower values"
+        }}
+    ],
     "error_patterns": [
         {{
             "target": "target_name",
@@ -962,12 +1143,7 @@ Respond ONLY with the JSON object."""
         response = self.query(prompt)
 
         try:
-            json_str = response.strip()
-            if json_str.startswith("```"):
-                json_str = json_str.split("```")[1]
-                if json_str.startswith("json"):
-                    json_str = json_str[4:]
-            result = json.loads(json_str)
+            result = self._extract_json(response)
 
             # Auto-record knowledge entries to memory if available
             if self.memory and result.get("knowledge_entries"):
@@ -1154,24 +1330,30 @@ Respond ONLY with the JSON object."""
 
 {f"## Parameter Bounds (from SALib problem){chr(10)}{json.dumps(problem, indent=2)}" if problem else ""}
 
-## Task
-Analyze the Morris sensitivity results to extract actionable insights:
+## Sensitivity Analysis Process (follow these steps)
 
 1. **Key Parameters**: Which parameters have the strongest influence? What mechanisms do they control?
+   For each top parameter, note the FATES mechanism (PID_Controller, ECA_Competition, etc.).
 
 2. **Parameter Interactions**: High σ/μ* ratio indicates non-linear effects or interactions.
    - Which parameters interact?
    - What does this mean for calibration strategy?
+   - Are interactions synergistic (combined effect > sum) or antagonistic?
 
-3. **Cross-PFT Patterns**:
-   - Parameters important for ALL PFTs → Generic importance, adjust carefully
-   - Parameters important for ONE PFT → PFT-specific tuning possible
+3. **Cross-PFT Comparison**: Create a comparison table showing:
+   - Which parameters are in the top 10 for ALL PFTs (generic importance)
+   - Which parameters are in the top 10 for only ONE PFT (PFT-specific)
+   - Are the same mechanisms dominant across PFTs or do different PFTs have different bottlenecks?
 
 4. **Edge Effects**: Parameters with high μ* near sampling bounds may need:
    - Expanded ranges in next iteration
    - Caution about extrapolation
 
-5. **Knowledge Base Entries**: What should be recorded for future reference?
+5. **Calibration Strategy Implications**:
+   - Which parameters should be tuned PFT-by-PFT vs globally?
+   - What order should parameters be tuned in (based on interactions)?
+
+6. **Knowledge Base Entries**: What should be recorded for future reference?
    - Generic FATES mechanisms (for all use cases)
    - Site-specific patterns (for this use case only)
 
@@ -1241,12 +1423,7 @@ Respond ONLY with the JSON object."""
         response = self.query(prompt)
 
         try:
-            json_str = response.strip()
-            if json_str.startswith("```"):
-                json_str = json_str.split("```")[1]
-                if json_str.startswith("json"):
-                    json_str = json_str[4:]
-            result = json.loads(json_str)
+            result = self._extract_json(response)
 
             # Auto-record knowledge entries to memory if available
             if self.memory and result.get("knowledge_entries"):

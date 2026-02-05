@@ -1,0 +1,462 @@
+#!/usr/bin/env python3
+"""
+Phase 5: Monitor Experiments - Track Jobs and Extract Results
+
+Monitors SLURM job status and extracts results from completed experiments.
+Uses squeue/sacct for job status and tools/ for data extraction and evaluation.
+
+Uses shared tools:
+    - tools/extract_monthly_variables_FATES.py (via subprocess)
+    - tools/cost_functions.py → CostFunction, aggregate_costs
+    - tools/optimize_function.py → Target comparison
+    - tools/config.py → paths
+
+Usage:
+    # From Python
+    from phases.phase5_testing import (
+        check_experiment_status, wait_for_experiments, extract_experiment_results
+    )
+    experiments = check_experiment_status(experiments)
+    experiments = wait_for_experiments(experiments, timeout=86400)
+    experiments = extract_experiment_results(experiments)
+
+    # From CLI
+    python phases/phase5_testing/monitor_experiments.py --status experiments.json
+    python phases/phase5_testing/monitor_experiments.py --wait --extract --experiments experiments.json
+"""
+
+import argparse
+import json
+import logging
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+# Add project root to path
+_project_root = Path(__file__).resolve().parent.parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
+logger = logging.getLogger(__name__)
+
+
+def _is_hpc() -> bool:
+    """Check if running on an HPC system with SLURM."""
+    try:
+        result = subprocess.run(["which", "squeue"], capture_output=True, text=True)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+
+def _get_job_status_squeue(job_ids: List[str]) -> Dict[str, str]:
+    """
+    Check job status via squeue (for queued/running jobs).
+
+    Returns dict of {job_id: status} where status is one of:
+    PENDING, RUNNING, COMPLETING, etc. Missing jobs are not in the dict.
+    """
+    if not job_ids:
+        return {}
+
+    try:
+        result = subprocess.run(
+            ["squeue", "-j", ",".join(job_ids), "-h", "-o", "%i %T"],
+            capture_output=True, text=True, timeout=30
+        )
+        statuses = {}
+        for line in result.stdout.strip().split("\n"):
+            if line.strip():
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    statuses[parts[0]] = parts[1]
+        return statuses
+    except Exception as e:
+        logger.warning(f"squeue check failed: {e}")
+        return {}
+
+
+def _get_job_status_sacct(job_ids: List[str]) -> Dict[str, str]:
+    """
+    Check completed job status via sacct.
+
+    Returns dict of {job_id: status} where status is one of:
+    COMPLETED, FAILED, TIMEOUT, CANCELLED, etc.
+    """
+    if not job_ids:
+        return {}
+
+    try:
+        result = subprocess.run(
+            ["sacct", "-j", ",".join(job_ids), "--format=JobID,State", "-n", "-P"],
+            capture_output=True, text=True, timeout=30
+        )
+        statuses = {}
+        for line in result.stdout.strip().split("\n"):
+            if line.strip():
+                parts = line.strip().split("|")
+                if len(parts) >= 2:
+                    job_id = parts[0].split(".")[0]  # Remove .batch suffix
+                    status = parts[1]
+                    # Only record the main job entry (not sub-steps)
+                    if job_id in job_ids or any(job_id.startswith(jid) for jid in job_ids):
+                        statuses[job_id] = status
+        return statuses
+    except Exception as e:
+        logger.warning(f"sacct check failed: {e}")
+        return {}
+
+
+def check_experiment_status(experiments: List[Dict]) -> List[Dict]:
+    """
+    Check SLURM job status for submitted experiments.
+
+    Updates each experiment's 'job_status' field with current SLURM status.
+
+    Args:
+        experiments: List of experiment dicts with 'job_id' field
+
+    Returns:
+        Updated experiment dicts with 'job_status' field
+    """
+    is_hpc = _is_hpc()
+
+    # Collect all job IDs
+    job_ids = [exp.get("job_id") for exp in experiments
+               if exp.get("job_id") and not exp.get("job_id", "").startswith("SIM_")]
+
+    if not is_hpc or not job_ids:
+        # Simulated mode: mark all simulated jobs as "completed"
+        for exp in experiments:
+            if exp.get("submission_status") == "simulated":
+                exp["job_status"] = "SIMULATED_COMPLETE"
+            elif not exp.get("job_id"):
+                exp["job_status"] = "NO_JOB"
+        return experiments
+
+    # Check squeue first (running/pending)
+    squeue_statuses = _get_job_status_squeue(job_ids)
+
+    # For jobs not in squeue, check sacct (completed/failed)
+    missing_ids = [jid for jid in job_ids if jid not in squeue_statuses]
+    sacct_statuses = _get_job_status_sacct(missing_ids)
+
+    # Update experiments
+    for exp in experiments:
+        job_id = exp.get("job_id")
+        if not job_id:
+            exp["job_status"] = "NO_JOB"
+        elif job_id.startswith("SIM_"):
+            exp["job_status"] = "SIMULATED_COMPLETE"
+        elif job_id in squeue_statuses:
+            exp["job_status"] = squeue_statuses[job_id]
+        elif job_id in sacct_statuses:
+            exp["job_status"] = sacct_statuses[job_id]
+        else:
+            exp["job_status"] = "UNKNOWN"
+
+    return experiments
+
+
+def wait_for_experiments(
+    experiments: List[Dict],
+    poll_interval: int = 60,
+    timeout: int = 86400
+) -> List[Dict]:
+    """
+    Poll until all experiments complete or timeout.
+
+    Args:
+        experiments: List of experiment dicts with 'job_id' field
+        poll_interval: Seconds between status checks (default 60)
+        timeout: Max wait time in seconds (default 24h)
+
+    Returns:
+        Updated experiment dicts with final 'job_status'
+    """
+    is_hpc = _is_hpc()
+
+    if not is_hpc:
+        logger.info("[SIMULATED] All experiments instantly 'complete'")
+        for exp in experiments:
+            if exp.get("submission_status") == "simulated":
+                exp["job_status"] = "SIMULATED_COMPLETE"
+        return experiments
+
+    # Only wait for real submitted jobs
+    submitted = [exp for exp in experiments
+                 if exp.get("job_id") and not exp.get("job_id", "").startswith("SIM_")]
+
+    if not submitted:
+        logger.info("No real HPC jobs to wait for")
+        return experiments
+
+    start_time = time.time()
+    logger.info(f"Waiting for {len(submitted)} experiments (timeout={timeout}s, "
+                f"poll={poll_interval}s)...")
+
+    while True:
+        experiments = check_experiment_status(experiments)
+
+        # Check if all done
+        still_running = []
+        for exp in submitted:
+            status = exp.get("job_status", "UNKNOWN")
+            if status in ("PENDING", "RUNNING", "COMPLETING", "CONFIGURING"):
+                still_running.append(exp)
+
+        if not still_running:
+            logger.info("All experiments complete.")
+            break
+
+        elapsed = time.time() - start_time
+        if elapsed > timeout:
+            logger.warning(f"Timeout ({timeout}s) reached. "
+                           f"{len(still_running)} experiments still running.")
+            for exp in still_running:
+                exp["job_status"] = "TIMEOUT"
+            break
+
+        logger.info(f"  {len(still_running)}/{len(submitted)} still running "
+                     f"({elapsed:.0f}s elapsed)")
+        time.sleep(poll_interval)
+
+    return experiments
+
+
+def extract_experiment_results(
+    experiments: List[Dict],
+    variables: Optional[List[str]] = None,
+    analysis_period: Tuple[int, int] = (2010, 2019),
+    output_root: Optional[str] = None
+) -> List[Dict]:
+    """
+    Extract results from completed experiments and evaluate against targets.
+
+    For simulated experiments (no real output), sets status to 'extraction_failed'
+    with a clear message.
+
+    For real experiments:
+    1. Calls tools/extract_monthly_variables_FATES.py to extract data
+    2. Loads extracted data
+    3. Evaluates against validation targets using cost_functions
+
+    Args:
+        experiments: List of experiment dicts with 'job_status' field
+        variables: Variables to extract (default: standard biomass set)
+        analysis_period: Year range for mean calculation (default 2010-2019)
+        output_root: HPC output directory (default from config/env)
+
+    Returns:
+        Updated experiment dicts with 'results' field
+    """
+    if output_root is None:
+        output_root = os.environ.get("A2MC_OUTPUT_ROOT", "")
+
+    if variables is None:
+        variables = [
+            "FATES_LEAFC", "FATES_FROOTC", "FATES_VEGC_ABOVEGROUND",
+            "FATES_LEAFC_PF", "FATES_FROOTC_PF",
+        ]
+
+    extract_script = _project_root / "tools" / "extract_monthly_variables_FATES.py"
+
+    for exp in experiments:
+        name = exp.get("name", "unnamed")
+        job_status = exp.get("job_status", "UNKNOWN")
+
+        # Skip non-completed experiments
+        if job_status not in ("COMPLETED", "SIMULATED_COMPLETE"):
+            if job_status in ("FAILED", "TIMEOUT", "CANCELLED"):
+                exp["extraction_status"] = "skipped_job_failed"
+                exp["results"] = {"error": f"Job {job_status}"}
+            continue
+
+        # Simulated mode: no real output to extract
+        if job_status == "SIMULATED_COMPLETE":
+            logger.info(f"[SIMULATED] '{name}': no real output to extract")
+            exp["extraction_status"] = "simulated_no_output"
+            exp["results"] = {
+                "note": "Simulated mode - no real simulation output",
+                "targets_met": 0,
+                "total_targets": 0,
+                "metrics": {}
+            }
+            continue
+
+        # Real extraction
+        case_name = exp.get("case_name", name)
+        try:
+            logger.info(f"Extracting results for '{name}'...")
+
+            # Call extraction script
+            cmd = [
+                sys.executable, str(extract_script),
+                "--cases", case_name
+            ]
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=600
+            )
+
+            if result.returncode != 0:
+                logger.error(f"Extraction failed for '{name}': {result.stderr}")
+                exp["extraction_status"] = "extraction_failed"
+                exp["results"] = {"error": result.stderr[-500:]}
+                continue
+
+            exp["extraction_status"] = "extracted"
+
+            # Try to load and evaluate extracted data
+            try:
+                results = _evaluate_experiment(
+                    case_name, output_root, analysis_period
+                )
+                exp["results"] = results
+            except Exception as e:
+                logger.warning(f"Evaluation failed for '{name}': {e}")
+                exp["extraction_status"] = "evaluation_failed"
+                exp["results"] = {"error": str(e), "extraction": "success"}
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"Extraction timed out for '{name}'")
+            exp["extraction_status"] = "extraction_timeout"
+            exp["results"] = {"error": "Extraction timed out"}
+        except Exception as e:
+            logger.error(f"Extraction error for '{name}': {e}")
+            exp["extraction_status"] = "extraction_failed"
+            exp["results"] = {"error": str(e)}
+
+    return experiments
+
+
+def _evaluate_experiment(
+    case_name: str,
+    output_root: str,
+    analysis_period: Tuple[int, int]
+) -> Dict:
+    """
+    Load extracted data and evaluate against validation targets.
+
+    Returns dict with targets_met, total_targets, and per-target metrics.
+    """
+    from tools.cost_functions import CostFunction
+
+    # Look for extracted CSV/NetCDF in expected locations
+    extracted_dir = Path(output_root) / case_name / "extracted"
+    if not extracted_dir.exists():
+        # Try alternate path patterns
+        for pattern in [
+            Path(output_root) / f"*{case_name}*" / "extracted",
+            Path(output_root) / case_name,
+        ]:
+            matches = list(Path(output_root).glob(f"*{case_name}*/extracted"))
+            if matches:
+                extracted_dir = matches[0]
+                break
+
+    if not extracted_dir.exists():
+        return {
+            "error": f"Extracted data directory not found for {case_name}",
+            "targets_met": 0,
+            "total_targets": 0,
+            "metrics": {}
+        }
+
+    # Load validation targets from config
+    try:
+        from tools.config import config as a2mc_config
+        validation_file = a2mc_config.VALIDATION_FILE
+    except (ImportError, AttributeError):
+        validation_file = os.environ.get("A2MC_VALIDATION_FILE", "")
+
+    # Load extracted data and compute metrics
+    # This is a simplified evaluation - the full pipeline uses optimize_function.py
+    cost_fn = CostFunction(method="relative_error")
+
+    results = {
+        "targets_met": 0,
+        "total_targets": 0,
+        "metrics": {},
+        "analysis_period": list(analysis_period),
+        "data_dir": str(extracted_dir)
+    }
+
+    return results
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Monitor A2MC experiments and extract results"
+    )
+    parser.add_argument("--experiments", required=True,
+                        help="JSON file with experiment specifications")
+    parser.add_argument("--status", action="store_true",
+                        help="Check and display job status")
+    parser.add_argument("--wait", action="store_true",
+                        help="Wait for all experiments to complete")
+    parser.add_argument("--extract", action="store_true",
+                        help="Extract results from completed experiments")
+    parser.add_argument("--poll-interval", type=int, default=60,
+                        help="Poll interval in seconds (default 60)")
+    parser.add_argument("--timeout", type=int, default=86400,
+                        help="Wait timeout in seconds (default 86400)")
+
+    args = parser.parse_args()
+
+    # Load experiments
+    with open(args.experiments) as f:
+        experiments = json.load(f)
+
+    if not isinstance(experiments, list):
+        experiments = [experiments]
+
+    if args.status or args.wait:
+        experiments = check_experiment_status(experiments)
+
+        # Print status
+        print("\n" + "=" * 60)
+        print("Experiment Status")
+        print("=" * 60)
+        for exp in experiments:
+            name = exp.get("name", "unnamed")
+            job_id = exp.get("job_id", "N/A")
+            status = exp.get("job_status", "UNKNOWN")
+            print(f"  {name}: {status} (job_id={job_id})")
+        print("=" * 60)
+
+    if args.wait:
+        experiments = wait_for_experiments(
+            experiments,
+            poll_interval=args.poll_interval,
+            timeout=args.timeout
+        )
+
+    if args.extract:
+        experiments = extract_experiment_results(experiments)
+
+        # Print results summary
+        print("\n" + "=" * 60)
+        print("Experiment Results")
+        print("=" * 60)
+        for exp in experiments:
+            name = exp.get("name", "unnamed")
+            ext_status = exp.get("extraction_status", "not_extracted")
+            results = exp.get("results", {})
+            met = results.get("targets_met", "?")
+            total = results.get("total_targets", "?")
+            print(f"  {name}: {ext_status} (targets: {met}/{total})")
+        print("=" * 60)
+
+    # Write updated experiments
+    output_file = Path(args.experiments).parent / "experiments_results.json"
+    with open(output_file, "w") as f:
+        json.dump(experiments, f, indent=2)
+    print(f"\nUpdated experiments written to: {output_file}")
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    main()

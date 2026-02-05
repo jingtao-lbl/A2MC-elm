@@ -396,7 +396,7 @@ class CalibrationOrchestrator:
         """Lazy-load HPC executor."""
         if self._hpc is None:
             from integration import HPCExecutor
-            self._hpc = HPCExecutor(self.config)
+            self._hpc = HPCExecutor()  # HPCConfig auto-loads from env
         return self._hpc
 
     @property
@@ -404,7 +404,7 @@ class CalibrationOrchestrator:
         """Lazy-load data pipeline."""
         if self._data is None:
             from integration import DataPipeline
-            self._data = DataPipeline(self.config)
+            self._data = DataPipeline()  # HPCConfig auto-loads from env
         return self._data
 
     @property
@@ -412,7 +412,7 @@ class CalibrationOrchestrator:
         """Lazy-load parameter manager."""
         if self._params is None:
             from integration import ParameterManager
-            self._params = ParameterManager(self.config)
+            self._params = ParameterManager()  # HPCConfig auto-loads from env
         return self._params
 
     def bootstrap(self) -> Dict[str, Any]:
@@ -1850,7 +1850,7 @@ Diagnosis Summary:
                 # AI reasoning is in 'mechanism' field (Claude) or 'reasoning' field (fallback)
                 ai_reasoning = hypothesis.get('mechanism', '') or hypothesis.get('reasoning', '')
                 log_path = self._phase_logger.log_hypothesis(
-                    title=f"Iteration_{self.state.iteration}_{hypothesis.get('name', 'Hypothesis')}",
+                    title=hypothesis.get('name', f"Iteration_{self.state.iteration}_Hypothesis"),
                     hypothesis_name=hypothesis.get('name', 'Unknown'),
                     mechanism=hypothesis.get('mechanism', ''),
                     parameters_to_modify=params_to_modify,
@@ -1962,76 +1962,243 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
         Phase 5: Execute experiments on HPC.
 
         This phase:
-        1. Creates modified parameter files
-        2. Submits simulations to HPC
-        3. Monitors job completion
-        4. Extracts and validates results
+        1. Creates modified parameter files (tools/modify_fates_parameters.py)
+        2. Submits simulations to HPC (tools/submit_experiment.sh)
+        3. Waits for job completion (squeue/sacct polling)
+        4. Extracts and evaluates results (tools/extract_*, tools/cost_functions.py)
+
+        Uses phase scripts from phases/phase5_testing/ which directly
+        call shared tools in tools/.
 
         Experiment Execution:
         - Base case: Best case from screening (e.g., #2678)
         - Modifications: As specified in hypothesis
-        - Duration: 20-year spinup + 20-year analysis
+        - Default phase: TRANS only (uses existing spinup restart files)
         """
-        logger.info("Executing experiments on HPC...")
+        from phases.phase5_testing import (
+            create_experiment_param_files,
+            submit_experiments,
+            wait_for_experiments,
+            extract_experiment_results
+        )
 
+        logger.info("=" * 60)
+        logger.info("PHASE 5: TESTING - Execute Experiments on HPC")
+        logger.info("=" * 60)
+
+        # --- 1. Resume-skip check ---
+        current_iter = self.state.iteration
+        existing_exps = [
+            e for e in self.state.experiments
+            if e.get("iteration") == current_iter
+            and e.get("status") not in (None, "placeholder")
+        ]
+        if existing_exps:
+            logger.info(f"Found {len(existing_exps)} experiments from iteration "
+                        f"{current_iter} with non-placeholder status. Skipping to transition.")
+            self.state.record_phase_transition(
+                Phase.TESTING.value, Phase.REFINEMENT.value,
+                f"Resumed: {len(existing_exps)} experiments already exist for iteration {current_iter}"
+            )
+            self.state.current_phase = Phase.REFINEMENT.value
+            return
+
+        # --- 2. Design experiments from hypothesis ---
         hypothesis = self.state.hypotheses[-1] if self.state.hypotheses else {}
+        if not hypothesis:
+            logger.warning("No hypothesis available. Cannot design experiments.")
+            self.state.record_phase_transition(
+                Phase.TESTING.value, Phase.REFINEMENT.value,
+                "No hypothesis to test"
+            )
+            self.state.current_phase = Phase.REFINEMENT.value
+            return
 
-        # Create experiment specifications
         experiments = self._design_experiment_sequence(hypothesis)
+        if not experiments:
+            logger.warning("No experiments designed from hypothesis.")
+            self.state.record_phase_transition(
+                Phase.TESTING.value, Phase.REFINEMENT.value,
+                "No experiments could be designed"
+            )
+            self.state.current_phase = Phase.REFINEMENT.value
+            return
 
-        for i, exp in enumerate(experiments):
-            logger.info(f"\nExperiment {i+1}/{len(experiments)}: {exp['name']}")
-            logger.info(f"  Base case: {exp['base_case']}")
-            logger.info(f"  Modifications: {len(exp['modifications'])}")
+        # Tag each experiment with iteration
+        for exp in experiments:
+            exp["iteration"] = current_iter
 
-            # TODO: Implement HPC execution
-            # 1. Create modified parameter file
-            # param_file = self.params.create_modified_file(exp)
+        logger.info(f"Designed {len(experiments)} experiments for iteration {current_iter}")
 
-            # 2. Submit to HPC
-            # job_id = self.hpc.submit_experiment(param_file, exp)
+        # --- 3. Create modified parameter files ---
+        base_param_file = self.config.base_param_file
+        if not base_param_file:
+            logger.error("No base parameter file configured (A2MC_BASE_PARAM_FILE)")
+            for exp in experiments:
+                exp["status"] = "no_base_param_file"
+                exp["iteration"] = current_iter
+                self.state.experiments.append(exp)
+            self.state.current_phase = Phase.REFINEMENT.value
+            return
 
-            # 3. Wait for completion
-            # self.hpc.wait_for_job(job_id)
+        output_dir = os.path.join(self.config.output_dir, "logs",
+                                  "phase5_testing", f"iter_{current_iter}")
+        try:
+            experiments = create_experiment_param_files(
+                experiments=experiments,
+                base_param_file=base_param_file,
+                output_dir=output_dir,
+                verify=True
+            )
+            created = sum(1 for e in experiments if e.get("param_status") == "created")
+            logger.info(f"Created {created}/{len(experiments)} parameter files")
+        except Exception as e:
+            logger.error(f"Parameter file creation failed: {e}")
+            for exp in experiments:
+                exp["status"] = "param_creation_failed"
+                exp["error"] = str(e)
+                self.state.experiments.append(exp)
+            self.state.current_phase = Phase.REFINEMENT.value
+            return
 
-            # 4. Extract results
-            # results = self.data.extract_experiment_results(exp)
+        # --- 4. Submit experiments to HPC ---
+        try:
+            experiments = submit_experiments(
+                experiments=experiments,
+                output_root=self.config.hpc_output_root,
+                phases="TRANS",
+                submit=True
+            )
+            submitted = sum(1 for e in experiments
+                           if e.get("submission_status") in ("submitted", "simulated"))
+            logger.info(f"Submitted {submitted}/{len(experiments)} experiments")
+        except Exception as e:
+            logger.error(f"Experiment submission failed: {e}")
+            for exp in experiments:
+                if not exp.get("submission_status"):
+                    exp["submission_status"] = "submission_failed"
+                    exp["status"] = "submission_failed"
+                    exp["error"] = str(e)
 
-            # Placeholder results
-            exp["status"] = "placeholder"
-            exp["results"] = {
-                "froot_pft10": 150.0,  # Placeholder
-                "targets_met": 4
-            }
+        # --- 5. Wait for all jobs to complete ---
+        try:
+            experiments = wait_for_experiments(
+                experiments=experiments,
+                poll_interval=self.config.poll_interval,
+                timeout=86400  # 24 hours
+            )
+        except Exception as e:
+            logger.error(f"Job monitoring failed: {e}")
+
+        # --- 6. Extract and evaluate results ---
+        try:
+            experiments = extract_experiment_results(
+                experiments=experiments,
+                output_root=self.config.hpc_output_root
+            )
+        except Exception as e:
+            logger.error(f"Result extraction failed: {e}")
+            for exp in experiments:
+                if not exp.get("extraction_status"):
+                    exp["extraction_status"] = "extraction_failed"
+                    exp["error"] = str(e)
+
+        # --- 7. Set final status and record to state ---
+        for exp in experiments:
+            # Determine overall status
+            if exp.get("extraction_status") in ("extracted", "simulated_no_output"):
+                exp["status"] = "completed"
+            elif exp.get("submission_status") == "simulated":
+                exp["status"] = "simulated"
+            elif "failed" in str(exp.get("submission_status", "")):
+                exp["status"] = "submission_failed"
+            elif "failed" in str(exp.get("extraction_status", "")):
+                exp["status"] = "extraction_failed"
+            else:
+                exp["status"] = exp.get("job_status", "unknown")
 
             self.state.experiments.append(exp)
 
-            # Record experiment to adaptive memory
-            if self._memory and self.config.auto_learn:
+        # --- 8. Record to adaptive memory ---
+        if self._memory and self.config.auto_learn:
+            for exp in experiments:
                 try:
+                    outcome = "completed" if exp.get("status") == "completed" else exp.get("status", "unknown")
                     self._memory.record_experiment(
-                        experiment_id=exp.get("name", f"exp_{i}"),
+                        experiment_id=exp.get("name", "unnamed"),
                         base_case=exp.get("base_case", "unknown"),
                         modifications=exp.get("modifications", []),
                         results=exp.get("results", {}),
-                        outcome="placeholder"  # Will be updated in refinement
+                        outcome=outcome
                     )
-                    logger.debug(f"Recorded experiment {exp['name']} to memory")
+                    logger.debug(f"Recorded experiment '{exp.get('name')}' to memory")
                 except Exception as e:
                     logger.warning(f"Could not record experiment to memory: {e}")
 
-        # Transition to REFINEMENT
+        # --- 9. Phase logger ---
+        try:
+            exp_names = []
+            results_summary = {}
+            for exp in experiments:
+                name = exp.get("name", "unnamed")
+                exp_names.append(name)
+                met = exp.get("results", {}).get("targets_met", "?")
+                total = exp.get("results", {}).get("total_targets", "?")
+                results_summary[name] = {
+                    "status": exp.get("status", "unknown"),
+                    "targets_met": met,
+                    "total_targets": total,
+                }
+            self._phase_logger.log_testing(
+                title=f"Iteration_{current_iter}_Testing",
+                experiments_run=exp_names,
+                results_summary=results_summary,
+                ai_reasoning=f"Hypothesis: {hypothesis.get('name', 'unknown')}\n"
+                             f"Mechanism: {hypothesis.get('mechanism', 'unknown')}"
+            )
+        except Exception as e:
+            logger.warning(f"Phase logging failed: {e}")
+
+        # --- 10. Human review checkpoint ---
+        if self.config.human_review:
+            completed = sum(1 for e in experiments if e.get("status") == "completed")
+            failed = sum(1 for e in experiments if "failed" in str(e.get("status", "")))
+            simulated = sum(1 for e in experiments if e.get("status") == "simulated")
+
+            summary = f"""
+  Iteration: {current_iter}
+  Hypothesis: {hypothesis.get('name', 'unknown')}
+  Experiments: {len(experiments)} total
+    Completed: {completed}
+    Simulated: {simulated}
+    Failed: {failed}
+
+  Results Summary:"""
+            for exp in experiments:
+                met = exp.get("results", {}).get("targets_met", "?")
+                total = exp.get("results", {}).get("total_targets", "?")
+                summary += f"\n    {exp.get('name', '?')}: {exp.get('status', '?')} (targets: {met}/{total})"
+
+            self._human_review_checkpoint(
+                phase="TESTING",
+                summary=summary,
+                next_phase="REFINEMENT"
+            )
+
+        # --- 11. Phase transition → REFINEMENT ---
+        completed_count = sum(1 for e in experiments if e.get("status") in ("completed", "simulated"))
         self.state.record_phase_transition(
             Phase.TESTING.value, Phase.REFINEMENT.value,
-            f"Executed {len(experiments)} experiments"
+            f"Executed {len(experiments)} experiments ({completed_count} completed)"
         )
         self.state.current_phase = Phase.REFINEMENT.value
-        logger.info("Testing complete. Advancing to REFINEMENT.")
+        logger.info(f"Testing complete. {completed_count}/{len(experiments)} experiments done. "
+                     f"Advancing to REFINEMENT.")
 
     def _design_experiment_sequence(self, hypothesis: Dict) -> List[Dict]:
         """Design experiment sequence from hypothesis."""
-        design_type = hypothesis.get("experimental_design", "cumulative")
-        params = hypothesis.get("parameters_to_test", [])
+        design_type = hypothesis.get("design_type", hypothesis.get("experimental_design", "cumulative"))
+        params = hypothesis.get("parameters", hypothesis.get("parameters_to_test", []))
         base_case = self.state.screening_data.get("best_case", {}).get("case_id", "2678")
 
         experiments = []
@@ -2040,16 +2207,22 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             # Cumulative: Exp1 = A, Exp2 = A+B, Exp3 = A+B+C
             cumulative_mods = []
             for i, param in enumerate(params):
-                cumulative_mods.append({
+                mod = {
                     "parameter": param["name"],
-                    "old_value": param["current"],
-                    "new_value": param["proposed"]
-                })
+                    "old_value": param.get("current"),
+                    "new_value": param.get("proposed"),
+                }
+                if "pft" in param:
+                    mod["pft"] = param["pft"]
+                if "organ" in param:
+                    mod["organ"] = param["organ"]
+                cumulative_mods.append(mod)
                 experiments.append({
                     "name": f"Exp{i+1}_{hypothesis.get('name', 'test')}",
                     "base_case": base_case,
                     "modifications": cumulative_mods.copy(),
-                    "expected_outcome": hypothesis.get("expected_outcome", "")
+                    "expected_outcome": hypothesis.get("expected_outcome",
+                                                       hypothesis.get("expected_outcomes", ""))
                 })
 
         elif design_type == "factorial":
@@ -2057,20 +2230,25 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             import itertools
             for r in range(1, len(params) + 1):
                 for combo in itertools.combinations(range(len(params)), r):
-                    mods = [
-                        {
+                    mods = []
+                    for i in combo:
+                        mod = {
                             "parameter": params[i]["name"],
-                            "old_value": params[i]["current"],
-                            "new_value": params[i]["proposed"]
+                            "old_value": params[i].get("current"),
+                            "new_value": params[i].get("proposed"),
                         }
-                        for i in combo
-                    ]
+                        if "pft" in params[i]:
+                            mod["pft"] = params[i]["pft"]
+                        if "organ" in params[i]:
+                            mod["organ"] = params[i]["organ"]
+                        mods.append(mod)
                     name_suffix = "+".join([params[i]["name"].split("_")[-1] for i in combo])
                     experiments.append({
                         "name": f"F{len(experiments)+1}_{name_suffix}",
                         "base_case": base_case,
                         "modifications": mods,
-                        "expected_outcome": hypothesis.get("expected_outcome", "")
+                        "expected_outcome": hypothesis.get("expected_outcome",
+                                                           hypothesis.get("expected_outcomes", ""))
                     })
 
         return experiments
