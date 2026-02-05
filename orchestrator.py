@@ -1904,14 +1904,22 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
     def _generate_hypothesis_with_claude(self, diagnosis: Dict) -> Dict:
         """Use Claude API to generate hypothesis."""
         try:
+            # reasoning.generate_hypothesis() expects a Diagnosis object with attributes
+            # (e.g., .parameter_recommendations, .likely_causes, .to_json()),
+            # but state stores diagnosis as a plain dict. Reconstruct the object.
+            from reasoning import Diagnosis
+            diagnosis_obj = Diagnosis(**diagnosis)
+
             hypothesis = self.reasoning.generate_hypothesis(
-                diagnosis=diagnosis,
+                diagnosis=diagnosis_obj,
                 sensitivity_data=self.state.exploration_data,
                 previous_experiments=self.state.experiments
             )
             return asdict(hypothesis) if hasattr(hypothesis, '__dict__') else hypothesis
         except Exception as e:
             logger.error(f"Claude hypothesis generation failed: {e}")
+            import traceback
+            logger.error(f"Traceback:\n{traceback.format_exc()}")
             return self._generate_hypothesis_rule_based(diagnosis)
 
     def _generate_hypothesis_rule_based(self, diagnosis: Dict) -> Dict:
