@@ -2066,7 +2066,7 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             experiments = submit_experiments(
                 experiments=experiments,
                 output_root=self.config.hpc_output_root,
-                phases="TRANS",
+                phases="ADSP RGSP TRANS",  # Full spinup required for modified params
                 submit=True
             )
             submitted = sum(1 for e in experiments

@@ -61,7 +61,8 @@ def _extract_job_id(output: str) -> Optional[str]:
 def submit_experiments(
     experiments: List[Dict],
     output_root: Optional[str] = None,
-    phases: str = "TRANS",
+    phases: str = "ADSP RGSP TRANS",
+    reuse_build: str = "En1",
     submit: bool = True,
     dry_run: bool = False
 ) -> List[Dict]:
@@ -69,9 +70,10 @@ def submit_experiments(
     Submit experiment cases to HPC.
 
     For each experiment:
-    1. Call tools/submit_experiment.sh with --name, --param-file, --base-case
-    2. Capture job_id from submission output
-    3. Tag experiment with submission status
+    1. Call tools/submit_experiment.sh with --name, --param-file
+    2. Runs full 3-phase spinup (ADSP→RGSP→TRANS) by default
+    3. Reuses compiled build from En1 (first Morris case) to avoid rebuilding
+    4. Capture job_id from submission output
 
     When SLURM is not available (local machine), runs in simulated mode:
     logs [SIMULATED] and returns fake job IDs.
@@ -82,7 +84,8 @@ def submit_experiments(
             - 'param_file': str - Path to modified parameter file
             - 'base_case': str (optional) - Base case for restart files
         output_root: HPC output directory (default from config/env)
-        phases: HPC phases to run (default "TRANS" for quick experiments)
+        phases: HPC phases to run (default "ADSP RGSP TRANS" - full spinup)
+        reuse_build: Case name whose build to reuse (default "En1", "" to build fresh)
         submit: Actually submit (vs just build cases)
         dry_run: Preview what would be done
 
@@ -155,6 +158,9 @@ def submit_experiments(
             cmd.extend(["--output-root", output_root])
 
         cmd.extend(["--phases", phases])
+
+        if reuse_build:
+            cmd.extend(["--reuse-build", reuse_build])
 
         if submit:
             cmd.append("--submit")

@@ -20,6 +20,8 @@
 #   --submit              Submit jobs after creating cases
 #   --build-only          Only build, don't submit
 #   --skip-build          Skip building (use existing build)
+#   --reuse-build CASE    Reuse compiled build from another case (e.g., "En1")
+#                         Sets EXEROOT and BUILD_COMPLETE=TRUE (implies --skip-build)
 #   --config FILE         Path to custom config file
 #   --dry-run             Show what would be done without doing it
 #   -h, --help            Show this help message
@@ -64,6 +66,7 @@ RUN_PHASES=("ADSP" "RGSP" "TRANS")
 DO_SUBMIT=false
 BUILD_ONLY=false
 SKIP_BUILD=false
+REUSE_BUILD=""  # Case name whose compiled build to reuse (e.g., "En1")
 DRY_RUN=false
 
 print_usage() {
@@ -107,6 +110,11 @@ while [[ $# -gt 0 ]]; do
         --skip-build)
             SKIP_BUILD=true
             shift
+            ;;
+        --reuse-build)
+            REUSE_BUILD="$2"
+            SKIP_BUILD=true
+            shift 2
             ;;
         --config)
             source "$2"
@@ -310,8 +318,16 @@ EOF
     # Preview namelists
     ./preview_namelists
 
-    # Build (unless skipped)
-    if [ "$SKIP_BUILD" = false ]; then
+    # Build or reuse existing build
+    if [ -n "$REUSE_BUILD" ]; then
+        # Reuse compiled binary from another case (e.g., En1)
+        # This is the standard pattern: En1 builds, all others reuse
+        REUSE_CASE="${CASE_PREFIX}_${REUSE_BUILD}_${PHASE}"
+        REUSE_EXEROOT="${CIME_OUTPUT_ROOT}${REUSE_CASE}/bld"
+        echo "Reusing build from: ${REUSE_CASE}"
+        ./xmlchange EXEROOT="${REUSE_EXEROOT}"
+        ./xmlchange BUILD_COMPLETE=TRUE
+    elif [ "$SKIP_BUILD" = false ]; then
         echo "Building case..."
         ./case.build
     fi

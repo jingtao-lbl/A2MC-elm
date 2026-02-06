@@ -77,7 +77,8 @@ EXP_NAME=""
 PARAM_FILE=""
 BASE_CASE=""
 OUTPUT_ROOT="${A2MC_OUTPUT_ROOT}"
-RUN_PHASES="TRANS"  # Default: only TRANS for experiments
+RUN_PHASES="ADSP RGSP TRANS"  # Default: full spinup required for modified params
+REUSE_BUILD="En1"             # Default: reuse En1's build (first Morris case)
 RESTART_FILE=""
 DO_SUBMIT=false
 DO_WAIT=false
@@ -113,6 +114,14 @@ while [[ $# -gt 0 ]]; do
         --restart-file)
             RESTART_FILE="$2"
             shift 2
+            ;;
+        --reuse-build)
+            REUSE_BUILD="$2"
+            shift 2
+            ;;
+        --no-reuse-build)
+            REUSE_BUILD=""
+            shift
             ;;
         --submit)
             DO_SUBMIT=true
@@ -234,6 +243,10 @@ CREATE_CASE_CMD="$CREATE_CASE_CMD --case-num ${EXP_NAME}"
 CREATE_CASE_CMD="$CREATE_CASE_CMD --param-file ${PARAM_FILE}"
 CREATE_CASE_CMD="$CREATE_CASE_CMD --output-root ${OUTPUT_ROOT}"
 CREATE_CASE_CMD="$CREATE_CASE_CMD --phases \"${RUN_PHASES}\""
+
+if [ -n "$REUSE_BUILD" ]; then
+    CREATE_CASE_CMD="$CREATE_CASE_CMD --reuse-build ${REUSE_BUILD}"
+fi
 
 if [ "$DO_SUBMIT" = true ]; then
     CREATE_CASE_CMD="$CREATE_CASE_CMD --submit"
