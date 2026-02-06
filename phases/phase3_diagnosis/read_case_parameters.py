@@ -45,21 +45,60 @@ def load_param_names(param_names_file: str) -> List[str]:
     """
     Load parameter names from a text file.
 
+    Supports two formats:
+    1. Simple: one parameter name per line (must contain underscore like 'alpha_ptase_7')
+    2. Tabular: No<TAB>FullName<TAB>ShortName<TAB>... (extracts ShortName from column 2)
+
     Args:
-        param_names_file: Path to file with one parameter name per line
+        param_names_file: Path to file with parameter names
 
     Returns:
         List of parameter names
     """
     names = []
+    has_tabs = False
+
+    # First pass: detect if file is tabular (has tab-delimited data rows)
+    with open(param_names_file, 'r') as f:
+        for line in f:
+            if '\t' in line:
+                parts = line.split('\t')
+                if len(parts) >= 3:
+                    try:
+                        int(parts[0])
+                        has_tabs = True
+                        break
+                    except ValueError:
+                        continue
+
+    # Second pass: extract parameter names
     with open(param_names_file, 'r') as f:
         for line in f:
             line = line.strip()
-            if line and not line.startswith('#'):
-                # Handle tab-delimited or space-delimited files
+            if not line or line.startswith('#'):
+                continue
+
+            if has_tabs:
+                # Tabular format: only process tab-delimited lines with numeric first column
+                if '\t' in line:
+                    parts = line.split('\t')
+                    if len(parts) >= 3:
+                        try:
+                            int(parts[0])  # Check if first column is a number
+                            # Use column 2 (short name with PFT suffix) e.g., "alpha_ptase_7"
+                            short_name = parts[2].strip()
+                            if short_name and not short_name.startswith('Symbol'):
+                                names.append(short_name)
+                        except ValueError:
+                            continue
+            else:
+                # Simple format: one parameter name per line
                 parts = line.split()
                 if parts:
-                    names.append(parts[0])
+                    first_word = parts[0]
+                    # Must contain underscore to be a parameter name
+                    if '_' in first_word and first_word[0].isalpha():
+                        names.append(first_word)
     return names
 
 
@@ -67,25 +106,60 @@ def load_param_bounds(bounds_file: str) -> List[Tuple[float, float]]:
     """
     Load parameter bounds from a SALib problem file or bounds file.
 
+    Supports formats:
+    1. SALib format: "  1. param_name    [lower, upper]"
+    2. Simple format: "lower upper" per line
+    3. Tabular format: "No<TAB>Name<TAB>ShortName<TAB>Lower<TAB>Upper<TAB>..."
+
     Args:
-        bounds_file: Path to file with bounds (format: lower upper per line)
+        bounds_file: Path to file with bounds
 
     Returns:
         List of (lower, upper) tuples
     """
+    import re
     bounds = []
+
     with open(bounds_file, 'r') as f:
         for line in f:
             line = line.strip()
-            if line and not line.startswith('#'):
-                parts = line.split()
-                if len(parts) >= 2:
+            if not line or line.startswith('#'):
+                continue
+
+            # Try SALib format: [lower, upper] in brackets
+            bracket_match = re.search(r'\[([-\d.eE+]+),\s*([-\d.eE+]+)\]', line)
+            if bracket_match:
+                try:
+                    lower = float(bracket_match.group(1))
+                    upper = float(bracket_match.group(2))
+                    bounds.append((lower, upper))
+                    continue
+                except ValueError:
+                    pass
+
+            # Try tabular format: No<TAB>...<TAB>Lower<TAB>Upper<TAB>...
+            if '\t' in line:
+                parts = line.split('\t')
+                if len(parts) >= 5:
                     try:
-                        lower = float(parts[0])
-                        upper = float(parts[1])
+                        int(parts[0])  # Check first column is a number
+                        lower = float(parts[3])
+                        upper = float(parts[4])
                         bounds.append((lower, upper))
-                    except ValueError:
                         continue
+                    except (ValueError, IndexError):
+                        pass
+
+            # Try simple format: lower upper
+            parts = line.split()
+            if len(parts) >= 2:
+                try:
+                    lower = float(parts[0])
+                    upper = float(parts[1])
+                    bounds.append((lower, upper))
+                except ValueError:
+                    continue
+
     return bounds
 
 
