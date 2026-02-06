@@ -64,6 +64,19 @@ try:
 except ImportError:
     PhaseLogger = None
 
+# Import Phase 3 diagnosis tools
+try:
+    from phases.phase3_diagnosis import (
+        run_diagnosis_for_orchestrator,
+        DiagnosisConfig,
+        DiagnosisResult
+    )
+    HAS_DIAGNOSIS_TOOLS = True
+except ImportError:
+    HAS_DIAGNOSIS_TOOLS = False
+    DiagnosisConfig = None
+    DiagnosisResult = None
+
 
 class Phase(Enum):
     """Workflow phases following A2MC methodology."""
@@ -1654,12 +1667,27 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
             screening_data = self.state.screening_data
             exploration_data = self.state.exploration_data
 
+            # Run diagnostic scripts to get actual parameter values and edge analysis
+            diagnostic_data = None
+            if HAS_DIAGNOSIS_TOOLS:
+                try:
+                    diagnostic_data = self._run_diagnostic_scripts(screening_data)
+                    if diagnostic_data:
+                        logger.info(f"Diagnostic analysis complete:")
+                        logger.info(f"  Parameters read: {len(diagnostic_data.parameters)}")
+                        logger.info(f"  Edge parameters: {len(diagnostic_data.edge_analysis.get('parameters_at_lower_bound', [])) + len(diagnostic_data.edge_analysis.get('parameters_at_upper_bound', []))}")
+                        logger.info(f"  Redesign candidates: {len(diagnostic_data.redesign_candidates)}")
+                except Exception as e:
+                    logger.warning(f"Diagnostic scripts failed: {e}")
+                    diagnostic_data = None
+
             # Prepare data for Claude reasoning
             diagnosis_input = {
                 "screening_results": screening_data,
                 "sensitivity_rankings": exploration_data.get("sensitivity_rankings", {}),
                 "targets": asdict(self.config.targets),
-                "iteration": self.state.iteration
+                "iteration": self.state.iteration,
+                "diagnostic_data": diagnostic_data  # Pass diagnostic results to Claude
             }
 
             # Use Claude API for diagnosis (if available)
@@ -1736,10 +1764,26 @@ Diagnosis Summary:
         logger.info("Diagnosis complete. Advancing to HYPOTHESIS.")
 
     def _diagnose_with_claude(self, diagnosis_input: Dict) -> Dict:
-        """Use Claude API for diagnosis."""
+        """Use Claude API for diagnosis with diagnostic script context."""
         try:
+            # Enrich results with diagnostic data if available
+            results = diagnosis_input["screening_results"].copy()
+            diagnostic_data = diagnosis_input.get("diagnostic_data")
+
+            if diagnostic_data:
+                # Add diagnostic context to results for AI reasoning
+                results["diagnostic_context"] = {
+                    "parameters": diagnostic_data.parameters if hasattr(diagnostic_data, 'parameters') else {},
+                    "edge_summary": diagnostic_data.edge_summary if hasattr(diagnostic_data, 'edge_summary') else "",
+                    "redesign_candidates": diagnostic_data.redesign_candidates if hasattr(diagnostic_data, 'redesign_candidates') else [],
+                    "target_summary": diagnostic_data.target_summary if hasattr(diagnostic_data, 'target_summary') else "",
+                    "pft_summary": diagnostic_data.pft_summary if hasattr(diagnostic_data, 'pft_summary') else "",
+                    "combined_summary": diagnostic_data.get_ai_context() if hasattr(diagnostic_data, 'get_ai_context') else ""
+                }
+                logger.info("Added diagnostic context to Claude reasoning")
+
             diagnosis = self.reasoning.diagnose(
-                results=diagnosis_input["screening_results"],
+                results=results,
                 targets=diagnosis_input["targets"],
                 sensitivity_rankings=diagnosis_input["sensitivity_rankings"],
                 iteration=diagnosis_input["iteration"]
@@ -1773,6 +1817,91 @@ Diagnosis Summary:
             "confidence": 0.85,
             "reasoning": "Based on comprehensive Dec 2025 diagnostic analysis identifying triple bottleneck"
         }
+
+    def _run_diagnostic_scripts(self, screening_data: Dict) -> Optional['DiagnosisResult']:
+        """
+        Run Phase 3 diagnostic scripts to gather actual data.
+
+        This method calls the diagnosis scripts to:
+        1. Read actual parameter values for the best case
+        2. Check which parameters are at sampling bounds
+        3. Compare best case with other top cases
+        4. Run PFT-specific diagnostics (if NC file available)
+
+        Args:
+            screening_data: Screening results from Phase 2
+
+        Returns:
+            DiagnosisResult with parameter values, edge analysis, etc.
+            Returns None if diagnostic tools unavailable or fail.
+        """
+        if not HAS_DIAGNOSIS_TOOLS:
+            logger.warning("Diagnosis tools not available")
+            return None
+
+        try:
+            from tools.config import config as a2mc_config
+
+            # Get paths from config
+            morris_file = a2mc_config.ENSEMBLE_MATRIX_FILE
+            param_names_file = a2mc_config.PARAM_LIST_FILE
+            param_bounds_file = a2mc_config.SALIB_PROBLEM_FILE
+
+            # Validate paths exist
+            if not morris_file or not Path(morris_file).exists():
+                logger.warning(f"Morris file not found: {morris_file}")
+                return None
+            if not param_names_file or not Path(param_names_file).exists():
+                logger.warning(f"Param names file not found: {param_names_file}")
+                return None
+
+            # Get PFT IDs from config or use defaults
+            pft_ids = []
+            pft_str = os.environ.get('A2MC_PFTS', '7,9,10')
+            if pft_str:
+                pft_ids = [int(p.strip()) for p in pft_str.split(',')]
+
+            # Get targets from config
+            targets = None
+            if hasattr(self.config.targets, 'biomass'):
+                targets = asdict(self.config.targets).get('biomass', {})
+
+            # Get NC file path for best case (if available)
+            nc_file = None
+            best_case = screening_data.get('best_case', {})
+            if best_case:
+                # Try to construct NC file path
+                case_id = best_case.get('case_id', best_case.get('case_num'))
+                if case_id:
+                    extracted_dir = a2mc_config.EXTRACTED_DATA
+                    if extracted_dir and Path(extracted_dir).exists():
+                        # Look for extracted NC file
+                        pattern = f"*En{case_id}_*all_variables*.nc"
+                        nc_files = list(Path(extracted_dir).glob(pattern))
+                        if nc_files:
+                            nc_file = str(nc_files[0])
+                            logger.info(f"Found NC file for case {case_id}: {nc_file}")
+
+            # Run diagnosis
+            result = run_diagnosis_for_orchestrator(
+                screening_data=screening_data,
+                morris_file=morris_file,
+                param_names_file=param_names_file,
+                param_bounds_file=param_bounds_file if param_bounds_file and Path(param_bounds_file).exists() else None,
+                nc_file=nc_file,
+                targets=targets,
+                pft_ids=pft_ids,
+                top_cases_for_comparison=5,
+                verbose=True
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error running diagnostic scripts: {e}")
+            import traceback
+            traceback.print_exc()
+            return None
 
     # =========================================================================
     # PHASE 4: HYPOTHESIS - Experimental Design
