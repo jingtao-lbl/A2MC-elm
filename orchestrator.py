@@ -1220,13 +1220,16 @@ class CalibrationOrchestrator:
         """
         Extract comprehensive monthly variables from simulation output.
 
-        Calls tools/extract_monthly_variables_FATES.py to produce per-case
-        NetCDF files with all variables (biomass, nutrients, fluxes, etc.)
-        that Phase 3 diagnostic scripts need.
+        Calls tools/extract_monthly_variables_FATES.run_monthly_extraction() to
+        produce per-case NetCDF files with all variables (biomass, nutrients,
+        fluxes, etc.) that Phase 3 diagnostic scripts need.
+
+        Falls back to integration.DataPipeline if direct import fails.
 
         Returns:
             Dict with 'status', 'successful_cases', 'failed_cases', 'output_dir'
         """
+        # Primary: direct in-process call (efficient, skips already-extracted)
         try:
             from tools.extract_monthly_variables_FATES import run_monthly_extraction
             logger.info("Starting monthly variable extraction from simulation output...")
@@ -1238,8 +1241,17 @@ class CalibrationOrchestrator:
                 logger.warning(f"Monthly extraction failed: {result.get('error', 'unknown')}")
             return result
         except ImportError as e:
-            logger.warning(f"Could not import monthly extraction module: {e}")
-            return {'status': 'failed', 'error': str(e)}
+            logger.warning(f"Could not import monthly extraction directly: {e}")
+
+        # Fallback: use DataPipeline (subprocess-based, slower but always available)
+        try:
+            logger.info("Falling back to DataPipeline for extraction...")
+            n_sims = self.config.total_ensemble
+            case_ids = [str(i) for i in range(1, n_sims + 1)]
+            results = self.data.extract_batch(case_ids)
+            n_success = sum(1 for r in results if r.get('success'))
+            status = 'completed' if n_success >= len(case_ids) * 0.9 else 'partial'
+            return {'status': status, 'total_extracted': n_success}
         except Exception as e:
             logger.error(f"Error during monthly extraction: {e}")
             return {'status': 'failed', 'error': str(e)}
