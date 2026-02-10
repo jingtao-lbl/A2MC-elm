@@ -890,11 +890,22 @@ Examples:
     args = parser.parse_args()
 
     # Load case numbers
-    # Convert case strings to case identifiers (handle both integers and strings like "845_exp1")
+    # Convert case strings to case identifiers
+    # Supports: integers (845), ranges (57:4890 or 57-4890), strings (845_exp1)
     case_list = None
     if args.cases:
         case_list = []
         for case_str in args.cases:
+            # Check for range notation (57:4890 or 57-4890)
+            if ':' in case_str or (case_str.count('-') == 1 and not case_str.startswith('-') and '_' not in case_str):
+                sep = ':' if ':' in case_str else '-'
+                parts = case_str.split(sep)
+                try:
+                    start, end = int(parts[0]), int(parts[1])
+                    case_list.extend(range(start, end + 1))
+                    continue
+                except (ValueError, IndexError):
+                    pass
             # Try to convert to int if it's a pure number
             try:
                 case_list.append(int(case_str))
