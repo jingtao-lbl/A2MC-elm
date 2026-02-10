@@ -156,9 +156,14 @@ class SamplingDesign:
 class WorkflowState:
     """Persistent state of the A2MC calibration workflow."""
     # Core state
-    iteration: int = 1  # Start at iteration 1 (not 0)
+    iteration: int = 1  # Start at iteration 1 (not 0) - display counter (total cycles)
     current_phase: str = Phase.DESIGN.value
     converged: bool = False
+
+    # Two-level iteration tracking
+    skip_testing_count: int = 0    # Inner loop: Phase 3↔4 cycles (resets after HPC)
+    experiment_count: int = 0       # Outer loop: Full experiment cycles (3→4→5→6)
+
     started_at: str = ""
     updated_at: str = ""
 
@@ -178,6 +183,9 @@ class WorkflowState:
     # Phase 5-6: Testing and Refinement
     experiments: List = field(default_factory=list)
     best_experiment: Dict = field(default_factory=dict)
+
+    # Skip Testing: Results from testing hypotheses with existing data
+    hypothesis_tests: List = field(default_factory=list)
 
     # History tracking
     phase_history: List = field(default_factory=list)
@@ -255,6 +263,11 @@ class Config:
     max_iterations: int = 10
     poll_interval: int = 300         # seconds
     human_review: bool = True        # Pause for human review at key points
+
+    # Two-level iteration limits
+    max_skip_testing: int = 10       # Max Phase 3↔4 skip testing cycles before forcing HPC
+    max_experiments: int = 10        # Max Phase 3→4→5→6 full experiment cycles
+    hypothesis_confidence_threshold: float = 0.95  # Exit skip testing when confidence >= this
 
     # Validation targets (loaded from site config)
     targets: ValidationTargets = field(default_factory=ValidationTargets)
@@ -772,7 +785,9 @@ class CalibrationOrchestrator:
             )
             self._workflow_status.set_iteration(self.state.iteration)
 
-        while not self.state.converged and self.state.iteration <= self.config.max_iterations:
+        while (not self.state.converged and
+               self.state.iteration <= self.config.max_iterations and
+               self.state.experiment_count < self.config.max_experiments):
             phase = Phase(self.state.current_phase)
             phase_num = list(Phase).index(phase)
 
@@ -781,7 +796,9 @@ class CalibrationOrchestrator:
 
             logger.info(f"\n{'='*60}")
             logger.info(f"PHASE: {phase.value.upper()}")
-            logger.info(f"Iteration: {self.state.iteration}")
+            logger.info(f"Iteration: {self.state.iteration} "
+                        f"(Skip Testing: {self.state.skip_testing_count}, "
+                        f"Experiments: {self.state.experiment_count})")
             logger.info(f"{'='*60}\n")
 
             # Track phase start in workflow status
@@ -847,12 +864,19 @@ class CalibrationOrchestrator:
             if self._workflow_status:
                 self._workflow_status.complete_workflow()
         else:
-            logger.warning(f"Max iterations ({self.config.max_iterations}) reached without convergence")
+            # Determine which limit was hit
+            if self.state.experiment_count >= self.config.max_experiments:
+                logger.warning(f"Max experiments ({self.config.max_experiments}) reached without convergence")
+            else:
+                logger.warning(f"Max iterations ({self.config.max_iterations}) reached without convergence")
             logger.info(f"Final iteration: {self.state.iteration}")
+            logger.info(f"Skip testing cycles: {self.state.skip_testing_count}")
+            logger.info(f"Experiment cycles: {self.state.experiment_count}")
             # Mark workflow as paused (not failed, just stopped)
             if self._workflow_status:
                 self._workflow_status.pause_workflow(
-                    reason=f"Max iterations ({self.config.max_iterations}) reached at iteration {self.state.iteration}"
+                    reason=f"Limits reached at iteration {self.state.iteration} "
+                           f"(experiments: {self.state.experiment_count}/{self.config.max_experiments})"
                 )
 
         # Show final workflow status
@@ -1687,7 +1711,9 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                 "sensitivity_rankings": exploration_data.get("sensitivity_rankings", {}),
                 "targets": asdict(self.config.targets),
                 "iteration": self.state.iteration,
-                "diagnostic_data": diagnostic_data  # Pass diagnostic results to Claude
+                "diagnostic_data": diagnostic_data,  # Pass diagnostic results to Claude
+                "hypothesis_tests": self.state.hypothesis_tests,  # Results from Skip Testing path
+                "previous_hypotheses": self.state.hypotheses  # Previous hypotheses for context
             }
 
             # Use Claude API for diagnosis (if available)
@@ -1697,6 +1723,19 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
             else:
                 logger.info("Claude API not available, using rule-based diagnosis...")
                 diagnosis = self._diagnose_rule_based(diagnosis_input)
+
+            # Handle requested diagnostics (if AI requested additional analyses)
+            requested_diagnostics = diagnosis.get('requested_diagnostics', [])
+            if requested_diagnostics and HAS_DIAGNOSIS_TOOLS:
+                logger.info(f"AI requested {len(requested_diagnostics)} additional diagnostics")
+                additional_context = self._execute_requested_diagnostics(
+                    requested_diagnostics, screening_data
+                )
+                if additional_context:
+                    # Re-run diagnosis with enhanced context
+                    logger.info("Re-running diagnosis with enhanced context...")
+                    diagnosis_input['diagnostic_context'] = additional_context
+                    diagnosis = self._diagnose_with_claude(diagnosis_input)
 
             self.state.diagnoses.append(diagnosis)
 
@@ -1781,6 +1820,29 @@ Diagnosis Summary:
                     "combined_summary": diagnostic_data.get_ai_context() if hasattr(diagnostic_data, 'get_ai_context') else ""
                 }
                 logger.info("Added diagnostic context to Claude reasoning")
+
+            # Check for additional diagnostic context from requested diagnostics
+            additional_context = diagnosis_input.get("diagnostic_context")
+            if additional_context:
+                # Merge with existing diagnostic context
+                if "diagnostic_context" not in results:
+                    results["diagnostic_context"] = {}
+                results["diagnostic_context"]["requested_diagnostics_results"] = additional_context
+                if additional_context.get('_combined_summary'):
+                    results["diagnostic_context"]["additional_analysis"] = additional_context['_combined_summary']
+                logger.info("Added requested diagnostics context to Claude reasoning")
+
+            # Add hypothesis test results from Skip Testing path
+            hypothesis_tests = diagnosis_input.get("hypothesis_tests", [])
+            if hypothesis_tests:
+                results["hypothesis_test_results"] = hypothesis_tests
+                logger.info(f"Added {len(hypothesis_tests)} hypothesis test results to Claude reasoning")
+
+            # Add previous hypotheses for context
+            previous_hypotheses = diagnosis_input.get("previous_hypotheses", [])
+            if previous_hypotheses:
+                results["previous_hypotheses"] = previous_hypotheses
+                logger.info(f"Added {len(previous_hypotheses)} previous hypotheses to Claude reasoning")
 
             diagnosis = self.reasoning.diagnose(
                 results=results,
@@ -1903,6 +1965,143 @@ Diagnosis Summary:
             traceback.print_exc()
             return None
 
+    def _execute_requested_diagnostics(
+        self,
+        requested_diagnostics: List[Dict],
+        screening_data: Dict
+    ) -> Optional[Dict]:
+        """
+        Execute diagnostic analyses requested by Claude AI.
+
+        This enables a two-phase diagnosis where Claude first analyzes
+        available data, then requests specific diagnostics for deeper insight.
+
+        Args:
+            requested_diagnostics: List of diagnostic requests from Claude
+                [{"tool": "check_edge_parameters", "reason": "...", "priority": "high", "args": {...}}]
+            screening_data: Screening results from Phase 2
+
+        Returns:
+            Dict with combined diagnostic results, or None if all fail
+        """
+        if not HAS_DIAGNOSIS_TOOLS:
+            logger.warning("Diagnostic tools not available for requested analyses")
+            return None
+
+        # Import diagnostic tools
+        try:
+            from phases.phase3_diagnosis import (
+                check_parameters_at_edge,
+                compare_cases,
+                diagnose_mortality_causes,
+                analyze_nutrient_depletion,
+                detect_vegetation_collapse,
+                run_pft_diagnosis,
+                get_edge_summary_for_ai,
+                get_comparison_summary_for_ai,
+                get_mortality_summary_for_ai,
+                get_nutrient_summary_for_ai,
+                get_collapse_summary_for_ai,
+                get_diagnosis_summary_for_ai
+            )
+            from tools.config import config as a2mc_config
+        except ImportError as e:
+            logger.error(f"Could not import diagnostic tools: {e}")
+            return None
+
+        results = {}
+        summaries = []
+
+        # Sort by priority (high first)
+        priority_order = {'high': 0, 'medium': 1, 'low': 2}
+        sorted_requests = sorted(
+            requested_diagnostics,
+            key=lambda x: priority_order.get(x.get('priority', 'medium'), 1)
+        )
+
+        for request in sorted_requests:
+            tool = request.get('tool', '')
+            reason = request.get('reason', '')
+            args = request.get('args', {})
+            priority = request.get('priority', 'medium')
+
+            logger.info(f"Running requested diagnostic: {tool} (priority: {priority})")
+            logger.info(f"  Reason: {reason}")
+
+            try:
+                if tool == 'check_edge_parameters':
+                    # Get best case parameters at edge
+                    best_case = screening_data.get('best_case', {})
+                    case_id = int(best_case.get('case_id', best_case.get('case_num', 2678)))
+                    edge_result = check_parameters_at_edge(
+                        case_id=case_id,
+                        morris_file=a2mc_config.ENSEMBLE_MATRIX_FILE,
+                        param_names=None,  # Will load from config
+                        param_bounds=None,  # Will load from config
+                        threshold_pct=args.get('threshold_pct', 1.0)
+                    )
+                    results['edge_parameters'] = edge_result
+                    summaries.append(f"## Edge Parameters Analysis\n{get_edge_summary_for_ai(edge_result)}")
+
+                elif tool == 'compare_case_parameters':
+                    # Compare best case with another case
+                    best_case = screening_data.get('best_case', {})
+                    case1_id = int(best_case.get('case_id', best_case.get('case_num', 2678)))
+                    case2_id = args.get('case2_id', None)
+                    if not case2_id:
+                        # Compare with worst performing case from screening
+                        best_cases = screening_data.get('best_cases', [])
+                        if len(best_cases) > 1:
+                            case2_id = int(best_cases[-1].get('case_id', best_cases[-1].get('case_num', 1)))
+                    if case2_id:
+                        comparison = compare_cases(
+                            case1_id=case1_id,
+                            case2_id=case2_id,
+                            morris_file=a2mc_config.ENSEMBLE_MATRIX_FILE,
+                            param_names=None,
+                            param_bounds=None,
+                            top_n=args.get('top_n', 20)
+                        )
+                        results['case_comparison'] = comparison
+                        summaries.append(f"## Case Comparison\n{get_comparison_summary_for_ai(comparison)}")
+
+                elif tool == 'analyze_mortality':
+                    pft_ids = args.get('pft_ids', [7, 9, 10])
+                    # Need NC files for mortality analysis
+                    logger.info(f"  Mortality analysis requested for PFTs: {pft_ids}")
+                    # This would need access to NC files - flag for later
+                    results['mortality_requested'] = {'pft_ids': pft_ids, 'status': 'requires_nc_files'}
+
+                elif tool == 'diagnose_pft_limitations':
+                    pft_id = args.get('pft_id', 10)
+                    logger.info(f"  PFT limitation diagnosis requested for PFT#{pft_id}")
+                    # This would need NC file access
+                    results['pft_diagnosis_requested'] = {'pft_id': pft_id, 'status': 'requires_nc_files'}
+
+                elif tool == 'analyze_nutrient_pools':
+                    logger.info("  Nutrient pool analysis requested")
+                    results['nutrient_analysis_requested'] = {'status': 'requires_nc_files'}
+
+                elif tool == 'detect_collapse':
+                    logger.info("  Collapse detection requested")
+                    results['collapse_analysis_requested'] = {'status': 'requires_nc_files'}
+
+                else:
+                    logger.warning(f"  Unknown diagnostic tool: {tool}")
+                    results[f'{tool}_unknown'] = {'status': 'unknown_tool'}
+
+            except Exception as e:
+                logger.error(f"  Diagnostic {tool} failed: {e}")
+                results[f'{tool}_error'] = {'error': str(e)}
+
+        # Combine summaries for AI context
+        if summaries:
+            results['_combined_summary'] = "\n\n".join(summaries)
+            logger.info(f"Completed {len(summaries)} diagnostic analyses")
+            return results
+
+        return None
+
     # =========================================================================
     # PHASE 4: HYPOTHESIS - Experimental Design
     # =========================================================================
@@ -1996,6 +2195,59 @@ Diagnosis Summary:
             except Exception as e:
                 logger.warning(f"Could not write hypothesis log: {e}")
 
+        # =====================================================================
+        # Skip Testing Path: Test hypothesis with existing ensemble data
+        # (Inner Loop of Two-Level Iteration Structure)
+        # =====================================================================
+        if hypothesis.get('test_with_existing', False):
+            logger.info("=" * 60)
+            logger.info("SKIP TESTING: Hypothesis can be tested with existing data")
+            logger.info("=" * 60)
+
+            test_result = self._test_hypothesis_with_existing_data(hypothesis)
+
+            logger.info(f"  Test method: {test_result.get('test_method', 'unknown')}")
+            logger.info(f"  Result: {'SUPPORTED' if test_result.get('hypothesis_supported') else 'NOT SUPPORTED'}")
+            logger.info(f"  Confidence: {test_result.get('confidence', 0):.2f}")
+
+            # Record test result
+            self.state.hypothesis_tests.append(test_result)
+
+            # Increment skip testing counter (inner loop)
+            self.state.skip_testing_count += 1
+            self.state.iteration += 1  # Keep for display/logging
+
+            # Check if should exit skip testing and proceed to HPC
+            confidence = test_result.get('confidence', 0)
+            if (confidence >= self.config.hypothesis_confidence_threshold or
+                self.state.skip_testing_count >= self.config.max_skip_testing):
+
+                logger.info(f"Exiting Skip Testing after {self.state.skip_testing_count} cycles")
+                logger.info(f"  Confidence: {confidence:.2f} (threshold: {self.config.hypothesis_confidence_threshold})")
+                logger.info(f"  Skip testing cycles: {self.state.skip_testing_count}/{self.config.max_skip_testing}")
+
+                # Proceed to TESTING instead of back to DIAGNOSIS
+                self.state.current_phase = Phase.TESTING.value
+                self.state.record_phase_transition(
+                    Phase.HYPOTHESIS.value, Phase.TESTING.value,
+                    f"Skip Testing complete after {self.state.skip_testing_count} cycles, "
+                    f"confidence={confidence:.2f}, proceeding to HPC"
+                )
+                logger.info("Advancing to TESTING phase (HPC experiments).")
+                return
+
+            # Otherwise continue skip testing loop (back to DIAGNOSIS)
+            self.state.record_phase_transition(
+                Phase.HYPOTHESIS.value, Phase.DIAGNOSIS.value,
+                f"Skip Testing cycle {self.state.skip_testing_count}: "
+                f"{'supported' if test_result.get('hypothesis_supported') else 'not supported'}, "
+                f"confidence={confidence:.2f}"
+            )
+            self.state.current_phase = Phase.DIAGNOSIS.value
+            logger.info(f"Skip Testing cycle {self.state.skip_testing_count}/{self.config.max_skip_testing}")
+            logger.info(f"Returning to DIAGNOSIS (iteration {self.state.iteration}) with test results.")
+            return
+
         # Human review checkpoint - key handoff before HPC testing
         if self.config.human_review:
             raw_params = hypothesis.get('parameters', hypothesis.get('parameters_to_test', []))
@@ -2084,6 +2336,731 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             }
 
     # =========================================================================
+    # SKIP TESTING PATH: Test Hypothesis with Existing Ensemble Data
+    # =========================================================================
+    def _test_hypothesis_with_existing_data(self, hypothesis: Dict) -> Dict:
+        """
+        Test a hypothesis using existing Morris ensemble data instead of new HPC runs.
+
+        This enables the Skip Testing path (Phase 4 → Phase 3) when hypotheses
+        can be verified using already-completed simulations.
+
+        Args:
+            hypothesis: Hypothesis dict with 'existing_data_test' specification
+
+        Returns:
+            Dict with:
+                - hypothesis_supported: bool
+                - confidence: float (0-1)
+                - test_method: str
+                - evidence: Dict with supporting data
+                - insights: List of new insights discovered
+                - next_steps: Recommendations for next iteration
+        """
+        test_spec = hypothesis.get('existing_data_test', {})
+        method = test_spec.get('method', 'comparison')
+        description = test_spec.get('description', 'Unknown test')
+
+        logger.info(f"Testing hypothesis with existing data:")
+        logger.info(f"  Method: {method}")
+        logger.info(f"  Description: {description}")
+
+        # Load Morris ensemble data
+        try:
+            param_matrix, y_outputs = self._load_morris_ensemble_data()
+            logger.info(f"  Loaded {len(param_matrix)} parameter sets")
+        except Exception as e:
+            logger.error(f"Failed to load Morris data: {e}")
+            return {
+                'hypothesis_supported': False,
+                'confidence': 0.0,
+                'test_method': method,
+                'evidence': {'error': str(e)},
+                'insights': [],
+                'next_steps': ['Fix data loading before retrying']
+            }
+
+        # Dispatch to appropriate test method
+        if method == 'comparison':
+            result = self._test_by_case_comparison(
+                hypothesis, test_spec, param_matrix, y_outputs
+            )
+        elif method == 'correlation':
+            result = self._test_by_correlation(
+                hypothesis, test_spec, param_matrix, y_outputs
+            )
+        elif method == 'threshold':
+            result = self._test_by_threshold(
+                hypothesis, test_spec, param_matrix, y_outputs
+            )
+        elif method == 'diagnostic':
+            result = self._test_by_diagnostic(
+                hypothesis, test_spec, param_matrix, y_outputs
+            )
+        elif method == 'custom_script':
+            result = self._test_by_custom_script(
+                hypothesis, test_spec, param_matrix, y_outputs
+            )
+        else:
+            logger.warning(f"Unknown test method: {method}, using comparison")
+            result = self._test_by_case_comparison(
+                hypothesis, test_spec, param_matrix, y_outputs
+            )
+
+        result['test_method'] = method
+        result['hypothesis_name'] = hypothesis.get('name', 'Unknown')
+        result['iteration'] = self.state.iteration
+
+        return result
+
+    def _load_morris_ensemble_data(self) -> tuple:
+        """
+        Load Morris parameter matrix and Y outputs.
+
+        Returns:
+            (param_matrix, y_outputs) where:
+                - param_matrix: np.array of shape (n_cases, n_params)
+                - y_outputs: Dict[str, np.array] with output variable arrays
+        """
+        import numpy as np
+
+        # Get paths from config
+        config = self.config
+        use_case_dir = config.use_case_dir
+
+        # Parameter matrix file
+        param_files = list(Path(use_case_dir).glob("parameters/*Morris*.txt"))
+        if not param_files:
+            # Try SALib directory
+            param_files = list(Path(use_case_dir).parent.parent.glob("SALib_FATES/*Morris*.txt"))
+
+        if not param_files:
+            raise FileNotFoundError("No Morris parameter matrix file found")
+
+        param_file = param_files[0]
+        logger.info(f"  Loading parameters from: {param_file}")
+        param_matrix = np.loadtxt(param_file)
+
+        # Y output files (screening results)
+        y_outputs = {}
+
+        # Check for extracted Y matrices
+        y_files = list(Path(use_case_dir).glob("**/Morris*Biomass*.txt"))
+        if not y_files:
+            # Try parent program directory
+            y_files = list(Path(use_case_dir).parent.glob("Morris*Biomass*.txt"))
+
+        for y_file in y_files:
+            # Parse variable name from filename
+            name = y_file.stem
+            if 'Leaf' in name:
+                var_name = 'leaf_biomass'
+            elif 'Fineroot' in name or 'FineRoot' in name:
+                var_name = 'froot_biomass'
+            elif 'AGB' in name or 'Aboveground' in name:
+                var_name = 'agb_biomass'
+            else:
+                var_name = name
+
+            try:
+                y_outputs[var_name] = np.loadtxt(y_file)
+                logger.info(f"  Loaded {var_name}: shape {y_outputs[var_name].shape}")
+            except Exception as e:
+                logger.warning(f"  Could not load {y_file}: {e}")
+
+        # Also load screening data if available
+        if self.state.screening_data:
+            y_outputs['_screening'] = self.state.screening_data
+
+        return param_matrix, y_outputs
+
+    def _test_by_case_comparison(
+        self,
+        hypothesis: Dict,
+        test_spec: Dict,
+        param_matrix,
+        y_outputs: Dict
+    ) -> Dict:
+        """
+        Test hypothesis by comparing cases with different parameter values.
+
+        Example: Compare cases with high vs low vmax_p to see if high vmax_p
+        correlates with higher P uptake.
+
+        Args:
+            hypothesis: The hypothesis being tested
+            test_spec: Test specification with 'cases_to_compare'
+            param_matrix: Parameter values for all cases
+            y_outputs: Output variables for all cases
+
+        Returns:
+            Test result dict
+        """
+        import numpy as np
+
+        cases_spec = test_spec.get('cases_to_compare', {})
+        success_criterion = test_spec.get('success_criterion', '')
+
+        # Get parameter of interest from hypothesis
+        params = hypothesis.get('parameters', hypothesis.get('parameters_to_test', []))
+        if not params:
+            return {
+                'hypothesis_supported': False,
+                'confidence': 0.0,
+                'evidence': {'error': 'No parameters specified in hypothesis'},
+                'insights': [],
+                'next_steps': ['Specify parameters to test']
+            }
+
+        # Get parameter name and find its index
+        param_name = params[0].get('name', '')
+        param_names = self._get_morris_param_names()
+        try:
+            param_idx = param_names.index(param_name) if param_names else 0
+        except ValueError:
+            logger.warning(f"Parameter {param_name} not found in Morris list")
+            param_idx = 0
+
+        # Split cases into high/low groups based on parameter value
+        n_cases = len(param_matrix)
+        param_values = param_matrix[:, param_idx] if len(param_matrix.shape) > 1 else param_matrix
+        threshold = np.percentile(param_values, 50)
+
+        high_cases = np.where(param_values > threshold)[0]
+        low_cases = np.where(param_values <= threshold)[0]
+
+        logger.info(f"  Comparing {len(high_cases)} high vs {len(low_cases)} low cases")
+
+        # Compare outcomes
+        evidence = {}
+        supported = False
+        confidence = 0.0
+
+        for var_name, y_data in y_outputs.items():
+            if var_name.startswith('_'):
+                continue  # Skip metadata
+
+            if len(y_data.shape) == 1:
+                y_array = y_data
+            else:
+                # Assume first column is the target (or take mean across columns)
+                y_array = np.mean(y_data, axis=1) if y_data.shape[1] > 1 else y_data[:, 0]
+
+            # Calculate mean for each group (handle index bounds)
+            valid_high = high_cases[high_cases < len(y_array)]
+            valid_low = low_cases[low_cases < len(y_array)]
+
+            if len(valid_high) > 0 and len(valid_low) > 0:
+                high_mean = np.mean(y_array[valid_high])
+                low_mean = np.mean(y_array[valid_low])
+                diff_pct = ((high_mean - low_mean) / low_mean * 100) if low_mean != 0 else 0
+
+                evidence[var_name] = {
+                    'high_group_mean': float(high_mean),
+                    'low_group_mean': float(low_mean),
+                    'difference_pct': float(diff_pct)
+                }
+
+                # Check if difference is in expected direction
+                expected_direction = params[0].get('rationale', 'increase')
+                if 'increase' in expected_direction.lower() and diff_pct > 10:
+                    supported = True
+                    confidence = min(0.9, abs(diff_pct) / 100)
+                elif 'decrease' in expected_direction.lower() and diff_pct < -10:
+                    supported = True
+                    confidence = min(0.9, abs(diff_pct) / 100)
+
+        insights = []
+        if supported:
+            insights.append(f"Cases with higher {param_name} show expected outcome difference")
+        else:
+            insights.append(f"No clear relationship between {param_name} and outcomes in existing data")
+
+        return {
+            'hypothesis_supported': supported,
+            'confidence': confidence,
+            'evidence': evidence,
+            'insights': insights,
+            'next_steps': [
+                'Proceed with targeted experiments' if not supported else 'Consider alternative parameters'
+            ]
+        }
+
+    def _test_by_correlation(
+        self,
+        hypothesis: Dict,
+        test_spec: Dict,
+        param_matrix,
+        y_outputs: Dict
+    ) -> Dict:
+        """
+        Test hypothesis by computing correlation between parameter and output.
+
+        Args:
+            hypothesis: The hypothesis being tested
+            test_spec: Test specification
+            param_matrix: Parameter values for all cases
+            y_outputs: Output variables for all cases
+
+        Returns:
+            Test result dict
+        """
+        import numpy as np
+        from scipy import stats
+
+        params = hypothesis.get('parameters', hypothesis.get('parameters_to_test', []))
+        if not params:
+            return {
+                'hypothesis_supported': False,
+                'confidence': 0.0,
+                'evidence': {'error': 'No parameters specified'},
+                'insights': [],
+                'next_steps': []
+            }
+
+        param_name = params[0].get('name', '')
+        param_names = self._get_morris_param_names()
+
+        try:
+            param_idx = param_names.index(param_name) if param_names else 0
+        except ValueError:
+            param_idx = 0
+
+        param_values = param_matrix[:, param_idx] if len(param_matrix.shape) > 1 else param_matrix
+
+        evidence = {}
+        max_correlation = 0.0
+        significant_correlations = []
+
+        for var_name, y_data in y_outputs.items():
+            if var_name.startswith('_'):
+                continue
+
+            y_array = y_data[:, 0] if len(y_data.shape) > 1 else y_data
+
+            # Match array lengths
+            min_len = min(len(param_values), len(y_array))
+            if min_len < 10:
+                continue
+
+            try:
+                r, p_value = stats.pearsonr(param_values[:min_len], y_array[:min_len])
+                evidence[var_name] = {
+                    'correlation': float(r),
+                    'p_value': float(p_value),
+                    'significant': p_value < 0.05
+                }
+
+                if abs(r) > abs(max_correlation):
+                    max_correlation = r
+
+                if p_value < 0.05:
+                    significant_correlations.append((var_name, r))
+
+            except Exception as e:
+                logger.warning(f"Correlation failed for {var_name}: {e}")
+
+        supported = abs(max_correlation) > 0.3 and len(significant_correlations) > 0
+        confidence = min(0.9, abs(max_correlation))
+
+        insights = []
+        if significant_correlations:
+            for var, r in significant_correlations:
+                direction = "positive" if r > 0 else "negative"
+                insights.append(f"{param_name} shows {direction} correlation (r={r:.3f}) with {var}")
+        else:
+            insights.append(f"No significant correlation found for {param_name}")
+
+        return {
+            'hypothesis_supported': supported,
+            'confidence': confidence,
+            'evidence': evidence,
+            'insights': insights,
+            'next_steps': [
+                'Parameter shows promise, proceed with experiments' if supported
+                else 'Consider alternative mechanisms'
+            ]
+        }
+
+    def _test_by_threshold(
+        self,
+        hypothesis: Dict,
+        test_spec: Dict,
+        param_matrix,
+        y_outputs: Dict
+    ) -> Dict:
+        """
+        Test hypothesis by filtering cases that meet threshold criteria.
+
+        Example: "Cases that meet all targets have vmax_p > X"
+
+        Args:
+            hypothesis: The hypothesis being tested
+            test_spec: Test specification with threshold criteria
+            param_matrix: Parameter values for all cases
+            y_outputs: Output variables for all cases
+
+        Returns:
+            Test result dict
+        """
+        import numpy as np
+
+        threshold_spec = test_spec.get('threshold', {})
+        success_criterion = test_spec.get('success_criterion', '')
+
+        # Use screening data to identify successful cases
+        screening = y_outputs.get('_screening', self.state.screening_data)
+        if not screening:
+            return {
+                'hypothesis_supported': False,
+                'confidence': 0.0,
+                'evidence': {'error': 'No screening data available'},
+                'insights': [],
+                'next_steps': ['Run screening first']
+            }
+
+        # Get best cases
+        best_cases = screening.get('best_cases', [])
+        best_case_ids = [c.get('case_id', c.get('case_num', 0)) for c in best_cases[:20]]
+
+        # Get parameter of interest
+        params = hypothesis.get('parameters', hypothesis.get('parameters_to_test', []))
+        param_name = params[0].get('name', '') if params else ''
+        param_names = self._get_morris_param_names()
+
+        try:
+            param_idx = param_names.index(param_name) if param_names else 0
+        except ValueError:
+            param_idx = 0
+
+        # Compare parameter values in best vs worst cases
+        param_values = param_matrix[:, param_idx] if len(param_matrix.shape) > 1 else param_matrix
+
+        # Convert case IDs to indices (0-based)
+        best_indices = []
+        for cid in best_case_ids:
+            try:
+                idx = int(cid) - 1 if isinstance(cid, (int, str)) else 0
+                if 0 <= idx < len(param_values):
+                    best_indices.append(idx)
+            except (ValueError, TypeError):
+                pass
+
+        if not best_indices:
+            return {
+                'hypothesis_supported': False,
+                'confidence': 0.0,
+                'evidence': {'error': 'Could not map case IDs to indices'},
+                'insights': [],
+                'next_steps': ['Check case ID format']
+            }
+
+        # Compare best cases vs all cases
+        best_param_mean = np.mean(param_values[best_indices])
+        all_param_mean = np.mean(param_values)
+        all_param_std = np.std(param_values)
+
+        diff_zscore = (best_param_mean - all_param_mean) / all_param_std if all_param_std > 0 else 0
+
+        evidence = {
+            'best_cases_mean': float(best_param_mean),
+            'all_cases_mean': float(all_param_mean),
+            'z_score': float(diff_zscore),
+            'n_best_cases': len(best_indices)
+        }
+
+        # Hypothesis supported if best cases have systematically different parameter values
+        supported = abs(diff_zscore) > 1.0
+        confidence = min(0.9, abs(diff_zscore) / 3.0)
+
+        direction = "higher" if diff_zscore > 0 else "lower"
+        insights = [
+            f"Best-performing cases have {direction} {param_name} values (z={diff_zscore:.2f})"
+        ]
+
+        return {
+            'hypothesis_supported': supported,
+            'confidence': confidence,
+            'evidence': evidence,
+            'insights': insights,
+            'next_steps': [
+                f'Prioritize {direction} values of {param_name}' if supported
+                else 'Parameter does not distinguish good from bad cases'
+            ]
+        }
+
+    def _test_by_diagnostic(
+        self,
+        hypothesis: Dict,
+        test_spec: Dict,
+        param_matrix,
+        y_outputs: Dict
+    ) -> Dict:
+        """
+        Test hypothesis using diagnostic analysis scripts.
+
+        This method runs existing Phase 3 diagnostic scripts on the
+        ensemble data to test mechanistic hypotheses.
+
+        Args:
+            hypothesis: The hypothesis being tested
+            test_spec: Test specification with diagnostic script info
+            param_matrix: Parameter values for all cases
+            y_outputs: Output variables for all cases
+
+        Returns:
+            Test result dict
+        """
+        diagnostic_script = test_spec.get('script', '')
+        diagnostic_type = test_spec.get('diagnostic_type', 'pft_comparison')
+
+        # Check if diagnostic tools are available
+        if not HAS_DIAGNOSIS_TOOLS:
+            logger.warning("Diagnostic tools not available")
+            return {
+                'hypothesis_supported': False,
+                'confidence': 0.0,
+                'evidence': {'error': 'Diagnostic tools not available'},
+                'insights': ['Install diagnosis_tools from phases/phase3_diagnosis/'],
+                'next_steps': ['Set up diagnostic scripts']
+            }
+
+        # Run screening data through diagnostics
+        screening = self.state.screening_data
+        if not screening:
+            return {
+                'hypothesis_supported': False,
+                'confidence': 0.0,
+                'evidence': {'error': 'No screening data'},
+                'insights': [],
+                'next_steps': ['Run screening first']
+            }
+
+        try:
+            diagnostic_result = self._run_diagnostic_scripts(screening)
+            if diagnostic_result:
+                # Extract relevant evidence for hypothesis
+                evidence = {
+                    'mortality_analysis': diagnostic_result.mortality_analysis,
+                    'allocation_analysis': diagnostic_result.allocation_analysis,
+                    'edge_parameters': diagnostic_result.edge_parameters
+                }
+
+                # Check if diagnostic results support hypothesis
+                mechanism = hypothesis.get('mechanism', '')
+                supported = False
+                confidence = 0.5
+
+                # Check for mechanism-specific patterns
+                if 'allocation' in mechanism.lower():
+                    if diagnostic_result.allocation_analysis:
+                        supported = True
+                        confidence = 0.7
+                elif 'mortality' in mechanism.lower():
+                    if diagnostic_result.mortality_analysis:
+                        supported = 'failure' in str(diagnostic_result.mortality_analysis).lower()
+                        confidence = 0.6
+
+                return {
+                    'hypothesis_supported': supported,
+                    'confidence': confidence,
+                    'evidence': evidence,
+                    'insights': diagnostic_result.key_insights if hasattr(diagnostic_result, 'key_insights') else [],
+                    'next_steps': ['Use diagnostic insights to refine hypothesis']
+                }
+
+        except Exception as e:
+            logger.error(f"Diagnostic test failed: {e}")
+            return {
+                'hypothesis_supported': False,
+                'confidence': 0.0,
+                'evidence': {'error': str(e)},
+                'insights': [],
+                'next_steps': ['Debug diagnostic script']
+            }
+
+        return {
+            'hypothesis_supported': False,
+            'confidence': 0.0,
+            'evidence': {},
+            'insights': [],
+            'next_steps': ['Run specific diagnostics for this hypothesis']
+        }
+
+    def _test_by_custom_script(
+        self,
+        hypothesis: Dict,
+        test_spec: Dict,
+        param_matrix,
+        y_outputs: Dict
+    ) -> Dict:
+        """
+        Test hypothesis using a custom Python script generated by Claude.
+
+        This method:
+        1. Extracts the script code from test_spec
+        2. Saves it to phases/phase3_diagnosis/generated/
+        3. Executes the test_hypothesis() function safely
+        4. Returns the results
+
+        Args:
+            hypothesis: The hypothesis being tested
+            test_spec: Test specification with 'script_code' and 'script_name'
+            param_matrix: Parameter values for all cases
+            y_outputs: Output variables for all cases
+
+        Returns:
+            Test result dict
+        """
+        import numpy as np
+        import importlib.util
+        import tempfile
+        from datetime import datetime
+
+        script_code = test_spec.get('script_code', '')
+        script_name = test_spec.get('script_name', 'custom_test')
+        description = test_spec.get('description', 'Custom hypothesis test')
+
+        if not script_code:
+            return {
+                'hypothesis_supported': False,
+                'confidence': 0.0,
+                'evidence': {'error': 'No script_code provided'},
+                'insights': [],
+                'next_steps': ['Provide script_code in existing_data_test']
+            }
+
+        logger.info(f"Executing custom script: {script_name}")
+        logger.info(f"  Description: {description}")
+
+        # Create generated scripts directory
+        generated_dir = Path(__file__).parent / "phases" / "phase3_diagnosis" / "generated"
+        generated_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate unique filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        script_filename = f"{script_name}_{timestamp}.py"
+        script_path = generated_dir / script_filename
+
+        # Prepare the full script with imports and wrapper
+        full_script = f'''#!/usr/bin/env python3
+"""
+Auto-generated custom hypothesis test script.
+
+Description: {description}
+Hypothesis: {hypothesis.get('name', 'Unknown')}
+Generated: {datetime.now().isoformat()}
+
+This script was generated by Claude AI to test a specific hypothesis
+using existing Morris ensemble data.
+"""
+
+import numpy as np
+try:
+    from scipy import stats
+except ImportError:
+    stats = None
+
+# Custom test function from Claude
+{script_code}
+'''
+
+        try:
+            # Save the script
+            with open(script_path, 'w') as f:
+                f.write(full_script)
+            logger.info(f"  Saved script to: {script_path}")
+
+            # Load the module dynamically
+            spec = importlib.util.spec_from_file_location(script_name, script_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            # Check for test_hypothesis function
+            if not hasattr(module, 'test_hypothesis'):
+                return {
+                    'hypothesis_supported': False,
+                    'confidence': 0.0,
+                    'evidence': {'error': 'Script missing test_hypothesis() function'},
+                    'insights': [],
+                    'next_steps': ['Ensure script defines test_hypothesis(param_matrix, y_outputs, screening_data, config)']
+                }
+
+            # Prepare config dict for the script
+            script_config = {
+                'param_names': self._get_morris_param_names(),
+                'pft_ids': [int(p.strip()) for p in os.environ.get('A2MC_PFTS', '7,9,10').split(',')],
+                'use_case_dir': str(self.config.use_case_dir) if hasattr(self.config, 'use_case_dir') else ''
+            }
+
+            # Execute the test function
+            logger.info("  Executing test_hypothesis()...")
+            result = module.test_hypothesis(
+                param_matrix=param_matrix,
+                y_outputs=y_outputs,
+                screening_data=self.state.screening_data,
+                config=script_config
+            )
+
+            # Validate result format
+            if not isinstance(result, dict):
+                return {
+                    'hypothesis_supported': False,
+                    'confidence': 0.0,
+                    'evidence': {'error': f'Script returned {type(result)}, expected dict'},
+                    'insights': [],
+                    'next_steps': ['Ensure test_hypothesis returns a dict']
+                }
+
+            # Ensure required fields
+            result.setdefault('hypothesis_supported', False)
+            result.setdefault('confidence', 0.0)
+            result.setdefault('evidence', {})
+            result.setdefault('insights', [])
+            result.setdefault('next_steps', [])
+
+            # Add script metadata
+            result['script_path'] = str(script_path)
+            result['script_name'] = script_name
+
+            logger.info(f"  Result: {'SUPPORTED' if result['hypothesis_supported'] else 'NOT SUPPORTED'}")
+            logger.info(f"  Confidence: {result['confidence']:.2f}")
+
+            return result
+
+        except SyntaxError as e:
+            logger.error(f"Syntax error in custom script: {e}")
+            return {
+                'hypothesis_supported': False,
+                'confidence': 0.0,
+                'evidence': {'error': f'Syntax error: {e}', 'line': e.lineno},
+                'insights': ['Fix syntax error in script_code'],
+                'next_steps': ['Review and correct the script code']
+            }
+
+        except Exception as e:
+            logger.error(f"Custom script execution failed: {e}")
+            import traceback
+            return {
+                'hypothesis_supported': False,
+                'confidence': 0.0,
+                'evidence': {'error': str(e), 'traceback': traceback.format_exc()},
+                'insights': [],
+                'next_steps': ['Debug the custom script', f'Check {script_path}']
+            }
+
+    def _get_morris_param_names(self) -> List[str]:
+        """Get list of Morris parameter names from config file."""
+        try:
+            param_list_file = self.config.param_list_file
+            if param_list_file and Path(param_list_file).exists():
+                with open(param_list_file) as f:
+                    return [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        except Exception as e:
+            logger.warning(f"Could not load parameter names: {e}")
+        return []
+
+    # =========================================================================
     # PHASE 5: TESTING - Execute Experiments on HPC
     # =========================================================================
     def _run_testing(self):
@@ -2114,6 +3091,11 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
         logger.info("=" * 60)
         logger.info("PHASE 5: TESTING - Execute Experiments on HPC")
         logger.info("=" * 60)
+
+        # Reset skip testing counter when entering HPC testing (outer loop)
+        if self.state.skip_testing_count > 0:
+            logger.info(f"Completed {self.state.skip_testing_count} skip testing cycles, now running HPC experiments")
+            self.state.skip_testing_count = 0
 
         # --- 1. Resume-skip check ---
         current_iter = self.state.iteration
@@ -2531,7 +3513,7 @@ Refinement Summary:
                 }
             )
 
-        # Decision logic
+        # Decision logic (Outer Loop of Two-Level Iteration Structure)
         if best_targets_met >= total_targets:
             # ALL targets met - CONVERGE!
             self.state.converged = True
@@ -2542,25 +3524,53 @@ Refinement Summary:
         elif best_targets_met > (self.state.best_experiment or {}).get("results", {}).get("targets_met", 0):
             # Progress made - update best and continue
             self.state.best_experiment = best_exp
+            self.state.experiment_count += 1  # Outer loop counter
             self.state.iteration += 1
-            self.state.current_phase = Phase.DIAGNOSIS.value
-            logger.info(f"\nProgress made ({best_targets_met}/{total_targets}). Iterating...")
 
-            self.state.record_phase_transition(
-                Phase.REFINEMENT.value, Phase.DIAGNOSIS.value,
-                f"Progress: {best_targets_met}/{total_targets} targets"
-            )
+            # Check outer loop limit
+            if self.state.experiment_count >= self.config.max_experiments:
+                logger.warning(f"Max experiments ({self.config.max_experiments}) reached")
+                logger.info(f"Best result: {best_targets_met}/{total_targets} targets met")
+                self.state.current_phase = Phase.CONVERGED.value
+                self.state.record_phase_transition(
+                    Phase.REFINEMENT.value, Phase.CONVERGED.value,
+                    f"Max experiments reached with {best_targets_met}/{total_targets} targets"
+                )
+            else:
+                self.state.current_phase = Phase.DIAGNOSIS.value
+                logger.info(f"\nProgress made ({best_targets_met}/{total_targets}). Iterating...")
+                logger.info(f"Experiment cycle {self.state.experiment_count}/{self.config.max_experiments}")
+
+                self.state.record_phase_transition(
+                    Phase.REFINEMENT.value, Phase.DIAGNOSIS.value,
+                    f"Progress: {best_targets_met}/{total_targets} targets, "
+                    f"experiment cycle {self.state.experiment_count}"
+                )
 
         else:
             # No progress - try different hypothesis
+            self.state.experiment_count += 1  # Outer loop counter
             self.state.iteration += 1
-            self.state.current_phase = Phase.DIAGNOSIS.value
-            logger.info(f"\nNo improvement. Trying different approach...")
 
-            self.state.record_phase_transition(
-                Phase.REFINEMENT.value, Phase.DIAGNOSIS.value,
-                "No improvement, trying new hypothesis"
-            )
+            # Check outer loop limit
+            if self.state.experiment_count >= self.config.max_experiments:
+                logger.warning(f"Max experiments ({self.config.max_experiments}) reached without improvement")
+                logger.info(f"Best result: {best_targets_met}/{total_targets} targets met")
+                self.state.current_phase = Phase.CONVERGED.value
+                self.state.record_phase_transition(
+                    Phase.REFINEMENT.value, Phase.CONVERGED.value,
+                    f"Max experiments reached without improvement, {best_targets_met}/{total_targets} targets"
+                )
+            else:
+                self.state.current_phase = Phase.DIAGNOSIS.value
+                logger.info(f"\nNo improvement. Trying different approach...")
+                logger.info(f"Experiment cycle {self.state.experiment_count}/{self.config.max_experiments}")
+
+                self.state.record_phase_transition(
+                    Phase.REFINEMENT.value, Phase.DIAGNOSIS.value,
+                    f"No improvement, trying new hypothesis, "
+                    f"experiment cycle {self.state.experiment_count}"
+                )
 
     # =========================================================================
     # CONVERGENCE - Final Report
@@ -2694,7 +3704,14 @@ Phase numbers:
                        help="State file path (default: auto-detected from A2MC_USE_CASE_DIR)")
     parser.add_argument("--output-dir", type=str, default=None,
                        help="Output directory (default: auto-detected from A2MC_USE_CASE_DIR)")
-    parser.add_argument("--max-iterations", type=int, default=10)
+    parser.add_argument("--max-iterations", type=int, default=10,
+                       help="Max total iterations (backward compatibility)")
+    parser.add_argument("--max-skip-testing", type=int, default=10,
+                       help="Max Phase 3↔4 skip testing cycles (default: 10)")
+    parser.add_argument("--max-experiments", type=int, default=10,
+                       help="Max full experiment cycles 3→4→5→6 (default: 10)")
+    parser.add_argument("--confidence-threshold", type=float, default=0.95,
+                       help="Hypothesis confidence threshold to exit skip testing (default: 0.95)")
     parser.add_argument("--no-review", action="store_true", help="Skip human review points")
     parser.add_argument("--no-reasoning", action="store_true", help="Disable Claude API")
     parser.add_argument("--start-phase", type=parse_phase,
@@ -2756,6 +3773,9 @@ Phase numbers:
         state_file=state_file,
         output_dir=output_dir,
         max_iterations=args.max_iterations,
+        max_skip_testing=args.max_skip_testing,
+        max_experiments=args.max_experiments,
+        hypothesis_confidence_threshold=args.confidence_threshold,
         human_review=not args.no_review,
         use_reasoning=not args.no_reasoning,
         sampling_scheme=args.sampling_scheme or "",

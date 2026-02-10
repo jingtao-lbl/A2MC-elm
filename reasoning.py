@@ -46,6 +46,148 @@ except ImportError as e:
 logger = logging.getLogger(__name__)
 
 
+# =============================================================================
+# DIAGNOSTIC TOOLS INVENTORY
+# =============================================================================
+# This inventory is included in AI prompts so Claude knows what scripts are
+# available and can request specific diagnostics for deeper analysis.
+
+DIAGNOSTIC_TOOLS_INVENTORY = """
+## Available Diagnostic Tools
+
+You can request specific diagnostic analyses by including them in your response.
+The orchestrator will run these scripts and provide results in follow-up calls.
+
+### Parameter Analysis
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `check_edge_parameters` | Find parameters at Morris sampling bounds | Suspect parameter space is too narrow |
+| `compare_case_parameters` | Compare parameters between good/bad cases | Want to find what makes best cases different |
+| `read_case_parameters` | Get exact parameter values for a case | Need specific values for diagnosis |
+
+### PFT Limitation Analysis
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `diagnose_pft_limitations` | Full PFT diagnosis (allocation, nutrients, competition) | PFT underperforming targets |
+| `analyze_allocation_dynamics` | Check L2FR and allocation responses | Suspect allocation imbalance |
+| `analyze_nutrient_limitation` | Test N/P starvation hypotheses | Suspect nutrient limits growth |
+| `analyze_light_competition` | Check inter-PFT shading effects | Suspect competition for light |
+
+### Mortality & Collapse Analysis
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `analyze_mortality` | Decompose mortality by cause (hydraulic, carbon starvation, fire) | Vegetation declining unexpectedly |
+| `detect_collapse` | Find "Perfect Storm" patterns (rapid vegetation loss) | Suspect cascading failures |
+| `detect_perfect_storm_pattern` | Check for multi-factor collapse signature | Multiple stressors combining |
+
+### Nutrient Pool Analysis
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `analyze_nutrient_pools` | P and N pool time series | Suspect nutrient depletion |
+| `compare_uptake_vs_demand` | Check if uptake meets plant demand | Suspect uptake limitation |
+| `extract_p_pools` / `extract_n_pools` | Get specific nutrient pool data | Need detailed nutrient dynamics |
+
+### Target Comparison
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `compare_biomass_targets` | Compare simulated vs observed values | Initial target assessment |
+| `calculate_target_metrics` | Compute RE, RMSE, bias for targets | Quantify error patterns |
+
+### How to Request Diagnostics
+
+In your JSON response, include:
+```json
+"requested_diagnostics": [
+    {
+        "tool": "check_edge_parameters",
+        "reason": "Best case has extreme values, need to verify bounds",
+        "priority": "high"
+    },
+    {
+        "tool": "analyze_mortality",
+        "reason": "PFT#10 biomass too low, suspect mortality issues",
+        "priority": "medium",
+        "args": {"pft_ids": [10]}
+    }
+]
+```
+
+The orchestrator will run requested diagnostics and include results in the next call.
+"""
+
+# Custom script template for hypothesis testing
+CUSTOM_SCRIPT_TEMPLATE = '''
+## Writing Custom Test Scripts
+
+If NO existing diagnostic tool can test your hypothesis, you can write a custom Python script.
+The script will be saved and executed by the orchestrator.
+
+### Script Requirements
+
+Your script must define a `test_hypothesis` function with this signature:
+
+```python
+def test_hypothesis(param_matrix, y_outputs, screening_data, config):
+    """
+    Test the hypothesis using existing ensemble data.
+
+    Args:
+        param_matrix: np.ndarray of shape (n_cases, n_params) - Morris parameter values
+        y_outputs: dict mapping variable names to np.ndarray - Simulation outputs
+            Example: {"leaf_biomass": array(...), "froot_biomass": array(...)}
+        screening_data: dict with screening results
+            Keys: "best_case", "best_cases", "n_cases_evaluated", etc.
+        config: dict with configuration
+            Keys: "param_names" (list), "pft_ids" (list), "use_case_dir" (str)
+
+    Returns:
+        dict with:
+            "supported": bool - Whether hypothesis is supported
+            "confidence": float - Confidence level (0-1)
+            "evidence": dict - Supporting data/statistics
+            "insights": list - Key findings
+    """
+    import numpy as np
+
+    # Your analysis code here
+    # Example: Check if high vmax_p correlates with better P uptake
+
+    return {
+        "supported": True,
+        "confidence": 0.75,
+        "evidence": {"correlation": 0.65, "p_value": 0.01},
+        "insights": ["Found significant positive correlation"]
+    }
+```
+
+### How to Specify a Custom Script
+
+In `existing_data_test`, set method to "custom_script" and include the code:
+
+```json
+{
+    "method": "custom_script",
+    "description": "Test if P uptake scales with vmax_p across ensemble",
+    "script_name": "test_p_uptake_scaling",
+    "script_code": "def test_hypothesis(param_matrix, y_outputs, screening_data, config):\\n    import numpy as np\\n    # ... your code ..."
+}
+```
+
+### Guidelines for Custom Scripts
+
+1. **Keep it focused** - Test ONE specific aspect of the hypothesis
+2. **Use numpy/scipy** - Standard scientific Python libraries are available
+3. **Return structured results** - Always return the required dict format
+4. **Handle edge cases** - Check for empty arrays, missing data
+5. **No side effects** - Don't modify files or state outside the function
+'''
+
+
 @dataclass
 class Diagnosis:
     """Structured diagnosis of calibration failures."""
@@ -56,6 +198,8 @@ class Diagnosis:
     cross_pft_conflicts: List[str]
     confidence: float  # 0-1
     reasoning: str
+    # Requested diagnostics: scripts to run for deeper analysis
+    requested_diagnostics: Optional[List[Dict]] = None  # [{tool, reason, priority, args}]
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
@@ -76,6 +220,9 @@ class Hypothesis:
     expected_outcomes: Dict[str, float]
     success_criteria: Dict[str, float]
     confidence: float
+    # Skip Testing path: test hypothesis with existing ensemble data
+    test_with_existing: bool = False  # If True, can be tested without new HPC runs
+    existing_data_test: Optional[Dict] = None  # Test spec: {method, description, cases_to_compare, success_criterion}
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
@@ -398,6 +545,18 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
 ## Sensitivity Rankings (top parameters by importance)
 {json.dumps(sensitivity_rankings, indent=2)}
 
+{DIAGNOSTIC_TOOLS_INVENTORY}
+
+## Previous Hypothesis Tests (if any)
+
+If the results include `hypothesis_test_results`, these are from previous iterations where
+hypotheses were tested using existing ensemble data (Skip Testing path). Use these insights:
+
+1. **If hypothesis was SUPPORTED**: The mechanism is likely correct; refine parameter recommendations
+2. **If hypothesis was NOT SUPPORTED**: Rule out that mechanism; consider alternatives
+3. **Check the evidence**: Use quantitative findings to inform current diagnosis
+4. **Build on insights**: Don't repeat failed hypotheses; incorporate lessons learned
+
 ## Diagnostic Process (follow these steps)
 1. **Classify severity** for each failing target:
    - CRITICAL: >50% error, blocks progress
@@ -471,9 +630,20 @@ Return a JSON object with this structure:
         "Description of any shared parameter conflicts"
     ],
     "confidence": 0.85,
-    "reasoning": "Summary of diagnosis logic including conceptual model"
+    "reasoning": "Summary of diagnosis logic including conceptual model",
+    "requested_diagnostics": [
+        {{
+            "tool": "tool_name_from_inventory",
+            "reason": "Why this diagnostic would help",
+            "priority": "high/medium/low",
+            "args": {{"optional": "arguments"}}
+        }}
+    ]
 }}
 ```
+
+**IMPORTANT**: If you need more data to form a confident diagnosis, use `requested_diagnostics`
+to request specific diagnostic analyses. The orchestrator will run them and provide results.
 
 Respond ONLY with the JSON object, no additional text."""
 
@@ -579,6 +749,36 @@ Respond ONLY with the JSON object, no additional text."""
 - Propose values within physically realistic bounds
 - Include parameter bounds (min/max) and sensitivity rank where known
 
+## Skip Testing: Test with Existing Data (IMPORTANT)
+
+Before proposing new HPC experiments, consider if this hypothesis can be tested
+using EXISTING Morris ensemble data. Set `test_with_existing: true` if ANY of these apply:
+
+1. **Correlation check**: Can verify by comparing cases with different parameter values
+   - Example: "Cases with high vmax_p should have higher P uptake"
+2. **Threshold analysis**: Can filter existing screening results
+   - Example: "Cases with l2fr > 2.0 should have better froot biomass"
+3. **Edge parameter impact**: Already computed by diagnostic scripts
+   - Example: "Parameters at upper bounds correlate with target failures"
+4. **Mass balance analysis**: Can analyze existing simulation outputs
+   - Example: "P uptake exceeds demand in failing cases"
+5. **Custom analysis**: Write a Python script for novel analysis not covered above
+   - Example: "Analyze P cycling dynamics across PFTs"
+
+If `test_with_existing: true`, provide `existing_data_test` with:
+- `method`: "correlation" | "threshold" | "comparison" | "diagnostic" | "custom_script"
+- `description`: What to check
+- `cases_to_compare`: Case IDs or selection criteria (for non-custom methods)
+- `success_criterion`: What result confirms/refutes the hypothesis
+
+**For custom_script method**, also provide:
+- `script_name`: Short name for the script (e.g., "test_p_cycling")
+- `script_code`: Python function code (see format below)
+
+{CUSTOM_SCRIPT_TEMPLATE}
+
+This saves HPC compute time by using data we already have!
+
 ## Response Format
 Return a JSON object with this structure:
 ```json
@@ -620,7 +820,36 @@ Return a JSON object with this structure:
             "why_fails": "Mechanistic reason",
             "alternative": "Better approach"
         }}
-    ]
+    ],
+    "test_with_existing": false,
+    "existing_data_test": null
+}}
+```
+
+If hypothesis CAN be tested with existing data, set:
+```json
+{{
+    "test_with_existing": true,
+    "existing_data_test": {{
+        "method": "comparison",
+        "description": "Compare cases with high vs low vmax_p values",
+        "cases_to_compare": {{"high_vmax_p": "top 10%", "low_vmax_p": "bottom 10%"}},
+        "success_criterion": "High vmax_p cases have >20% higher P uptake"
+    }}
+}}
+```
+
+If you need a CUSTOM SCRIPT for novel analysis:
+```json
+{{
+    "test_with_existing": true,
+    "existing_data_test": {{
+        "method": "custom_script",
+        "description": "Analyze P cycling efficiency across PFTs",
+        "script_name": "test_p_cycling_efficiency",
+        "script_code": "def test_hypothesis(param_matrix, y_outputs, screening_data, config):\\n    import numpy as np\\n    # Get P uptake and demand data\\n    # Calculate cycling efficiency\\n    # Compare across PFTs\\n    return {{\\n        \\"supported\\": True,\\n        \\"confidence\\": 0.8,\\n        \\"evidence\\": {{\\"efficiency_ratio\\": 0.75}},\\n        \\"insights\\": [\\"PFT10 has lowest P cycling efficiency\\"]\\n    }}",
+        "success_criterion": "P cycling efficiency < 0.5 indicates limitation"
+    }}
 }}
 ```
 
