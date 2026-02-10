@@ -1,7 +1,7 @@
 # A2MC: Agentic Adaptive Multi-target Calibration
 
 **Status:** Implementation Complete
-**Version:** 1.0 (Public Release)
+**Version:** 1.2 (Public Release)
 **Purpose:** Fully autonomous multi-target calibration of ELM-FATES using Claude API + HPC + Adaptive Memory
 
 ---
@@ -244,6 +244,27 @@ When experiment results disprove the hypothesis, return to diagnosis to revise u
 
 **Phase 6 → Phase 0 (Redesign):**
 When all parameter candidates are at bounds and calibration fails, expand parameter ranges and run a new ensemble.
+
+### Two-Level Iteration Structure
+
+A2MC uses separate counters for lightweight hypothesis testing vs expensive HPC experiments:
+
+**Inner Loop (Skip Testing):** Phase 3 ↔ 4, max 10 cycles
+- Test hypotheses with existing ensemble data
+- Exit when confidence threshold met OR max cycles reached
+- Counter resets when entering Phase 5 (HPC)
+
+**Outer Loop (Experiments):** Phase 3 → 4 → 5 → 6, max 10 cycles
+- Run full HPC experiments
+- Exit when targets met OR max experiments reached
+
+```bash
+# Control iteration limits
+python orchestrator.py --run \
+    --max-skip-testing 10 \      # Max Phase 3↔4 cycles (default: 10)
+    --max-experiments 10 \        # Max full experiment cycles (default: 10)
+    --confidence-threshold 0.95   # Exit skip testing threshold (default: 0.95)
+```
 
 ### Phase Details
 
@@ -1002,6 +1023,14 @@ A2MC/
 ---
 
 ## Version History
+
+- **v1.2 (2026-02-09)** - Two-level iteration and diagnostic tools
+  - Two-level iteration structure: separate counters for skip testing vs HPC experiments
+  - New CLI args: `--max-skip-testing`, `--max-experiments`, `--confidence-threshold`
+  - Diagnostic Tools Inventory: Claude API can request specific diagnostic analyses
+  - Custom script generation: Claude can write Python scripts for hypothesis testing
+  - Generated scripts saved to `phases/phase3_diagnosis/generated/`
+  - Script promotion tool: `tools/promote_diagnostic_script.py`
 
 - **v1.1 (2026-02-02)** - Knowledge system enhancements
   - Knox 2026 CNP Guidebook integrated into three-tier knowledge system
