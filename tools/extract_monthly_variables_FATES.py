@@ -715,6 +715,21 @@ def process_case(case_id, available_site, available_levgrnd, available_levsoi, a
 
 
 # ============================================================================
+# PARALLEL WORKER (must be at module level for pickling)
+# ============================================================================
+
+# Shared state set before Pool is created
+_available_vars = {}
+
+def _extract_case_worker(case_id):
+    """Worker function for parallel extraction. Uses module-level _available_vars."""
+    v = _available_vars
+    success = process_case(case_id, v['site'], v['levgrnd'], v['levsoi'],
+                           v['levdcmp'], v['levelem'], v['pft'], v['szpf'])
+    return (case_id, success)
+
+
+# ============================================================================
 # CALLABLE API (for orchestrator integration)
 # ============================================================================
 
@@ -819,14 +834,16 @@ def run_monthly_extraction(case_list=None, case_file=None, parallel=8):
         from multiprocessing import Pool
         print(f"Using {parallel} parallel workers")
 
-        # Worker function with all available vars bound
-        def _extract_case(case_id):
-            return (case_id, process_case(case_id, available_site, available_levgrnd,
-                                          available_levsoi, available_levdcmp,
-                                          available_levelem, available_pft, available_szpf))
+        # Set module-level shared state for worker
+        global _available_vars
+        _available_vars = {
+            'site': available_site, 'levgrnd': available_levgrnd,
+            'levsoi': available_levsoi, 'levdcmp': available_levdcmp,
+            'levelem': available_levelem, 'pft': available_pft, 'szpf': available_szpf,
+        }
 
         with Pool(processes=parallel) as pool:
-            for i, (case_id, success) in enumerate(pool.imap_unordered(_extract_case, cases_to_extract), 1):
+            for i, (case_id, success) in enumerate(pool.imap_unordered(_extract_case_worker, cases_to_extract), 1):
                 if success:
                     successful_cases.append(case_id)
                 else:
@@ -1019,13 +1036,16 @@ Examples:
     if args.parallel > 1 and len(cases_to_extract) > 1:
         from multiprocessing import Pool
 
-        def _extract_case(case_id):
-            return (case_id, process_case(case_id, available_site, available_levgrnd,
-                                          available_levsoi, available_levdcmp,
-                                          available_levelem, available_pft, available_szpf))
+        # Set module-level shared state for worker
+        global _available_vars
+        _available_vars = {
+            'site': available_site, 'levgrnd': available_levgrnd,
+            'levsoi': available_levsoi, 'levdcmp': available_levdcmp,
+            'levelem': available_levelem, 'pft': available_pft, 'szpf': available_szpf,
+        }
 
         with Pool(processes=args.parallel) as pool:
-            for i, (case_id, success) in enumerate(pool.imap_unordered(_extract_case, cases_to_extract), 1):
+            for i, (case_id, success) in enumerate(pool.imap_unordered(_extract_case_worker, cases_to_extract), 1):
                 if success:
                     successful_cases.append(case_id)
                 else:
