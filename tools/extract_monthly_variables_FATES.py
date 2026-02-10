@@ -973,15 +973,39 @@ Examples:
     print(f"  PFT-level: {len(available_pft)}/{len(PFT_LEVEL_VARS)}")
     print(f"  SZPF-level: {len(available_szpf)}/{len(SZPF_VARS)}")
 
-    # Process each case
+    # Check which cases already have extracted files
+    cases_to_extract = []
+    already_done = 0
+    for case_id in CASE_NUMBERS:
+        if isinstance(case_id, int):
+            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_{CASE_SUFFIX}'
+        elif '_exp' in str(case_id):
+            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_TRANS'
+        else:
+            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_{CASE_SUFFIX}'
+        nc_file = OUTPUT_DIR / f'{case_name}_all_variables_monthly_{START_YEAR}_{END_YEAR}.nc'
+        if nc_file.exists():
+            already_done += 1
+        else:
+            cases_to_extract.append(case_id)
+
+    print(f"\n  Already extracted: {already_done}/{len(CASE_NUMBERS)}")
+    print(f"  Remaining: {len(cases_to_extract)}")
+
+    if not cases_to_extract:
+        print("\nAll cases already extracted. Nothing to do.")
+        print(f"Output directory: {OUTPUT_DIR}")
+        return
+
+    # Process remaining cases
     print("\n" + "=" * 80)
-    print(f"PROCESSING CASES (parallel={args.parallel})")
+    print(f"PROCESSING {len(cases_to_extract)} CASES (parallel={args.parallel})")
     print("=" * 80)
 
     successful_cases = []
     failed_cases = []
 
-    if args.parallel > 1 and len(CASE_NUMBERS) > 1:
+    if args.parallel > 1 and len(cases_to_extract) > 1:
         from multiprocessing import Pool
 
         def _extract_case(case_id):
@@ -990,17 +1014,17 @@ Examples:
                                           available_levelem, available_pft, available_szpf))
 
         with Pool(processes=args.parallel) as pool:
-            for i, (case_id, success) in enumerate(pool.imap_unordered(_extract_case, CASE_NUMBERS), 1):
+            for i, (case_id, success) in enumerate(pool.imap_unordered(_extract_case, cases_to_extract), 1):
                 if success:
                     successful_cases.append(case_id)
                 else:
                     failed_cases.append(case_id)
-                if i % 50 == 0 or i == len(CASE_NUMBERS):
-                    print(f"  Progress: {i}/{len(CASE_NUMBERS)} "
+                if i % 50 == 0 or i == len(cases_to_extract):
+                    print(f"  Progress: {i}/{len(cases_to_extract)} "
                           f"({len(successful_cases)} OK, {len(failed_cases)} failed)")
     else:
-        for idx, case_id in enumerate(CASE_NUMBERS, 1):
-            print(f"\n[{idx}/{len(CASE_NUMBERS)}] Case {case_id}")
+        for idx, case_id in enumerate(cases_to_extract, 1):
+            print(f"\n[{idx}/{len(cases_to_extract)}] Case {case_id}")
             print("=" * 80)
 
             success = process_case(case_id, available_site, available_levgrnd, available_levsoi, available_levdcmp, available_levelem, available_pft, available_szpf)
@@ -1014,8 +1038,10 @@ Examples:
     print("\n" + "=" * 80)
     print("BATCH PROCESSING COMPLETE")
     print("=" * 80)
-    print(f"Successful: {len(successful_cases)}/{len(CASE_NUMBERS)} cases")
-    print(f"Failed: {len(failed_cases)}/{len(CASE_NUMBERS)} cases")
+    print(f"Already done: {already_done}")
+    print(f"Newly extracted: {len(successful_cases)}")
+    print(f"Failed: {len(failed_cases)}")
+    print(f"Total: {already_done + len(successful_cases)}/{len(CASE_NUMBERS)} cases")
 
     if failed_cases:
         print(f"\nFailed cases: {failed_cases}")
