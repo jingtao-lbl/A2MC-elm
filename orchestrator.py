@@ -1022,12 +1022,14 @@ class CalibrationOrchestrator:
             # Load existing sensitivity results
             self.state.exploration_data = self._analyze_existing_ensemble()
 
-            # Block if data is missing (extraction needed)
+            # If extraction was attempted but no data produced, block
             if self.state.exploration_data.get("data_missing", False):
                 logger.error("=" * 60)
-                logger.error("WORKFLOW BLOCKED: Extraction required before proceeding")
+                logger.error("WORKFLOW BLOCKED: No Y matrix data available")
                 logger.error("=" * 60)
-                logger.error("Run the extraction commands above, then resume:")
+                logger.error("Auto-extraction was attempted but did not produce Y matrices.")
+                logger.error("This typically means simulation output is not accessible.")
+                logger.error("Run extraction on HPC, then resume:")
                 logger.error(f"  python orchestrator.py --resume")
                 self.state.save(str(self.state_path))
                 raise SystemExit(1)
@@ -1169,13 +1171,25 @@ class CalibrationOrchestrator:
                     results["morris_y_matrices"] = [str(f) for f in morris_files]
                     results = self._run_morris_sensitivity_analysis(results, morris_files)
             else:
-                logger.warning("No Morris Y matrices found and extraction incomplete.")
-                logger.warning("Data extraction required before analysis can proceed.")
-                logger.info("Step 1: Extract monthly variables from simulation output:")
-                logger.info("  python tools/extract_monthly_variables_FATES.py --case-file completed_cases.txt")
-                logger.info("Step 2: Extract Y matrices for Morris analysis:")
-                logger.info("  python phases/phase1_exploration/extract_sensitivity_outputs.py --output-var leaf_biomass")
-                results["data_missing"] = True
+                # No Y matrices and extraction not marked complete — try extraction anyway
+                logger.info("No Morris Y matrices found. Attempting Y matrix extraction...")
+                results = self._run_y_matrix_extraction(results)
+
+                # Check again for Y matrices after extraction
+                morris_files = list(phase1_output_dir.glob("Morris*biomass*.txt")) if phase1_output_dir.exists() else []
+                if not morris_files:
+                    morris_files = list(Path('.').glob("Morris*biomass*.txt"))
+                if morris_files:
+                    logger.info(f"Found {len(morris_files)} Morris Y matrix files after extraction")
+                    results["morris_y_matrices"] = [str(f) for f in morris_files]
+                    results = self._run_morris_sensitivity_analysis(results, morris_files)
+                else:
+                    logger.warning("Y matrix extraction did not produce output files.")
+                    logger.warning("This may mean simulation output is not accessible from this machine.")
+                    logger.info("If running remotely, extract on HPC first:")
+                    logger.info("  python tools/extract_monthly_variables_FATES.py --case-file completed_cases.txt")
+                    logger.info("  python phases/phase1_exploration/extract_sensitivity_outputs.py")
+                    results["data_missing"] = True
 
         except ImportError:
             logger.debug("tools.config not available, skipping results loading")
