@@ -419,7 +419,7 @@ def run_diagnosis(
         if result.redesign_candidates:
             print(f"\nRedesign candidates ({len(result.redesign_candidates)}):")
             for cand in result.redesign_candidates[:5]:
-                print(f"  - {cand.get('parameter')}: {cand.get('reason')}")
+                print(f"  - {cand.get('name')}: {cand.get('suggestion')}")
 
     return result
 

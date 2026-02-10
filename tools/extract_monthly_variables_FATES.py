@@ -160,16 +160,38 @@ SITE_LEVEL_VARS = [
     'WIND',                  # Wind speed
     'RAIN',                  # Rainfall
     'SNOW',                  # Snowfall
-    'SMINP_LEACHED',
-    'BIOCHEM_PMIN',
-    'SMINP_TO_PLANT',
-    'PRIMP',              # Primary mineral P by layer (inorganic, freshly weathered)
-    'SECONDP',            # Secondary mineral P by layer (aged, occluded)
-    'OCCLP',              # Occluded P by layer (strongly sorbed, unavailable)
-    'LABILEP',            # Labile P by layer (plant-available inorganic P)
-    'SMINP',              # Soil mineral P by layer (total inorganic P)
-    'FATES_PUPTAKE',
-    'FATES_PEFFLUX',
+    # === P POOLS (site-level) ===
+    'SMINP',              # Soil mineral P (total inorganic P)
+    'LABILEP',            # Labile P (plant-available inorganic P)
+    'SECONDP',            # Secondary mineral P (aged, sorbed)
+    'PRIMP',              # Primary mineral P (freshly weathered)
+    'OCCLP',              # Occluded P (strongly sorbed, unavailable)
+
+    # === P FLUXES (site-level) ===
+    'FATES_PUPTAKE',      # Plant P uptake (FATES, kg/m2/s)
+    'FATES_PEFFLUX',      # Plant P efflux (FATES, kg/m2/s)
+    'SMINP_LEACHED',      # P leaching loss
+    'BIOCHEM_PMIN',       # Biochemical P mineralization
+    'GROSS_PMIN',         # Gross P mineralization
+    'SMINP_TO_PLANT',     # Mineral P to plant
+    'PRIMP_TO_LABILEP',   # Primary P weathering → labile
+    'PDEP_TO_SMINP',      # Atmospheric P deposition → soil mineral
+    'SECONDP_TO_LABILEP', # Secondary P desorption → labile
+    'LABILEP_TO_SECONDP', # Labile P sorption → secondary
+    'SECONDP_TO_OCCLP',   # Secondary P occlusion → occluded
+
+    # === N FLUXES (site-level) ===
+    'NDEP_TO_SMINN',      # N deposition → soil mineral
+    'NFIX_TO_SMINN',      # Free-living N fixation → soil mineral
+    'GROSS_NMIN',         # Gross N mineralization
+    'SMIN_NO3_LEACHED',   # NO3 leaching loss
+    'SMIN_NO3_RUNOFF',    # NO3 runoff loss
+    'SMINN',              # Total soil mineral N
+    'SMIN_NH4',           # Soil ammonium
+    'SMIN_NO3',           # Soil nitrate
+    'FATES_NH4UPTAKE',    # Plant NH4 uptake (FATES)
+    'FATES_NO3UPTAKE',    # Plant NO3 uptake (FATES)
+    'FATES_NEFFLUX',      # Plant N efflux (FATES)
 ]
 
 # ======= SOIL LAYER VARIABLES (time, levgrnd=15, lndgrid) =======
