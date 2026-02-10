@@ -718,7 +718,7 @@ def process_case(case_id, available_site, available_levgrnd, available_levsoi, a
 # CALLABLE API (for orchestrator integration)
 # ============================================================================
 
-def run_monthly_extraction(case_list=None, case_file=None):
+def run_monthly_extraction(case_list=None, case_file=None, parallel=8):
     """
     Extract comprehensive monthly variables from ELM-FATES simulation output.
 
@@ -731,6 +731,8 @@ def run_monthly_extraction(case_list=None, case_file=None):
         List of case numbers to extract. If None, uses case_file or config.
     case_file : str, optional
         Path to file containing case numbers (one per line).
+    parallel : int, optional
+        Number of parallel workers (default: 8). Set to 1 for sequential.
 
     Returns:
     --------
@@ -809,17 +811,38 @@ def run_monthly_extraction(case_list=None, case_file=None):
     available_szpf = [v for v in SZPF_VARS if v in all_vars]
     ds_test.close()
 
-    # Process cases
+    # Process cases (parallel or sequential)
     successful_cases = []
     failed_cases = []
-    for idx, case_id in enumerate(cases_to_extract, 1):
-        print(f"\n[{idx}/{len(cases_to_extract)}] Case {case_id}")
-        success = process_case(case_id, available_site, available_levgrnd, available_levsoi,
-                               available_levdcmp, available_levelem, available_pft, available_szpf)
-        if success:
-            successful_cases.append(case_id)
-        else:
-            failed_cases.append(case_id)
+
+    if parallel > 1 and len(cases_to_extract) > 1:
+        from multiprocessing import Pool
+        print(f"Using {parallel} parallel workers")
+
+        # Worker function with all available vars bound
+        def _extract_case(case_id):
+            return (case_id, process_case(case_id, available_site, available_levgrnd,
+                                          available_levsoi, available_levdcmp,
+                                          available_levelem, available_pft, available_szpf))
+
+        with Pool(processes=parallel) as pool:
+            for i, (case_id, success) in enumerate(pool.imap_unordered(_extract_case, cases_to_extract), 1):
+                if success:
+                    successful_cases.append(case_id)
+                else:
+                    failed_cases.append(case_id)
+                if i % 50 == 0 or i == len(cases_to_extract):
+                    print(f"  Progress: {i}/{len(cases_to_extract)} "
+                          f"({len(successful_cases)} OK, {len(failed_cases)} failed)")
+    else:
+        for idx, case_id in enumerate(cases_to_extract, 1):
+            print(f"\n[{idx}/{len(cases_to_extract)}] Case {case_id}")
+            success = process_case(case_id, available_site, available_levgrnd, available_levsoi,
+                                   available_levdcmp, available_levelem, available_pft, available_szpf)
+            if success:
+                successful_cases.append(case_id)
+            else:
+                failed_cases.append(case_id)
 
     total_success = len(successful_cases) + (len(case_numbers) - len(cases_to_extract))
     status = 'completed' if not failed_cases else 'partial'
@@ -862,6 +885,8 @@ Examples:
                        help='List of case numbers or case IDs (e.g., 845 2678 or 845_exp1 845_exp2)')
     parser.add_argument('--case-file', type=str, default=None,
                        help='File containing case numbers (one per line)')
+    parser.add_argument('--parallel', type=int, default=8,
+                       help='Number of parallel workers (default: 8, use 1 for sequential)')
     args = parser.parse_args()
 
     # Load case numbers
@@ -950,22 +975,40 @@ Examples:
 
     # Process each case
     print("\n" + "=" * 80)
-    print("PROCESSING CASES")
+    print(f"PROCESSING CASES (parallel={args.parallel})")
     print("=" * 80)
 
     successful_cases = []
     failed_cases = []
 
-    for idx, case_id in enumerate(CASE_NUMBERS, 1):
-        print(f"\n[{idx}/{len(CASE_NUMBERS)}] Case {case_id}")
-        print("=" * 80)
+    if args.parallel > 1 and len(CASE_NUMBERS) > 1:
+        from multiprocessing import Pool
 
-        success = process_case(case_id, available_site, available_levgrnd, available_levsoi, available_levdcmp, available_levelem, available_pft, available_szpf)
+        def _extract_case(case_id):
+            return (case_id, process_case(case_id, available_site, available_levgrnd,
+                                          available_levsoi, available_levdcmp,
+                                          available_levelem, available_pft, available_szpf))
 
-        if success:
-            successful_cases.append(case_id)
-        else:
-            failed_cases.append(case_id)
+        with Pool(processes=args.parallel) as pool:
+            for i, (case_id, success) in enumerate(pool.imap_unordered(_extract_case, CASE_NUMBERS), 1):
+                if success:
+                    successful_cases.append(case_id)
+                else:
+                    failed_cases.append(case_id)
+                if i % 50 == 0 or i == len(CASE_NUMBERS):
+                    print(f"  Progress: {i}/{len(CASE_NUMBERS)} "
+                          f"({len(successful_cases)} OK, {len(failed_cases)} failed)")
+    else:
+        for idx, case_id in enumerate(CASE_NUMBERS, 1):
+            print(f"\n[{idx}/{len(CASE_NUMBERS)}] Case {case_id}")
+            print("=" * 80)
+
+            success = process_case(case_id, available_site, available_levgrnd, available_levsoi, available_levdcmp, available_levelem, available_pft, available_szpf)
+
+            if success:
+                successful_cases.append(case_id)
+            else:
+                failed_cases.append(case_id)
 
     # Final summary
     print("\n" + "=" * 80)
