@@ -18,6 +18,7 @@ module load python
 
 # Extract specific cases
 python extract_monthly_variables_FATES.py --cases 845 2678 2675
+python tools/extract_monthly_variables_FATES.py --cases 57:4890 --parallel 16  
 
 # Or from case file
 python extract_monthly_variables_FATES.py --case-file case_numbers.txt
@@ -722,10 +723,18 @@ def process_case(case_id, available_site, available_levgrnd, available_levsoi, a
 _available_vars = {}
 
 def _extract_case_worker(case_id):
-    """Worker function for parallel extraction. Uses module-level _available_vars."""
+    """Worker function for parallel extraction. Uses module-level _available_vars.
+    Suppresses per-file output to avoid interleaved noise."""
+    import io, sys
     v = _available_vars
-    success = process_case(case_id, v['site'], v['levgrnd'], v['levsoi'],
-                           v['levdcmp'], v['levelem'], v['pft'], v['szpf'])
+    # Suppress stdout in parallel workers
+    old_stdout = sys.stdout
+    sys.stdout = io.StringIO()
+    try:
+        success = process_case(case_id, v['site'], v['levgrnd'], v['levsoi'],
+                               v['levdcmp'], v['levelem'], v['pft'], v['szpf'])
+    finally:
+        sys.stdout = old_stdout
     return (case_id, success)
 
 
