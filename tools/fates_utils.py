@@ -285,11 +285,11 @@ def convert_flux_to_annual(
     Notes
     -----
     Common conversions:
-    - kg m-2 s-1 → g m-2 yr-1: multiply by 1000 * 31557600 (seconds per year)
+    - kg m-2 s-1 → g m-2 yr-1: multiply by 1000 * 31536000 (seconds per year)
     - kg m-2 s-1 → g m-2 day-1: multiply by 1000 * 86400
     """
     SECONDS_PER_DAY = 86400
-    SECONDS_PER_YEAR = 31557600  # 365.25 days
+    SECONDS_PER_YEAR = 31536000  # 365 days (ELM uses no-leap-year calendar)
 
     conversion_factors = {
         ('kg m-2 s-1', 'g m-2 yr-1'): 1000 * SECONDS_PER_YEAR,

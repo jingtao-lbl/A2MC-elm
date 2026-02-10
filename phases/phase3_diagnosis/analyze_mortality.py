@@ -55,7 +55,7 @@ MORTALITY_VARS = {
 
 # Unit conversion: kg C/m²/s to g C/m²/yr
 KG_TO_G = 1000
-SEC_PER_YEAR = 365.25 * 24 * 3600
+SEC_PER_YEAR = 365 * 24 * 3600  # ELM uses no-leap-year calendar
 FLUX_SCALE = KG_TO_G * SEC_PER_YEAR
 
 

@@ -295,7 +295,7 @@ def analyze_collapse_causes(
             'fire': 'FATES_MORTALITY_FIRE_CFLUX_PF'
         }
 
-        scale = 1000 * 365.25 * 24 * 3600  # kg/m²/s to g/m²/yr
+        scale = 1000 * 365 * 24 * 3600  # kg/m²/s to g/m²/yr (ELM: no leap years)
 
         for pft_id in pft_ids:
             pft_idx = pft_id - 1

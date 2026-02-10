@@ -269,7 +269,7 @@ def compare_uptake_vs_demand(
 
     with nc.Dataset(nc_file, 'r') as ds:
         # Unit conversion: kg/m²/s to g/m²/year
-        scale = G_PER_KG * 365.25 * 24 * 3600
+        scale = G_PER_KG * 365 * 24 * 3600  # ELM uses no-leap-year calendar
 
         if demand_var in ds.variables:
             demand_data = ds.variables[demand_var][:]

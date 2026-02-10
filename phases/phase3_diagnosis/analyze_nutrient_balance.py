@@ -129,8 +129,9 @@ N_SZPF_VARS = [
 # Unit conversions
 G_PER_KG = 1000.0
 SECONDS_PER_DAY = 86400.0
-DAYS_PER_MONTH = 30.4375  # Average days per month (365.25/12)
-SECONDS_PER_MONTH = SECONDS_PER_DAY * DAYS_PER_MONTH
+# ELM uses no-leap-year calendar: each month has fixed day counts
+DAYS_PER_MONTH_ARRAY = np.array([31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31], dtype=float)
+SECONDS_PER_MONTH_ARRAY = SECONDS_PER_DAY * DAYS_PER_MONTH_ARRAY
 
 
 # =============================================================================
@@ -246,11 +247,24 @@ def _convert_flux_to_g_per_month(data: np.ndarray, source: str) -> np.ndarray:
 
     ELM variables: g/m2/s -> g/m2/month
     FATES variables: kg/m2/s -> g/m2/month
+
+    Uses per-month day counts (ELM no-leap-year calendar:
+    31,28,31,30,31,30,31,31,30,31,30,31) tiled across all years.
     """
-    scale = SECONDS_PER_MONTH
+    n_months = len(data)
+    n_years = n_months // 12
+    remainder = n_months % 12
+    # Tile [31,28,...,31] for each complete year, append partial if needed
+    if remainder == 0:
+        seconds = np.tile(SECONDS_PER_MONTH_ARRAY, n_years)
+    else:
+        seconds = np.concatenate([
+            np.tile(SECONDS_PER_MONTH_ARRAY, n_years),
+            SECONDS_PER_MONTH_ARRAY[:remainder]
+        ])
     if source == 'FATES':
-        scale *= G_PER_KG
-    return data * scale
+        seconds = seconds * G_PER_KG
+    return data * seconds
 
 
 def _convert_pool_to_g(data: np.ndarray, source: str) -> np.ndarray:
@@ -508,7 +522,7 @@ def analyze_pft_competition(
                     else:
                         pft_data = np.zeros(1)
                     # FATES: kg/m2/s -> g/m2/yr
-                    annual = float(np.mean(pft_data)) * G_PER_KG * SECONDS_PER_DAY * 365.25
+                    annual = float(np.mean(pft_data)) * G_PER_KG * SECONDS_PER_DAY * 365
                     pft_uptake += annual
 
             uptake_by_pft[pft_id] = pft_uptake
@@ -525,7 +539,7 @@ def analyze_pft_competition(
                     pft_data = np.sum(raw[:, start:end+1, 0], axis=1)
                 else:
                     pft_data = np.zeros(1)
-                pft_demand = float(np.mean(pft_data)) * G_PER_KG * SECONDS_PER_DAY * 365.25
+                pft_demand = float(np.mean(pft_data)) * G_PER_KG * SECONDS_PER_DAY * 365
 
             demand_by_pft[pft_id] = pft_demand
 

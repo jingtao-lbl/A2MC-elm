@@ -256,7 +256,7 @@ def analyze_nutrient_limitation(
     pft_data = data.get('pft_data', {}).get(pft_id, {})
 
     # Unit conversion: kg/m²/s to kg/m²/year
-    seconds_per_year = 365.25 * 24 * 3600
+    seconds_per_year = 365 * 24 * 3600  # ELM uses no-leap-year calendar
 
     # Nitrogen analysis
     if 'FATES_NDEMAND_SZPF' in pft_data:
@@ -421,7 +421,7 @@ def analyze_allocation_rates(
     pft_data = data.get('pft_data', {}).get(pft_id, {})
 
     # Unit conversion: kg C/m²/s to g C/m²/year
-    scale = 365.25 * 24 * 3600 * 1000
+    scale = 365 * 24 * 3600 * 1000  # ELM: no-leap-year calendar
 
     if 'FATES_LEAF_ALLOC_SZPF' in pft_data:
         leaf_alloc = pft_data['FATES_LEAF_ALLOC_SZPF'] * scale
