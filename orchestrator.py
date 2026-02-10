@@ -273,6 +273,7 @@ class Config:
     max_skip_testing: int = 10       # Max Phase 3↔4 skip testing cycles before forcing HPC
     max_experiments: int = 10        # Max Phase 3→4→5→6 full experiment cycles
     hypothesis_confidence_threshold: float = 0.95  # Exit skip testing when confidence >= this
+    auto_skip_testing: bool = True   # Auto-continue Phase 3↔4 cycles (no checkpoint during skip testing)
 
     # Validation targets (loaded from site config)
     targets: ValidationTargets = field(default_factory=ValidationTargets)
@@ -1796,10 +1797,14 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                     logger.warning(f"Could not write diagnosis log: {e}")
 
         # Human review checkpoint
-        if self.config.human_review:
+        # During skip-testing, auto-continue by default (no interactive prompt)
+        in_skip_testing = self.state.skip_testing_count > 0
+        auto_continue = in_skip_testing and self.config.auto_skip_testing
+
+        if self.config.human_review and not auto_continue:
             # Build skip-testing context header if in skip-testing loop
             skip_header = ""
-            if self.state.skip_testing_count > 0:
+            if in_skip_testing:
                 last_test = self.state.hypothesis_tests[-1] if self.state.hypothesis_tests else {}
                 last_confidence = last_test.get('confidence', 0)
                 last_supported = last_test.get('hypothesis_supported', None)
@@ -1828,6 +1833,14 @@ Diagnosis Summary:{skip_header}
                     'q': 'Quit workflow (state saved)',
                 }
             )
+        elif auto_continue:
+            # Log summary without blocking
+            last_test = self.state.hypothesis_tests[-1] if self.state.hypothesis_tests else {}
+            logger.info(f"[Auto Skip Testing {self.state.skip_testing_count}/{self.config.max_skip_testing}] "
+                       f"Diagnosis complete → auto-continuing to hypothesis")
+            logger.info(f"  Failing: {diagnosis.get('failing_targets', ['unknown'])}")
+            logger.info(f"  Causes: {len(diagnosis.get('likely_causes', []))}, "
+                       f"Confidence: {diagnosis.get('confidence', 0):.2f}")
 
         # Transition to HYPOTHESIS
         self.state.record_phase_transition(
@@ -3802,6 +3815,8 @@ Phase numbers:
     parser.add_argument("--confidence-threshold", type=float, default=0.95,
                        help="Hypothesis confidence threshold to exit skip testing (default: 0.95)")
     parser.add_argument("--no-review", action="store_true", help="Skip human review points")
+    parser.add_argument("--manual-skip-testing", action="store_true",
+                       help="Require manual review at each skip-testing cycle (default: auto-continue)")
     parser.add_argument("--no-reasoning", action="store_true", help="Disable Claude API")
     parser.add_argument("--start-phase", type=parse_phase,
                        help="Start from phase (0-7, phase0-phase7, or name like 'exploration')")
@@ -3866,6 +3881,7 @@ Phase numbers:
         max_experiments=args.max_experiments,
         hypothesis_confidence_threshold=args.confidence_threshold,
         human_review=not args.no_review,
+        auto_skip_testing=not args.manual_skip_testing,
         use_reasoning=not args.no_reasoning,
         sampling_scheme=args.sampling_scheme or "",
         n_trajectories=args.n_trajectories or 0,
