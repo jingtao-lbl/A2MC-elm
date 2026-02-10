@@ -91,12 +91,36 @@ The orchestrator will run these scripts and provide results in follow-up calls.
 | `compare_uptake_vs_demand` | Check if uptake meets plant demand | Suspect uptake limitation |
 | `extract_p_pools` / `extract_n_pools` | Get specific nutrient pool data | Need detailed nutrient dynamics |
 
+### Nutrient Mass Balance
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `extract_nutrient_budget` | Full N/P budget (all inputs, outputs, pools) | Need complete nutrient accounting |
+| `calculate_budget_closure` | Check dPool/dt = Inputs - Outputs | Suspect mass imbalance or missing fluxes |
+| `analyze_pft_competition` | PFT-level uptake shares and supply/demand | Suspect inter-PFT nutrient competition |
+| `identify_nutrient_sinks` | Rank output pathways by magnitude | Need to find dominant nutrient loss paths |
+
 ### Target Comparison
 
 | Tool | Function | Use When |
 |------|----------|----------|
 | `compare_biomass_targets` | Compare simulated vs observed values | Initial target assessment |
 | `calculate_target_metrics` | Compute RE, RMSE, bias for targets | Quantify error patterns |
+
+### Hypothesis Testing
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `test_hypotheses` | Test multiple competing hypotheses with quantified metrics | Evaluating multiple explanations for a pattern |
+| `test_single_hypothesis` | Test one specific hypothesis | Targeted hypothesis testing |
+| `get_default_hypotheses` | Get common hypotheses for CNP allocation issues | Starting point for hypothesis testing |
+
+### Carbon Balance Analysis
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `analyze_carbon_balance` | Detect carbon deficit (cumulative GPP vs MR) | Suspecting carbon starvation or growth constraints |
+| `detect_carbon_bottleneck` | Quick check for carbon bottleneck | Fast screening for C limitation |
 
 ### How to Request Diagnostics
 

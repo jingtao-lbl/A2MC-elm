@@ -216,13 +216,13 @@ A2MC uses a 7-phase workflow with intelligent iteration paths to minimize HPC co
 | 0 | DESIGN | Morris/Sobol sampling, create cases, submit to HPC | No | `create_morris_ensemble.py` |
 | 1 | EXPLORATION | Extract Y matrix, run sensitivity analysis | **Yes** | `extract_sensitivity_outputs.py`, `morris_sensitivity_analysis.py` |
 | 2 | SCREENING | Rank ensemble by validation targets | Yes | `screen_ensemble.py` |
-| 3 | DIAGNOSIS | Root cause analysis, edge case detection | Yes | `run_diagnosis.py` (+ 8 diagnostic tools) |
+| 3 | DIAGNOSIS | Root cause analysis, edge case detection | Yes | `run_diagnosis.py` (+ 11 diagnostic tools) |
 | 4 | HYPOTHESIS | Generate experiments OR test with existing data | Yes | `reasoning.py` |
 | 5 | TESTING | Run designed experiments on HPC | No | `submit_experiments.py` (+ design, monitor) |
 | 6 | REFINEMENT | Evaluate results, extract lessons, check equifinality | Yes | `reasoning.py`, `memory/manager.py` |
 | 7 | CONVERGED | Final optimal configuration | - | - |
 
-**Phase 3 Diagnostic Tools:** `analyze_mortality.py`, `analyze_nutrient_pools.py`, `check_edge_parameters.py`, `compare_case_parameters.py`, `compare_targets.py`, `detect_collapse.py`, `diagnose_pft_limitations.py`, `read_case_parameters.py`
+**Phase 3 Diagnostic Tools:** `analyze_carbon_balance.py`, `analyze_mortality.py`, `analyze_nutrient_balance.py`, `analyze_nutrient_pools.py`, `check_edge_parameters.py`, `compare_case_parameters.py`, `compare_targets.py`, `detect_collapse.py`, `diagnose_pft_limitations.py`, `read_case_parameters.py`, `test_hypothesis_framework.py`
 
 **Phase 5 Scripts:** `design_experiments.py`, `monitor_experiments.py`, `submit_experiments.py`
 

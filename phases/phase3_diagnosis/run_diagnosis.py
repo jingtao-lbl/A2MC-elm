@@ -11,6 +11,7 @@ Integrates with:
   - compare_case_parameters.py for case comparison
   - diagnose_pft_limitations.py for PFT-specific diagnosis
   - compare_targets.py for target comparison
+  - analyze_nutrient_balance.py for N/P mass balance analysis
   - reasoning.py for AI analysis
 
 Usage:
@@ -67,6 +68,14 @@ try:
         run_pft_diagnosis,
         get_diagnosis_summary_for_ai
     )
+    from phases.phase3_diagnosis.analyze_nutrient_balance import (
+        extract_nutrient_budget,
+        calculate_budget_closure,
+        analyze_pft_competition,
+        identify_nutrient_sinks,
+        get_balance_summary_for_ai,
+        results_to_dict as nutrient_balance_results_to_dict
+    )
     HAS_DIAGNOSIS_TOOLS = True
 except ImportError as e:
     logger.warning(f"Could not import diagnosis tools: {e}")
@@ -105,6 +114,9 @@ class DiagnosisConfig:
     # Number of top differences to report
     top_n_differences: int = 20
 
+    # Nutrient for mass balance analysis ('P' or 'N')
+    nutrient: str = 'P'
+
 
 @dataclass
 class DiagnosisResult:
@@ -132,6 +144,10 @@ class DiagnosisResult:
     pft_diagnoses: Dict[int, Dict] = field(default_factory=dict)
     pft_summary: str = ""
 
+    # Nutrient mass balance (if NC file provided)
+    nutrient_balance: Dict = field(default_factory=dict)
+    nutrient_balance_summary: str = ""
+
     # Combined summary for AI
     combined_summary: str = ""
 
@@ -154,6 +170,9 @@ class DiagnosisResult:
 
         if self.pft_summary:
             sections.append(self.pft_summary)
+
+        if self.nutrient_balance_summary:
+            sections.append(self.nutrient_balance_summary)
 
         return "\n\n".join(sections) if sections else self.combined_summary
 
@@ -356,6 +375,40 @@ def run_diagnosis(
         if pft_summaries:
             result.pft_summary = "\n\n".join(pft_summaries)
 
+    # Step 6: Nutrient mass balance (if NC file provided)
+    if config.nc_file:
+        if verbose:
+            print(f"\nStep 6: Analyzing {config.nutrient} mass balance...")
+
+        try:
+            budget = extract_nutrient_budget(
+                config.nc_file, config.nutrient, config.pft_ids
+            )
+            closure = calculate_budget_closure(budget)
+
+            competition = None
+            if config.pft_ids:
+                competition = analyze_pft_competition(
+                    config.nc_file, config.pft_ids, config.nutrient
+                )
+
+            sinks = identify_nutrient_sinks(budget)
+
+            result.nutrient_balance = nutrient_balance_results_to_dict(
+                budget, closure, competition, sinks
+            )
+            result.nutrient_balance_summary = get_balance_summary_for_ai(
+                budget, closure, competition, sinks
+            )
+
+            if verbose:
+                print(f"  Budget closure: {'OK' if closure.closure_acceptable else 'FAILED'}")
+                print(f"  Residual: {closure.relative_residual:.1%} of total input")
+                if sinks.leaching_exceeds_uptake:
+                    print(f"  WARNING: Leaching exceeds plant uptake!")
+        except Exception as e:
+            logger.warning(f"Could not run nutrient balance: {e}")
+
     # Build combined summary
     result.combined_summary = result.get_ai_context()
 
@@ -461,6 +514,8 @@ def main():
                         help='Targets JSON file')
     parser.add_argument('--pft-ids', type=int, nargs='+', default=[7, 9, 10],
                         help='PFT IDs to diagnose')
+    parser.add_argument('--nutrient', choices=['P', 'N'], default='P',
+                        help='Nutrient for mass balance analysis (default: P)')
     parser.add_argument('--output', '-o',
                         help='Output JSON file')
     parser.add_argument('--summary', action='store_true',
@@ -487,7 +542,8 @@ def main():
         param_bounds_file=args.param_bounds,
         nc_file=args.nc_file,
         targets=targets,
-        pft_ids=args.pft_ids
+        pft_ids=args.pft_ids,
+        nutrient=args.nutrient
     )
 
     # Run diagnosis
