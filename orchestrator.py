@@ -187,6 +187,11 @@ class WorkflowState:
     # Skip Testing: Results from testing hypotheses with existing data
     hypothesis_tests: List = field(default_factory=list)
 
+    # Cumulative insights: Key findings accumulated across skip-testing cycles
+    # Each entry: {cycle, hypothesis, supported, confidence, key_insights, evidence}
+    # Passed to next diagnosis so AI can build on previous findings
+    cumulative_insights: List = field(default_factory=list)
+
     # History tracking
     phase_history: List = field(default_factory=list)
 
@@ -394,7 +399,9 @@ class CalibrationOrchestrator:
                 self._phase_logger = PhaseLogger(
                     site_dir=site_dir,
                     site_name=site_name,
-                    iteration=self.state.iteration
+                    iteration=self.state.iteration,
+                    experiment_count=self.state.experiment_count,
+                    skip_testing_count=self.state.skip_testing_count
                 )
                 logger.info(f"Phase logger initialized: {self._phase_logger.log_dir}")
             except Exception as e:
@@ -1032,7 +1039,11 @@ class CalibrationOrchestrator:
         # Log exploration to phase logger
         if self._phase_logger:
             try:
-                self._phase_logger.set_iteration(self.state.iteration)
+                self._phase_logger.set_iteration_context(
+                        iteration=self.state.iteration,
+                        experiment_count=self.state.experiment_count,
+                        skip_testing_count=self.state.skip_testing_count
+                    )
                 exploration_data = self.state.exploration_data
 
                 # Build sensitivity analysis summary for log
@@ -1400,7 +1411,11 @@ class CalibrationOrchestrator:
             # Log to phase logger
             if self._phase_logger:
                 try:
-                    self._phase_logger.set_iteration(self.state.iteration)
+                    self._phase_logger.set_iteration_context(
+                        iteration=self.state.iteration,
+                        experiment_count=self.state.experiment_count,
+                        skip_testing_count=self.state.skip_testing_count
+                    )
                     log_path = self._phase_logger.log_screening(
                         title=f"Iteration_{self.state.iteration}_Screening",
                         n_sets_evaluated=n_cases,
@@ -1713,7 +1728,8 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                 "iteration": self.state.iteration,
                 "diagnostic_data": diagnostic_data,  # Pass diagnostic results to Claude
                 "hypothesis_tests": self.state.hypothesis_tests,  # Results from Skip Testing path
-                "previous_hypotheses": self.state.hypotheses  # Previous hypotheses for context
+                "previous_hypotheses": self.state.hypotheses,  # Previous hypotheses for context
+                "cumulative_insights": self.state.cumulative_insights,  # Cross-cycle synthesis
             }
 
             # Use Claude API for diagnosis (if available)
@@ -1749,7 +1765,11 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
             log_path = None
             if self._phase_logger:
                 try:
-                    self._phase_logger.set_iteration(self.state.iteration)
+                    self._phase_logger.set_iteration_context(
+                        iteration=self.state.iteration,
+                        experiment_count=self.state.experiment_count,
+                        skip_testing_count=self.state.skip_testing_count
+                    )
                     log_path = self._phase_logger.log_diagnosis(
                         title=f"Iteration_{self.state.iteration}_Diagnosis",
                         failing_targets=diagnosis.get('failing_targets', []),
@@ -1777,10 +1797,25 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
 
         # Human review checkpoint
         if self.config.human_review:
+            # Build skip-testing context header if in skip-testing loop
+            skip_header = ""
+            if self.state.skip_testing_count > 0:
+                last_test = self.state.hypothesis_tests[-1] if self.state.hypothesis_tests else {}
+                last_confidence = last_test.get('confidence', 0)
+                last_supported = last_test.get('hypothesis_supported', None)
+                skip_header = (
+                    f"\n  [Skip Testing Cycle {self.state.skip_testing_count}/{self.config.max_skip_testing}]"
+                    f"\n  Last hypothesis: {'SUPPORTED' if last_supported else 'NOT SUPPORTED'}"
+                    f" (confidence: {last_confidence:.2f}, threshold: {self.config.hypothesis_confidence_threshold})"
+                    f"\n  Cumulative insights: {len(self.state.cumulative_insights)} findings accumulated"
+                    f"\n"
+                )
+
             self._human_review_checkpoint(
                 phase="DIAGNOSIS",
                 summary=f"""
-Diagnosis Summary:
+Diagnosis Summary:{skip_header}
+  - Iteration: {self.state.iteration} (experiment: {self.state.experiment_count}, skip-test: {self.state.skip_testing_count})
   - Failing targets: {diagnosis.get('failing_targets', ['unknown'])}
   - Likely causes: {len(diagnosis.get('likely_causes', []))}
   - Confidence: {diagnosis.get('confidence', 0):.2f}
@@ -1843,6 +1878,32 @@ Diagnosis Summary:
             if previous_hypotheses:
                 results["previous_hypotheses"] = previous_hypotheses
                 logger.info(f"Added {len(previous_hypotheses)} previous hypotheses to Claude reasoning")
+
+            # Add cumulative insights from skip-testing cycles for cross-cycle synthesis
+            cumulative_insights = diagnosis_input.get("cumulative_insights", [])
+            if cumulative_insights:
+                # Build a structured summary for AI consumption
+                insights_summary = []
+                for ins in cumulative_insights:
+                    insights_summary.append({
+                        'cycle': ins.get('cycle'),
+                        'hypothesis': ins.get('hypothesis_name'),
+                        'supported': ins.get('hypothesis_supported'),
+                        'confidence': ins.get('confidence'),
+                        'parameters_tested': ins.get('parameters_tested', []),
+                        'key_insights': ins.get('key_insights', ''),
+                    })
+                results["cumulative_skip_testing_insights"] = {
+                    'total_cycles': len(cumulative_insights),
+                    'insights': insights_summary,
+                    'instruction': (
+                        "IMPORTANT: These are accumulated findings from previous skip-testing cycles. "
+                        "Build on these insights rather than repeating the same analyses. "
+                        "Identify patterns across cycles, refine hypotheses based on what was "
+                        "supported/rejected, and propose NEW directions not yet explored."
+                    )
+                }
+                logger.info(f"Added {len(cumulative_insights)} cumulative insights to Claude reasoning")
 
             diagnosis = self.reasoning.diagnose(
                 results=results,
@@ -2163,7 +2224,11 @@ Diagnosis Summary:
         log_path = None
         if self._phase_logger:
             try:
-                self._phase_logger.set_iteration(self.state.iteration)
+                self._phase_logger.set_iteration_context(
+                        iteration=self.state.iteration,
+                        experiment_count=self.state.experiment_count,
+                        skip_testing_count=self.state.skip_testing_count
+                    )
                 # Handle both Claude-generated (parameters) and rule-based (parameters_to_test) field names
                 raw_params = hypothesis.get('parameters', hypothesis.get('parameters_to_test', []))
                 params_to_modify = [
@@ -2212,6 +2277,26 @@ Diagnosis Summary:
 
             # Record test result
             self.state.hypothesis_tests.append(test_result)
+
+            # Accumulate insights for cross-cycle synthesis
+            insight_entry = {
+                'cycle': self.state.skip_testing_count + 1,  # 1-based for display
+                'iteration': self.state.iteration,
+                'hypothesis_name': hypothesis.get('name', 'Unknown'),
+                'hypothesis_supported': test_result.get('hypothesis_supported', None),
+                'confidence': test_result.get('confidence', 0),
+                'test_method': test_result.get('test_method', 'unknown'),
+                'key_insights': test_result.get('insights', test_result.get('evidence', '')),
+                'evidence_summary': test_result.get('evidence', ''),
+                'parameters_tested': [
+                    p.get('name', '') for p in hypothesis.get('parameters',
+                        hypothesis.get('parameters_to_test', []))
+                ],
+            }
+            self.state.cumulative_insights.append(insight_entry)
+            logger.info(f"  Accumulated insight #{len(self.state.cumulative_insights)}: "
+                       f"{hypothesis.get('name', '?')} → "
+                       f"{'supported' if test_result.get('hypothesis_supported') else 'not supported'}")
 
             # Increment skip testing counter (inner loop)
             self.state.skip_testing_count += 1
@@ -3449,7 +3534,11 @@ except ImportError:
         # Log refinement to phase logger
         if self._phase_logger:
             try:
-                self._phase_logger.set_iteration(self.state.iteration)
+                self._phase_logger.set_iteration_context(
+                        iteration=self.state.iteration,
+                        experiment_count=self.state.experiment_count,
+                        skip_testing_count=self.state.skip_testing_count
+                    )
 
                 # Determine targets improved/degraded
                 prev_best_targets = (self.state.best_experiment or {}).get("results", {}).get("targets_met", 0)
