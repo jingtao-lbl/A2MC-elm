@@ -1022,6 +1022,16 @@ class CalibrationOrchestrator:
             # Load existing sensitivity results
             self.state.exploration_data = self._analyze_existing_ensemble()
 
+            # Block if data is missing (extraction needed)
+            if self.state.exploration_data.get("data_missing", False):
+                logger.error("=" * 60)
+                logger.error("WORKFLOW BLOCKED: Extraction required before proceeding")
+                logger.error("=" * 60)
+                logger.error("Run the extraction commands above, then resume:")
+                logger.error(f"  python orchestrator.py --resume")
+                self.state.save(str(self.state_path))
+                raise SystemExit(1)
+
         else:
             # Submit ensemble to HPC
             logger.info(f"Submitting {n_sims} simulations to HPC...")
@@ -1159,8 +1169,13 @@ class CalibrationOrchestrator:
                     results["morris_y_matrices"] = [str(f) for f in morris_files]
                     results = self._run_morris_sensitivity_analysis(results, morris_files)
             else:
-                logger.info("No Morris Y matrices found and extraction incomplete")
-                logger.info("Run: python phases/phase1_exploration/extract_sensitivity_outputs.py --output-var leaf_biomass")
+                logger.warning("No Morris Y matrices found and extraction incomplete.")
+                logger.warning("Data extraction required before analysis can proceed.")
+                logger.info("Step 1: Extract monthly variables from simulation output:")
+                logger.info("  python tools/extract_monthly_variables_FATES.py --case-file completed_cases.txt")
+                logger.info("Step 2: Extract Y matrices for Morris analysis:")
+                logger.info("  python phases/phase1_exploration/extract_sensitivity_outputs.py --output-var leaf_biomass")
+                results["data_missing"] = True
 
         except ImportError:
             logger.debug("tools.config not available, skipping results loading")
