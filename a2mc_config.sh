@@ -26,6 +26,11 @@ export A2MC_COMPILER="intel"
 # ========================
 # PYTHON ENVIRONMENT
 # ========================
+# Load Python module on HPC (provides base Python with scientific packages)
+if command -v module &> /dev/null; then
+    module load python 2>/dev/null
+fi
+
 # Activate a2mc_env if it exists and not already activated
 export A2MC_VENV="${HOME}/a2mc_env"
 if [ -d "${A2MC_VENV}" ] && [ -z "${VIRTUAL_ENV:-}" ]; then

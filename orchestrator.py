@@ -1246,6 +1246,17 @@ class CalibrationOrchestrator:
         # Fallback: use DataPipeline (subprocess-based, slower but always available)
         try:
             logger.info("Falling back to DataPipeline for extraction...")
+            # Test first case before attempting all ~4890 cases
+            test_result = self.data.extract_case_data("1")
+            if not test_result.get('success'):
+                error_msg = test_result.get('error', 'extraction failed')
+                logger.error(f"Test extraction of case 1 failed: {error_msg}")
+                if 'xarray' in str(error_msg) or 'ModuleNotFoundError' in str(error_msg):
+                    logger.error("Missing Python packages. On Perlmutter, run:")
+                    logger.error("  module load python")
+                    logger.error("  # OR: conda activate <your_env>")
+                return {'status': 'failed', 'error': error_msg}
+
             n_sims = self.config.total_ensemble
             case_ids = [str(i) for i in range(1, n_sims + 1)]
             results = self.data.extract_batch(case_ids)
