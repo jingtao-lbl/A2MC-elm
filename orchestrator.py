@@ -1134,10 +1134,30 @@ class CalibrationOrchestrator:
                         logger.warning(f"Extraction incomplete: {len(nc_files)}/{n_sims} ({100*len(nc_files)/n_sims:.1f}%)")
                         logger.info("Run: python phases/phase1_exploration/extract_sensitivity_outputs.py")
                 else:
-                    logger.warning(f"No extracted files found in: {extracted_dir}")
-                    logger.info("Run: python tools/extract_monthly_variables_FATES.py --case-file completed_cases.txt")
+                    logger.info(f"No extracted files found in: {extracted_dir}")
+                    logger.info("Running monthly variable extraction from simulation output...")
+                    extraction_result = self._run_monthly_extraction()
+                    if extraction_result.get('status') in ['completed', 'partial']:
+                        nc_files = list(extracted_dir.glob("*_all_variables_monthly_*.nc"))
+                        results["extracted_cases"] = len(nc_files)
+                        if len(nc_files) >= n_sims * 0.9:
+                            results["extraction_complete"] = True
+                        logger.info(f"Monthly extraction done: {len(nc_files)} cases extracted")
+                    else:
+                        logger.warning(f"Monthly extraction failed: {extraction_result.get('error', 'unknown')}")
             else:
                 logger.warning(f"Extracted data directory does not exist: {extracted_dir}")
+                logger.info("Running monthly variable extraction from simulation output...")
+                extraction_result = self._run_monthly_extraction()
+                if extraction_result.get('status') in ['completed', 'partial']:
+                    extracted_dir.mkdir(parents=True, exist_ok=True)
+                    nc_files = list(extracted_dir.glob("*_all_variables_monthly_*.nc"))
+                    results["extracted_cases"] = len(nc_files)
+                    if len(nc_files) >= n_sims * 0.9:
+                        results["extraction_complete"] = True
+                    logger.info(f"Monthly extraction done: {len(nc_files)} cases extracted")
+                else:
+                    logger.warning(f"Monthly extraction failed: {extraction_result.get('error', 'unknown')}")
 
             # Check for Morris sensitivity results (Y matrices)
             # Look in multiple locations
@@ -1195,6 +1215,34 @@ class CalibrationOrchestrator:
             logger.debug("tools.config not available, skipping results loading")
 
         return results
+
+    def _run_monthly_extraction(self) -> Dict:
+        """
+        Extract comprehensive monthly variables from simulation output.
+
+        Calls tools/extract_monthly_variables_FATES.py to produce per-case
+        NetCDF files with all variables (biomass, nutrients, fluxes, etc.)
+        that Phase 3 diagnostic scripts need.
+
+        Returns:
+            Dict with 'status', 'successful_cases', 'failed_cases', 'output_dir'
+        """
+        try:
+            from tools.extract_monthly_variables_FATES import run_monthly_extraction
+            logger.info("Starting monthly variable extraction from simulation output...")
+            result = run_monthly_extraction()
+            if result.get('status') in ['completed', 'partial']:
+                logger.info(f"Monthly extraction {result['status']}: "
+                            f"{result.get('total_extracted', len(result.get('successful_cases', [])))} cases")
+            else:
+                logger.warning(f"Monthly extraction failed: {result.get('error', 'unknown')}")
+            return result
+        except ImportError as e:
+            logger.warning(f"Could not import monthly extraction module: {e}")
+            return {'status': 'failed', 'error': str(e)}
+        except Exception as e:
+            logger.error(f"Error during monthly extraction: {e}")
+            return {'status': 'failed', 'error': str(e)}
 
     def _run_y_matrix_extraction(self, results: Dict) -> Dict:
         """

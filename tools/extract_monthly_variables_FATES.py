@@ -715,6 +715,129 @@ def process_case(case_id, available_site, available_levgrnd, available_levsoi, a
 
 
 # ============================================================================
+# CALLABLE API (for orchestrator integration)
+# ============================================================================
+
+def run_monthly_extraction(case_list=None, case_file=None):
+    """
+    Extract comprehensive monthly variables from ELM-FATES simulation output.
+
+    Callable API wrapping the main() logic for use by the orchestrator.
+    Uses module-level config (BASE_INPUT_DIR, OUTPUT_DIR, etc.).
+
+    Parameters:
+    -----------
+    case_list : list of int, optional
+        List of case numbers to extract. If None, uses case_file or config.
+    case_file : str, optional
+        Path to file containing case numbers (one per line).
+
+    Returns:
+    --------
+    dict with keys:
+        'status': 'completed' | 'partial' | 'failed'
+        'successful_cases': list of int
+        'failed_cases': list of int
+        'output_dir': str
+    """
+    if not BASE_INPUT_DIR or not OUTPUT_DIR:
+        return {'status': 'failed', 'error': 'A2MC config not loaded (BASE_INPUT_DIR/OUTPUT_DIR not set)'}
+
+    # Load case numbers
+    try:
+        case_numbers = load_case_numbers(case_list, case_file)
+    except ValueError as e:
+        # No cases specified — generate full range from config
+        try:
+            from tools.config import config as a2mc_config
+            n_total = a2mc_config.TOTAL_ENSEMBLE
+            case_numbers = list(range(1, n_total + 1))
+        except (ImportError, AttributeError):
+            return {'status': 'failed', 'error': str(e)}
+
+    if not case_numbers:
+        return {'status': 'failed', 'error': 'No case numbers to process'}
+
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Skip cases that already have extracted files
+    cases_to_extract = []
+    for case_id in case_numbers:
+        if isinstance(case_id, int):
+            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_{CASE_SUFFIX}'
+        elif '_exp' in str(case_id):
+            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_TRANS'
+        else:
+            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_{CASE_SUFFIX}'
+        nc_file = OUTPUT_DIR / f'{case_name}_all_variables_monthly_{START_YEAR}_{END_YEAR}.nc'
+        if not nc_file.exists():
+            cases_to_extract.append(case_id)
+
+    if not cases_to_extract:
+        print(f"All {len(case_numbers)} cases already extracted in {OUTPUT_DIR}")
+        return {
+            'status': 'completed',
+            'successful_cases': case_numbers,
+            'failed_cases': [],
+            'output_dir': str(OUTPUT_DIR),
+            'skipped': len(case_numbers)
+        }
+
+    print(f"\nExtracting {len(cases_to_extract)} cases ({len(case_numbers) - len(cases_to_extract)} already done)")
+
+    # Detect available variables from first case
+    first_case_id = cases_to_extract[0]
+    if isinstance(first_case_id, int):
+        first_case_name = f'Kougarok_ELM-FATES_PtCNPEn{first_case_id}_{CASE_SUFFIX}'
+    elif '_exp' in str(first_case_id):
+        first_case_name = f'Kougarok_ELM-FATES_PtCNPEn{first_case_id}_TRANS'
+    else:
+        first_case_name = f'Kougarok_ELM-FATES_PtCNPEn{first_case_id}_{CASE_SUFFIX}'
+
+    first_history_files = get_history_files(first_case_name, START_YEAR, START_YEAR)
+    if not first_history_files:
+        return {'status': 'failed', 'error': f'No history files found for case {first_case_id}'}
+
+    ds_test = xr.open_dataset(first_history_files[0], decode_times=False)
+    all_vars = list(ds_test.variables.keys())
+    available_site = [v for v in SITE_LEVEL_VARS if v in all_vars]
+    available_levgrnd = [v for v in LEVGRND_VARS if v in all_vars]
+    available_levsoi = [v for v in LEVSOI_VARS if v in all_vars]
+    available_levdcmp = [v for v in LEVDCMP_VARS if v in all_vars]
+    available_levelem = [v for v in LEVELEM_VARS if v in all_vars]
+    available_pft = [v for v in PFT_LEVEL_VARS if v in all_vars]
+    available_szpf = [v for v in SZPF_VARS if v in all_vars]
+    ds_test.close()
+
+    # Process cases
+    successful_cases = []
+    failed_cases = []
+    for idx, case_id in enumerate(cases_to_extract, 1):
+        print(f"\n[{idx}/{len(cases_to_extract)}] Case {case_id}")
+        success = process_case(case_id, available_site, available_levgrnd, available_levsoi,
+                               available_levdcmp, available_levelem, available_pft, available_szpf)
+        if success:
+            successful_cases.append(case_id)
+        else:
+            failed_cases.append(case_id)
+
+    total_success = len(successful_cases) + (len(case_numbers) - len(cases_to_extract))
+    status = 'completed' if not failed_cases else 'partial'
+
+    print(f"\nExtraction {status}: {total_success}/{len(case_numbers)} cases")
+    if failed_cases:
+        print(f"Failed cases: {failed_cases}")
+
+    return {
+        'status': status,
+        'successful_cases': successful_cases,
+        'failed_cases': failed_cases,
+        'output_dir': str(OUTPUT_DIR),
+        'total_extracted': total_success
+    }
+
+
+# ============================================================================
 # MAIN EXECUTION
 # ============================================================================
 
