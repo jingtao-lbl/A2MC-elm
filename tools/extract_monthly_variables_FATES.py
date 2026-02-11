@@ -51,12 +51,19 @@ try:
     from config import config
     BASE_INPUT_DIR = Path(config.ENSEMBLE_OUTPUT) if config.ENSEMBLE_OUTPUT else None
     OUTPUT_DIR = Path(config.EXTRACTED_DATA) if config.EXTRACTED_DATA else None
+    _CASE_NAME_PATTERN = config.CASE_NAME_PATTERN
 except ImportError:
     # Fallback to environment variables (no hardcoded defaults)
     _ensemble_output = os.environ.get('A2MC_ENSEMBLE_OUTPUT', '')
     _extracted_data = os.environ.get('A2MC_EXTRACTED_DATA', '')
     BASE_INPUT_DIR = Path(_ensemble_output) if _ensemble_output else None
     OUTPUT_DIR = Path(_extracted_data) if _extracted_data else None
+    _prefix = os.environ.get('A2MC_ENSEMBLE_PREFIX', '')
+    _CASE_NAME_PATTERN = os.environ.get('A2MC_CASE_NAME_PATTERN', f"{_prefix}{{N}}_{{PHASE}}")
+
+def _make_case_name(case_id, phase_suffix):
+    """Build case name from case_id and phase suffix using configurable pattern."""
+    return _CASE_NAME_PATTERN.format(N=case_id, PHASE=phase_suffix)
 
 # Validate configuration
 if not BASE_INPUT_DIR or not OUTPUT_DIR:
@@ -632,17 +639,17 @@ def process_case(case_id, available_site, available_levgrnd, available_levsoi, a
     # Handle both integer case numbers and string case IDs
     if isinstance(case_id, int):
         # Regular ensemble case: use CASE_SUFFIX
-        case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_{CASE_SUFFIX}'
+        case_name = _make_case_name(case_id, CASE_SUFFIX)
     else:
         # String case ID (e.g., "845_exp1")
         # Check if it's an experimental case
         if '_exp' in str(case_id):
             # Experimental case: case_id already contains "845_exp1", just append "_TRANS"
             # Result: Kougarok_ELM-FATES_PtCNPEn845_exp1_TRANS
-            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_TRANS'
+            case_name = _make_case_name(case_id, 'TRANS')
         else:
             # Other string case ID: use CASE_SUFFIX
-            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_{CASE_SUFFIX}'
+            case_name = _make_case_name(case_id, CASE_SUFFIX)
 
     print(f"\n  Processing case {case_id}: {case_name}")
 
@@ -790,11 +797,11 @@ def run_monthly_extraction(case_list=None, case_file=None, parallel=8):
     cases_to_extract = []
     for case_id in case_numbers:
         if isinstance(case_id, int):
-            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_{CASE_SUFFIX}'
+            case_name = _make_case_name(case_id, CASE_SUFFIX)
         elif '_exp' in str(case_id):
-            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_TRANS'
+            case_name = _make_case_name(case_id, 'TRANS')
         else:
-            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_{CASE_SUFFIX}'
+            case_name = _make_case_name(case_id, CASE_SUFFIX)
         nc_file = OUTPUT_DIR / f'{case_name}_all_variables_monthly_{START_YEAR}_{END_YEAR}.nc'
         if not nc_file.exists():
             cases_to_extract.append(case_id)
@@ -814,11 +821,11 @@ def run_monthly_extraction(case_list=None, case_file=None, parallel=8):
     # Detect available variables from first case
     first_case_id = cases_to_extract[0]
     if isinstance(first_case_id, int):
-        first_case_name = f'Kougarok_ELM-FATES_PtCNPEn{first_case_id}_{CASE_SUFFIX}'
+        first_case_name = _make_case_name(first_case_id, CASE_SUFFIX)
     elif '_exp' in str(first_case_id):
-        first_case_name = f'Kougarok_ELM-FATES_PtCNPEn{first_case_id}_TRANS'
+        first_case_name = _make_case_name(first_case_id, 'TRANS')
     else:
-        first_case_name = f'Kougarok_ELM-FATES_PtCNPEn{first_case_id}_{CASE_SUFFIX}'
+        first_case_name = _make_case_name(first_case_id, CASE_SUFFIX)
 
     first_history_files = get_history_files(first_case_name, START_YEAR, START_YEAR)
     if not first_history_files:
@@ -972,15 +979,15 @@ Examples:
 
     # Build case name with appropriate suffix
     if isinstance(first_case_id, int):
-        first_case_name = f'Kougarok_ELM-FATES_PtCNPEn{first_case_id}_{CASE_SUFFIX}'
+        first_case_name = _make_case_name(first_case_id, CASE_SUFFIX)
     else:
         # String case ID
         if '_exp' in str(first_case_id):
             # Experimental case: just append "_TRANS"
-            first_case_name = f'Kougarok_ELM-FATES_PtCNPEn{first_case_id}_TRANS'
+            first_case_name = _make_case_name(first_case_id, 'TRANS')
         else:
             # Other string case ID: use CASE_SUFFIX
-            first_case_name = f'Kougarok_ELM-FATES_PtCNPEn{first_case_id}_{CASE_SUFFIX}'
+            first_case_name = _make_case_name(first_case_id, CASE_SUFFIX)
 
     first_history_files = get_history_files(first_case_name, START_YEAR, START_YEAR)
 
@@ -1015,11 +1022,11 @@ Examples:
     already_done = 0
     for case_id in CASE_NUMBERS:
         if isinstance(case_id, int):
-            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_{CASE_SUFFIX}'
+            case_name = _make_case_name(case_id, CASE_SUFFIX)
         elif '_exp' in str(case_id):
-            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_TRANS'
+            case_name = _make_case_name(case_id, 'TRANS')
         else:
-            case_name = f'Kougarok_ELM-FATES_PtCNPEn{case_id}_{CASE_SUFFIX}'
+            case_name = _make_case_name(case_id, CASE_SUFFIX)
         nc_file = OUTPUT_DIR / f'{case_name}_all_variables_monthly_{START_YEAR}_{END_YEAR}.nc'
         if nc_file.exists():
             already_done += 1

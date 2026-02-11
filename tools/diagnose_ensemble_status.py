@@ -74,6 +74,19 @@ except ImportError:
     CASE_SCRIPTS_DIR = os.environ.get('A2MC_CASE_SCRIPTS', '')
     TOTAL_ENSEMBLE = int(os.environ.get('A2MC_TOTAL_ENSEMBLE', '0'))
 
+# Case name pattern: how to construct case directory names from case number and phase
+# Uses {N} for case number and {PHASE} for phase name (ADSP, RGSP, TRANS)
+# Example: "Kougarok_ELM-FATES_PtCNPEn{N}_{PHASE}"
+# Fallback: "{CASE_PREFIX}{N}_{PHASE}" (legacy behavior)
+CASE_NAME_PATTERN = os.environ.get(
+    'A2MC_CASE_NAME_PATTERN',
+    f"{CASE_PREFIX}{{N}}_{{PHASE}}"
+)
+
+def make_case_name(case_num, phase):
+    """Build case directory name from case number and phase."""
+    return CASE_NAME_PATTERN.format(N=case_num, PHASE=phase)
+
 # Validate configuration
 if not OUTPUT_ROOT:
     print("ERROR: A2MC_ENSEMBLE_OUTPUT not set. Source a2mc_config.sh and site config first.")
@@ -162,7 +175,7 @@ def check_case_creation(case_num, phase):
     Returns:
         dict with 'valid' (bool) and 'error' (str) keys
     """
-    case_name = f"{CASE_PREFIX}{case_num}_{phase}"
+    case_name = make_case_name(case_num, phase)
     script_path = os.path.join(SCRIPT_DIR, case_name)
 
     errors = []
@@ -201,7 +214,7 @@ def check_prev_phase_restart(case_num, phase, min_size_bytes=1000):
         return {'exists': True, 'path': None, 'error': None, 'size': None}  # ADSP has no prev phase
 
     prev_final_year = PHASES[prev_phase]['final_year']
-    prev_case_name = f"{CASE_PREFIX}{case_num}_{prev_phase}"
+    prev_case_name = make_case_name(case_num, prev_phase)
     prev_restart_file = f"{OUTPUT_ROOT}/{prev_case_name}/run/{prev_case_name}.elm.r.{prev_final_year:04d}-01-01-00000.nc"
 
     if os.path.exists(prev_restart_file):
@@ -258,7 +271,7 @@ def scan_case_creation_log(case_num):
 
 def check_phase_status(case_num, phase):
     """Check the status of a specific phase for a case."""
-    case_name = f"{CASE_PREFIX}{case_num}_{phase}"
+    case_name = make_case_name(case_num, phase)
     case_dir = os.path.join(OUTPUT_ROOT, case_name)
 
     phase_info = PHASES[phase]
@@ -396,7 +409,7 @@ def check_phase_ready(case_num, phase):
     Returns:
         dict with 'ready' (bool), 'reason' (str), and 'script_path' (str) keys
     """
-    case_name = f"{CASE_PREFIX}{case_num}_{phase}"
+    case_name = make_case_name(case_num, phase)
     script_path = os.path.join(SCRIPT_DIR, case_name)
 
     if not os.path.isdir(script_path):
@@ -432,7 +445,7 @@ def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_ye
         List of shell command lines
     """
     phase_info = PHASES[phase]
-    case_name = f"{CASE_PREFIX}{case_num}_{phase}"
+    case_name = make_case_name(case_num, phase)
     case_path = os.path.join(SCRIPT_DIR, case_name)
 
     # Calculate restart year and STOP_N
@@ -463,7 +476,7 @@ def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_ye
         # RGSP or TRANS fresh start - finidat from previous phase
         prev_phase = phase_info['prev_phase']
         prev_final_year = PHASES[prev_phase]['final_year']
-        prev_case_name = f"{CASE_PREFIX}{case_num}_{prev_phase}"
+        prev_case_name = make_case_name(case_num, prev_phase)
         prev_restart_file = f"{OUTPUT_ROOT}/{prev_case_name}/run/{prev_case_name}.elm.r.{prev_final_year:04d}-01-01-00000.nc"
 
         cmd_lines.extend([

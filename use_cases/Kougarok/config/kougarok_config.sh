@@ -82,6 +82,7 @@ export A2MC_TOP_N=50
 # -----------------------------------------------------------------------------
 export A2MC_ENSEMBLE_NAME="Kougarok_PlantTraitsCNPEnsemble162_Morris"
 export A2MC_ENSEMBLE_PREFIX="Kougarok_ELM-FATES"
+export A2MC_CASE_NAME_PATTERN="${A2MC_ENSEMBLE_PREFIX}_PtCNPEn{N}_{PHASE}"
 export A2MC_ENSEMBLE_OUTPUT="${A2MC_OUTPUT_ROOT}/${A2MC_ENSEMBLE_NAME}"
 # Extracted monthly data (NetCDF files from extract_monthly_variables_FATES.py)
 export A2MC_EXTRACTED_DATA="${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_Morris_Extract"

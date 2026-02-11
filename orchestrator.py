@@ -1065,7 +1065,7 @@ class CalibrationOrchestrator:
                 ai_reasoning = self._build_sensitivity_summary(exploration_data)
 
                 log_path = self._phase_logger.log_exploration(
-                    title=f"Iteration_{self.state.iteration}_Exploration",
+                    title="Exploration",
                     total_cases=n_sims,
                     completed_cases=exploration_data.get('extracted_cases', 0),
                     failed_cases=n_sims - exploration_data.get('extracted_cases', 0),
@@ -1521,7 +1521,7 @@ class CalibrationOrchestrator:
                         skip_testing_count=self.state.skip_testing_count
                     )
                     log_path = self._phase_logger.log_screening(
-                        title=f"Iteration_{self.state.iteration}_Screening",
+                        title="Screening",
                         n_sets_evaluated=n_cases,
                         best_cost=best_case.get('composite_rmsre', float('inf')),
                         top_sets=[c.get('case_num', 0) for c in screening_data.get('best_cases', [])[:10]],
@@ -1876,7 +1876,7 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                         skip_testing_count=self.state.skip_testing_count
                     )
                     log_path = self._phase_logger.log_diagnosis(
-                        title=f"Iteration_{self.state.iteration}_Diagnosis",
+                        title="Diagnosis",
                         failing_targets=diagnosis.get('failing_targets', []),
                         likely_causes=diagnosis.get('likely_causes', []),
                         ai_reasoning=diagnosis.get('reasoning', ''),
@@ -2262,8 +2262,8 @@ Diagnosis Summary:{skip_header}
                     edge_result = check_parameters_at_edge(
                         case_id=target_case,
                         morris_file=a2mc_config.ENSEMBLE_MATRIX_FILE,
-                        param_names=None,
-                        param_bounds=None,
+                        param_names=a2mc_config.PARAM_LIST_FILE,
+                        param_bounds=a2mc_config.SALIB_PROBLEM_FILE,
                         threshold_pct=tool_args.get('threshold_pct', 1.0)
                     )
                     results['edge_parameters'] = edge_result
@@ -2281,8 +2281,8 @@ Diagnosis Summary:{skip_header}
                             case1_id=case1_id,
                             case2_id=int(case2_id),
                             morris_file=a2mc_config.ENSEMBLE_MATRIX_FILE,
-                            param_names=None,
-                            param_bounds=None,
+                            param_names=a2mc_config.PARAM_LIST_FILE,
+                            param_bounds=a2mc_config.SALIB_PROBLEM_FILE,
                             top_n=tool_args.get('top_n', 20)
                         )
                         results['case_comparison'] = comparison
@@ -2350,7 +2350,7 @@ Diagnosis Summary:{skip_header}
                                     mortality_data=mort_data, pft_id=pid
                                 )
                             results['mortality'] = mort_results
-                            summaries.append(f"## Mortality Analysis\n{get_mortality_summary_for_ai(mort_results)}")
+                            summaries.append(f"## Mortality Analysis\n{get_mortality_summary_for_ai(mort_results, mort_pft_ids)}")
                         elif tool == 'detect_collapse':
                             vegc_data = extract_vegc_timeseries(
                                 data_files=data_files, pft_ids=tool_args.get('pft_ids', pft_ids)
@@ -2607,7 +2607,7 @@ Diagnosis Summary:{skip_header}
                 ]
                 ai_reasoning = hypothesis.get('mechanism', '') or hypothesis.get('reasoning', '')
                 log_path = self._phase_logger.log_hypothesis(
-                    title=hypothesis.get('name', f"Iteration_{self.state.iteration}_Hypothesis"),
+                    title=hypothesis.get('name', "Hypothesis"),
                     hypothesis_name=hypothesis.get('name', 'Unknown'),
                     mechanism=hypothesis.get('mechanism', ''),
                     parameters_to_modify=params_to_modify,
@@ -3112,7 +3112,7 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
                     targets_degraded = [f"{prev_best_targets - best_targets_met} targets degraded"]
 
                 log_path = self._phase_logger.log_refinement(
-                    title=f"Iteration_{self.state.iteration}_Refinement",
+                    title="Refinement",
                     hypothesis_status=action_result['hypothesis_status'],
                     targets_improved=targets_improved,
                     targets_degraded=targets_degraded,

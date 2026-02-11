@@ -59,8 +59,15 @@ RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
 picture_name = 'Compare_Top50Cases_New162Params_4890Ensemble_LeafFroot_3x2.png'
 
-# Case naming pattern
-CASE_PATTERN = 'Kougarok_ELM-FATES_PtCNPEn{case_num}_TRANS'
+# Case naming pattern - from A2MC config
+import os as _os
+try:
+    from tools.config import config as _a2mc_config
+    CASE_PATTERN = _a2mc_config.CASE_NAME_PATTERN
+except ImportError:
+    _prefix = _os.environ.get('A2MC_ENSEMBLE_PREFIX', '')
+    CASE_PATTERN = _os.environ.get(
+        'A2MC_CASE_NAME_PATTERN', f"{_prefix}{{N}}_{{PHASE}}")
 FILE_PATTERN = '{case_name}_all_variables_monthly_{year_start}_{year_end}.nc'
 
 # Variable settings
@@ -147,7 +154,12 @@ BEST_LINEWIDTH = 3
 def get_available_cases(data_dir):
     """Scan directory to find all available case numbers."""
     cases = []
-    pattern = re.compile(r'Kougarok_ELM-FATES_PtCNPEn(\d+)_TRANS_all_variables_monthly')
+    # Build regex from configurable case name pattern
+    marker = '___CASENUM___'
+    template = CASE_PATTERN.format(N=marker, PHASE='TRANS')
+    escaped = re.escape(template)
+    regex_str = escaped.replace(marker, r'(\d+)') + '_all_variables_monthly'
+    pattern = re.compile(regex_str)
 
     for f in data_dir.glob('*_all_variables_monthly_*.nc'):
         match = pattern.search(f.name)
@@ -159,7 +171,7 @@ def get_available_cases(data_dir):
 
 def load_nc_timeseries(case_num, var_name, data_dir, year_start=1901, year_end=2019):
     """Load timeseries from NetCDF file."""
-    case_name = CASE_PATTERN.format(case_num=case_num)
+    case_name = CASE_PATTERN.format(N=case_num, PHASE='TRANS')
     nc_file = data_dir / FILE_PATTERN.format(
         case_name=case_name,
         year_start=year_start,

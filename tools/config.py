@@ -164,6 +164,16 @@ class A2MCConfig:
         return self.ENSEMBLE_PREFIX
 
     @property
+    def CASE_NAME_PATTERN(self) -> str:
+        """Pattern for case directory names. Uses {N} for case number, {PHASE} for phase."""
+        default = f"{self.ENSEMBLE_PREFIX}{{N}}_{{PHASE}}"
+        return os.environ.get('A2MC_CASE_NAME_PATTERN', default)
+
+    def make_case_name(self, case_num: int, phase: str = 'TRANS') -> str:
+        """Build case directory name from case number and phase."""
+        return self.CASE_NAME_PATTERN.format(N=case_num, PHASE=phase)
+
+    @property
     def N_PARAMS(self) -> int:
         """Number of parameters"""
         return int(os.environ.get('A2MC_N_PARAMS', '100'))
@@ -379,15 +389,18 @@ config = A2MCConfig()
 # Convenience function to get specific ensemble paths
 def get_case_path(case_num: int, phase: str = 'TRANS') -> Path:
     """Get path to a specific case output directory"""
-    case_name = f"{config.CASE_PREFIX}_PtCNPEn{case_num}_{phase}"
+    case_name = config.make_case_name(case_num, phase)
     return Path(config.ENSEMBLE_OUTPUT) / case_name / 'run'
 
 
 def get_case_name(case_num: int, suffix: str = '', phase: str = 'TRANS') -> str:
     """Generate case name from case number"""
     if suffix:
-        return f"{config.CASE_PREFIX}_PtCNPEn{case_num}_{suffix}_{phase}"
-    return f"{config.CASE_PREFIX}_PtCNPEn{case_num}_{phase}"
+        # For suffixed names, insert suffix before phase
+        base = config.make_case_name(case_num, phase)
+        # Replace _{PHASE} with _{suffix}_{PHASE}
+        return base.replace(f"_{phase}", f"_{suffix}_{phase}")
+    return config.make_case_name(case_num, phase)
 
 
 def get_extracted_data_path(case_name: str) -> Path:

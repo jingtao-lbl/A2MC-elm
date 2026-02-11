@@ -202,7 +202,8 @@ def aggregate_szpf_to_pft(szpf_data: np.ndarray, pft_id: int) -> np.ndarray:
 def get_case_path(case_num: int, ensemble_output: str, case_prefix: str,
                   phase: str = 'TRANS') -> Path:
     """Get path to case output directory."""
-    case_name = f"{case_prefix}_PtCNPEn{case_num}_{phase}"
+    pattern = os.environ.get('A2MC_CASE_NAME_PATTERN', f"{case_prefix}{{N}}_{{PHASE}}")
+    case_name = pattern.format(N=case_num, PHASE=phase)
     return Path(ensemble_output) / case_name / 'run'
 
 
@@ -249,7 +250,8 @@ def extract_variable_from_case(
     Returns:
         Array of shape (n_pfts,) with aggregated values, or None if failed
     """
-    case_name = f"{case_prefix}_PtCNPEn{case_num}_TRANS"
+    pattern = os.environ.get('A2MC_CASE_NAME_PATTERN', f"{case_prefix}{{N}}_{{PHASE}}")
+    case_name = pattern.format(N=case_num, PHASE='TRANS')
     case_dir = Path(ensemble_output) / case_name / 'run'
 
     if not case_dir.exists():

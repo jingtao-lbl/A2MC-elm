@@ -62,7 +62,7 @@ class ScreeningConfig:
     """Configuration for ensemble screening"""
     # Data location
     data_dir: Path = None
-    case_pattern: str = 'Kougarok_ELM-FATES_PtCNPEn{case_num}_TRANS'
+    case_pattern: str = ''  # Set from A2MC_CASE_NAME_PATTERN or default
     file_pattern: str = '{case_name}_all_variables_monthly_{year_start}_{year_end}.nc'
 
     # Time settings
@@ -91,6 +91,18 @@ class ScreeningConfig:
     aggregation_method: str = 'rmsre'
     tolerance: float = 0.2
     top_n: int = 100
+
+    def __post_init__(self):
+        """Initialize case_pattern from A2MC config if not set."""
+        if not self.case_pattern:
+            import os
+            try:
+                from tools.config import config as a2mc_config
+                self.case_pattern = a2mc_config.CASE_NAME_PATTERN
+            except ImportError:
+                prefix = os.environ.get('A2MC_ENSEMBLE_PREFIX', '')
+                self.case_pattern = os.environ.get(
+                    'A2MC_CASE_NAME_PATTERN', f"{prefix}{{N}}_{{PHASE}}")
 
     @property
     def obs_idx(self) -> int:
@@ -181,7 +193,12 @@ FATES_PFTMAP_LEVSCPF = np.array([
 def get_available_cases(data_dir: Path, config: ScreeningConfig) -> List[int]:
     """Scan directory to find all available case numbers."""
     cases = []
-    pattern = re.compile(r'Kougarok_ELM-FATES_PtCNPEn(\d+)_TRANS_all_variables_monthly')
+    # Build regex from configurable case name pattern
+    marker = '___CASENUM___'
+    template = config.case_pattern.format(N=marker, PHASE='TRANS')
+    escaped = re.escape(template)
+    regex_str = escaped.replace(marker, r'(\d+)') + '_all_variables_monthly'
+    pattern = re.compile(regex_str)
 
     for f in data_dir.glob('*_all_variables_monthly_*.nc'):
         match = pattern.search(f.name)
@@ -193,7 +210,7 @@ def get_available_cases(data_dir: Path, config: ScreeningConfig) -> List[int]:
 
 def load_nc_timeseries(case_num: int, var_name: str, config: ScreeningConfig) -> np.ndarray:
     """Load timeseries from NetCDF file."""
-    case_name = config.case_pattern.format(case_num=case_num)
+    case_name = config.case_pattern.format(N=case_num, PHASE='TRANS')
     nc_file = config.data_dir / config.file_pattern.format(
         case_name=case_name,
         year_start=config.year_start,
