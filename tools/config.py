@@ -71,15 +71,18 @@ class A2MCConfig:
 
     @property
     def PARAM_DIR(self) -> str:
-        """FATES parameter files directory"""
-        return os.environ.get('A2MC_PARAM_DIR',
-            '/dvs_ro/u1/j/jingtao/E3SM_Aid/FATES-ParameterFiles')
+        """Directory containing ensemble parameter files"""
+        return os.environ.get('A2MC_PARAM_DIR', '')
 
     @property
     def BASE_PARAM_FILE(self) -> str:
-        """Base FATES parameter file (template)"""
-        return os.environ.get('A2MC_BASE_PARAM_FILE',
-            '/dvs_ro/u1/j/jingtao/FATES-DataParameterFiles/fates_params_api25.5.0_12pft_c230710.nc')
+        """Base FATES parameter file (template fallback)"""
+        return os.environ.get('A2MC_BASE_PARAM_FILE', '')
+
+    @property
+    def PARAM_PATTERN(self) -> str:
+        """Parameter file naming pattern with {N} placeholder for case number"""
+        return os.environ.get('A2MC_PARAM_PATTERN', '')
 
     @property
     def ENSEMBLE_MATRIX_FILE(self) -> str:
@@ -347,6 +350,7 @@ class A2MCConfig:
         print("")
         print("Parameter Files:")
         print(f"  PARAM_DIR:          {self.PARAM_DIR}")
+        print(f"  PARAM_PATTERN:      {self.PARAM_PATTERN}")
         print(f"  BASE_PARAM_FILE:    {self.BASE_PARAM_FILE}")
         print(f"  ENSEMBLE_MATRIX:    {self.ENSEMBLE_MATRIX_FILE}")
         print(f"  PARAM_LIST:         {self.PARAM_LIST_FILE}")

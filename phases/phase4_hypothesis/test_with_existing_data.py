@@ -128,15 +128,39 @@ def load_morris_ensemble_data(config: Any, screening_data: Dict = None) -> Tuple
     if not use_case_dir:
         raise FileNotFoundError("Cannot determine use case directory")
 
-    # Parameter matrix file
-    param_files = list(Path(use_case_dir).glob("parameters/*Morris*.txt"))
-    if not param_files:
-        param_files = list(Path(use_case_dir).parent.parent.glob("SALib_FATES/*Morris*.txt"))
+    # Parameter matrix file - check config/env var first, then glob
+    param_file = None
 
-    if not param_files:
-        raise FileNotFoundError("No Morris parameter matrix file found")
+    # 1. Check A2MC_ENSEMBLE_MATRIX_FILE from config or env
+    ensemble_matrix = os.environ.get('A2MC_ENSEMBLE_MATRIX_FILE', '')
+    if not ensemble_matrix:
+        try:
+            from tools.config import config as a2mc_config
+            ensemble_matrix = getattr(a2mc_config, 'ENSEMBLE_MATRIX_FILE', '')
+        except (ImportError, AttributeError):
+            pass
 
-    param_file = param_files[0]
+    if ensemble_matrix and Path(ensemble_matrix).exists():
+        param_file = Path(ensemble_matrix)
+    else:
+        # 2. Glob in use_case_dir/parameters/
+        param_files = list(Path(use_case_dir).glob("parameters/*Morris*.txt"))
+        # 3. Glob in phases/phase0_design/
+        if not param_files:
+            a2mc_root = Path(use_case_dir).parent.parent
+            param_files = list((a2mc_root / "phases" / "phase0_design").glob("*Morris*.txt"))
+        # 4. Legacy: SALib_FATES/
+        if not param_files:
+            param_files = list(Path(use_case_dir).parent.parent.glob("SALib_FATES/*Morris*.txt"))
+
+        if not param_files:
+            raise FileNotFoundError(
+                "No Morris parameter matrix file found. "
+                "Set A2MC_ENSEMBLE_MATRIX_FILE or place file in "
+                "use_cases/{site}/parameters/ or phases/phase0_design/"
+            )
+        param_file = param_files[0]
+
     logger.info(f"  Loading parameters from: {param_file}")
     param_matrix = np.loadtxt(param_file)
 

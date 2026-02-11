@@ -2548,24 +2548,41 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
         logger.info(f"Designed {len(experiments)} experiments for iteration {current_iter}")
 
         # --- 3. Create modified parameter files ---
-        base_param_file = self.config.base_param_file
-        if not base_param_file:
-            logger.error("No base parameter file configured (A2MC_BASE_PARAM_FILE)")
+        # Each experiment uses its base_case's parameter file (not the default template)
+        param_dir = os.environ.get('A2MC_PARAM_DIR', '')
+        param_pattern = os.environ.get('A2MC_PARAM_PATTERN', '')
+
+        if not param_dir or not param_pattern:
+            try:
+                from tools.config import config as a2mc_config
+                if not param_dir:
+                    param_dir = a2mc_config.PARAM_DIR
+                if not param_pattern:
+                    param_pattern = a2mc_config.PARAM_PATTERN
+            except (ImportError, AttributeError):
+                pass
+
+        if not param_dir or not param_pattern:
+            logger.error("A2MC_PARAM_DIR and A2MC_PARAM_PATTERN must be configured. "
+                         "Experiments require case-specific parameter files.")
             for exp in experiments:
-                exp["status"] = "no_base_param_file"
+                exp["status"] = "no_param_config"
                 exp["iteration"] = current_iter
                 self.state.experiments.append(exp)
             self.state.current_phase = Phase.REFINEMENT.value
             return
+
+        logger.info(f"Case parameter files: {param_dir}/{param_pattern}")
 
         output_dir = os.path.join(self.config.output_dir, "logs",
                                   "phase5_testing", f"iter_{current_iter}")
         try:
             experiments = create_experiment_param_files(
                 experiments=experiments,
-                base_param_file=base_param_file,
                 output_dir=output_dir,
-                verify=True
+                verify=True,
+                param_dir=param_dir,
+                param_pattern=param_pattern,
             )
             created = sum(1 for e in experiments if e.get("param_status") == "created")
             logger.info(f"Created {created}/{len(experiments)} parameter files")

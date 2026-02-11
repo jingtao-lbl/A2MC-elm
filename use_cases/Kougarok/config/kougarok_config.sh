@@ -94,7 +94,7 @@ export A2MC_LOG_DIR="${A2MC_CASE_SCRIPTS}"
 # HPC Paths (NERSC Perlmutter)
 # -----------------------------------------------------------------------------
 # Base FATES parameter file (template)
-export A2MC_BASE_PARAM_FILE="/dvs_ro/u1/j/jingtao/FATES-DataParameterFiles/fates_params_api25.5.0_12pft_c230710.nc"
+export A2MC_BASE_PARAM_FILE="/dvs_ro/u1/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_api25.5.0_12pft_c230710.nc"
 
 # Directory containing FATES parameter files for ensemble
 export A2MC_PARAM_DIR="/dvs_ro/u1/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
@@ -111,8 +111,8 @@ export A2MC_ENSEMBLE_MATRIX_FILE="${A2MC_ROOT}/phases/phase0_design/FATES_CNPnPl
 # Phenology Calibration (from Dec 2025 analysis)
 # -----------------------------------------------------------------------------
 # Calibrated phenology parameters (shared across cold-deciduous PFTs)
-export A2MC_PHEN_GDDTHRESH_C=-0.00991
-export A2MC_PHEN_CHILLTEMP=2.262
+#export A2MC_PHEN_GDDTHRESH_C=-0.00991
+#export A2MC_PHEN_CHILLTEMP=2.262
 
 # -----------------------------------------------------------------------------
 # History Output Variables
