@@ -805,9 +805,17 @@ class CalibrationOrchestrator:
 
             logger.info(f"\n{'='*60}")
             logger.info(f"PHASE: {phase.value.upper()}")
-            logger.info(f"Iteration: {self.state.iteration} "
-                        f"(Skip Testing: {self.state.skip_testing_count}, "
-                        f"Experiments: {self.state.experiment_count})")
+            # Phases 0-2 run once per round; iteration only meaningful for 3-6
+            iterative_phases = ('diagnosis', 'hypothesis', 'testing', 'refinement')
+            if phase.value in iterative_phases:
+                banner = f"Round {self.state.calibration_round}, Iteration {self.state.iteration}"
+                if phase.value in ('diagnosis', 'hypothesis') and (
+                        self.state.skip_testing_count > 0 or self.state.experiment_count > 0):
+                    banner += (f" (skip-test: {self.state.skip_testing_count}, "
+                               f"experiment: {self.state.experiment_count})")
+            else:
+                banner = f"Round {self.state.calibration_round}"
+            logger.info(banner)
             logger.info(f"{'='*60}\n")
 
             # Track phase start in workflow status
@@ -3425,9 +3433,17 @@ Phase numbers:
         orchestrator.state.current_phase = args.start_phase
         logger.info(f"Starting from phase: {args.start_phase}")
 
-        # Clear cached results for this phase+iteration so it actually re-runs
+        # Clear cached results for this phase so it actually re-runs
         # (otherwise the phase sees existing results and skips execution)
         iteration = orchestrator.state.iteration
+
+        # Screening: clear screening_data dict
+        if args.start_phase == 'screening':
+            if orchestrator.state.screening_data:
+                orchestrator.state.screening_data = {}
+                logger.info("Cleared cached screening results (will re-run)")
+
+        # Diagnosis/Hypothesis: clear from result lists
         phase_result_lists = {
             'diagnosis': 'diagnoses',
             'hypothesis': 'hypotheses',

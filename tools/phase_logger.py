@@ -187,10 +187,11 @@ class PhaseLogger:
         Generate log filename with iteration context, date, and session letter.
 
         Phase 3 & 4: r{RR}_iter{II}_exp{EE}_skip{SS}_{YYYYMMDDx}_Title.md
-        All others:  r{RR}_iter{II}_{YYYYMMDDx}_Title.md
+        Phase 5 & 6: r{RR}_iter{II}_{YYYYMMDDx}_Title.md
+        Phase 0-2:   r{RR}_{YYYYMMDDx}_Title.md  (iteration always 1, omitted)
 
         RR = calibration_round (outermost Phase 0→7 loop, e.g., round 1=138 params)
-        II = iteration (cycle counter within a round)
+        II = iteration (cycle counter within a round, only meaningful for phases 3-6)
         EE/SS = experiment/skip_testing counts (only Phase 3 & 4)
         """
         today = datetime.now().strftime("%Y%m%d")
@@ -203,14 +204,19 @@ class PhaseLogger:
         # Clean title for filename
         clean_title = title.replace(' ', '_').replace('/', '_')[:50]
 
-        # Build prefix — include exp/skip only for phases 3 & 4
+        # Build prefix:
+        # - Phases 3 & 4: round + iteration + exp/skip
+        # - Phases 5 & 6: round + iteration
+        # - Phases 0-2: round only (iteration is always 1)
         round_prefix = f"r{self.calibration_round:02d}"
         if phase in (3, 4):
             iter_prefix = (f"{round_prefix}_iter{self.current_iteration:02d}"
                            f"_exp{self.experiment_count:02d}"
                            f"_skip{self.skip_testing_count:02d}")
-        else:
+        elif phase in (5, 6):
             iter_prefix = f"{round_prefix}_iter{self.current_iteration:02d}"
+        else:
+            iter_prefix = round_prefix
 
         filename = f"{iter_prefix}_{today}{self._session_letter}_{clean_title}.md"
 
