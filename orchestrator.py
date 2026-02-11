@@ -3297,16 +3297,12 @@ Examples:
   # Resume from checkpoint (state file is in site memory folder)
   python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state.json
 
-  # Start from specific phase (accepts number, 'phaseN', or name)
-  python orchestrator.py --run --start-phase 1 --start-iteration 2
-  python orchestrator.py --run --start-phase phase1 --start-iteration 2
-  python orchestrator.py --run --start-phase exploration --start-iteration 2
+  # Start from specific phase in calibration round 2 (e.g., 162 params)
+  python orchestrator.py --run --start-phase 2 --start-iteration 2
+  python orchestrator.py --run --start-phase screening --start-iteration 2
 
-  # Start from diagnosis phase at iteration 3
-  python orchestrator.py --init --start-phase 3 --start-iteration 3
-
-  # Resume at different iteration
-  python orchestrator.py --resume --start-iteration 5
+  # Start from diagnosis in round 2
+  python orchestrator.py --run --start-phase diagnosis --start-iteration 2
 
   # Skip bootstrap check before running
   python orchestrator.py --run --skip-bootstrap
@@ -3349,9 +3345,7 @@ Phase numbers:
     parser.add_argument("--start-phase", type=parse_phase,
                        help="Start from phase (0-7, phase0-phase7, or name like 'exploration')")
     parser.add_argument("--start-iteration", type=int, default=None,
-                       help="Start from specific iteration number (use with --init or --resume)")
-    parser.add_argument("--calibration-round", type=int, default=None,
-                       help="Set calibration round (outermost loop: 1=first ensemble, 2=redesigned, ...)")
+                       help="Calibration round (outermost loop: 1=first ensemble, 2=redesigned, ...)")
 
     # Sampling design options (override config defaults)
     parser.add_argument("--sampling-scheme", type=str,
@@ -3433,7 +3427,7 @@ Phase numbers:
 
         # Clear cached results for this phase+iteration so it actually re-runs
         # (otherwise the phase sees existing results and skips execution)
-        iteration = args.start_iteration if args.start_iteration is not None else orchestrator.state.iteration
+        iteration = orchestrator.state.iteration
         phase_result_lists = {
             'diagnosis': 'diagnoses',
             'hypothesis': 'hypotheses',
@@ -3452,18 +3446,12 @@ Phase numbers:
                         hyp_list.pop()
                         logger.info(f"  Also cleared cached hypothesis for iteration {iteration}")
 
-    if args.calibration_round is not None:
-        orchestrator.state.calibration_round = args.calibration_round
-        logger.info(f"Calibration round: {args.calibration_round}")
-        os.environ['A2MC_CALIBRATION_ROUND'] = str(args.calibration_round)
-
     if args.start_iteration is not None:
-        orchestrator.state.iteration = args.start_iteration
-        logger.info(f"Starting from iteration: {args.start_iteration}")
-        # Also set environment variable for PhaseLogger
-        os.environ['A2MC_ITERATION'] = str(args.start_iteration)
+        orchestrator.state.calibration_round = args.start_iteration
+        logger.info(f"Calibration round: {args.start_iteration}")
+        os.environ['A2MC_CALIBRATION_ROUND'] = str(args.start_iteration)
 
-    # Initialize sampling_design for iteration 2+ (simulations already complete)
+    # Initialize sampling_design for round 2+ (simulations already complete)
     if args.start_iteration is not None and args.start_iteration >= 2:
         if not orchestrator.state.sampling_design.get('complete', False):
             try:
@@ -3478,7 +3466,7 @@ Phase numbers:
                     'ensemble_output_dir': a2mc_config.ENSEMBLE_OUTPUT,
                     'ensemble_matrix_file': a2mc_config.ENSEMBLE_MATRIX_FILE,
                 }
-                logger.info(f"Initialized sampling_design for iteration {args.start_iteration}:")
+                logger.info(f"Initialized sampling_design for round {args.start_iteration}:")
                 logger.info(f"  - {a2mc_config.TOTAL_ENSEMBLE} simulations (marked complete)")
                 logger.info(f"  - Extracted data: {a2mc_config.EXTRACTED_DATA}")
             except ImportError:
