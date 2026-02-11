@@ -3157,6 +3157,27 @@ Phase numbers:
         orchestrator.state.current_phase = args.start_phase
         logger.info(f"Starting from phase: {args.start_phase}")
 
+        # Clear cached results for this phase+iteration so it actually re-runs
+        # (otherwise the phase sees existing results and skips execution)
+        iteration = args.start_iteration if args.start_iteration is not None else orchestrator.state.iteration
+        phase_result_lists = {
+            'diagnosis': 'diagnoses',
+            'hypothesis': 'hypotheses',
+        }
+        result_key = phase_result_lists.get(args.start_phase)
+        if result_key:
+            result_list = getattr(orchestrator.state, result_key, [])
+            if result_list and result_list[-1].get('iteration') == iteration:
+                removed = result_list.pop()
+                logger.info(f"Cleared cached {args.start_phase} result for iteration {iteration} "
+                           f"(will re-run)")
+                # Also clear downstream results for the same iteration
+                if args.start_phase == 'diagnosis':
+                    hyp_list = orchestrator.state.hypotheses
+                    if hyp_list and hyp_list[-1].get('iteration') == iteration:
+                        hyp_list.pop()
+                        logger.info(f"  Also cleared cached hypothesis for iteration {iteration}")
+
     if args.start_iteration is not None:
         orchestrator.state.iteration = args.start_iteration
         logger.info(f"Starting from iteration: {args.start_iteration}")
