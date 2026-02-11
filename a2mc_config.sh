@@ -27,15 +27,16 @@ export A2MC_COMPILER="intel"
 # PYTHON ENVIRONMENT
 # ========================
 # Load Python module on HPC (provides base Python with scientific packages)
+# NOTE: Must happen BEFORE venv activation since module load can change PATH
 if command -v module &> /dev/null; then
     module load python 2>/dev/null
 fi
 
-# Activate a2mc_env if it exists and not already activated
+# Activate a2mc_env if it exists
+# Always re-activate (module load python above may have altered PATH)
 export A2MC_VENV="${HOME}/a2mc_env"
-if [ -d "${A2MC_VENV}" ] && [ -z "${VIRTUAL_ENV:-}" ]; then
+if [ -d "${A2MC_VENV}" ]; then
     source "${A2MC_VENV}/bin/activate"
-    echo "Activated Python environment: ${A2MC_VENV}"
 fi
 
 # ========================
