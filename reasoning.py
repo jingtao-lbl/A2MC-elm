@@ -372,9 +372,146 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             logger.warning("RAG requested but HybridRetriever not available (import failed)")
             print("Warning: RAG requested but HybridRetriever import failed. Check dependencies.")
 
+        # Load full parameter list for constraining AI recommendations
+        self._param_list_context = self._load_parameter_list()
+
         memory_status = "with memory" if memory else "without memory"
         rag_status = "with RAG" if self.rag_retriever else "without RAG"
-        logger.info(f"Reasoning module initialized {memory_status}, {rag_status}, model: {self.model}")
+        param_status = f", {len(self._param_list_context.splitlines())} params loaded" if self._param_list_context else ""
+        logger.info(f"Reasoning module initialized {memory_status}, {rag_status}{param_status}, model: {self.model}")
+
+    def _load_parameter_list(self) -> str:
+        """Load the full FATES parameter reference and Morris ensemble list.
+
+        Two parts:
+        1. Full FATES parameter definitions (from CDL file) - all ~290 parameters with
+           dimensions, units, and descriptions so the AI understands the full parameter space
+        2. Morris ensemble subset (from parameter list file) - the 162 parameters actually
+           varied in the current ensemble with their sampling bounds
+
+        Returns a formatted string for inclusion in AI prompts, or empty string if unavailable.
+        """
+        sections = []
+
+        # --- Part 1: Full FATES parameter definitions from CDL ---
+        cdl_context = self._load_fates_parameter_definitions()
+        if cdl_context:
+            sections.append(cdl_context)
+
+        # --- Part 2: Morris ensemble parameter list with bounds ---
+        ensemble_context = self._load_ensemble_parameter_list()
+        if ensemble_context:
+            sections.append(ensemble_context)
+
+        return "\n\n".join(sections)
+
+    def _load_fates_parameter_definitions(self) -> str:
+        """Load full FATES parameter definitions from CDL/JSON/NC file.
+
+        Uses rag/parameter_parser.py to parse the parameter definition file.
+        Returns a compact reference of all FATES parameters with dimensions, units, descriptions.
+        """
+        try:
+            from pathlib import Path
+            # Find parameter definition file
+            cdl_file = None
+            # Check common locations
+            base_dir = Path(__file__).parent
+            candidates = [
+                base_dir / 'Offline' / 'fates_params_api25.5.0_12pft_c230710__parameterdef.cdl',
+            ]
+            # Also check environment variable
+            env_file = os.environ.get('A2MC_FATES_PARAM_DEF_FILE', '')
+            if env_file:
+                candidates.insert(0, Path(env_file))
+
+            for candidate in candidates:
+                if candidate.exists():
+                    cdl_file = candidate
+                    break
+
+            if not cdl_file:
+                logger.info("No FATES parameter definition file found")
+                return ""
+
+            # Import parser directly to avoid rag/__init__.py dependency chain
+            import importlib.util
+            spec = importlib.util.spec_from_file_location(
+                'parameter_parser', str(base_dir / 'rag' / 'parameter_parser.py'))
+            parser_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(parser_mod)
+
+            parser = parser_mod.FATESParameterParser(str(cdl_file))
+            params = parser.parse()
+
+            if not params:
+                return ""
+
+            # Build compact reference (skip string/name params)
+            lines = []
+            for name in sorted(params.keys()):
+                p = params[name]
+                if p.is_string or name.endswith('_name'):
+                    continue
+                dims = ','.join(p.dimensions) if p.dimensions else 'scalar'
+                desc = p.long_name[:100] if p.long_name else ''
+                lines.append(f"  {name} ({dims}) [{p.units}] {desc}")
+
+            header = (
+                "## FATES Parameter Definitions (Complete Reference)\n\n"
+                "All FATES parameters with their dimensions, units, and descriptions.\n"
+                "Use this to understand what each parameter controls and its correct name.\n\n"
+            )
+            logger.info(f"Loaded {len(lines)} FATES parameter definitions from {cdl_file.name}")
+            return header + "\n".join(lines)
+
+        except Exception as e:
+            logger.warning(f"Could not load FATES parameter definitions: {e}")
+            return ""
+
+    def _load_ensemble_parameter_list(self) -> str:
+        """Load the Morris ensemble parameter list with sampling bounds.
+
+        Returns a formatted string listing the parameters varied in the current ensemble.
+        """
+        try:
+            param_file = None
+            if a2mc_config:
+                param_file = getattr(a2mc_config, 'PARAM_LIST_FILE', None)
+            if not param_file:
+                param_file = os.environ.get('A2MC_PARAM_LIST_FILE', '')
+            if not param_file or not os.path.exists(param_file):
+                logger.info("No ensemble parameter list file found")
+                return ""
+
+            lines = []
+            with open(param_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('=') or line.startswith('No\t') or line.startswith('ELM'):
+                        continue
+                    parts = line.split('\t')
+                    if len(parts) >= 4 and parts[0].isdigit():
+                        shorthand = parts[2] if len(parts) > 2 else ''
+                        bounds = f"[{parts[3]}, {parts[4]}]" if len(parts) > 4 else ''
+                        default_val = parts[5] if len(parts) > 5 else ''
+                        desc = parts[6] if len(parts) > 6 else ''
+                        lines.append(f"  {parts[0]}. {shorthand} ({parts[1]}) {bounds} default={default_val} | {desc}")
+
+            if lines:
+                header = (
+                    "## Parameters in Current Morris Ensemble\n\n"
+                    "CRITICAL: When recommending parameter changes, ONLY use parameters from this list.\n"
+                    "These are the parameters varied in the Morris ensemble with their sampling bounds.\n"
+                    "Do NOT invent parameter names - verify against the FATES definitions above.\n\n"
+                )
+                logger.info(f"Loaded {len(lines)} ensemble parameters from {param_file}")
+                return header + "\n".join(lines)
+
+        except Exception as e:
+            logger.warning(f"Could not load ensemble parameter list: {e}")
+
+        return ""
 
     def query(self, prompt: str, max_tokens: Optional[int] = None) -> str:
         """Send a query to Claude and return the response.
@@ -560,7 +697,9 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
 
         prompt = f"""Analyze these ELM-FATES calibration results and diagnose why targets are not being met.
 
-{rag_context}{memory_context}## Current Results (simulated values in g C/m²)
+{rag_context}{memory_context}{self._param_list_context}
+
+## Current Results (simulated values in g C/m²)
 {json.dumps(results, indent=2)}
 
 ## Validation Targets (observed values with ±20% uncertainty)
@@ -733,7 +872,8 @@ Respond ONLY with the JSON object, no additional text."""
             )
 
         prompt = f"""Based on this diagnosis, generate a testable hypothesis for ELM-FATES calibration.
-{rag_context}{failed_approaches_context}
+{rag_context}{failed_approaches_context}{self._param_list_context}
+
 ## Diagnosis
 {diagnosis.to_json()}
 

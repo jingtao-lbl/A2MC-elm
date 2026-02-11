@@ -316,20 +316,51 @@ class FATESParameterParser:
         return dimensions
 
     def _parse_cdl_attributes(self, content: str, parameters: Dict[str, FATESParameter]):
-        """Parse variable attributes (units, long_name) from CDL content."""
-        # Match: variable_name:attribute = "value" ;
-        attr_pattern = r'(fates_\w+):(\w+)\s*=\s*"([^"]*)"'
+        """Parse variable attributes (units, long_name) from CDL content.
 
-        for match in re.finditer(attr_pattern, content):
+        CDL format has two attribute styles:
+        1. variable_name:attr = "value" ;     (ncdump -h style)
+        2. :attr = "value" ;                  (indented under variable declaration)
+
+        This parser handles both styles.
+        """
+        # Style 1: variable_name:attribute = "value"
+        attr_pattern1 = r'(fates_\w+):(\w+)\s*=\s*"([^"]*)"'
+        for match in re.finditer(attr_pattern1, content):
             var_name = match.group(1)
             attr_name = match.group(2)
             attr_value = match.group(3)
-
             if var_name in parameters:
                 if attr_name == 'units':
                     parameters[var_name].units = attr_value
                 elif attr_name == 'long_name':
                     parameters[var_name].long_name = attr_value
+
+        # Style 2: :attr = "value" indented under variable declaration
+        # Parse by scanning line-by-line, tracking current variable
+        current_var = None
+        var_decl_pattern = re.compile(r'^\s+(?:double|int|char)\s+(fates_\w+)')
+        indent_attr_pattern = re.compile(r'^\s+:(\w+)\s*=\s*"([^"]*)"')
+
+        for line in content.splitlines():
+            # Check for variable declaration
+            m = var_decl_pattern.match(line)
+            if m:
+                current_var = m.group(1)
+                continue
+            # Check for indented attribute under current variable
+            m = indent_attr_pattern.match(line)
+            if m and current_var and current_var in parameters:
+                attr_name = m.group(1)
+                attr_value = m.group(2)
+                if attr_name == 'units':
+                    parameters[current_var].units = attr_value
+                elif attr_name == 'long_name':
+                    parameters[current_var].long_name = attr_value
+            elif line.strip() == '' or (line.strip() and not line.strip().startswith(':')):
+                # Reset current_var on blank lines or non-attribute lines
+                if not line.strip().startswith(':'):
+                    current_var = None
 
     # =========================================================================
     # JSON Parser
