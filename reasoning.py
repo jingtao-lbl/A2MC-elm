@@ -418,6 +418,7 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             # Check common locations
             base_dir = Path(__file__).parent
             candidates = [
+                base_dir / 'docs' / 'fates-knowledge-base' / 'fates_params_info.cdl',
                 base_dir / 'Offline' / 'fates_params_api25.5.0_12pft_c230710__parameterdef.cdl',
             ]
             # Also check environment variable
