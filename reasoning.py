@@ -501,9 +501,10 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             if lines:
                 header = (
                     "## Parameters in Current Morris Ensemble\n\n"
-                    "CRITICAL: When recommending parameter changes, ONLY use parameters from this list.\n"
-                    "These are the parameters varied in the Morris ensemble with their sampling bounds.\n"
-                    "Do NOT invent parameter names - verify against the FATES definitions above.\n\n"
+                    "These are the parameters varied in the current ensemble with their sampling bounds.\n"
+                    "When recommending parameter changes, use exact names from the FATES definitions above.\n"
+                    "If you identify a key parameter NOT in this ensemble list, flag it explicitly as\n"
+                    "'NOT IN CURRENT ENSEMBLE - consider adding in next redesign cycle (Phase 0)'.\n\n"
                 )
                 logger.info(f"Loaded {len(lines)} ensemble parameters from {param_file}")
                 return header + "\n".join(lines)
