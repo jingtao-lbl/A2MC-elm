@@ -2318,15 +2318,15 @@ Diagnosis Summary:{skip_header}
                         # run_pft_diagnosis covers all sub-analyses for a single PFT
                         if tool == 'diagnose_pft_limitations':
                             req_pft_ids = tool_args.get('pft_ids', pft_ids)
-                            combined = {}
+                            combined_summaries = {}
                             for pid in req_pft_ids:
                                 pft_result = run_pft_diagnosis(
                                     nc_file=nc_file, pft_id=pid, targets=tool_args.get('targets', {})
                                 )
-                                combined[f'pft{pid}'] = pft_result
-                            results['pft_diagnosis'] = combined
+                                combined_summaries[f'pft{pid}'] = get_diagnosis_summary_for_ai(pft_result)
+                            results['pft_diagnosis'] = combined_summaries
                             summaries.append(f"## PFT Limitation Diagnosis\n" +
-                                           "\n".join(f"PFT#{p}: {get_diagnosis_summary_for_ai(r)}" for p, r in combined.items()))
+                                           "\n".join(f"PFT#{p}: {s}" for p, s in combined_summaries.items()))
                         else:
                             pft_result = run_pft_diagnosis(
                                 nc_file=nc_file, pft_id=pft_id, targets=tool_args.get('targets', {})
@@ -2334,8 +2334,9 @@ Diagnosis Summary:{skip_header}
                             label = {'analyze_allocation_dynamics': 'Allocation Dynamics',
                                      'analyze_nutrient_limitation': 'Nutrient Limitation',
                                      'analyze_light_competition': 'Light Competition'}[tool]
-                            results[tool] = pft_result
-                            summaries.append(f"## {label} (PFT#{pft_id})\n{get_diagnosis_summary_for_ai(pft_result)}")
+                            pft_summary = get_diagnosis_summary_for_ai(pft_result)
+                            results[tool] = pft_summary
+                            summaries.append(f"## {label} (PFT#{pft_id})\n{pft_summary}")
 
                 # ===== Mortality & Collapse (require NC file) =====
                 elif tool in ('analyze_mortality', 'detect_collapse', 'detect_perfect_storm_pattern'):
@@ -2365,8 +2366,9 @@ Diagnosis Summary:{skip_header}
                             )
                             # detect_vegetation_collapse needs vegc array and time array
                             # Use vegc_data dict which contains per-PFT time series
-                            results['collapse'] = vegc_data  # Raw data for AI context
-                            summaries.append(f"## Collapse Detection\nExtracted vegc timeseries for {len(vegc_data)} phases")
+                            collapse_summary = f"Extracted vegc timeseries for {len(vegc_data.get('phases', {}))} phases, {len(vegc_data.get('pft_data', {}))} PFTs"
+                            results['collapse'] = collapse_summary
+                            summaries.append(f"## Collapse Detection\n{collapse_summary}")
                         elif tool == 'detect_perfect_storm_pattern':
                             vegc_data = extract_vegc_timeseries(
                                 data_files=data_files, pft_ids=tool_args.get('pft_ids', pft_ids)
@@ -2375,8 +2377,9 @@ Diagnosis Summary:{skip_header}
                                 vegc_data=vegc_data,
                                 pft_id=tool_args.get('pft_id', pft_ids[0] if pft_ids else 10)
                             )
-                            results['perfect_storm'] = storm_result
-                            summaries.append(f"## Perfect Storm Pattern\n{str(storm_result)[:500]}")
+                            storm_summary = str(storm_result)[:500]
+                            results['perfect_storm'] = storm_summary
+                            summaries.append(f"## Perfect Storm Pattern\n{storm_summary}")
 
                 # ===== Nutrient Pool Analysis (require NC file) =====
                 elif tool in ('analyze_nutrient_pools', 'compare_uptake_vs_demand',
@@ -2390,24 +2393,26 @@ Diagnosis Summary:{skip_header}
                             # Extract pools first, then analyze depletion
                             p_pools = extract_p_pools(data_files=data_files)
                             depletion = analyze_nutrient_depletion(pool_data=p_pools)
-                            results['nutrient_pools'] = depletion
-                            summaries.append(f"## Nutrient Pool Analysis\n{get_nutrient_summary_for_ai(depletion)}")
+                            nutrient_summary = get_nutrient_summary_for_ai(p_pools, depletion, {})
+                            results['nutrient_pools'] = nutrient_summary
+                            summaries.append(f"## Nutrient Pool Analysis\n{nutrient_summary}")
                         elif tool == 'compare_uptake_vs_demand':
                             pft_id = tool_args.get('pft_id', pft_ids[0] if pft_ids else 10)
                             nutrient = tool_args.get('nutrient', 'P')
                             uptake_result = compare_uptake_vs_demand(
                                 nc_file=nc_file, pft_id=pft_id, nutrient=nutrient
                             )
-                            results['uptake_vs_demand'] = uptake_result
-                            summaries.append(f"## Uptake vs Demand (PFT#{pft_id}, {nutrient})\n{str(uptake_result)[:500]}")
+                            uptake_summary = str(uptake_result)[:500]
+                            results['uptake_vs_demand'] = uptake_summary
+                            summaries.append(f"## Uptake vs Demand (PFT#{pft_id}, {nutrient})\n{uptake_summary}")
                         elif tool == 'extract_p_pools':
                             p_result = extract_p_pools(data_files=data_files)
-                            results['p_pools'] = p_result
-                            summaries.append(f"## P Pool Data\nExtracted {len(p_result)} P pool variables")
+                            results['p_pools'] = f"Extracted {len(p_result.get('pools', {}))} P pool variables"
+                            summaries.append(f"## P Pool Data\nExtracted {len(p_result.get('pools', {}))} P pool variables")
                         elif tool == 'extract_n_pools':
                             n_result = extract_n_pools(data_files=data_files)
-                            results['n_pools'] = n_result
-                            summaries.append(f"## N Pool Data\nExtracted {len(n_result)} N pool variables")
+                            results['n_pools'] = f"Extracted {len(n_result.get('pools', {}))} N pool variables"
+                            summaries.append(f"## N Pool Data\nExtracted {len(n_result.get('pools', {}))} N pool variables")
 
                 # ===== Nutrient Mass Balance (require NC file) =====
                 elif tool in ('extract_nutrient_budget', 'calculate_budget_closure',
@@ -2422,30 +2427,34 @@ Diagnosis Summary:{skip_header}
                                 nc_file=nc_file, nutrient=nutrient,
                                 pft_ids=tool_args.get('pft_ids', pft_ids)
                             )
-                            results['nutrient_budget'] = budget
-                            summaries.append(f"## {nutrient} Budget\n{get_balance_summary_for_ai(budget)}")
+                            budget_summary = get_balance_summary_for_ai(budget)
+                            results['nutrient_budget'] = budget_summary
+                            summaries.append(f"## {nutrient} Budget\n{budget_summary}")
                         elif tool == 'calculate_budget_closure':
                             budget = extract_nutrient_budget(
                                 nc_file=nc_file, nutrient=nutrient,
                                 pft_ids=tool_args.get('pft_ids', pft_ids)
                             )
                             closure = calculate_budget_closure(budget)
-                            results['budget_closure'] = closure
-                            summaries.append(f"## {nutrient} Budget Closure\n{str(closure)[:500]}")
+                            closure_summary = str(closure)[:500]
+                            results['budget_closure'] = closure_summary
+                            summaries.append(f"## {nutrient} Budget Closure\n{closure_summary}")
                         elif tool == 'analyze_pft_competition':
                             competition = analyze_pft_competition(
                                 nc_file=nc_file, pft_ids=pft_ids, nutrient=nutrient
                             )
-                            results['pft_competition'] = competition
-                            summaries.append(f"## PFT {nutrient} Competition\n{str(competition)[:500]}")
+                            competition_summary = str(competition)[:500]
+                            results['pft_competition'] = competition_summary
+                            summaries.append(f"## PFT {nutrient} Competition\n{competition_summary}")
                         elif tool == 'identify_nutrient_sinks':
                             budget = extract_nutrient_budget(
                                 nc_file=nc_file, nutrient=nutrient,
                                 pft_ids=tool_args.get('pft_ids', pft_ids)
                             )
                             sinks = identify_nutrient_sinks(budget)
-                            results['nutrient_sinks'] = sinks
-                            summaries.append(f"## {nutrient} Sinks\n{str(sinks)[:500]}")
+                            sinks_summary = str(sinks)[:500]
+                            results['nutrient_sinks'] = sinks_summary
+                            summaries.append(f"## {nutrient} Sinks\n{sinks_summary}")
 
                 # ===== Target Comparison (require NC file) =====
                 elif tool in ('compare_biomass_targets', 'calculate_target_metrics'):
@@ -2459,16 +2468,18 @@ Diagnosis Summary:{skip_header}
                                 nc_file=nc_file, targets=targets_dict,
                                 pft_ids=tool_args.get('pft_ids', pft_ids)
                             )
-                            results['target_comparison'] = target_result
-                            summaries.append(f"## Target Comparison\n{get_target_summary_for_ai(target_result)}")
+                            target_summary = get_target_summary_for_ai(target_result)
+                            results['target_comparison'] = target_summary
+                            summaries.append(f"## Target Comparison\n{target_summary}")
                         elif tool == 'calculate_target_metrics':
                             # Needs extracted data dict - use compare_biomass_targets first
                             target_result = compare_biomass_targets(
                                 nc_file=nc_file, targets=tool_args.get('targets', {}),
                                 pft_ids=tool_args.get('pft_ids', pft_ids)
                             )
-                            results['target_metrics'] = target_result
-                            summaries.append(f"## Target Metrics\n{get_target_summary_for_ai(target_result)}")
+                            metrics_summary = get_target_summary_for_ai(target_result)
+                            results['target_metrics'] = metrics_summary
+                            summaries.append(f"## Target Metrics\n{metrics_summary}")
 
                 # ===== Carbon Balance (require NC file) =====
                 elif tool in ('analyze_carbon_balance', 'detect_carbon_bottleneck'):
@@ -2491,12 +2502,14 @@ Diagnosis Summary:{skip_header}
 
                             if tool == 'analyze_carbon_balance':
                                 carbon_result = analyze_carbon_balance(data=df)
-                                results['carbon_balance'] = carbon_result
-                                summaries.append(f"## Carbon Balance\n{get_carbon_summary_for_ai(carbon_result)}")
+                                carbon_summary = get_carbon_summary_for_ai(carbon_result)
+                                results['carbon_balance'] = carbon_summary
+                                summaries.append(f"## Carbon Balance\n{carbon_summary}")
                             elif tool == 'detect_carbon_bottleneck':
                                 bottleneck = detect_carbon_bottleneck(data=df)
-                                results['carbon_bottleneck'] = bottleneck
-                                summaries.append(f"## Carbon Bottleneck\n{str(bottleneck)[:500]}")
+                                bottleneck_summary = str(bottleneck)[:500]
+                                results['carbon_bottleneck'] = bottleneck_summary
+                                summaries.append(f"## Carbon Bottleneck\n{bottleneck_summary}")
                         except Exception as e:
                             logger.warning(f"  Carbon balance analysis failed: {e}")
                             results[f'{tool}_error'] = {'error': str(e)}
@@ -2512,13 +2525,43 @@ Diagnosis Summary:{skip_header}
                             import netCDF4 as nc4
                             ds = nc4.Dataset(nc_file)
                             data_dict = {}
+                            n_szpf_size_classes = 13
                             for var in ds.variables:
                                 try:
                                     v = ds.variables[var]
-                                    if v.ndim <= 2 and 'time' in str(v.dimensions):
-                                        data_dict[var] = v[:].flatten()
+                                    dims = v.dimensions
+                                    if v.ndim == 1 and 'time' in str(dims):
+                                        # 1D site-level: include directly
+                                        data_dict[var] = v[:]
+                                    elif v.ndim == 2 and 'time' in str(dims):
+                                        arr = v[:]
+                                        second_dim_size = arr.shape[1]
+                                        if second_dim_size == 12:
+                                            # PFT-level (time, fates_levpft): extract per PFT
+                                            for pid in pft_ids:
+                                                idx = pid - 1  # 0-based
+                                                data_dict[f"{var}_PFT{pid}"] = arr[:, idx]
+                                        elif second_dim_size == 156:
+                                            # SZPF-level (time, fates_levscpf): sum by PFT
+                                            for pid in pft_ids:
+                                                start = (pid - 1) * n_szpf_size_classes
+                                                end = start + n_szpf_size_classes
+                                                data_dict[f"{var}_PFT{pid}"] = np.nansum(arr[:, start:end], axis=1)
                                 except Exception:
                                     pass
+                            # Add day-of-year column from time variable
+                            if 'time' in ds.variables:
+                                try:
+                                    import cftime
+                                    times = nc4.num2date(ds.variables['time'][:],
+                                                         ds.variables['time'].units,
+                                                         ds.variables['time'].calendar)
+                                    data_dict['doy'] = np.array([t.timetuple().tm_yday for t in times])
+                                except Exception:
+                                    n_time = len(ds.variables['time'][:])
+                                    # Fallback: assume monthly data, assign mid-month DOY
+                                    monthly_doy = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
+                                    data_dict['doy'] = np.array([monthly_doy[i % 12] for i in range(n_time)])
                             ds.close()
                             df = pd.DataFrame(data_dict)
 
@@ -2526,11 +2569,47 @@ Diagnosis Summary:{skip_header}
                                 data=df,
                                 pft_id=tool_args.get('pft_id', pft_ids[0] if pft_ids else 10)
                             )
-                            results['hypothesis_tests'] = hyp_result
-                            summaries.append(f"## Hypothesis Tests\n{get_hypothesis_summary_for_ai(hyp_result)}")
+                            hyp_summary = get_hypothesis_summary_for_ai(hyp_result)
+                            results['hypothesis_tests'] = hyp_summary
+                            summaries.append(f"## Hypothesis Tests\n{hyp_summary}")
                         except Exception as e:
                             logger.warning(f"  Hypothesis testing failed: {e}")
                             results[f'{tool}_error'] = {'error': str(e)}
+
+                # ---- Ensemble-level hypothesis tests ----
+                elif tool in ('test_p_limitation_cascade', 'test_root_turnover_impact'):
+                    try:
+                        from phases.phase3_diagnosis import (
+                            test_p_limitation_cascade,
+                            test_root_turnover_impact,
+                        )
+                        from phases.phase4_hypothesis.test_with_existing_data import (
+                            load_morris_ensemble_data,
+                            get_morris_param_names,
+                        )
+                        test_fn = {
+                            'test_p_limitation_cascade': test_p_limitation_cascade,
+                            'test_root_turnover_impact': test_root_turnover_impact,
+                        }[tool]
+                        param_matrix, y_outputs = load_morris_ensemble_data(self.config)
+                        param_names = get_morris_param_names(self.config)
+                        test_config = {
+                            'param_names': param_names,
+                            'pft_ids': pft_ids,
+                            'use_case_dir': str(use_case_dir),
+                        }
+                        result = test_fn(param_matrix, y_outputs, screening_data, test_config)
+                        # Format as text summary
+                        lines = [f"Supported: {result.get('supported', False)}",
+                                 f"Confidence: {result.get('confidence', 0.0):.2f}"]
+                        for insight in result.get('insights', []):
+                            lines.append(f"  - {insight}")
+                        summary_text = "\n".join(lines)
+                        results[tool] = summary_text
+                        summaries.append(f"## {tool}\n{summary_text}")
+                    except Exception as e:
+                        logger.warning(f"  {tool} failed: {e}")
+                        results[f'{tool}_error'] = {'error': str(e)}
 
                 else:
                     logger.warning(f"  Unknown diagnostic tool: {tool}")

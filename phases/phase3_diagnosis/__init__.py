@@ -12,6 +12,7 @@ Provides diagnostic tools for:
 - Target comparison (simulated vs observed)
 - Hypothesis testing (structured hypothesis evaluation)
 - Carbon balance analysis (GPP vs MR bottleneck detection)
+- Ensemble-level hypothesis tests (P limitation cascade, root turnover impact)
 
 These tools are designed to be called by the orchestrator during
 diagnosis phase to provide actual data to the AI reasoning system.
@@ -158,6 +159,15 @@ from .analyze_nutrient_balance import (
     results_to_dict as nutrient_balance_results_to_dict,
 )
 
+# Ensemble-level hypothesis tests (promoted from generated/)
+from .test_p_limitation_cascade import (
+    test_hypothesis as test_p_limitation_cascade,
+)
+
+from .test_root_turnover_impact import (
+    test_hypothesis as test_root_turnover_impact,
+)
+
 __all__ = [
     # High-level API
     'run_diagnosis',
@@ -255,4 +265,8 @@ __all__ = [
     'PFTCompetition',
     'NutrientSinks',
     'nutrient_balance_results_to_dict',
+
+    # Ensemble-level hypothesis tests
+    'test_p_limitation_cascade',
+    'test_root_turnover_impact',
 ]

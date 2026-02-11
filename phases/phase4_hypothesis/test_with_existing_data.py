@@ -196,7 +196,12 @@ def load_morris_ensemble_data(config: Any, screening_data: Dict = None) -> Tuple
 
 
 def get_morris_param_names(config: Any) -> List[str]:
-    """Get list of Morris parameter names from config file."""
+    """Get list of Morris parameter shorthand names from config file.
+
+    Parses the tab-separated parameter list file and extracts the shorthand
+    names (column 3, e.g., 'vmax_p_10', 'turnover_fnrt_7') that match the
+    column order of the Morris X matrix.
+    """
     try:
         param_list_file = getattr(config, 'param_list_file', None)
         if not param_list_file:
@@ -209,8 +214,26 @@ def get_morris_param_names(config: Any) -> List[str]:
                 param_list_file = os.environ.get('A2MC_PARAM_LIST_FILE', '')
 
         if param_list_file and Path(param_list_file).exists():
+            names = []
             with open(param_list_file) as f:
-                return [line.strip() for line in f if line.strip() and not line.startswith('#')]
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#') or line.startswith('='):
+                        continue
+                    parts = line.split('\t')
+                    # Tab-separated format: No, FATES_name, Shorthand, LB, UB, Default, Description
+                    if len(parts) >= 3 and parts[0].isdigit():
+                        names.append(parts[2])  # Shorthand name (e.g., vmax_p_10)
+                    # SALib numbered format: "  1. alpha_ptase_7"
+                    elif '.' in line and line.lstrip().split('.')[0].strip().isdigit():
+                        name = line.split('.', 1)[1].strip()
+                        if name and (name[0].isalpha() or name[0] == '_'):
+                            names.append(name)
+                    # Simple one-name-per-line format
+                    elif '\t' not in line and line[0:1].isalpha():
+                        names.append(line)
+            if names:
+                return names
     except Exception as e:
         logger.warning(f"Could not load parameter names: {e}")
     return []

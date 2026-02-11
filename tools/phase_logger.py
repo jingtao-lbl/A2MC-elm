@@ -8,25 +8,26 @@ Logs capture full AI reasoning, analyses, and results for knowledge extraction.
 Log Structure (site-specific):
     use_cases/{site}/memory/logs/
     ├── phase0_design/
-    │   └── r02_iter01_20260116a_Morris_Design.md
+    │   └── r02_20260116a_Morris_Design.md
     ├── phase2_screening/
     │   └── r02_iter01_20260116b_Ensemble_Screening.md
     ├── phase3_diagnosis/
-    │   └── r02_iter02_exp01_skip03_20260116c_Root_Cause_Analysis.md
+    │   └── r02_exp01_iter03_20260116c_Root_Cause_Analysis.md
     └── ...
 
 Filename formats:
-    Most phases:   r{RR}_iter{II}_{YYYYMMDDx}_Title.md
-    Phase 3 & 4:   r{RR}_iter{II}_exp{EE}_skip{SS}_{YYYYMMDDx}_Title.md
+    Phase 0-2:     r{RR}_{YYYYMMDDx}_Title.md
+    Phase 3 & 4:   r{RR}_exp{EE}_iter{II}_{YYYYMMDDx}_Title.md
+    Phase 5 & 6:   r{RR}_iter{II}_{YYYYMMDDx}_Title.md
 
     RR = calibration_round (outermost Phase 0→7 loop, e.g., round 1=138 params, round 2=162 params)
-    II = iteration (cycle counter within a round, zero-padded)
-    EE = experiment_count (outer loop, only in Phase 3 & 4)
-    SS = skip_testing_count (inner loop, only in Phase 3 & 4)
+    EE = experiment_count (outer loop: full 3→4→5→6 cycles, only in Phase 3 & 4)
+    II = iteration within experiment cycle (1-based inner loop counter, only in Phase 3 & 4)
+         For Phase 5 & 6: overall iteration counter within round
     YYYYMMDDx = date + session letter (a, b, c for same-day logs)
 
-    exp/skip counters only appear in Phase 3 (Diagnosis) and Phase 4 (Hypothesis)
-    because skip testing (Phase 3↔4 inner loop) only applies there.
+    exp/iter counters only appear in Phase 3 (Diagnosis) and Phase 4 (Hypothesis)
+    because the inner loop (Phase 3↔4) only applies there.
 
 Note:
     - A2MC development logs go to: memory/logs/ (at framework level)
@@ -186,13 +187,13 @@ class PhaseLogger:
         """
         Generate log filename with iteration context, date, and session letter.
 
-        Phase 3 & 4: r{RR}_iter{II}_exp{EE}_skip{SS}_{YYYYMMDDx}_Title.md
+        Phase 3 & 4: r{RR}_exp{EE}_iter{II}_{YYYYMMDDx}_Title.md
         Phase 5 & 6: r{RR}_iter{II}_{YYYYMMDDx}_Title.md
         Phase 0-2:   r{RR}_{YYYYMMDDx}_Title.md  (iteration always 1, omitted)
 
         RR = calibration_round (outermost Phase 0→7 loop, e.g., round 1=138 params)
-        II = iteration (cycle counter within a round, only meaningful for phases 3-6)
-        EE/SS = experiment/skip_testing counts (only Phase 3 & 4)
+        EE = experiment_count (outer loop, only Phase 3 & 4)
+        II = iteration within experiment cycle (1-based, = skip_testing_count + 1)
         """
         today = datetime.now().strftime("%Y%m%d")
 
@@ -205,14 +206,14 @@ class PhaseLogger:
         clean_title = title.replace(' ', '_').replace('/', '_')[:50]
 
         # Build prefix:
-        # - Phases 3 & 4: round + iteration + exp/skip
+        # - Phases 3 & 4: round + exp + iter (iter = skip_testing_count + 1, 1-based)
         # - Phases 5 & 6: round + iteration
         # - Phases 0-2: round only (iteration is always 1)
         round_prefix = f"r{self.calibration_round:02d}"
         if phase in (3, 4):
-            iter_prefix = (f"{round_prefix}_iter{self.current_iteration:02d}"
-                           f"_exp{self.experiment_count:02d}"
-                           f"_skip{self.skip_testing_count:02d}")
+            iter_in_exp = self.skip_testing_count + 1  # 1-based inner loop counter
+            iter_prefix = (f"{round_prefix}_exp{self.experiment_count:02d}"
+                           f"_iter{iter_in_exp:02d}")
         elif phase in (5, 6):
             iter_prefix = f"{round_prefix}_iter{self.current_iteration:02d}"
         else:
@@ -265,10 +266,10 @@ class PhaseLogger:
         For phases 3 & 4, also includes experiment and skip testing counters.
         """
         if phase in (3, 4):
+            iter_in_exp = self.skip_testing_count + 1  # 1-based inner loop counter
             return (f"**Round:** {self.calibration_round} | "
-                    f"**Iteration:** {self.current_iteration} "
-                    f"(Experiment: {self.experiment_count}, "
-                    f"Skip Testing: {self.skip_testing_count})")
+                    f"**Experiment:** {self.experiment_count} | "
+                    f"**Iteration:** {iter_in_exp}")
         else:
             return (f"**Round:** {self.calibration_round} | "
                     f"**Iteration:** {self.current_iteration}")
@@ -1317,9 +1318,12 @@ class PhaseLogger:
         Args:
             phase: Phase number or name
             calibration_round: Filter by calibration round (None = any)
-            iteration: Filter by iteration within round (None = any)
+            iteration: Filter by iteration within experiment cycle (1-based, None = any)
+                       For Phase 3&4: inner loop counter (= skip_testing_count + 1)
+                       For Phase 5&6: overall iteration within round
             experiment_count: Filter by experiment count (None = any, Phase 3&4 only)
-            skip_testing_count: Filter by skip testing count (None = any, Phase 3&4 only)
+            skip_testing_count: Deprecated alias for iteration (kept for backward compat).
+                               If provided and iteration is None, converts to iteration.
 
         Returns:
             List of matching log paths, sorted by name
@@ -1328,12 +1332,16 @@ class PhaseLogger:
             # All logs for round 2
             find_logs_by_iteration(3, calibration_round=2)
 
-            # All logs for round 2, iteration 1
-            find_logs_by_iteration(3, calibration_round=2, iteration=1)
+            # All logs for experiment 0, iteration 1
+            find_logs_by_iteration(3, experiment_count=0, iteration=1)
 
-            # All skip-testing cycle 3 logs in experiment 1
-            find_logs_by_iteration(3, experiment_count=1, skip_testing_count=3)
+            # All logs for experiment 1
+            find_logs_by_iteration(3, experiment_count=1)
         """
+        # Backward compat: convert skip_testing_count to iteration
+        if skip_testing_count is not None and iteration is None:
+            iteration = skip_testing_count + 1
+
         if isinstance(phase, str):
             for num, name in PHASES.items():
                 if name == phase.lower():
@@ -1346,13 +1354,13 @@ class PhaseLogger:
 
         # Build glob pattern
         round_part = f"r{calibration_round:02d}" if calibration_round is not None else "r*"
-        iter_part = f"_iter{iteration:02d}" if iteration is not None else "_iter*"
 
         if phase in (3, 4):
             exp_part = f"_exp{experiment_count:02d}" if experiment_count is not None else "_exp*"
-            skip_part = f"_skip{skip_testing_count:02d}" if skip_testing_count is not None else "_skip*"
-            pattern = f"{round_part}{iter_part}{exp_part}{skip_part}_*.md"
+            iter_part = f"_iter{iteration:02d}" if iteration is not None else "_iter*"
+            pattern = f"{round_part}{exp_part}{iter_part}_*.md"
         else:
+            iter_part = f"_iter{iteration:02d}" if iteration is not None else "_iter*"
             pattern = f"{round_part}{iter_part}_*.md"
 
         return sorted(phase_dir.glob(pattern))
@@ -1365,6 +1373,8 @@ def create_logger(site_dir: str = None) -> PhaseLogger:
 
 if __name__ == "__main__":
     # Test the logger
+    # With experiment_count=1 and skip_testing_count=3, filename will be:
+    #   r02_exp01_iter04_YYYYMMDD{x}_Title.md  (iter = skip + 1 = 4)
     logger = PhaseLogger(site_dir="use_cases/Kougarok", site_name="Kougarok",
                          calibration_round=2, iteration=2,
                          experiment_count=1, skip_testing_count=3)
