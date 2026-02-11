@@ -69,6 +69,13 @@ from .parameter_parser import (
     CATEGORIES as PARAM_CATEGORIES,
 )
 
+# Phase 4: Full Coverage (Output Parser + CDL Indexing)
+from .output_parser import (
+    FATESOutputParser,
+    FATESOutputVariable,
+)
+from .loader import load_parameter_descriptions
+
 __all__ = [
     # Phase 1
     'load_markdown_files',
@@ -94,4 +101,8 @@ __all__ = [
     'compare_parameter_files',
     'get_calibratable_parameters',
     'PARAM_CATEGORIES',
+    # Phase 4
+    'FATESOutputParser',
+    'FATESOutputVariable',
+    'load_parameter_descriptions',
 ]

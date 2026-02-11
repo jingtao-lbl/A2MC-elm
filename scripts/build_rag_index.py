@@ -6,8 +6,9 @@ This script:
 1. Loads all documents from the FATES knowledge base
 2. Chunks them for optimal embedding
 3. Creates a ChromaDB vector store (Phase 1: RAG)
-4. Builds a knowledge graph with FATES entities (Phase 2: GraphRAG)
-5. Tests the retrievers with sample queries
+4. Indexes parameter/output definitions from CDL files (Phase 4: Full Coverage)
+5. Builds a knowledge graph with FATES entities (Phase 2: GraphRAG)
+6. Tests the retrievers with sample queries
 
 Usage:
     python scripts/build_rag_index.py [--rebuild] [--test] [--graph-only]
@@ -17,6 +18,9 @@ Options:
     --test        Run test queries after building
     --graph-only  Only build/rebuild the knowledge graph
     --vector-only Only build/rebuild the vector index
+    --no-definitions  Skip indexing CDL parameter/output definitions
+    --param-cdl PATH  Path to FATES parameter CDL file
+    --output-cdl PATH Path to ELM-FATES output CDL file
 """
 
 import argparse
@@ -29,6 +33,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from rag.retriever import FATESRetriever, create_retriever
 from rag.graph_builder import build_fates_graph, save_graph, load_graph
 from rag.hybrid_retriever import HybridRetriever, create_hybrid_retriever
+from rag.loader import load_parameter_descriptions
+
+# Default CDL paths (relative to A2MC root)
+_A2MC_ROOT = Path(__file__).parent.parent
+DEFAULT_PARAM_CDL = _A2MC_ROOT / "docs" / "fates-knowledge-base" / "fates_params_info.cdl"
+DEFAULT_OUTPUT_CDL = _A2MC_ROOT / "docs" / "fates-knowledge-base" / "elm_fates_output_info.cdl"
 
 
 def main():
@@ -54,6 +64,11 @@ def main():
         help="Only build the vector index"
     )
     parser.add_argument(
+        "--no-definitions",
+        action="store_true",
+        help="Skip indexing CDL parameter/output definitions in ChromaDB"
+    )
+    parser.add_argument(
         "--kb-path",
         default="docs/fates-knowledge-base",
         help="Path to knowledge base (default: docs/fates-knowledge-base)"
@@ -68,8 +83,27 @@ def main():
         default="rag/fates_knowledge_graph.json",
         help="Knowledge graph JSON path (default: rag/fates_knowledge_graph.json)"
     )
+    parser.add_argument(
+        "--param-cdl",
+        default=None,
+        help="Path to FATES parameter CDL file (auto-detected from docs/)"
+    )
+    parser.add_argument(
+        "--output-cdl",
+        default=None,
+        help="Path to ELM-FATES output CDL file (auto-detected from docs/)"
+    )
 
     args = parser.parse_args()
+
+    # Auto-detect CDL paths
+    param_cdl = args.param_cdl
+    if param_cdl is None and DEFAULT_PARAM_CDL.exists():
+        param_cdl = str(DEFAULT_PARAM_CDL)
+
+    output_cdl = args.output_cdl
+    if output_cdl is None and DEFAULT_OUTPUT_CDL.exists():
+        output_cdl = str(DEFAULT_OUTPUT_CDL)
 
     print("=" * 60)
     print("FATES RAG/GraphRAG Index Builder")
@@ -77,7 +111,10 @@ def main():
     print(f"\nKnowledge base: {args.kb_path}")
     print(f"Vector store: {args.persist_dir}")
     print(f"Knowledge graph: {args.graph_path}")
+    print(f"Parameter CDL: {param_cdl or 'not found'}")
+    print(f"Output CDL: {output_cdl or 'not found'}")
     print(f"Rebuild: {args.rebuild}")
+    print(f"Include definitions: {not args.no_definitions}")
     print()
 
     # Build vector index (Phase 1)
@@ -100,6 +137,19 @@ def main():
                 auto_build=True
             )
 
+        # Index CDL parameter/output definitions
+        if not args.no_definitions and (param_cdl or output_cdl):
+            print("\n" + "-" * 40)
+            print("Indexing parameter/output definitions from CDL files...")
+            definition_chunks = load_parameter_descriptions(
+                param_cdl_path=param_cdl,
+                output_cdl_path=output_cdl
+            )
+            if definition_chunks:
+                print(f"Adding {len(definition_chunks)} definition chunks to vector store...")
+                retriever.vector_store.add_documents(definition_chunks)
+                print(f"Total documents now: {retriever.vector_store.collection.count()}")
+
         # Print vector stats
         print("\nVector Index Statistics:")
         stats = retriever.get_stats()
@@ -115,10 +165,12 @@ def main():
         graph_path = Path(args.graph_path)
 
         if args.rebuild or not graph_path.exists():
-            print("Building knowledge graph...\n")
+            print("Building knowledge graph (two-layer construction)...\n")
             kg = build_fates_graph(
                 knowledge_base_path=args.kb_path,
-                include_pft_specific=True
+                include_pft_specific=True,
+                param_cdl_path=param_cdl,
+                output_cdl_path=output_cdl,
             )
             save_graph(kg, args.graph_path)
         else:
@@ -146,6 +198,12 @@ def main():
     print("  context = retriever.get_calibration_context(")
     print("      parameters=['fates_cnp_pid_kp'],")
     print("      outputs=['FATES_LEAFC', 'FATES_FROOTC']")
+    print("  )")
+    print("\n  # New: Targeted parameter context (replaces raw text injection)")
+    print("  context = retriever.get_targeted_context(")
+    print("      param_names=['fates_cnp_pid_kp', 'fates_alloc_storage_cushion'],")
+    print("      output_names=['FATES_LEAFC', 'FATES_FROOTC'],")
+    print("      mechanisms=['PID_Controller']")
     print("  )")
 
 
@@ -178,30 +236,58 @@ def run_tests(args):
         for r in results[:2]:
             print(f"    - {r['source']} (relevance: {r['relevance']:.3f})")
 
-    # Test 2: Knowledge graph queries
-    print("\n--- Test 2: Knowledge Graph Queries ---")
+    # Test 2: Filtered queries (parameter/output definitions)
+    print("\n--- Test 2: Filtered Queries (Parameter/Output Definitions) ---")
+
+    print("\n  Parameter query: 'PID controller allocation gain'")
+    param_results = retriever.vector_retriever.query_parameters(
+        "PID controller allocation gain", n_results=3
+    )
+    for r in param_results[:3]:
+        print(f"    - {r['title']} (relevance: {r['relevance']:.3f})")
+
+    print("\n  Output query: 'leaf carbon biomass'")
+    output_results = retriever.vector_retriever.query_outputs(
+        "leaf carbon biomass", n_results=3
+    )
+    for r in output_results[:3]:
+        print(f"    - {r['title']} (relevance: {r['relevance']:.3f})")
+
+    # Test 3: Knowledge graph queries
+    print("\n--- Test 3: Knowledge Graph Queries ---")
 
     print("\n  Parameters affecting FATES_FROOTC:")
     params = retriever.knowledge_graph.get_related_parameters("FATES_FROOTC", depth=3)
-    for p in params[:5]:
+    unique_params = list(dict.fromkeys(params))
+    for p in unique_params[:5]:
         print(f"    - {p}")
 
     print("\n  Parameters controlling PID_Controller:")
     pid_params = retriever.knowledge_graph.get_mechanism_parameters("PID_Controller")
-    for p in pid_params[:5]:
+    unique_pid = list(dict.fromkeys(pid_params))
+    for p in unique_pid[:5]:
         print(f"    - {p}")
 
-    print("\n  PFT10 parameters:")
+    print("\n  PFT10 parameters (first 10):")
     pft_params = retriever.knowledge_graph.get_pft_parameters(10)
-    for p in pft_params[:5]:
+    for p in pft_params[:10]:
         print(f"    - {p}")
 
-    # Test 3: Hybrid retrieval
-    print("\n--- Test 3: Hybrid Calibration Context ---")
-    print("  Parameters: ['fates_cnp_pid_kp', 'fates_alloc_storage_cushion']")
-    print("  Outputs: ['FATES_LEAFC', 'FATES_FROOTC']")
-    print("  Mechanisms: ['PID_Controller']")
+    # Test 4: Targeted context (NEW)
+    print("\n--- Test 4: Targeted Context (Replaces Raw Text Injection) ---")
+    targeted = retriever.get_targeted_context(
+        param_names=['fates_cnp_pid_kp', 'fates_alloc_storage_cushion', 'fates_cnp_vmax_p'],
+        output_names=['FATES_LEAFC', 'FATES_FROOTC'],
+        mechanisms=['PID_Controller'],
+        pft=10
+    )
+    # Show first 1500 chars
+    print(targeted[:1500])
+    if len(targeted) > 1500:
+        print(f"  ... ({len(targeted)} total chars)")
 
+    # Test 5: Hybrid calibration context
+    print("\n--- Test 5: Hybrid Calibration Context ---")
     cal_context = retriever.get_calibration_context(
         parameters=['fates_cnp_pid_kp', 'fates_alloc_storage_cushion'],
         outputs=['FATES_LEAFC', 'FATES_FROOTC'],
@@ -214,19 +300,6 @@ def run_tests(args):
         effects = info.get('effects', [])
         if effects:
             print(f"    {param}: affects {[e['target'] for e in effects]}")
-
-    print("\n  Relationships found:")
-    for rel in cal_context.get('relationships', []):
-        if rel['path']:
-            path_str = " -> ".join([p.split(':')[-1] for p in rel['path']])
-            print(f"    {rel['from']} -> {rel['to']}: {path_str}")
-
-    # Test 4: Find parameters for output
-    print("\n--- Test 4: Find Parameters for Output ---")
-    print("  Finding parameters that affect FATES_L2FR:")
-    l2fr_params = retriever.find_parameters_for_output("FATES_L2FR")
-    for p in l2fr_params[:5]:
-        print(f"    - {p['parameter']}")
 
     # Print combined stats
     print("\n--- Combined Statistics ---")

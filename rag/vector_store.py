@@ -90,16 +90,21 @@ class FATESVectorStore:
             batch = chunks[i:i + batch_size]
 
             documents = [c['content'] for c in batch]
-            metadatas = [
-                {
+            metadatas = []
+            for c in batch:
+                meta = {
                     'source': c['source'],
                     'type': c['type'],
                     'title': c.get('title', ''),
                     'format': c.get('format', 'unknown'),
-                    'kb_source': c.get('kb_source', '')  # Knowledge base source
+                    'kb_source': c.get('kb_source', ''),
                 }
-                for c in batch
-            ]
+                # Pass through CDL definition metadata for filtered queries
+                for extra_key in ('entity_type', 'param_category', 'is_pft_specific',
+                                  'dimension_level', 'output_category'):
+                    if extra_key in c:
+                        meta[extra_key] = c[extra_key]
+                metadatas.append(meta)
             ids = [c['chunk_id'] for c in batch]
 
             # Check for existing IDs and skip them
@@ -189,6 +194,109 @@ class FATESVectorStore:
                     'kb_source': meta.get('kb_source', ''),  # Knowledge base source
                     'distance': dist,
                     'relevance': 1 - dist  # Convert distance to relevance score
+                })
+
+        return formatted
+
+    def query_parameters(
+        self,
+        query: str,
+        n_results: int = 10,
+        category: Optional[str] = None
+    ) -> list[dict]:
+        """Query for parameter definitions only.
+
+        Args:
+            query: Search query
+            n_results: Max results
+            category: Filter by parameter category (e.g., 'cnp', 'alloc')
+
+        Returns:
+            List of result dicts filtered to parameter definitions
+        """
+        where = {"entity_type": "parameter"}
+        if category:
+            where = {"$and": [
+                {"entity_type": "parameter"},
+                {"param_category": category}
+            ]}
+
+        try:
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=n_results,
+                where=where,
+                include=["documents", "metadatas", "distances"]
+            )
+        except Exception:
+            # Fallback: entity_type metadata may not exist in older indexes
+            return self.query(query, n_results=n_results)
+
+        formatted = []
+        if results['documents'] and results['documents'][0]:
+            for doc, meta, dist in zip(
+                results['documents'][0],
+                results['metadatas'][0],
+                results['distances'][0]
+            ):
+                formatted.append({
+                    'content': doc,
+                    'source': meta.get('source', ''),
+                    'type': meta.get('type', ''),
+                    'title': meta.get('title', ''),
+                    'distance': dist,
+                    'relevance': 1 - dist
+                })
+
+        return formatted
+
+    def query_outputs(
+        self,
+        query: str,
+        n_results: int = 10,
+        dimension_level: Optional[str] = None
+    ) -> list[dict]:
+        """Query for output variable definitions only.
+
+        Args:
+            query: Search query
+            n_results: Max results
+            dimension_level: Filter by dimension level (e.g., 'site', 'pft', 'szpf')
+
+        Returns:
+            List of result dicts filtered to output definitions
+        """
+        where = {"entity_type": "output"}
+        if dimension_level:
+            where = {"$and": [
+                {"entity_type": "output"},
+                {"dimension_level": dimension_level}
+            ]}
+
+        try:
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=n_results,
+                where=where,
+                include=["documents", "metadatas", "distances"]
+            )
+        except Exception:
+            return self.query(query, n_results=n_results)
+
+        formatted = []
+        if results['documents'] and results['documents'][0]:
+            for doc, meta, dist in zip(
+                results['documents'][0],
+                results['metadatas'][0],
+                results['distances'][0]
+            ):
+                formatted.append({
+                    'content': doc,
+                    'source': meta.get('source', ''),
+                    'type': meta.get('type', ''),
+                    'title': meta.get('title', ''),
+                    'distance': dist,
+                    'relevance': 1 - dist
                 })
 
         return formatted

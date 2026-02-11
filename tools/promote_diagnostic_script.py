@@ -39,7 +39,7 @@ from datetime import datetime
 A2MC_ROOT = Path(__file__).parent.parent
 GENERATED_DIR = A2MC_ROOT / "phases" / "phase3_diagnosis" / "generated"
 DIAGNOSIS_DIR = A2MC_ROOT / "phases" / "phase3_diagnosis"
-REASONING_FILE = A2MC_ROOT / "reasoning.py"
+REASONING_FILE = A2MC_ROOT / "reasoning" / "prompts.py"
 
 
 def list_generated_scripts():

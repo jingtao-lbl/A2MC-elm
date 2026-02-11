@@ -496,6 +496,235 @@ class HybridRetriever:
 
         return "\n".join(parts)
 
+    def get_parameter_definitions(
+        self,
+        param_names: list[str],
+        include_related: bool = True,
+        include_docs: bool = True,
+        max_related: int = 5
+    ) -> str:
+        """Get formatted parameter context for specific parameters.
+
+        Combines graph metadata + graph edges + vector search docs.
+
+        Args:
+            param_names: List of parameter names to look up
+            include_related: Include related parameters from graph
+            include_docs: Include documentation from vector search
+            max_related: Max related parameters to include
+
+        Returns:
+            Formatted parameter context string
+        """
+        parts = []
+
+        for param_name in param_names:
+            # Get graph metadata
+            param_id = f"parameter:{param_name}"
+            node = self.knowledge_graph.get_node(param_id)
+
+            if node:
+                dims = []
+                # Get dimensions from has_dimension edges
+                for neighbor in self.knowledge_graph.graph.successors(param_id):
+                    n_data = self.knowledge_graph.graph.nodes.get(neighbor, {})
+                    edge_data = self.knowledge_graph.graph.edges.get((param_id, neighbor), {})
+                    if edge_data.get('relation_type') == 'has_dimension':
+                        dims.append(n_data.get('name', neighbor))
+
+                dims_str = ', '.join(dims) if dims else 'scalar'
+                units = node.get('units', '')
+                desc = node.get('description', '')
+                cat = node.get('category', '')
+
+                line = f"- **{param_name}** ({dims_str}) [{units}]"
+                if desc:
+                    line += f"\n  {desc}"
+
+                # Get effects
+                effects = self.knowledge_graph.get_parameter_effects(param_name)
+                mechanisms = [e['target'] for e in effects if e.get('target_type') == 'Mechanism']
+                outputs = [e['target'] for e in effects if e.get('target_type') == 'Output']
+                related = [e['target'] for e in effects if e.get('relation') == 'related_to']
+
+                if mechanisms:
+                    line += f"\n  Controls: {', '.join(mechanisms)}"
+                if outputs:
+                    line += f"\n  Affects: {', '.join(outputs[:5])}"
+                if include_related and related:
+                    line += f"\n  Related: {', '.join(related[:max_related])}"
+
+                parts.append(line)
+            else:
+                # Try vector search as fallback
+                parts.append(f"- **{param_name}** (not in knowledge graph)")
+
+        # Add documentation if requested
+        doc_section = ""
+        if include_docs and param_names:
+            try:
+                doc_results = self.vector_retriever.query_parameters(
+                    ' '.join(param_names[:5]),
+                    n_results=3
+                )
+                if doc_results:
+                    doc_parts = []
+                    for r in doc_results[:3]:
+                        doc_parts.append(r['content'])
+                    doc_section = "\n\n### Parameter Documentation\n" + "\n\n".join(doc_parts)
+            except Exception:
+                pass
+
+        result = "### Parameters Under Analysis\n" + "\n\n".join(parts)
+        if doc_section:
+            result += doc_section
+
+        return result
+
+    def get_output_definitions(
+        self,
+        output_names: list[str],
+        include_controlling_params: bool = True,
+        include_docs: bool = True
+    ) -> str:
+        """Get formatted output variable context for specific outputs.
+
+        Args:
+            output_names: List of output variable names
+            include_controlling_params: Include controlling parameters from graph
+            include_docs: Include documentation from vector search
+
+        Returns:
+            Formatted output variable context string
+        """
+        parts = []
+
+        for output_name in output_names:
+            node = self.knowledge_graph.get_node(f"output:{output_name}")
+
+            if node:
+                units = node.get('units', '')
+                desc = node.get('description', '')
+                level = node.get('level', '')
+
+                line = f"- **{output_name}** ({level}) [{units}]"
+                if desc:
+                    line += f" - {desc}"
+
+                # Get controlling parameters
+                if include_controlling_params:
+                    params = self.knowledge_graph.get_related_parameters(output_name, depth=2)
+                    # Deduplicate
+                    unique_params = list(dict.fromkeys(params))
+                    if unique_params:
+                        line += f"\n  Key parameters: {', '.join(unique_params[:8])}"
+
+                parts.append(line)
+            else:
+                parts.append(f"- **{output_name}** (not in knowledge graph)")
+
+        result = "### Output Variables\n" + "\n\n".join(parts)
+        return result
+
+    def get_targeted_context(
+        self,
+        param_names: list[str] = None,
+        output_names: list[str] = None,
+        mechanisms: list[str] = None,
+        pft: int = None,
+        include_docs: bool = True
+    ) -> str:
+        """Unified method replacing raw text injection.
+
+        Returns formatted block with only relevant parameter/output context
+        from the knowledge graph and vector store.
+
+        Args:
+            param_names: Parameter names to look up
+            output_names: Output variable names to look up
+            mechanisms: Mechanism names to look up
+            pft: PFT index for additional context
+            include_docs: Include documentation from vector search
+
+        Returns:
+            Formatted context string for inclusion in AI prompts
+        """
+        sections = []
+        sections.append("## FATES Parameter & Output Context (Targeted)\n")
+
+        # Parameter definitions
+        if param_names:
+            param_context = self.get_parameter_definitions(
+                param_names, include_related=True,
+                include_docs=include_docs
+            )
+            sections.append(param_context)
+
+        # Output definitions
+        if output_names:
+            output_context = self.get_output_definitions(
+                output_names,
+                include_controlling_params=True,
+                include_docs=False  # Avoid duplicate doc retrieval
+            )
+            sections.append(output_context)
+
+        # Mechanism context
+        if mechanisms:
+            mech_parts = []
+            for mech_name in mechanisms:
+                mech_node = self.knowledge_graph.get_node(f"mechanism:{mech_name}")
+                if mech_node:
+                    desc = mech_node.get('description', '')
+                    params = self.knowledge_graph.get_mechanism_parameters(mech_name)
+                    unique_params = list(dict.fromkeys(params))
+                    line = f"- **{mech_name}**: {desc}"
+                    if unique_params:
+                        line += f"\n  Parameters: {', '.join(unique_params[:8])}"
+                    mech_parts.append(line)
+            if mech_parts:
+                sections.append("### Mechanisms\n" + "\n\n".join(mech_parts))
+
+        # PFT context
+        if pft is not None:
+            pft_params = self.knowledge_graph.get_pft_parameters(pft)
+            if pft_params:
+                unique_pft_params = list(dict.fromkeys(pft_params))
+                sections.append(
+                    f"### PFT{pft} Parameters ({len(unique_pft_params)} total)\n"
+                    f"First 15: {', '.join(unique_pft_params[:15])}"
+                )
+
+        # Relevant documentation (general, not specific to params/outputs)
+        if include_docs and (param_names or output_names or mechanisms):
+            query_terms = []
+            if param_names:
+                query_terms.extend(param_names[:3])
+            if output_names:
+                query_terms.extend(output_names[:3])
+            if mechanisms:
+                query_terms.extend(mechanisms[:2])
+
+            try:
+                doc_results = self.vector_retriever.vector_store.query(
+                    ' '.join(query_terms),
+                    n_results=3
+                )
+                if doc_results:
+                    doc_parts = []
+                    for r in doc_results[:3]:
+                        doc_parts.append(
+                            f"[{r['source']}] (relevance: {r['relevance']:.2f})\n"
+                            f"{r['content'][:500]}"
+                        )
+                    sections.append(
+                        "### Relevant Documentation\n" + "\n\n---\n\n".join(doc_parts)
+                    )
+            except Exception:
+                pass
+
+        return "\n\n".join(sections)
+
     def get_stats(self) -> dict:
         """Get statistics about both retrievers."""
         vector_stats = self.vector_retriever.get_stats()

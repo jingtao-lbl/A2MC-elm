@@ -455,6 +455,116 @@ DEFAULT_KNOWLEDGE_BASES = [
 ]
 
 
+def load_parameter_descriptions(
+    param_cdl_path: str,
+    output_cdl_path: str = None
+) -> list[dict]:
+    """Generate document chunks from CDL metadata for vector indexing.
+
+    Each parameter generates a chunk like:
+        "FATES Parameter: fates_alloc_storage_cushion
+        Dimensions: fates_pft (PFT-specific)
+        Units: unitless
+        Description: Ratio of storage carbon to leaf carbon that plants target.
+        Category: Allocation"
+
+    Each output generates a chunk like:
+        "FATES Output Variable: FATES_LEAFC
+        Dimensions: time, lndgrid (site-level)
+        Units: kg C m-2
+        Description: Leaf carbon pool.
+        Category: Biomass"
+
+    Args:
+        param_cdl_path: Path to FATES parameter CDL file
+        output_cdl_path: Path to ELM-FATES output CDL file (optional)
+
+    Returns:
+        List of chunk dictionaries ready for add_documents()
+    """
+    chunks = []
+
+    # --- Parameter definitions ---
+    if param_cdl_path:
+        from .parameter_parser import FATESParameterParser, CATEGORIES
+        try:
+            parser = FATESParameterParser(param_cdl_path)
+            params = parser.parse()
+
+            for name, param in params.items():
+                if param.is_string or name.endswith('_name'):
+                    continue
+
+                dims_str = ', '.join(param.dimensions) if param.dimensions else 'scalar'
+                pft_note = ' (PFT-specific)' if param.is_pft_specific else ''
+                cat_name = CATEGORIES.get(param.category_key, param.category_key)
+
+                content = (
+                    f"FATES Parameter: {name}\n"
+                    f"Dimensions: {dims_str}{pft_note}\n"
+                    f"Units: {param.units}\n"
+                    f"Description: {param.long_name}\n"
+                    f"Category: {cat_name}"
+                )
+
+                chunks.append({
+                    'content': content,
+                    'source': f'fates_params_info.cdl::{name}',
+                    'type': 'parameter_definition',
+                    'title': f'Parameter: {name}',
+                    'format': 'cdl',
+                    'chunk_id': f'param_def::{name}',
+                    'entity_type': 'parameter',
+                    'param_category': param.category_key,
+                    'is_pft_specific': str(param.is_pft_specific),
+                })
+
+            print(f"  Generated {len(chunks)} parameter definition chunks")
+        except Exception as e:
+            print(f"  Warning: Could not load parameter definitions: {e}")
+
+    # --- Output variable definitions ---
+    if output_cdl_path:
+        from .output_parser import FATESOutputParser
+        try:
+            out_parser = FATESOutputParser(output_cdl_path)
+            fates_vars = out_parser.get_fates_variables()
+            key_elm = out_parser.get_key_elm_variables()
+            all_vars = {**fates_vars, **key_elm}
+
+            out_count = 0
+            for name, var in all_vars.items():
+                dims_str = ', '.join(var.dimensions) if var.dimensions else 'scalar'
+                level_note = f' ({var.dimension_level}-level)' if var.dimension_level != 'other' else ''
+
+                content = (
+                    f"{'FATES' if var.is_fates else 'ELM'} Output Variable: {name}\n"
+                    f"Dimensions: {dims_str}{level_note}\n"
+                    f"Units: {var.units}\n"
+                    f"Description: {var.long_name}\n"
+                    f"Category: {var.category}"
+                )
+
+                chunks.append({
+                    'content': content,
+                    'source': f'elm_fates_output_info.cdl::{name}',
+                    'type': 'output_definition',
+                    'title': f'Output: {name}',
+                    'format': 'cdl',
+                    'chunk_id': f'output_def::{name}',
+                    'entity_type': 'output',
+                    'dimension_level': var.dimension_level,
+                    'output_category': var.category,
+                })
+                out_count += 1
+
+            print(f"  Generated {out_count} output definition chunks")
+        except Exception as e:
+            print(f"  Warning: Could not load output definitions: {e}")
+
+    return chunks
+
+
 if __name__ == "__main__":
     # Test the loader
     import sys

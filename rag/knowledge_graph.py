@@ -10,6 +10,7 @@ Node Types:
 - Mechanism: Model processes (e.g., PID_Controller, ECA_Competition)
 - PFT: Plant Functional Types (e.g., PFT7, PFT9, PFT10)
 - Module: Source code modules (e.g., PRTAllometricCNPMod.F90)
+- Dimension: NetCDF dimensions (e.g., fates_pft, fates_levscpf)
 
 Edge Types:
 - controls: Parameter controls a mechanism
@@ -19,6 +20,7 @@ Edge Types:
 - implemented_in: Mechanism is implemented in a module
 - competes_with: PFT competes with another PFT
 - depends_on: Output depends on another output
+- has_dimension: Parameter/Output has a specific dimension
 """
 
 import json
@@ -45,6 +47,7 @@ class FATESKnowledgeGraph:
     PFT = "PFT"
     MODULE = "Module"
     CATEGORY = "Category"
+    DIMENSION = "Dimension"
 
     # Edge type constants
     CONTROLS = "controls"
@@ -55,6 +58,7 @@ class FATESKnowledgeGraph:
     COMPETES_WITH = "competes_with"
     DEPENDS_ON = "depends_on"
     CONTAINS = "contains"
+    HAS_DIMENSION = "has_dimension"
 
     def __init__(self):
         """Initialize an empty knowledge graph."""
@@ -305,6 +309,39 @@ class FATESKnowledgeGraph:
         if self.CATEGORY not in self._node_index:
             self._node_index[self.CATEGORY] = set()
         self._node_index[self.CATEGORY].add(node_id)
+
+        return node_id
+
+    def add_dimension(
+        self,
+        name: str,
+        size: Optional[int] = None,
+        description: Optional[str] = None
+    ) -> str:
+        """
+        Add a dimension type node (e.g., fates_pft, fates_levscpf).
+
+        Args:
+            name: Dimension name (e.g., 'fates_pft')
+            size: Dimension size if known
+            description: Dimension description
+
+        Returns:
+            Node ID
+        """
+        node_id = self._make_node_id(self.DIMENSION, name)
+
+        self.graph.add_node(
+            node_id,
+            node_type=self.DIMENSION,
+            name=name,
+            size=size,
+            description=description
+        )
+
+        if self.DIMENSION not in self._node_index:
+            self._node_index[self.DIMENSION] = set()
+        self._node_index[self.DIMENSION].add(node_id)
 
         return node_id
 

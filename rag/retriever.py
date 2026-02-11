@@ -303,6 +303,28 @@ class FATESRetriever:
 
         return "\n\n---\n\n".join(context_parts)
 
+    def query_parameters(
+        self,
+        query: str,
+        n_results: int = 10,
+        category: Optional[str] = None
+    ) -> list[dict]:
+        """Query for parameter definitions. Proxy to vector_store."""
+        if not self._indexed:
+            return []
+        return self.vector_store.query_parameters(query, n_results, category)
+
+    def query_outputs(
+        self,
+        query: str,
+        n_results: int = 10,
+        dimension_level: Optional[str] = None
+    ) -> list[dict]:
+        """Query for output variable definitions. Proxy to vector_store."""
+        if not self._indexed:
+            return []
+        return self.vector_store.query_outputs(query, n_results, dimension_level)
+
     def get_stats(self) -> dict:
         """Get retriever statistics."""
         store_stats = self.vector_store.get_stats()
