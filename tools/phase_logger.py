@@ -8,18 +8,25 @@ Logs capture full AI reasoning, analyses, and results for knowledge extraction.
 Log Structure (site-specific):
     use_cases/{site}/memory/logs/
     ├── phase0_design/
-    │   └── iter01_exp00_skip00_20260116a_Morris_Design.md
+    │   └── r02_iter01_20260116a_Morris_Design.md
     ├── phase2_screening/
-    │   └── iter01_exp00_skip00_20260116b_Ensemble_Screening.md
+    │   └── r02_iter01_20260116b_Ensemble_Screening.md
     ├── phase3_diagnosis/
-    │   └── iter02_exp01_skip03_20260116c_Root_Cause_Analysis.md
+    │   └── r02_iter02_exp01_skip03_20260116c_Root_Cause_Analysis.md
     └── ...
 
-Filename format: iter{II}_exp{EE}_skip{SS}_{YYYYMMDDx}_Title.md
-    II = high-level iteration (display counter, zero-padded)
-    EE = experiment_count (outer loop counter, zero-padded)
-    SS = skip_testing_count (inner loop counter, zero-padded)
+Filename formats:
+    Most phases:   r{RR}_iter{II}_{YYYYMMDDx}_Title.md
+    Phase 3 & 4:   r{RR}_iter{II}_exp{EE}_skip{SS}_{YYYYMMDDx}_Title.md
+
+    RR = calibration_round (outermost Phase 0→7 loop, e.g., round 1=138 params, round 2=162 params)
+    II = iteration (cycle counter within a round, zero-padded)
+    EE = experiment_count (outer loop, only in Phase 3 & 4)
+    SS = skip_testing_count (inner loop, only in Phase 3 & 4)
     YYYYMMDDx = date + session letter (a, b, c for same-day logs)
+
+    exp/skip counters only appear in Phase 3 (Diagnosis) and Phase 4 (Hypothesis)
+    because skip testing (Phase 3↔4 inner loop) only applies there.
 
 Note:
     - A2MC development logs go to: memory/logs/ (at framework level)
@@ -98,8 +105,8 @@ class PhaseLogger:
     """
 
     def __init__(self, site_dir: str = None, site_name: str = None,
-                 iteration: int = None, experiment_count: int = None,
-                 skip_testing_count: int = None):
+                 calibration_round: int = None, iteration: int = None,
+                 experiment_count: int = None, skip_testing_count: int = None):
         """
         Initialize the phase logger.
 
@@ -108,7 +115,10 @@ class PhaseLogger:
                       If None, tries to get from A2MC_USE_CASE_DIR env var
             site_name: Site name for log headers (e.g., "Kougarok")
                        If None, tries to get from A2MC_SITE_NAME env var
-            iteration: Current workflow iteration number
+            calibration_round: Outermost loop counter (Phase 0→7 redesign cycle)
+                              e.g., round 1 = 138 params, round 2 = 162 params
+                              If None, tries A2MC_CALIBRATION_ROUND env var (default: 1)
+            iteration: Cycle counter within a round (diagnosis/hypothesis cycles)
                        If None, tries to get from A2MC_ITERATION env var (default: 1)
             experiment_count: Outer loop counter (full 3→4→5→6 cycles)
                              If None, tries A2MC_EXPERIMENT_COUNT env var (default: 0)
@@ -118,6 +128,7 @@ class PhaseLogger:
         Environment Variables:
             A2MC_USE_CASE_DIR: Site directory path
             A2MC_SITE_NAME: Site name for log headers
+            A2MC_CALIBRATION_ROUND: Calibration round (outermost loop)
             A2MC_ITERATION: Current iteration number (set by orchestrator)
             A2MC_EXPERIMENT_COUNT: Outer loop counter (set by orchestrator)
             A2MC_SKIP_TESTING_COUNT: Inner loop counter (set by orchestrator)
@@ -142,6 +153,11 @@ class PhaseLogger:
         self._ensure_directories()
 
         # Resolve iteration counters: explicit arg > env var > default
+        if calibration_round is not None:
+            self.calibration_round = calibration_round
+        else:
+            self.calibration_round = int(os.environ.get('A2MC_CALIBRATION_ROUND', '1'))
+
         if iteration is not None:
             self.current_iteration = iteration
         else:
@@ -170,18 +186,12 @@ class PhaseLogger:
         """
         Generate log filename with iteration context, date, and session letter.
 
-        Format: iter{II}_exp{EE}_skip{SS}_{YYYYMMDDx}_Title.md
+        Phase 3 & 4: r{RR}_iter{II}_exp{EE}_skip{SS}_{YYYYMMDDx}_Title.md
+        All others:  r{RR}_iter{II}_{YYYYMMDDx}_Title.md
 
-        Where:
-            II = iteration (zero-padded, 2 digits)
-            EE = experiment_count (zero-padded, 2 digits)
-            SS = skip_testing_count (zero-padded, 2 digits)
-            YYYYMMDDx = date + session letter (a, b, c for same-day logs)
-
-        Benefits:
-            - `ls` sorts by iteration → experiment → skip-testing order
-            - Glob `iter01_*` finds all logs for a given iteration
-            - System can find latest: `glob(f"iter{n:02d}_exp{e:02d}_skip*_*.md")`
+        RR = calibration_round (outermost Phase 0→7 loop, e.g., round 1=138 params)
+        II = iteration (cycle counter within a round)
+        EE/SS = experiment/skip_testing counts (only Phase 3 & 4)
         """
         today = datetime.now().strftime("%Y%m%d")
 
@@ -193,10 +203,14 @@ class PhaseLogger:
         # Clean title for filename
         clean_title = title.replace(' ', '_').replace('/', '_')[:50]
 
-        # Build iteration prefix
-        iter_prefix = (f"iter{self.current_iteration:02d}"
-                       f"_exp{self.experiment_count:02d}"
-                       f"_skip{self.skip_testing_count:02d}")
+        # Build prefix — include exp/skip only for phases 3 & 4
+        round_prefix = f"r{self.calibration_round:02d}"
+        if phase in (3, 4):
+            iter_prefix = (f"{round_prefix}_iter{self.current_iteration:02d}"
+                           f"_exp{self.experiment_count:02d}"
+                           f"_skip{self.skip_testing_count:02d}")
+        else:
+            iter_prefix = f"{round_prefix}_iter{self.current_iteration:02d}"
 
         filename = f"{iter_prefix}_{today}{self._session_letter}_{clean_title}.md"
 
@@ -215,6 +229,7 @@ class PhaseLogger:
         self.current_iteration = iteration
 
     def set_iteration_context(self, iteration: int,
+                              calibration_round: int = None,
                               experiment_count: int = None,
                               skip_testing_count: int = None):
         """
@@ -223,21 +238,34 @@ class PhaseLogger:
         Call this before each phase logging call to sync with orchestrator state.
 
         Args:
-            iteration: Display iteration counter
+            iteration: Cycle counter within a calibration round
+            calibration_round: Outermost loop (Phase 0→7 redesign cycle, if None keeps current)
             experiment_count: Outer loop counter (if None, keeps current value)
             skip_testing_count: Inner loop counter (if None, keeps current value)
         """
         self.current_iteration = iteration
+        if calibration_round is not None:
+            self.calibration_round = calibration_round
         if experiment_count is not None:
             self.experiment_count = experiment_count
         if skip_testing_count is not None:
             self.skip_testing_count = skip_testing_count
 
-    def _format_iteration_line(self) -> str:
-        """Format the iteration context line for log headers."""
-        return (f"**Iteration:** {self.current_iteration} "
-                f"(Experiment: {self.experiment_count}, "
-                f"Skip Testing: {self.skip_testing_count})")
+    def _format_iteration_line(self, phase: int = None) -> str:
+        """
+        Format the iteration context line for log headers.
+
+        Always shows calibration round and iteration.
+        For phases 3 & 4, also includes experiment and skip testing counters.
+        """
+        if phase in (3, 4):
+            return (f"**Round:** {self.calibration_round} | "
+                    f"**Iteration:** {self.current_iteration} "
+                    f"(Experiment: {self.experiment_count}, "
+                    f"Skip Testing: {self.skip_testing_count})")
+        else:
+            return (f"**Round:** {self.calibration_round} | "
+                    f"**Iteration:** {self.current_iteration}")
 
     def _format_metadata_block(self, phase: int, phase_name: str,
                                extra: Dict = None) -> str:
@@ -245,16 +273,20 @@ class PhaseLogger:
         Generate a structured metadata JSON block for machine-readable parsing.
 
         Appended at the end of every log file.
+        Includes experiment_count and skip_testing_count only for phases 3 & 4.
         """
         metadata = {
+            "calibration_round": self.calibration_round,
             "iteration": self.current_iteration,
-            "experiment_count": self.experiment_count,
-            "skip_testing_count": self.skip_testing_count,
             "phase": phase,
             "phase_name": phase_name,
             "timestamp": datetime.now().isoformat(),
             "site": self.site_name
         }
+        # Only include skip testing counters for phases where they matter
+        if phase in (3, 4):
+            metadata["experiment_count"] = self.experiment_count
+            metadata["skip_testing_count"] = self.skip_testing_count
         if extra:
             metadata.update(extra)
         return f"""
@@ -330,7 +362,7 @@ class PhaseLogger:
 
 **Site:** {self.site_name}
 **Phase:** 0 - Design
-{self._format_iteration_line()}
+{self._format_iteration_line(phase=0)}
 **Date:** {timestamp}
 
 ---
@@ -398,7 +430,7 @@ class PhaseLogger:
 
 **Site:** {self.site_name}
 **Phase:** 1 - Exploration
-{self._format_iteration_line()}
+{self._format_iteration_line(phase=1)}
 **Date:** {timestamp}
 
 ---
@@ -474,7 +506,7 @@ class PhaseLogger:
 
 **Site:** {self.site_name}
 **Phase:** 2 - Screening
-{self._format_iteration_line()}
+{self._format_iteration_line(phase=2)}
 **Date:** {timestamp}
 
 ---
@@ -582,7 +614,7 @@ class PhaseLogger:
 
 **Site:** {self.site_name}
 **Phase:** 3 - Diagnosis
-{self._format_iteration_line()}
+{self._format_iteration_line(phase=3)}
 **Date:** {timestamp}
 **Confidence:** {confidence:.2f}
 
@@ -783,7 +815,7 @@ class PhaseLogger:
 
 **Site:** {self.site_name}
 **Phase:** 4 - Hypothesis
-{self._format_iteration_line()}
+{self._format_iteration_line(phase=4)}
 **Date:** {timestamp}
 **Confidence:** {confidence:.2f}
 
@@ -870,7 +902,7 @@ class PhaseLogger:
 
 **Site:** {self.site_name}
 **Phase:** 5 - Testing
-{self._format_iteration_line()}
+{self._format_iteration_line(phase=5)}
 **Date:** {timestamp}
 
 ---
@@ -976,7 +1008,7 @@ class PhaseLogger:
 
 **Site:** {self.site_name}
 **Phase:** 6 - Refinement
-{self._format_iteration_line()}
+{self._format_iteration_line(phase=6)}
 **Date:** {timestamp}
 
 ---
@@ -1269,6 +1301,7 @@ class PhaseLogger:
         return sorted(phase_dir.glob("*.md"), reverse=True)
 
     def find_logs_by_iteration(self, phase: int | str,
+                               calibration_round: int = None,
                                iteration: int = None,
                                experiment_count: int = None,
                                skip_testing_count: int = None) -> List[Path]:
@@ -1277,16 +1310,20 @@ class PhaseLogger:
 
         Args:
             phase: Phase number or name
-            iteration: Filter by display iteration (None = any)
-            experiment_count: Filter by experiment count (None = any)
-            skip_testing_count: Filter by skip testing count (None = any)
+            calibration_round: Filter by calibration round (None = any)
+            iteration: Filter by iteration within round (None = any)
+            experiment_count: Filter by experiment count (None = any, Phase 3&4 only)
+            skip_testing_count: Filter by skip testing count (None = any, Phase 3&4 only)
 
         Returns:
             List of matching log paths, sorted by name
 
         Examples:
-            # All logs for iteration 2
-            find_logs_by_iteration(3, iteration=2)
+            # All logs for round 2
+            find_logs_by_iteration(3, calibration_round=2)
+
+            # All logs for round 2, iteration 1
+            find_logs_by_iteration(3, calibration_round=2, iteration=1)
 
             # All skip-testing cycle 3 logs in experiment 1
             find_logs_by_iteration(3, experiment_count=1, skip_testing_count=3)
@@ -1302,11 +1339,16 @@ class PhaseLogger:
         phase_dir = self._get_phase_dir(phase)
 
         # Build glob pattern
-        iter_part = f"iter{iteration:02d}" if iteration is not None else "iter*"
-        exp_part = f"_exp{experiment_count:02d}" if experiment_count is not None else "_exp*"
-        skip_part = f"_skip{skip_testing_count:02d}" if skip_testing_count is not None else "_skip*"
+        round_part = f"r{calibration_round:02d}" if calibration_round is not None else "r*"
+        iter_part = f"_iter{iteration:02d}" if iteration is not None else "_iter*"
 
-        pattern = f"{iter_part}{exp_part}{skip_part}_*.md"
+        if phase in (3, 4):
+            exp_part = f"_exp{experiment_count:02d}" if experiment_count is not None else "_exp*"
+            skip_part = f"_skip{skip_testing_count:02d}" if skip_testing_count is not None else "_skip*"
+            pattern = f"{round_part}{iter_part}{exp_part}{skip_part}_*.md"
+        else:
+            pattern = f"{round_part}{iter_part}_*.md"
+
         return sorted(phase_dir.glob(pattern))
 
 
@@ -1318,7 +1360,8 @@ def create_logger(site_dir: str = None) -> PhaseLogger:
 if __name__ == "__main__":
     # Test the logger
     logger = PhaseLogger(site_dir="use_cases/Kougarok", site_name="Kougarok",
-                         iteration=2, experiment_count=1, skip_testing_count=3)
+                         calibration_round=2, iteration=2,
+                         experiment_count=1, skip_testing_count=3)
 
     # Test diagnosis log
     filepath = logger.log_diagnosis(

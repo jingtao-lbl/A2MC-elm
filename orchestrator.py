@@ -156,11 +156,12 @@ class SamplingDesign:
 class WorkflowState:
     """Persistent state of the A2MC calibration workflow."""
     # Core state
-    iteration: int = 1  # Start at iteration 1 (not 0) - display counter (total cycles)
+    calibration_round: int = 1     # Outermost loop: Phase 0→7 cycle (e.g., round 1=138 params, round 2=162 params)
+    iteration: int = 1             # Display counter: cycles within a round (resets on new round)
     current_phase: str = Phase.DESIGN.value
     converged: bool = False
 
-    # Two-level iteration tracking
+    # Two-level iteration tracking (within a calibration round)
     skip_testing_count: int = 0    # Inner loop: Phase 3↔4 cycles (resets after HPC)
     experiment_count: int = 0       # Outer loop: Full experiment cycles (3→4→5→6)
 
@@ -1053,6 +1054,7 @@ class CalibrationOrchestrator:
         if self._phase_logger:
             try:
                 self._phase_logger.set_iteration_context(
+                        calibration_round=self.state.calibration_round,
                         iteration=self.state.iteration,
                         experiment_count=self.state.experiment_count,
                         skip_testing_count=self.state.skip_testing_count
@@ -1513,6 +1515,7 @@ class CalibrationOrchestrator:
             if self._phase_logger:
                 try:
                     self._phase_logger.set_iteration_context(
+                        calibration_round=self.state.calibration_round,
                         iteration=self.state.iteration,
                         experiment_count=self.state.experiment_count,
                         skip_testing_count=self.state.skip_testing_count
@@ -1867,6 +1870,7 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
             if self._phase_logger:
                 try:
                     self._phase_logger.set_iteration_context(
+                        calibration_round=self.state.calibration_round,
                         iteration=self.state.iteration,
                         experiment_count=self.state.experiment_count,
                         skip_testing_count=self.state.skip_testing_count
@@ -2586,6 +2590,7 @@ Diagnosis Summary:{skip_header}
         if self._phase_logger:
             try:
                 self._phase_logger.set_iteration_context(
+                        calibration_round=self.state.calibration_round,
                         iteration=self.state.iteration,
                         experiment_count=self.state.experiment_count,
                         skip_testing_count=self.state.skip_testing_count
@@ -3093,6 +3098,7 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
         if self._phase_logger:
             try:
                 self._phase_logger.set_iteration_context(
+                        calibration_round=self.state.calibration_round,
                         iteration=self.state.iteration,
                         experiment_count=self.state.experiment_count,
                         skip_testing_count=self.state.skip_testing_count
@@ -3344,6 +3350,8 @@ Phase numbers:
                        help="Start from phase (0-7, phase0-phase7, or name like 'exploration')")
     parser.add_argument("--start-iteration", type=int, default=None,
                        help="Start from specific iteration number (use with --init or --resume)")
+    parser.add_argument("--calibration-round", type=int, default=None,
+                       help="Set calibration round (outermost loop: 1=first ensemble, 2=redesigned, ...)")
 
     # Sampling design options (override config defaults)
     parser.add_argument("--sampling-scheme", type=str,
@@ -3443,6 +3451,11 @@ Phase numbers:
                     if hyp_list and hyp_list[-1].get('iteration') == iteration:
                         hyp_list.pop()
                         logger.info(f"  Also cleared cached hypothesis for iteration {iteration}")
+
+    if args.calibration_round is not None:
+        orchestrator.state.calibration_round = args.calibration_round
+        logger.info(f"Calibration round: {args.calibration_round}")
+        os.environ['A2MC_CALIBRATION_ROUND'] = str(args.calibration_round)
 
     if args.start_iteration is not None:
         orchestrator.state.iteration = args.start_iteration
