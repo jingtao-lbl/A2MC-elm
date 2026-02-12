@@ -2511,11 +2511,24 @@ Diagnosis Summary:{skip_header}
                             # Load data into DataFrame for carbon balance tools
                             ds = nc4.Dataset(nc_file)
                             data_dict = {}
-                            for var in ['FATES_GPP', 'FATES_AUTORESP', 'FATES_MAINTENANCE_RESP',
+                            for var in ['FATES_GPP', 'FATES_AUTORESP', 'FATES_MAINT_RESP',
                                        'FATES_GROWTH_RESP', 'FATES_NPP']:
                                 if var in ds.variables:
                                     data_dict[var] = ds.variables[var][:].flatten()
+                            n_timesteps = len(data_dict.get('FATES_GPP', []))
                             ds.close()
+
+                            # Derive year and doy from monthly time index
+                            # Extracted NC files have 12 months/year starting from START_YEAR
+                            start_year = int(os.environ.get('A2MC_TRANS_START_YEAR', '1901'))
+                            mid_month_doy = [16, 46, 75, 106, 136, 167, 197, 228, 259, 289, 320, 350]
+                            years = []
+                            doys = []
+                            for t in range(n_timesteps):
+                                years.append(start_year + t // 12)
+                                doys.append(mid_month_doy[t % 12])
+                            data_dict['year'] = years
+                            data_dict['doy'] = doys
                             df = pd.DataFrame(data_dict)
 
                             if tool == 'analyze_carbon_balance':
