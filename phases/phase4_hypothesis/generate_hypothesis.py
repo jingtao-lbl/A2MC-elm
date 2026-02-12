@@ -40,7 +40,7 @@ def generate_hypothesis_with_claude(
 
         hypothesis = reasoning_module.generate_hypothesis(
             diagnosis=diagnosis_obj,
-            sensitivity_data=exploration_data,
+            sensitivity_data=exploration_data.get('sensitivity_rankings', {}),
             previous_experiments=previous_experiments
         )
         return asdict(hypothesis) if hasattr(hypothesis, '__dict__') else hypothesis
