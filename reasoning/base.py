@@ -149,6 +149,9 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
         # Load full parameter list for constraining AI recommendations
         self._param_list_context = self._load_parameter_list()
 
+        # Build shorthand → official FATES name mapping for RAG queries
+        self._shorthand_to_official = self._build_param_name_mapping()
+
         memory_status = "with memory" if memory else "without memory"
         rag_status = "with RAG" if self.rag_retriever else "without RAG"
         param_status = f", {len(self._param_list_context.splitlines())} params loaded" if self._param_list_context else ""
@@ -208,6 +211,97 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             logger.warning(f"Could not load ensemble parameter list: {e}")
 
         return ""
+
+    def _build_param_name_mapping(self) -> Dict[str, tuple]:
+        """Build mapping from Morris shorthand names to (official_name, pft) tuples.
+
+        Reads the parameter list file (same one used by _load_ensemble_parameter_list)
+        and creates a lookup dict: shorthand (e.g., 'alpha_ptase_10') →
+        (official_name, pft_number_or_None).
+
+        PFT-specific parameters appear multiple times with different PFT suffixes.
+        The PFT number is extracted from the shorthand suffix (e.g., _10 → PFT#10).
+        """
+        import re
+        from collections import Counter
+
+        mapping = {}
+        try:
+            param_file = None
+            if a2mc_config:
+                param_file = getattr(a2mc_config, 'PARAM_LIST_FILE', None)
+            if not param_file:
+                param_file = os.environ.get('A2MC_PARAM_LIST_FILE', '')
+            if not param_file or not os.path.exists(param_file):
+                return mapping
+
+            # First pass: collect all (shorthand, official) pairs
+            entries = []
+            with open(param_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('=') or line.startswith('No\t') or line.startswith('ELM'):
+                        continue
+                    parts = line.split('\t')
+                    if len(parts) >= 3 and parts[0].isdigit():
+                        official = parts[1].strip()   # e.g., fates_cnp_eca_alpha_ptase
+                        shorthand = parts[2].strip()  # e.g., alpha_ptase_7
+                        if shorthand and official:
+                            entries.append((shorthand, official))
+
+            # Detect PFT-specific parameters (same official name appears multiple times)
+            official_counts = Counter(official for _, official in entries)
+
+            for shorthand, official in entries:
+                if official_counts[official] > 1:
+                    # PFT-specific: extract PFT number from shorthand suffix
+                    match = re.search(r'_(\d+)$', shorthand)
+                    pft = int(match.group(1)) if match else None
+                    mapping[shorthand] = (official, pft)
+                else:
+                    # Non-PFT (scalar) parameter
+                    mapping[shorthand] = (official, None)
+                # Also map official name to itself (no PFT — base node)
+                if official not in mapping:
+                    mapping[official] = (official, None)
+
+            if mapping:
+                logger.info(f"Built parameter name mapping: {len(mapping)} entries")
+        except Exception as e:
+            logger.warning(f"Could not build parameter name mapping: {e}")
+
+        return mapping
+
+    def _resolve_param_names(self, param_names: List[str]) -> List[str]:
+        """Convert Morris shorthand parameter names to graph-compatible names.
+
+        For PFT-specific parameters, returns 'official_name:pftN' format which
+        matches the knowledge graph node ID convention (e.g., 'fates_cnp_eca_alpha_ptase:pft10').
+
+        For non-PFT parameters, returns the official FATES name.
+
+        Args:
+            param_names: List of parameter names (may be shorthand or official)
+
+        Returns:
+            List of resolved parameter names (deduplicated)
+        """
+        if not self._shorthand_to_official:
+            return param_names
+
+        resolved = []
+        seen = set()
+        for name in param_names:
+            entry = self._shorthand_to_official.get(name)
+            if entry:
+                official, pft = entry
+                resolved_name = f"{official}:pft{pft}" if pft is not None else official
+            else:
+                resolved_name = name
+            if resolved_name not in seen:
+                resolved.append(resolved_name)
+                seen.add(resolved_name)
+        return resolved
 
     def query(self, prompt: str, max_tokens: Optional[int] = None) -> str:
         """Send a query to Claude and return the response.
@@ -295,8 +389,10 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
         if not self.rag_retriever:
             return ""
         try:
+            # Resolve shorthand names to official FATES names for graph lookup
+            resolved_params = self._resolve_param_names(param_names) if param_names else param_names
             return self.rag_retriever.get_targeted_context(
-                param_names=param_names, output_names=output_names,
+                param_names=resolved_params, output_names=output_names,
                 mechanisms=mechanisms, pft=pft, include_docs=True
             )
         except Exception as e:
@@ -327,6 +423,10 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
 
         try:
             context_parts = []
+
+            # Resolve shorthand names to official FATES names for graph lookup
+            if parameters:
+                parameters = self._resolve_param_names(parameters)
 
             # Get calibration context if we have structured entities
             if parameters or outputs or mechanisms:

@@ -531,7 +531,7 @@ class FATESKnowledgeGraph:
                 target_id
             )
             return path
-        except nx.NetworkXNoPath:
+        except (nx.NetworkXNoPath, nx.NodeNotFound):
             return []
 
     def get_subgraph(
