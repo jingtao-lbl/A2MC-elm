@@ -155,7 +155,7 @@ class WorkflowStatus:
         """
         self.log_dir = Path(log_dir)
         self.log_file = self.log_dir / "workflow_log.json"
-        self.phase_logs_dir = self.log_dir / "phase_logs"
+        self.phase_results_dir = self.log_dir / "phase_results"
 
         # Initialize or load log
         if auto_load and self.log_file.exists():
@@ -198,7 +198,7 @@ class WorkflowStatus:
     def _update_check_logs_at(self):
         """Update the check_logs_at path based on current phase."""
         phase_name = PHASES.get(self.log.current_phase, "unknown")
-        self.log.check_logs_at = f"memory/phase_logs/phase{self.log.current_phase}_{phase_name}/"
+        self.log.check_logs_at = f"memory/phase_results/phase{self.log.current_phase}_{phase_name}/"
 
     # =========================================================================
     # Workflow-level operations

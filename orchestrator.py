@@ -1173,7 +1173,7 @@ class CalibrationOrchestrator:
             # Look in multiple locations
             # Pattern: Morris{Varname}_{N}cases_{start}_{end}.txt
             # e.g., MorrisLeafbiomass_4889cases_2010_2019.txt
-            phase1_output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_logs" / "phase1_exploration"
+            phase1_output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
             morris_files = list(phase1_output_dir.glob("Morris*biomass*.txt")) if phase1_output_dir.exists() else []
 
             # Also check current directory and ensemble output
@@ -1292,7 +1292,7 @@ class CalibrationOrchestrator:
             from tools.config import config as a2mc_config
 
             # Output directory for Y matrices
-            output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_logs" / "phase1_exploration"
+            output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
 
             logger.info("Extracting Y matrices from simulation outputs...")
 
@@ -1332,7 +1332,7 @@ class CalibrationOrchestrator:
             from tools.config import config as a2mc_config
 
             # Determine output directory for sensitivity results
-            output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_logs" / "phase1_exploration"
+            output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
             output_dir.mkdir(parents=True, exist_ok=True)
 
             # Map Y matrix files to output variables
@@ -1883,6 +1883,11 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                         experiment_count=self.state.experiment_count,
                         skip_testing_count=self.state.skip_testing_count
                     )
+                    # Collect figure paths from diagnostic data
+                    fig_paths = []
+                    if diagnostic_data and hasattr(diagnostic_data, 'figure_paths'):
+                        fig_paths = diagnostic_data.figure_paths
+
                     log_path = self._phase_logger.log_diagnosis(
                         title="Diagnosis",
                         failing_targets=diagnosis.get('failing_targets', []),
@@ -1896,6 +1901,7 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                             'rag': self.reasoning.rag_retriever is not None if self.reasoning else False,
                             'experiments': len(self.state.experiments) > 0
                         },
+                        figure_paths=fig_paths if fig_paths else None,
                         metadata={
                             'iteration': self.state.iteration,
                             'screening_data_summary': {
@@ -2148,6 +2154,20 @@ Diagnosis Summary:{skip_header}
                             nc_file = str(nc_files[0])
                             logger.info(f"Found NC file for case {case_id}: {nc_file}")
 
+            # Compute plot output directory (phase_results, not logs)
+            plot_output_dir = None
+            plot_filename_prefix = ""
+            if a2mc_config.USE_CASE_DIR:
+                plot_output_dir = str(
+                    Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase3_diagnosis"
+                )
+                # Build filename prefix from iteration context
+                rr = self.state.calibration_round if hasattr(self.state, 'calibration_round') else 1
+                ee = self.state.experiment_count if hasattr(self.state, 'experiment_count') else 0
+                sc = self.state.skip_testing_count if hasattr(self.state, 'skip_testing_count') else 0
+                ii = sc + 1  # 1-based inner loop counter
+                plot_filename_prefix = f"r{rr:02d}_exp{ee:02d}_iter{ii:02d}_"
+
             # Run diagnosis
             result = run_diagnosis_for_orchestrator(
                 screening_data=screening_data,
@@ -2158,6 +2178,8 @@ Diagnosis Summary:{skip_header}
                 targets=targets,
                 pft_ids=pft_ids,
                 top_cases_for_comparison=5,
+                plot_output_dir=plot_output_dir,
+                plot_filename_prefix=plot_filename_prefix,
                 verbose=True
             )
 

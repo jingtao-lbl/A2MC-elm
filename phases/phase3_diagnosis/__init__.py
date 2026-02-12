@@ -159,6 +159,16 @@ from .analyze_nutrient_balance import (
     results_to_dict as nutrient_balance_results_to_dict,
 )
 
+# Diagnostic plotting
+from .plot_diagnostics import (
+    plot_pft_diagnosis,
+    plot_biomass_trajectories,
+    plot_nutrient_limitation,
+    plot_light_competition,
+    plot_allocation_dynamics,
+    plot_allocation_rates,
+)
+
 # Ensemble-level hypothesis tests (promoted from generated/)
 from .test_p_limitation_cascade import (
     test_hypothesis as test_p_limitation_cascade,
@@ -265,6 +275,14 @@ __all__ = [
     'PFTCompetition',
     'NutrientSinks',
     'nutrient_balance_results_to_dict',
+
+    # Diagnostic plotting
+    'plot_pft_diagnosis',
+    'plot_biomass_trajectories',
+    'plot_nutrient_limitation',
+    'plot_light_competition',
+    'plot_allocation_dynamics',
+    'plot_allocation_rates',
 
     # Ensemble-level hypothesis tests
     'test_p_limitation_cascade',

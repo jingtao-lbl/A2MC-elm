@@ -122,10 +122,13 @@ use_cases/Kougarok/
     │   ├── phase5_testing/
     │   └── phase6_refinement/
     │
-    ├── phase_logs/                 # Data files (Y matrices, plots, CSVs)
-    │   └── phase1_exploration/     #   ├── MorrisLeafbiomass_4890cases_2010_2019.txt
-    │                               #   ├── morris_leaf_biomass_sensitivity_*.png
-    │                               #   └── morris_leaf_biomass_rankings_*.csv
+    ├── phase_results/              # Phase deliverables (data, plots, scripts)
+    │   ├── phase1_exploration/     #   ├── MorrisLeafbiomass_4890cases_2010_2019.txt
+    │   │                           #   ├── morris_leaf_biomass_sensitivity_*.png
+    │   │                           #   └── morris_leaf_biomass_rankings_*.csv
+    │   ├── phase3_diagnosis/       #   └── r02_exp01_iter01_pft10_diagnosis.png
+    │   ├── phase4_hypothesis/      #   └── modify_params_exp01.sh (wrapper scripts)
+    │   └── phase5_testing/         #   └── submit_exp01.sh (case creation/submission)
     │
     └── gained_knowledge/           # Site-specific knowledge (JSON)
         ├── discoveries.json        # Mechanistic insights (e.g., "Allocation Paradox")
@@ -135,7 +138,7 @@ use_cases/Kougarok/
 
 **Memory folder distinction:**
 - `logs/` = Human-readable Markdown documentation with AI reasoning
-- `phase_logs/` = Data outputs (matrices, plots, CSVs) from each phase
+- `phase_results/` = Phase deliverables (data, plots, wrapper scripts) from each phase
 - `gained_knowledge/` = Structured JSON knowledge for AI to reference
 
 ### Running the Workflow

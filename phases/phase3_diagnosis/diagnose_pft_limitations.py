@@ -456,7 +456,9 @@ def run_pft_diagnosis(
     nc_file: str,
     pft_id: int,
     targets: Dict[str, float],
-    comparison_pfts: Optional[List[int]] = None
+    comparison_pfts: Optional[List[int]] = None,
+    output_dir: Optional[str] = None,
+    filename_prefix: str = ""
 ) -> Dict:
     """
     Run all diagnostic tests for a PFT.
@@ -466,9 +468,11 @@ def run_pft_diagnosis(
         pft_id: PFT ID to diagnose
         targets: Dict with 'leaf' and 'froot' target values (g C/m²)
         comparison_pfts: Other PFTs to compare for competition analysis
+        output_dir: If set, generates diagnostic plots to this directory
+        filename_prefix: Prefix for plot filenames (e.g., "r02_exp01_iter01_")
 
     Returns:
-        Comprehensive diagnosis result
+        Comprehensive diagnosis result (includes 'figure_paths' if output_dir set)
     """
     # Determine all PFTs to load
     pft_ids = [pft_id]
@@ -522,6 +526,24 @@ def run_pft_diagnosis(
         'primary_issues': [f['message'] for f in critical],
         'nutrient_limitation': nutrient.get('primary_limitation', 'unknown')
     }
+
+    # Generate diagnostic plots if output_dir is set
+    if output_dir:
+        try:
+            from phases.phase3_diagnosis.plot_diagnostics import plot_pft_diagnosis as _plot
+            fig_path = _plot(
+                data=data,
+                diagnosis=result,
+                pft_id=pft_id,
+                targets=targets,
+                comparison_pfts=comparison_pfts or [],
+                output_dir=output_dir,
+                filename_prefix=filename_prefix
+            )
+            result['figure_paths'] = [fig_path] if fig_path else []
+        except Exception as e:
+            logger.warning(f"Could not generate diagnostic plots: {e}")
+            result['figure_paths'] = []
 
     return result
 

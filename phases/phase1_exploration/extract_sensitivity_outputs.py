@@ -449,7 +449,7 @@ def run_extraction(
         cases = list(range(1, n_cases + 1))
 
     if output_dir is None:
-        output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_logs" / "phase1_exploration"
+        output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
 
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)

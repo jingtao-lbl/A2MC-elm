@@ -124,6 +124,13 @@ class DiagnosisConfig:
     # Nutrient for mass balance analysis ('P' or 'N')
     nutrient: str = 'P'
 
+    # Diagnostic plot output directory (if set, generates figures)
+    # Typically: use_cases/{site}/memory/phase_results/phase3_diagnosis/
+    plot_output_dir: Optional[str] = None
+
+    # Prefix for plot filenames (e.g., "r02_exp01_iter01_")
+    plot_filename_prefix: str = ""
+
 
 @dataclass
 class DiagnosisResult:
@@ -154,6 +161,9 @@ class DiagnosisResult:
     # Nutrient mass balance (if NC file provided)
     nutrient_balance: Dict = field(default_factory=dict)
     nutrient_balance_summary: str = ""
+
+    # Diagnostic figure paths
+    figure_paths: List[str] = field(default_factory=list)
 
     # Combined summary for AI
     combined_summary: str = ""
@@ -366,6 +376,10 @@ def run_diagnosis(
         if verbose:
             print("\nStep 5: Running PFT-specific diagnosis...")
 
+        # Create plot output directory if configured
+        if config.plot_output_dir:
+            Path(config.plot_output_dir).mkdir(parents=True, exist_ok=True)
+
         pft_summaries = []
         for pft_id in config.pft_ids:
             pft_key = f'PFT{pft_id}'
@@ -378,13 +392,23 @@ def run_diagnosis(
                 pft_diagnosis = run_pft_diagnosis(
                     nc_file=config.nc_file,
                     pft_id=pft_id,
-                    targets=pft_targets
+                    targets=pft_targets,
+                    comparison_pfts=[p for p in config.pft_ids if p != pft_id],
+                    output_dir=config.plot_output_dir,
+                    filename_prefix=config.plot_filename_prefix
                 )
                 result.pft_diagnoses[pft_id] = pft_diagnosis
                 pft_summaries.append(get_diagnosis_summary_for_ai(pft_diagnosis))
 
+                # Collect figure paths
+                for fp in pft_diagnosis.get('figure_paths', []):
+                    if fp:
+                        result.figure_paths.append(fp)
+
                 if verbose:
                     print(f"  PFT#{pft_id} diagnosis complete")
+                    if pft_diagnosis.get('figure_paths'):
+                        print(f"    Figures: {pft_diagnosis['figure_paths']}")
             except Exception as e:
                 logger.warning(f"Could not diagnose PFT#{pft_id}: {e}")
 
@@ -449,6 +473,8 @@ def run_diagnosis_for_orchestrator(
     targets: Optional[Dict] = None,
     pft_ids: List[int] = None,
     top_cases_for_comparison: int = 5,
+    plot_output_dir: Optional[str] = None,
+    plot_filename_prefix: str = "",
     verbose: bool = True
 ) -> DiagnosisResult:
     """
@@ -474,13 +500,17 @@ def run_diagnosis_for_orchestrator(
         PFT IDs to diagnose (default: [7, 9, 10])
     top_cases_for_comparison : int
         Number of top cases to compare (default: 5)
+    plot_output_dir : str, optional
+        Directory for diagnostic plots (e.g., phase_results/phase3_diagnosis/)
+    plot_filename_prefix : str
+        Prefix for plot filenames (e.g., "r02_exp01_iter01_")
     verbose : bool
         Print progress
 
     Returns
     -------
     DiagnosisResult
-        Structured diagnosis results
+        Structured diagnosis results (includes figure_paths if plot_output_dir set)
     """
     if pft_ids is None:
         pft_ids = [7, 9, 10]
@@ -500,7 +530,9 @@ def run_diagnosis_for_orchestrator(
         comparison_case_ids=comparison_ids,
         pft_ids=pft_ids,
         targets=targets,
-        nc_file=nc_file
+        nc_file=nc_file,
+        plot_output_dir=plot_output_dir,
+        plot_filename_prefix=plot_filename_prefix
     )
 
     return run_diagnosis(screening_data, config, verbose)

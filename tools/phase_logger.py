@@ -592,6 +592,7 @@ class PhaseLogger:
                       pool_tracking: Dict = None,
                       named_discoveries: List[Dict] = None,
                       questions_for_discussion: List[str] = None,
+                      figure_paths: List[str] = None,
                       metadata: Dict = None) -> Path:
         """
         Log Phase 3: Diagnosis with full AI reasoning.
@@ -778,6 +779,17 @@ class PhaseLogger:
             for i, q in enumerate(questions_for_discussion, 1):
                 content += f"{i}. {q}\n"
 
+        if figure_paths:
+            content += """
+---
+
+## Diagnostic Figures
+
+"""
+            for fig_path in figure_paths:
+                fig_name = Path(fig_path).name
+                content += f"![{fig_name}](../../phase_results/phase3_diagnosis/{fig_name})\n\n"
+
         if context_used:
             content += f"""
 ---
@@ -814,6 +826,7 @@ class PhaseLogger:
                        expected_outcomes: Dict = None,
                        experiments_planned: List[Dict] = None,
                        confidence: float = 0.0,
+                       figure_paths: List[str] = None,
                        metadata: Dict = None) -> Path:
         """Log Phase 4: Hypothesis with experimental design."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -878,6 +891,17 @@ class PhaseLogger:
             for i, exp in enumerate(experiments_planned, 1):
                 content += f"### Experiment {i}: {exp.get('name', 'Unknown')}\n"
                 content += f"{self._format_dict_as_markdown(exp)}\n\n"
+
+        if figure_paths:
+            content += """
+---
+
+## Diagnostic Figures
+
+"""
+            for fig_path in figure_paths:
+                fig_name = Path(fig_path).name
+                content += f"![{fig_name}](../../phase_results/phase3_diagnosis/{fig_name})\n\n"
 
         if metadata:
             content += f"""
