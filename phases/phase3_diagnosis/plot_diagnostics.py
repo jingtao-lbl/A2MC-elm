@@ -6,12 +6,14 @@ Creates publication-quality diagnostic figures for PFT diagnosis results.
 Figures are saved to use_cases/{site}/memory/phase_results/phase3_diagnosis/.
 
 Functions:
-    plot_pft_diagnosis()       - 6-panel composite figure (main entry point)
-    plot_biomass_trajectories() - Fine root + leaf biomass time series
-    plot_nutrient_limitation()  - P (or N) uptake/demand ratio
-    plot_light_competition()    - GPP ratio between PFTs
-    plot_allocation_dynamics()  - L2FR seasonal dynamics
-    plot_allocation_rates()     - Leaf vs froot allocation rates
+    plot_pft_diagnosis()         - 6-panel composite figure (main entry point)
+    plot_biomass_trajectories()  - Fine root + leaf biomass time series
+    plot_nutrient_limitation()   - P (or N) uptake/demand ratio
+    plot_light_competition()     - GPP ratio between PFTs
+    plot_allocation_dynamics()   - L2FR seasonal dynamics
+    plot_allocation_rates()      - Leaf vs froot allocation rates
+    plot_mortality_components()  - Stacked area mortality by component per PFT
+    plot_p_mass_balance()        - 6-panel P mass balance overview from NetCDF
 
 Usage:
     from phases.phase3_diagnosis.plot_diagnostics import plot_pft_diagnosis
@@ -645,5 +647,365 @@ def plot_pft_diagnosis(
 
     except Exception as e:
         logger.warning(f"Failed to create diagnostic plot for PFT#{pft_id}: {e}")
+        plt.close('all')
+        return None
+
+
+# =============================================================================
+# Mortality Components Plot
+# =============================================================================
+
+def plot_mortality_components(
+    mortality_data: Dict,
+    pft_ids: List[int],
+    output_path: Optional[str] = None,
+    title_suffix: str = ""
+) -> Optional[str]:
+    """
+    Plot mortality component breakdown (stacked area) for each PFT.
+
+    Creates one subplot per PFT, stacking hydraulic, C starvation, and fire
+    mortality fluxes over time. Vertical dashed lines mark phase boundaries
+    (ADSP/RGSP/TRANS).
+
+    Args:
+        mortality_data: Output from extract_mortality_timeseries()
+                        Keys: 'time', 'phases', 'pft_data'
+        pft_ids: PFT IDs to plot (one subplot each)
+        output_path: Full path to save figure. If None, returns None.
+        title_suffix: Optional suffix for figure title (e.g., "Case 3930")
+
+    Returns:
+        Path to saved figure, or None
+    """
+    time = mortality_data.get('time', np.array([]))
+    phases = mortality_data.get('phases', {})
+    pft_all = mortality_data.get('pft_data', {})
+
+    if len(time) == 0 or not pft_ids:
+        logger.warning("No mortality data to plot")
+        return None
+
+    n_pfts = len(pft_ids)
+    fig, axes = plt.subplots(n_pfts, 1, figsize=(12, 4.5 * n_pfts), squeeze=False)
+
+    component_colors = {
+        'hydraulic': '#CC0000',      # red
+        'cstarvation': '#FF8C00',    # dark orange
+        'fire': '#6A0DAD',           # purple
+    }
+    component_labels = {
+        'hydraulic': 'Hydraulic',
+        'cstarvation': 'C Starvation',
+        'fire': 'Fire',
+    }
+    component_order = ['hydraulic', 'cstarvation', 'fire']
+
+    for row, pft_id in enumerate(pft_ids):
+        ax = axes[row, 0]
+        pft_data = pft_all.get(pft_id, {})
+
+        # Build arrays for stacking
+        stack_arrays = []
+        stack_labels = []
+        stack_colors = []
+        for comp in component_order:
+            if comp in pft_data and len(pft_data[comp]) == len(time):
+                arr = np.clip(pft_data[comp], 0, None)  # no negatives for stacking
+                stack_arrays.append(arr)
+                stack_labels.append(component_labels[comp])
+                stack_colors.append(component_colors[comp])
+
+        if stack_arrays:
+            ax.stackplot(time, *stack_arrays, labels=stack_labels,
+                         colors=stack_colors, alpha=0.85)
+        else:
+            ax.text(0.5, 0.5, f'No mortality data for PFT#{pft_id}',
+                    transform=ax.transAxes, ha='center', fontsize=12)
+
+        # Phase boundary lines
+        for phase_name, (start_idx, end_idx) in phases.items():
+            if start_idx > 0 and start_idx < len(time):
+                ax.axvline(time[start_idx], color='gray', linestyle='--',
+                           linewidth=1, alpha=0.6)
+
+        # Stats box: dominant cause in final 120 months (10 years)
+        if stack_arrays:
+            n_final = min(120, len(time))
+            final_means = {}
+            for comp, arr in zip(component_order, stack_arrays):
+                final_means[comp] = float(np.mean(arr[-n_final:]))
+            total = sum(final_means.values())
+            if total > 0:
+                stats_lines = ['Final 10yr mean:']
+                for comp in component_order:
+                    if comp in final_means:
+                        pct = 100 * final_means[comp] / total
+                        stats_lines.append(
+                            f'  {component_labels.get(comp, comp)}: '
+                            f'{final_means[comp]:.1f} ({pct:.0f}%)')
+                _stats_box(ax, '\n'.join(stats_lines))
+
+        ax.set_title(f'PFT{pft_id}: Mortality Components', fontsize=13, fontweight='bold')
+        ax.set_xlabel('Simulation Year')
+        ax.set_ylabel('C Flux (g C m$^{-2}$ yr$^{-1}$)')
+        ax.legend(loc='upper right', fontsize=9)
+        ax.grid(True, alpha=0.2, linestyle='--')
+        ax.set_xlim(time[0], time[-1])
+
+    suptitle = 'Mortality Components by PFT'
+    if title_suffix:
+        suptitle += f' — {title_suffix}'
+    fig.suptitle(suptitle, fontsize=15, fontweight='bold', y=1.01)
+    fig.tight_layout()
+
+    if output_path:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches='tight')
+        plt.close(fig)
+        logger.info(f"Saved mortality plot: {output_path}")
+        return output_path
+    plt.close(fig)
+    return None
+
+
+# =============================================================================
+# P Mass Balance Plot
+# =============================================================================
+
+def plot_p_mass_balance(
+    nc_file: str,
+    output_path: Optional[str] = None,
+    title_suffix: str = ""
+) -> Optional[str]:
+    """
+    Plot 6-panel P mass balance overview from a NetCDF output file.
+
+    Panels:
+        A. Soil Inorganic P Pools (line plot: SMINP, LABILEP, SECONDP, OCCLP, PRIMP)
+        B. Stacked Soil Inorganic P (area plot: same pools, stacked)
+        C. Litter P Pools (LITR1P, LITR2P, LITR3P, total)
+        D. Plant P and Soil Organic P (FATES_VEGP, FATES_STOREP, Total SOM P)
+        E. P Fluxes (uptake, efflux, leaching, deposition)
+        F. Total Ecosystem P Budget (total ecosystem, total inorganic, total SOM)
+
+    Reads directly from NetCDF (does NOT require pre-extracted NutrientBudget).
+
+    Args:
+        nc_file: Path to NetCDF output file (can be multi-phase concatenated
+                 or single-phase)
+        output_path: Full path to save figure. If None, returns None.
+        title_suffix: Optional suffix for figure title (e.g., "Case 2678")
+
+    Returns:
+        Path to saved figure, or None
+    """
+    try:
+        import netCDF4 as nc
+    except ImportError:
+        logger.error("netCDF4 required for P mass balance plot")
+        return None
+
+    try:
+        ds = nc.Dataset(nc_file, 'r')
+    except Exception as e:
+        logger.error(f"Cannot open {nc_file}: {e}")
+        return None
+
+    try:
+        n_time = ds.dimensions['time'].size
+        # Simulation year axis (1-indexed)
+        sim_year = np.arange(n_time) / 12.0 + 1
+
+        def _read(var_name):
+            """Read a variable, collapsing spatial dims, handling missing."""
+            if var_name not in ds.variables:
+                return np.zeros(n_time)
+            arr = ds.variables[var_name][:]
+            if hasattr(arr, 'filled'):
+                arr = arr.filled(0.0)
+            if arr.ndim == 1:
+                return arr
+            elif arr.ndim == 2:
+                dims = ds.variables[var_name].dimensions
+                if len(dims) == 2 and dims[1] in ('levdcmp', 'levsoi', 'levgrnd'):
+                    return np.sum(arr, axis=1)
+                return arr[:, 0]
+            elif arr.ndim == 3:
+                return np.sum(arr[:, :, 0], axis=1)
+            return arr
+
+        def _to_g(arr, source='ELM'):
+            """Convert pool: FATES kg/m2 → g/m2, ELM already g/m2."""
+            return arr * 1000.0 if source == 'FATES' else arr.copy()
+
+        def _flux_to_g_yr(arr, source='ELM'):
+            """Convert flux to g/m2/yr (approximate: mean rate × 365 × 86400).
+            ELM: g/m2/s, FATES: kg/m2/s."""
+            scale = 365 * 86400
+            if source == 'FATES':
+                scale *= 1000.0
+            return arr * scale
+
+        # ---- Read pools (g/m2) ----
+        sminp = _read('SMINP')
+        labilep = _read('LABILEP')
+        secondp = _read('SECONDP')
+        occlp = _read('OCCLP')
+        primp = _read('PRIMP')
+
+        # Litter P: try site-level first, then _vr (per-layer, summed by _read)
+        litr1p = _read('LITR1P')
+        if np.all(litr1p == 0):
+            litr1p = _read('LITR1P_vr')
+        litr2p = _read('LITR2P')
+        if np.all(litr2p == 0):
+            litr2p = _read('LITR2P_vr')
+        litr3p = _read('LITR3P')
+        if np.all(litr3p == 0):
+            litr3p = _read('LITR3P_vr')
+        total_litrp = litr1p + litr2p + litr3p
+
+        vegp = _to_g(_read('FATES_VEGP'), 'FATES')
+        storep = _to_g(_read('FATES_STOREP'), 'FATES')
+        # Total SOM P: try TOTSOMP, then site-level SOIL*P, then _vr variants
+        totsomp = _read('TOTSOMP')
+        if np.all(totsomp == 0):
+            totsomp = _read('SOIL1P') + _read('SOIL2P') + _read('SOIL3P') + _read('SOIL4P')
+        if np.all(totsomp == 0):
+            totsomp = (_read('SOIL1P_vr') + _read('SOIL2P_vr')
+                       + _read('SOIL3P_vr') + _read('SOIL4P_vr'))
+
+        # ---- Read fluxes (g/m2/yr) ----
+        p_uptake = _flux_to_g_yr(_read('FATES_PUPTAKE'), 'FATES')
+        p_efflux = _flux_to_g_yr(_read('FATES_PEFFLUX'), 'FATES')
+        sminp_leached = _flux_to_g_yr(_read('SMINP_LEACHED'), 'ELM')
+        # ELM SMINP→Plant (same as FATES uptake from ELM side)
+        elm_sminp_to_plant = _flux_to_g_yr(_read('SMINP_TO_PLANT'), 'ELM')
+
+        # ---- Ecosystem totals ----
+        total_inorganic = sminp + labilep + secondp + occlp + primp
+        total_ecosystem = total_inorganic + total_litrp + totsomp + vegp + storep
+
+        # ---- Create figure ----
+        fig, axes = plt.subplots(3, 2, figsize=(16, 14))
+        suptitle = 'P Mass Balance Time Series'
+        if title_suffix:
+            suptitle += f': {title_suffix}'
+        fig.suptitle(suptitle, fontsize=15, fontweight='bold', y=0.98)
+
+        # --- Panel A: Soil Inorganic P Pools (lines) ---
+        ax = axes[0, 0]
+        ax.plot(sim_year, sminp, 'c-', linewidth=1.2, label='SMINP (mineral)')
+        ax.plot(sim_year, labilep, color='orange', linewidth=1.2, label='LABILEP (labile)')
+        ax.plot(sim_year, secondp, 'r-', linewidth=1.2, label='SECONDP (secondary)')
+        ax.plot(sim_year, occlp, color='brown', linewidth=1.2, label='OCCLP (occluded)')
+        ax.plot(sim_year, primp, color='teal', linewidth=1.2, label='PRIMP (primary)')
+        ax.set_title('A. Soil Inorganic P Pools', fontweight='bold')
+        ax.set_xlabel('Simulation Year')
+        ax.set_ylabel('P Pool (g P m$^{-2}$)')
+        ax.legend(loc='upper right', fontsize=8)
+        ax.grid(True, alpha=0.3, linestyle='--')
+
+        # --- Panel B: Stacked Soil Inorganic P ---
+        ax = axes[0, 1]
+        ax.stackplot(sim_year, primp, occlp, secondp, labilep, sminp,
+                     labels=['PRIMP', 'OCCLP', 'SECONDP', 'LABILEP', 'SMINP'],
+                     colors=['teal', 'brown', 'red', 'orange', 'cyan'],
+                     alpha=0.7)
+        ax.plot(sim_year, total_inorganic, 'k-', linewidth=1.5, label='Total')
+        ax.set_title('B. Stacked Soil Inorganic P', fontweight='bold')
+        ax.set_xlabel('Simulation Year')
+        ax.set_ylabel('P Pool (g P m$^{-2}$)')
+        ax.legend(loc='upper right', fontsize=8)
+        ax.grid(True, alpha=0.3, linestyle='--')
+
+        # --- Panel C: Litter P Pools ---
+        ax = axes[1, 0]
+        ax.plot(sim_year, litr1p, 'b-', linewidth=1.2, label='LITR1P (labile)')
+        ax.plot(sim_year, litr2p, color='orange', linewidth=1.2, label='LITR2P (cellulose)')
+        ax.plot(sim_year, litr3p, 'r-', linewidth=1.2, label='LITR3P (lignin)')
+        ax.plot(sim_year, total_litrp, 'k--', linewidth=1.5, label='Total Litter P')
+        # Flag if litter P is accumulating
+        if len(total_litrp) > 24:
+            initial_litr = float(np.mean(total_litrp[:12]))
+            final_litr = float(np.mean(total_litrp[-12:]))
+            if final_litr > initial_litr * 2:
+                ax.annotate('P ACCUMULATING!', xy=(sim_year[-1], final_litr),
+                            fontsize=10, color='red', fontweight='bold',
+                            ha='right', va='bottom',
+                            bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.9))
+        ax.set_title('C. Litter P Pools (WHERE P ACCUMULATES!)', fontweight='bold')
+        ax.set_xlabel('Simulation Year')
+        ax.set_ylabel('P Pool (g P m$^{-2}$)')
+        ax.legend(loc='upper left', fontsize=8)
+        ax.grid(True, alpha=0.3, linestyle='--')
+
+        # --- Panel D: Plant P and Soil Organic P ---
+        ax = axes[1, 1]
+        ax.plot(sim_year, vegp, 'g-', linewidth=1.2, label='Vegetation P')
+        ax.plot(sim_year, storep, color='orange', linewidth=1.2, label='Storage P')
+        if not np.all(totsomp == 0):
+            ax.plot(sim_year, totsomp, 'r-', linewidth=1.2, label='Total SOM P')
+        ax.set_title('D. Plant P and Soil Organic P', fontweight='bold')
+        ax.set_xlabel('Simulation Year')
+        ax.set_ylabel('P Pool (g P m$^{-2}$)')
+        ax.legend(loc='upper right', fontsize=8)
+        ax.grid(True, alpha=0.3, linestyle='--')
+
+        # --- Panel E: P Fluxes ---
+        ax = axes[2, 0]
+        ax.plot(sim_year, p_uptake, 'c-', linewidth=1.2, label='FATES P uptake')
+        if not np.all(elm_sminp_to_plant == 0):
+            ax.plot(sim_year, elm_sminp_to_plant, color='orange', linewidth=1.0,
+                    label='ELM SMINP→Plant', alpha=0.7)
+        ax.plot(sim_year, p_efflux, 'r-', linewidth=1.0, label='FATES P efflux', alpha=0.7)
+        ax.plot(sim_year, sminp_leached, color='purple', linewidth=1.0,
+                label='SMINP leached', alpha=0.7)
+        ax.set_title('E. P Fluxes', fontweight='bold')
+        ax.set_xlabel('Simulation Year')
+        ax.set_ylabel('P Flux (g P m$^{-2}$ yr$^{-1}$)')
+        ax.legend(loc='upper right', fontsize=8)
+        ax.grid(True, alpha=0.3, linestyle='--')
+
+        # --- Panel F: Total Ecosystem P Budget ---
+        ax = axes[2, 1]
+        ax.plot(sim_year, total_ecosystem, 'b-', linewidth=1.5, label='Total Ecosystem P')
+        ax.plot(sim_year, total_inorganic, color='orange', linewidth=1.2,
+                label='Total Inorganic P')
+        if not np.all(totsomp == 0):
+            ax.plot(sim_year, totsomp, 'r-', linewidth=1.2, label='Total SOM P')
+        # Stats box
+        if len(total_ecosystem) > 24:
+            initial_eco = float(np.mean(total_ecosystem[:12]))
+            final_eco = float(np.mean(total_ecosystem[-12:]))
+            delta = final_eco - initial_eco
+            pct = 100 * delta / initial_eco if initial_eco > 0 else 0
+            _stats_box(ax, f'Initial: {initial_eco:.1f} g P/m²\n'
+                          f'Final: {final_eco:.1f} g P/m²\n'
+                          f'Δ: {delta:.1f} g P/m² ({pct:.1f}%)',
+                       loc='upper left')
+        ax.set_title('F. Total Ecosystem P Budget', fontweight='bold')
+        ax.set_xlabel('Simulation Year')
+        ax.set_ylabel('P Pool (g P m$^{-2}$)')
+        ax.legend(loc='upper right', fontsize=8)
+        ax.grid(True, alpha=0.3, linestyle='--')
+
+        fig.tight_layout(rect=[0, 0, 1, 0.96])
+
+        ds.close()
+
+        if output_path:
+            Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+            fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches='tight')
+            plt.close(fig)
+            logger.info(f"Saved P mass balance plot: {output_path}")
+            return output_path
+        plt.close(fig)
+        return None
+
+    except Exception as e:
+        ds.close()
+        logger.warning(f"Failed to create P mass balance plot: {e}")
         plt.close('all')
         return None

@@ -167,6 +167,8 @@ from .plot_diagnostics import (
     plot_light_competition,
     plot_allocation_dynamics,
     plot_allocation_rates,
+    plot_mortality_components,
+    plot_p_mass_balance,
 )
 
 # Ensemble-level hypothesis tests (promoted from generated/)
@@ -283,6 +285,8 @@ __all__ = [
     'plot_light_competition',
     'plot_allocation_dynamics',
     'plot_allocation_rates',
+    'plot_mortality_components',
+    'plot_p_mass_balance',
 
     # Ensemble-level hypothesis tests
     'test_p_limitation_cascade',

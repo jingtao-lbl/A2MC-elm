@@ -1690,6 +1690,45 @@ Review the screening log at:
                 "status": "completed"
             }
 
+            # Generate ensemble biomass figure
+            try:
+                from phases.phase2_screening.plot_screening import (
+                    plot_ensemble_biomass, rank_cases_by_nrmse
+                )
+                # Build simple target dict from screening targets
+                simple_targets = {
+                    name: {'observed': t.observed, 'uncertainty': t.uncertainty}
+                    for name, t in screening_targets.items()
+                }
+                # Build ranked_cases list from optimization result
+                ranked_cases = []
+                for idx in result.optimization_result.ranked_indices:
+                    ranked_cases.append({
+                        'case_num': result.case_numbers[idx],
+                        'composite_nrmse': float(result.optimization_result.composite_cost[idx]),
+                        'n_satisfied': int(result.optimization_result.n_satisfied[idx]),
+                        'n_total': len(screening_targets),
+                    })
+                # Determine output path in phase log directory
+                fig_dir = None
+                if self._phase_logger:
+                    fig_dir = self._phase_logger._get_phase_dir(2)
+                if not fig_dir:
+                    fig_dir = data_dir
+                fig_path = plot_ensemble_biomass(
+                    data_dir=str(data_dir),
+                    ranked_cases=ranked_cases,
+                    targets=simple_targets,
+                    pft_ids=config.pfts,
+                    output_path=str(Path(fig_dir) / 'ensemble_biomass_top_cases.png'),
+                    top_n=100,
+                )
+                if fig_path:
+                    screening_data['figure_paths'] = [fig_path]
+                    logger.info(f"  Ensemble biomass figure: {fig_path}")
+            except Exception as e:
+                logger.warning(f"Could not generate ensemble biomass figure: {e}")
+
             return screening_data
 
         except ImportError as e:
@@ -2628,6 +2667,50 @@ Diagnosis Summary:{skip_header}
                         except Exception as e:
                             logger.warning(f"  Hypothesis testing failed: {e}")
                             results[f'{tool}_error'] = {'error': str(e)}
+
+                # ===== Ensemble Visualization =====
+                elif tool == 'plot_ensemble_biomass':
+                    try:
+                        from phases.phase2_screening.plot_screening import (
+                            plot_ensemble_biomass_from_dir
+                        )
+                        extracted_dir = a2mc_config.EXTRACTED_DATA
+                        if extracted_dir and Path(extracted_dir).exists():
+                            # Build simple targets dict
+                            simple_targets = {}
+                            for tc in screening_data.get('best_cases', []):
+                                pass  # targets come from config
+                            # Load targets from screening module
+                            try:
+                                from phases.phase2_screening.screen_ensemble import load_kougarok_targets
+                                raw_targets = load_kougarok_targets()
+                                simple_targets = {
+                                    name: {'observed': t.observed, 'uncertainty': t.uncertainty}
+                                    for name, t in raw_targets.items()
+                                }
+                            except Exception:
+                                simple_targets = tool_args.get('targets', {})
+                            # Determine output path
+                            fig_dir = None
+                            if self._phase_logger:
+                                fig_dir = self._phase_logger._get_phase_dir(3)
+                            if not fig_dir:
+                                fig_dir = Path(extracted_dir)
+                            fig_path = plot_ensemble_biomass_from_dir(
+                                data_dir=extracted_dir,
+                                targets=simple_targets,
+                                pft_ids=pft_ids,
+                                output_path=str(Path(fig_dir) / 'ensemble_biomass_top_cases.png'),
+                                top_n=tool_args.get('top_n', 100),
+                            )
+                            if fig_path:
+                                results['ensemble_biomass_figure'] = fig_path
+                                summaries.append(f"## Ensemble Biomass Figure\nSaved: {fig_path}")
+                        else:
+                            logger.warning("  plot_ensemble_biomass: extracted data dir not available")
+                    except Exception as e:
+                        logger.warning(f"  plot_ensemble_biomass failed: {e}")
+                        results[f'{tool}_error'] = {'error': str(e)}
 
                 # ---- Ensemble-level hypothesis tests ----
                 elif tool in ('test_p_limitation_cascade', 'test_root_turnover_impact'):

@@ -92,6 +92,12 @@ The orchestrator will run these scripts and provide results in follow-up calls.
 | `test_p_limitation_cascade` | Test if low vmax_p drives biomass failure (correlation, threshold, PID cascade, microbial competition) | Suspect P uptake is the primary bottleneck |
 | `test_root_turnover_impact` | Test if high fineroot turnover drives PFT#10 froot failure (cross-PFT, root profile, turnover–biomass) | Suspect root turnover is too high for a PFT |
 
+### Ensemble Visualization
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `plot_ensemble_biomass` | Plot top-N ensemble timeseries with best cases highlighted (red=best NRMSE, blue=most targets) | Want to visualize ensemble spread and best cases against observations |
+
 ### How to Request Diagnostics
 
 In your JSON response, include:
