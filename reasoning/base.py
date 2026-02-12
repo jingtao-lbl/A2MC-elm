@@ -329,9 +329,85 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             logger.error(f"Claude API error: {e}")
             raise
 
+    @staticmethod
+    def _compress_image(img_path: str, max_long_edge: int = 1568,
+                        jpeg_quality: int = 80,
+                        max_bytes: int = 1_000_000) -> tuple:
+        """Compress an image for the Claude API.
+
+        Resizes so the longest edge is at most max_long_edge pixels,
+        converts to JPEG, and re-compresses if still over max_bytes.
+
+        Args:
+            img_path: Path to the source image file
+            max_long_edge: Maximum pixels for the longest edge (Claude recommends 1568)
+            jpeg_quality: Initial JPEG quality (1-100)
+            max_bytes: Maximum encoded size in bytes
+
+        Returns:
+            Tuple of (base64_data: str, media_type: str, compressed_kb: float)
+            or (None, None, 0) if the image cannot be processed.
+        """
+        try:
+            from PIL import Image
+            import io
+        except ImportError:
+            # PIL not available — fall back to raw file bytes
+            logger.warning("Pillow not installed; sending raw image without compression")
+            p = Path(img_path)
+            suffix = p.suffix.lower()
+            media_map = {'.png': 'image/png', '.jpg': 'image/jpeg',
+                         '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+                         '.webp': 'image/webp'}
+            media_type = media_map.get(suffix)
+            if not media_type:
+                return None, None, 0
+            raw = p.read_bytes()
+            data = base64.standard_b64encode(raw).decode("utf-8")
+            return data, media_type, len(raw) / 1024
+
+        p = Path(img_path)
+        img = Image.open(p)
+
+        # Convert RGBA/palette to RGB for JPEG
+        if img.mode in ('RGBA', 'P', 'LA'):
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            background.paste(img, mask=img.split()[-1] if 'A' in img.mode else None)
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        # Resize if larger than max_long_edge
+        w, h = img.size
+        long_edge = max(w, h)
+        if long_edge > max_long_edge:
+            scale = max_long_edge / long_edge
+            new_w, new_h = int(w * scale), int(h * scale)
+            img = img.resize((new_w, new_h), Image.LANCZOS)
+            logger.info(f"  Resized {p.name}: {w}x{h} → {new_w}x{new_h}")
+
+        # Encode to JPEG, reduce quality if over max_bytes
+        quality = jpeg_quality
+        while quality >= 30:
+            buf = io.BytesIO()
+            img.save(buf, format='JPEG', quality=quality, optimize=True)
+            raw = buf.getvalue()
+            if len(raw) <= max_bytes:
+                break
+            quality -= 10
+            logger.info(f"  Re-compressing {p.name} at quality={quality}")
+
+        data = base64.standard_b64encode(raw).decode("utf-8")
+        return data, "image/jpeg", len(raw) / 1024
+
     def query_with_images(self, prompt: str, image_paths: List[str],
                           max_tokens: Optional[int] = None) -> str:
         """Send a multimodal query to Claude with text and images.
+
+        Images are automatically resized (max 1568px long edge) and
+        compressed to JPEG to stay within API size limits.
 
         Args:
             prompt: The text prompt to send
@@ -342,8 +418,9 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             Claude API response text. Falls back to text-only query if no
             images can be loaded.
         """
-        # Load and encode images
+        # Load, compress, and encode images
         image_blocks = []
+        total_kb = 0.0
         for img_path in image_paths:
             try:
                 p = Path(img_path)
@@ -351,18 +428,15 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
                     logger.warning(f"Image not found: {img_path}")
                     continue
                 suffix = p.suffix.lower()
-                if suffix in ('.png',):
-                    media_type = "image/png"
-                elif suffix in ('.jpg', '.jpeg'):
-                    media_type = "image/jpeg"
-                elif suffix in ('.gif',):
-                    media_type = "image/gif"
-                elif suffix in ('.webp',):
-                    media_type = "image/webp"
-                else:
+                if suffix not in ('.png', '.jpg', '.jpeg', '.gif', '.webp'):
                     logger.warning(f"Unsupported image format: {suffix} ({img_path})")
                     continue
-                data = base64.standard_b64encode(p.read_bytes()).decode("utf-8")
+
+                orig_kb = p.stat().st_size / 1024
+                data, media_type, compressed_kb = self._compress_image(str(p))
+                if data is None:
+                    continue
+
                 image_blocks.append({
                     "type": "image",
                     "source": {
@@ -371,7 +445,8 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
                         "data": data,
                     }
                 })
-                logger.info(f"Loaded image: {p.name} ({p.stat().st_size / 1024:.0f} KB)")
+                total_kb += compressed_kb
+                logger.info(f"  Image: {p.name} ({orig_kb:.0f} KB → {compressed_kb:.0f} KB)")
             except Exception as e:
                 logger.warning(f"Failed to load image {img_path}: {e}")
 
@@ -390,7 +465,8 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
         content = image_blocks + [{"type": "text", "text": prompt}]
 
         try:
-            logger.info(f"Sending multimodal query with {len(image_blocks)} images")
+            logger.info(f"Sending multimodal query with {len(image_blocks)} images "
+                        f"(total ~{total_kb:.0f} KB compressed)")
             message = self.client.messages.create(
                 model=self.model,
                 max_tokens=max_tokens,

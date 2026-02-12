@@ -192,7 +192,7 @@ python -m venv ~/a2mc_env
 source ~/a2mc_env/bin/activate
 
 # Install anthropic and A2MC dependencies (including RAG)
-pip install anthropic numpy pandas xarray netCDF4 scipy SALib networkx chromadb sentence-transformers pyyaml
+pip install anthropic numpy pandas xarray netCDF4 scipy SALib networkx chromadb sentence-transformers pyyaml Pillow
 
 # Set your API key (add to ~/.bashrc for persistence)
 export AI_API_KEY="your-api-key-here"
@@ -721,7 +721,7 @@ cd A2MC
 module load python
 python -m venv ~/a2mc_env
 source ~/a2mc_env/bin/activate
-pip install anthropic netCDF4 numpy scipy SALib pandas networkx chromadb sentence-transformers pyyaml
+pip install anthropic netCDF4 numpy scipy SALib pandas networkx chromadb sentence-transformers pyyaml Pillow
 
 # 3. Set API key (add to ~/.bashrc for persistence)
 export AI_API_KEY="sk-ant-..."

@@ -21,5 +21,8 @@ networkx>=3.0
 numpy>=1.20.0
 pyyaml>=6.0
 
+# Image compression for multimodal API calls
+Pillow>=9.0.0
+
 # Anthropic API (for Claude integration)
 anthropic>=0.18.0
