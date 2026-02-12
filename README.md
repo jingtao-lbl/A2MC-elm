@@ -1,7 +1,7 @@
 # A2MC: Agentic Adaptive Multi-target Calibration
 
 **Status:** Implementation Complete
-**Version:** 1.2 (Public Release)
+**Version:** 1.3 (Public Release)
 **Purpose:** Fully autonomous multi-target calibration of ELM-FATES using Claude API + HPC + Adaptive Memory
 
 ---
@@ -106,14 +106,14 @@ source use_cases/YourSite/config/yoursite_config.sh
 print_config  # Verify settings
 
 # Run calibration
-python orchestrator.py
+python orchestrator.py --run
 ```
 
 **Configuration hierarchy:**
-- `a2mc_config.sh` - Machine-level defaults (HPC paths, COMPSET, etc.)
+- `a2mc_config.sh` - Machine-level defaults (HPC paths, COMPSET, Python env)
 - `use_cases/{site}/config/{site}_config.sh` - ALL site-specific settings
 
-See "Installation & Setup" section below for detailed HPC setup instructions.
+See "Running the Workflow" section below for more options.
 
 ---
 
@@ -165,7 +165,7 @@ The framework runs entirely on NERSC HPC (no SSH tunneling) and uses the Anthrop
 │            ▼                         ▼                         ▼            │
 │  ┌──────────────────┐    ┌───────────────────┐    ┌──────────────────┐      │
 │  │    REASONING     │    │    INTEGRATION    │    │  EXISTING TOOLS  │      │
-│  │  (reasoning.py)  │    │  (integration.py) │    │                  │      │
+│  │  (reasoning/)    │    │  (integration.py) │    │                  │      │
 │  │                  │    │                   │    │ modify_fates_    │      │
 │  │ • diagnose()     │    │ • ParameterManager│◄──►│   parameters.py  │      │
 │  │ • hypothesize()  │    │ • HPCExecutor     │    │                  │      │
@@ -217,9 +217,9 @@ A2MC uses a 7-phase workflow with intelligent iteration paths to minimize HPC co
 | 1 | EXPLORATION | Extract Y matrix, run sensitivity analysis | **Yes** | `extract_sensitivity_outputs.py`, `morris_sensitivity_analysis.py` |
 | 2 | SCREENING | Rank ensemble by validation targets | Yes | `screen_ensemble.py` |
 | 3 | DIAGNOSIS | Root cause analysis, edge case detection | Yes | `run_diagnosis.py` (+ 11 diagnostic tools) |
-| 4 | HYPOTHESIS | Generate experiments OR test with existing data | Yes | `reasoning.py` |
+| 4 | HYPOTHESIS | Generate experiments OR test with existing data | Yes | `reasoning/`, `phases/phase4_hypothesis/` |
 | 5 | TESTING | Run designed experiments on HPC | No | `submit_experiments.py` (+ design, monitor) |
-| 6 | REFINEMENT | Evaluate results, extract lessons, check equifinality | Yes | `reasoning.py`, `memory/manager.py` |
+| 6 | REFINEMENT | Evaluate results, extract lessons, check equifinality | Yes | `reasoning/`, `phases/phase6_refinement/` |
 | 7 | CONVERGED | Final optimal configuration | - | - |
 
 **Phase 3 Diagnostic Tools:** `analyze_carbon_balance.py`, `analyze_mortality.py`, `analyze_nutrient_balance.py`, `analyze_nutrient_pools.py`, `check_edge_parameters.py`, `compare_case_parameters.py`, `compare_targets.py`, `detect_collapse.py`, `diagnose_pft_limitations.py`, `read_case_parameters.py`, `test_hypothesis_framework.py`
@@ -431,9 +431,9 @@ orchestrator.run()
 - `WorkflowState` - Persistent state with full history
 - `CalibrationOrchestrator` - Main controller
 
-### reasoning.py
+### reasoning/ package
 
-Claude API interface for intelligent reasoning.
+Claude API interface for intelligent reasoning (split into `schemas.py`, `prompts.py`, `base.py`, `methods.py`).
 
 ```python
 from reasoning import ReasoningModule, Diagnosis, Hypothesis
@@ -636,7 +636,7 @@ When A2MC performs diagnosis or generates hypotheses, three knowledge sources ar
 
 | Source | Content | Role |
 |--------|---------|------|
-| **RAG/GraphRAG** | FATES + ELM documentation (3,914 chunks) | General knowledge - "how does the PID controller work?" |
+| **RAG/GraphRAG** | FATES + ELM documentation (2,707 doc chunks + 560 CDL definitions) | General knowledge - "how does the PID controller work?" |
 | **Adaptive Memory** | Discoveries, failed approaches, parameter insights | Learned knowledge - "what failed before? what worked?" |
 | **Task Data** | Results, targets, sensitivity rankings | Current context - "what are we trying to calibrate?" |
 
@@ -754,32 +754,32 @@ python -c "from orchestrator import CalibrationOrchestrator; print('Orchestrator
 
 ### Running the Workflow
 
+Before running, modify the two configuration files for your setup:
+
+1. **`a2mc_config.sh`** — Machine-level settings (HPC project, E3SM path, output root, Python env)
+2. **`use_cases/{site}/config/{site}_config.sh`** — Site-specific settings (PFTs, parameters, validation targets, case naming)
+
 ```bash
-# Start new calibration (run in screen/tmux for long runs)
-screen -S a2mc
-cd /global/homes/j/jingtao/A2MC
-python -c "
-from orchestrator import CalibrationOrchestrator
+# Source both configuration files (required before every run)
+source a2mc_config.sh
+source use_cases/Kougarok/config/kougarok_config.sh
 
-orch = CalibrationOrchestrator(
-    work_dir='/pscratch/sd/j/jingtao/A2MC_calibration',
-    param_file='/path/to/base_params.nc',
-    output_root='/global/cfs/cdirs/m2467/jingtao/A2MC_runs'
-)
-orch.run()
-"
+# Start a new calibration run
+python orchestrator.py --run
 
-# Resume from checkpoint
-python -c "
-from orchestrator import CalibrationOrchestrator
+# Start from a specific phase and calibration round
+python orchestrator.py --run --start-phase 2 --start-iteration 2
 
-orch = CalibrationOrchestrator.load_state('/pscratch/sd/j/jingtao/A2MC_calibration/workflow_state.json')
-orch.run()
-"
+# Resume from a saved checkpoint
+python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state.json
 
-# Monitor progress
-tail -f /pscratch/sd/j/jingtao/A2MC_calibration/a2mc.log
+# Monitor progress (main log file saved to use_cases/{site}/)
+tail -f use_cases/Kougarok/a2mc_run_*.log
 ```
+
+**Tip:** Use `screen` or `tmux` for long-running sessions on HPC.
+
+All screen output is automatically saved to `use_cases/{site}/a2mc_run_{timestamp}.log`.
 
 ---
 
@@ -929,7 +929,12 @@ A2MC/
 ├── README.md              # This file
 ├── a2mc_config.sh         # Machine-level configuration (HPC paths, defaults)
 ├── orchestrator.py        # Main workflow controller
-├── reasoning.py           # Claude API interface
+├── reasoning/             # Claude API interface (package)
+│   ├── __init__.py        # Backward-compatible re-exports
+│   ├── schemas.py         # Diagnosis, Hypothesis, Experiment dataclasses
+│   ├── prompts.py         # DIAGNOSTIC_TOOLS_INVENTORY, CUSTOM_SCRIPT_TEMPLATE
+│   ├── base.py            # ReasoningModule class core (init, query, RAG)
+│   └── methods.py         # Phase methods (diagnose, hypothesis, etc.)
 ├── integration.py         # HPC integration layer
 │
 ├── use_cases/             # Site-specific case studies
@@ -973,6 +978,8 @@ A2MC/
 │   ├── cost_functions.py  # Error metrics (RE, RMSE, NSE, KGE)
 │   ├── optimize_function.py  # Ensemble ranking
 │   ├── fates_utils.py     # FATES data utilities
+│   ├── fates_output_variables.py  # FATES output variable registry
+│   ├── hpc_utils.py       # HPCConfig, HPCExecutor, ParameterManager
 │   ├── modify_fates_parameters.py
 │   ├── diagnose_ensemble_status.py
 │   └── extract_knowledge.py  # Knowledge extraction from logs
@@ -992,8 +999,8 @@ A2MC/
 │
 ├── rag/                   # RAG/GraphRAG System (FATES + ELM knowledge)
 │   ├── loader.py          # Document loading
-│   ├── vector_store.py    # ChromaDB wrapper (3,914 chunks)
-│   ├── knowledge_graph.py # NetworkX graph (220 nodes, 562 edges)
+│   ├── vector_store.py    # ChromaDB wrapper (2,707 doc chunks + 560 CDL definitions)
+│   ├── knowledge_graph.py # NetworkX graph (1,299 nodes, 2,200 edges)
 │   ├── graph_builder.py   # Build from YAML
 │   ├── hybrid_retriever.py# Combined retrieval
 │   ├── data/
@@ -1007,8 +1014,6 @@ A2MC/
 ├── scripts/               # Utility scripts
 │   ├── seed_memory_from_yaml.py
 │   ├── build_rag_index.py
-│   ├── migrate_fates_wiki.py
-│   ├── curated_knowledge.yaml
 │   └── curated_knowledge_template.yaml
 │
 └── plot/                  # Visualization scripts
@@ -1027,6 +1032,20 @@ A2MC/
 ---
 
 ## Version History
+
+- **v1.3 (2026-02-11)** - Module refactoring, RAG expansion, output variable registry
+  - `reasoning.py` monolith split into `reasoning/` package (schemas, prompts, base, methods)
+  - RAG expansion: full FATES parameter & output CDL coverage (1,299 nodes, 2,200 edges)
+  - Two-layer graph construction: auto-extract CDL (Layer 1) + curated YAML overlay (Layer 2)
+  - CDL definitions indexed in ChromaDB with filtered queries (`query_parameters`, `query_outputs`)
+  - Targeted RAG context (`get_targeted_context`) replaces raw text injection (~9K token savings/call)
+  - New `tools/fates_output_variables.py`: FATES output variable registry
+  - Promoted diagnostic tool preference for AI-generated scripts
+  - Configurable case name pattern (`A2MC_CASE_NAME_PATTERN` with `{N}` and `{PHASE}` placeholders)
+  - Phase 4 `test_with_existing_data` extracted to `phases/phase4_hypothesis/`
+  - Phase 6 evaluation logic extracted to `phases/phase6_refinement/evaluate_results.py`
+  - HPC utilities extracted to `tools/hpc_utils.py`
+  - Three-level iteration structure: calibration round (outermost) + experiment + skip-testing
 
 - **v1.2 (2026-02-09)** - Two-level iteration and diagnostic tools
   - Two-level iteration structure: separate counters for skip testing vs HPC experiments

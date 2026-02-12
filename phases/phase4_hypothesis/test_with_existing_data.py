@@ -628,6 +628,20 @@ def test_by_custom_script(
     script_name = test_spec.get('script_name', 'custom_test')
     description = test_spec.get('description', 'Custom hypothesis test')
 
+    # Check if a promoted tool with this name already exists
+    a2mc_root = Path(__file__).parent.parent.parent
+    promoted_path = a2mc_root / "phases" / "phase3_diagnosis" / f"{script_name}.py"
+
+    if promoted_path.exists():
+        logger.info(f"  Found promoted tool: {promoted_path.name} — using it instead of inline code")
+        result = _execute_promoted_tool(
+            promoted_path, script_name, description,
+            param_matrix, y_outputs, screening_data, config, param_names
+        )
+        if result is not None:
+            return result
+        logger.warning(f"  Promoted tool failed, falling back to inline code")
+
     if not script_code:
         return {
             'hypothesis_supported': False,
@@ -764,3 +778,76 @@ except ImportError:
             'insights': [],
             'next_steps': ['Debug the custom script', f'Check {script_path}']
         }
+
+
+def _execute_promoted_tool(
+    promoted_path: Path,
+    script_name: str,
+    description: str,
+    param_matrix,
+    y_outputs: Dict,
+    screening_data: Dict,
+    config: Any,
+    param_names: List[str]
+) -> Optional[Dict]:
+    """
+    Execute a promoted diagnostic tool instead of AI-generated inline code.
+
+    Returns result dict on success, or None on failure (caller falls back to inline).
+    """
+    import importlib.util
+
+    try:
+        spec = importlib.util.spec_from_file_location(script_name, promoted_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        if not hasattr(module, 'test_hypothesis'):
+            logger.warning(f"  Promoted tool {promoted_path.name} has no test_hypothesis() — skipping")
+            return None
+
+        # Build script_config (same as test_by_custom_script)
+        use_case_dir = getattr(config, 'use_case_dir', None)
+        if not use_case_dir:
+            try:
+                from tools.config import config as a2mc_config
+                use_case_dir = a2mc_config.USE_CASE_DIR
+            except (ImportError, AttributeError):
+                use_case_dir = os.environ.get('A2MC_USE_CASE_DIR', '')
+
+        script_config = {
+            'param_names': param_names,
+            'pft_ids': [int(p.strip()) for p in os.environ.get('A2MC_PFTS', '7,9,10').split(',')],
+            'use_case_dir': str(use_case_dir) if use_case_dir else ''
+        }
+
+        logger.info(f"  Executing promoted tool test_hypothesis()...")
+        result = module.test_hypothesis(
+            param_matrix=param_matrix,
+            y_outputs=y_outputs,
+            screening_data=screening_data,
+            config=script_config
+        )
+
+        if not isinstance(result, dict):
+            logger.warning(f"  Promoted tool returned {type(result)}, expected dict")
+            return None
+
+        result.setdefault('hypothesis_supported', False)
+        result.setdefault('confidence', 0.0)
+        result.setdefault('evidence', {})
+        result.setdefault('insights', [])
+        result.setdefault('next_steps', [])
+
+        result['script_path'] = str(promoted_path)
+        result['script_name'] = script_name
+        result['promoted_tool'] = True
+
+        logger.info(f"  Result: {'SUPPORTED' if result['hypothesis_supported'] else 'NOT SUPPORTED'}")
+        logger.info(f"  Confidence: {result['confidence']:.2f}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"  Promoted tool execution failed: {e}")
+        return None

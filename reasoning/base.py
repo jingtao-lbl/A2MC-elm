@@ -1,0 +1,361 @@
+#!/usr/bin/env python3
+"""
+Reasoning Module Core
+
+ReasoningModule class: Claude API interface for agentic reasoning.
+Contains initialization, query infrastructure, parameter loading,
+RAG integration, and utility methods.
+
+Phase-specific methods (diagnose, generate_hypothesis, etc.) are
+defined in reasoning/methods.py and attached to this class.
+
+Author: Jing Tao with Claude
+"""
+
+import os
+import json
+import logging
+from typing import List, Dict, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from memory import MemoryManager
+
+try:
+    import anthropic
+except ImportError:
+    anthropic = None
+    print("Warning: anthropic package not installed. Run: pip install anthropic")
+
+# Configuration
+try:
+    from tools.config import config as a2mc_config
+except ImportError:
+    a2mc_config = None
+
+# RAG/GraphRAG integration
+try:
+    from rag import HybridRetriever
+except ImportError as e:
+    HybridRetriever = None
+    print(f"Warning: RAG module not available ({e}). RAG context will be disabled.")
+    print("  To enable RAG, install: pip install networkx chromadb sentence-transformers pyyaml")
+    print("  Or use Python 3.10: /Library/Frameworks/Python.framework/Versions/3.10/bin/python3")
+
+logger = logging.getLogger(__name__)
+
+
+class ReasoningModule:
+    """
+    Claude API interface for agentic reasoning.
+
+    This module uses carefully crafted prompts to elicit structured,
+    actionable outputs from Claude for each reasoning task.
+    """
+
+    # System prompt establishing the agent's expertise
+    SYSTEM_PROMPT = """You are an expert in ELM-FATES (E3SM Land Model - Functionally Assembled Terrestrial Ecosystem Simulator) calibration, specializing in:
+
+1. Arctic tundra ecosystems and plant functional types (PFTs)
+2. Carbon-Nitrogen-Phosphorus (CNP) cycling and nutrient limitation
+3. Sensitivity analysis interpretation (Morris, Sobol, etc.)
+4. Multi-objective optimization for ecosystem models
+5. Mechanistic hypothesis generation for model calibration
+
+Your role is to act as an autonomous calibration agent that:
+- Analyzes simulation results objectively
+- Identifies mechanistic causes of model-observation mismatch
+- Generates testable hypotheses with specific parameter modifications
+- Designs efficient experiments (cumulative or factorial)
+- Interprets results and recommends next steps
+- Learns from experiments and records discoveries for future reference
+
+IMPORTANT: You have access to a MEMORY SYSTEM containing:
+- Verified DISCOVERIES from previous calibration work
+- FAILED EXPERIMENTS that should NOT be repeated
+- PARAMETER RELATIONSHIPS and known interactions
+
+When the memory context mentions "DO NOT REPEAT", you MUST NOT propose that approach
+unless you have strong justification for why it would work differently this time.
+
+Always respond with structured JSON that can be parsed programmatically.
+Be specific about parameter names, values, and expected quantitative outcomes.
+Express uncertainty when appropriate using confidence scores (0-1)."""
+
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None,
+                 memory: Optional['MemoryManager'] = None,
+                 use_rag: bool = True):
+        """
+        Initialize the reasoning module.
+
+        Args:
+            api_key: AI API key. Resolution order:
+                     1. Explicit argument
+                     2. A2MC_AI_API_KEY_ENV config (default: AI_API_KEY)
+            model: Claude model to use. Resolution order:
+                   1. Explicit argument
+                   2. A2MC_AI_MODEL env var
+                   3. Default: claude-sonnet-4-20250514
+            memory: Optional MemoryManager for adaptive learning
+            use_rag: Whether to use RAG/GraphRAG for context retrieval
+
+        Environment Variables (set in a2mc_config.sh):
+            A2MC_AI_MODEL: Model name (e.g., claude-sonnet-4-20250514)
+            A2MC_AI_MAX_TOKENS: Max tokens for responses (default: 4096)
+            AI_API_KEY: API key (or use A2MC_AI_API_KEY_ENV to specify different var)
+        """
+        # Resolve API key
+        if api_key:
+            self.api_key = api_key
+        elif a2mc_config:
+            self.api_key = a2mc_config.get_ai_api_key()
+        else:
+            self.api_key = os.environ.get("AI_API_KEY")
+
+        # Resolve model
+        if model:
+            self.model = model
+        elif a2mc_config:
+            self.model = a2mc_config.AI_MODEL
+        else:
+            self.model = os.environ.get("A2MC_AI_MODEL", "claude-sonnet-4-20250514")
+
+        self.memory = memory
+        self.use_rag = use_rag
+
+        if anthropic is None:
+            raise ImportError("anthropic package required. Install with: pip install anthropic")
+
+        if not self.api_key:
+            raise ValueError("AI_API_KEY not found in environment. Set it with: export AI_API_KEY='your-key'")
+
+        self.client = anthropic.Anthropic(api_key=self.api_key)
+
+        # Initialize RAG retriever if enabled
+        self.rag_retriever = None
+        if use_rag and HybridRetriever is not None:
+            try:
+                self.rag_retriever = HybridRetriever(auto_build=False)
+                logger.info("RAG/GraphRAG retriever initialized successfully")
+            except Exception as e:
+                import traceback
+                logger.warning(f"Could not initialize RAG retriever: {e}")
+                logger.warning(f"RAG initialization traceback:\n{traceback.format_exc()}")
+                print(f"Warning: RAG initialization failed: {e}")
+                self.rag_retriever = None
+        elif use_rag and HybridRetriever is None:
+            logger.warning("RAG requested but HybridRetriever not available (import failed)")
+            print("Warning: RAG requested but HybridRetriever import failed. Check dependencies.")
+
+        # Load full parameter list for constraining AI recommendations
+        self._param_list_context = self._load_parameter_list()
+
+        memory_status = "with memory" if memory else "without memory"
+        rag_status = "with RAG" if self.rag_retriever else "without RAG"
+        param_status = f", {len(self._param_list_context.splitlines())} params loaded" if self._param_list_context else ""
+        logger.info(f"Reasoning module initialized {memory_status}, {rag_status}{param_status}, model: {self.model}")
+
+    def _load_parameter_list(self) -> str:
+        """Load only the Morris ensemble parameter list.
+
+        Full FATES parameter definitions are now retrieved via targeted RAG
+        (get_targeted_context) instead of being injected into every prompt.
+
+        Returns a formatted string for inclusion in AI prompts, or empty string if unavailable.
+        """
+        return self._load_ensemble_parameter_list()
+
+    def _load_ensemble_parameter_list(self) -> str:
+        """Load the Morris ensemble parameter list with sampling bounds.
+
+        Returns a formatted string listing the parameters varied in the current ensemble.
+        """
+        try:
+            param_file = None
+            if a2mc_config:
+                param_file = getattr(a2mc_config, 'PARAM_LIST_FILE', None)
+            if not param_file:
+                param_file = os.environ.get('A2MC_PARAM_LIST_FILE', '')
+            if not param_file or not os.path.exists(param_file):
+                logger.info("No ensemble parameter list file found")
+                return ""
+
+            lines = []
+            with open(param_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('=') or line.startswith('No\t') or line.startswith('ELM'):
+                        continue
+                    parts = line.split('\t')
+                    if len(parts) >= 4 and parts[0].isdigit():
+                        shorthand = parts[2] if len(parts) > 2 else ''
+                        bounds = f"[{parts[3]}, {parts[4]}]" if len(parts) > 4 else ''
+                        default_val = parts[5] if len(parts) > 5 else ''
+                        desc = parts[6] if len(parts) > 6 else ''
+                        lines.append(f"  {parts[0]}. {shorthand} ({parts[1]}) {bounds} default={default_val} | {desc}")
+
+            if lines:
+                header = (
+                    "## Parameters in Current Morris Ensemble\n\n"
+                    "These are the parameters varied in the current ensemble with their sampling bounds.\n"
+                    "When recommending parameter changes, use exact names from the FATES definitions above.\n"
+                    "If you identify a key parameter NOT in this ensemble list, flag it explicitly as\n"
+                    "'NOT IN CURRENT ENSEMBLE - consider adding in next redesign cycle (Phase 0)'.\n\n"
+                )
+                logger.info(f"Loaded {len(lines)} ensemble parameters from {param_file}")
+                return header + "\n".join(lines)
+
+        except Exception as e:
+            logger.warning(f"Could not load ensemble parameter list: {e}")
+
+        return ""
+
+    def query(self, prompt: str, max_tokens: Optional[int] = None) -> str:
+        """Send a query to Claude and return the response.
+
+        Args:
+            prompt: The prompt to send
+            max_tokens: Max tokens for response. If None, uses A2MC_AI_MAX_TOKENS config.
+        """
+        if max_tokens is None:
+            if a2mc_config:
+                max_tokens = a2mc_config.AI_MAX_TOKENS
+            else:
+                max_tokens = int(os.environ.get("A2MC_AI_MAX_TOKENS", "4096"))
+        try:
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=self.SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            return message.content[0].text
+        except Exception as e:
+            logger.error(f"Claude API error: {e}")
+            raise
+
+    def _load_template_schema(self, template_name: str) -> str:
+        """Load JSON output schema from a reasoning template file.
+
+        Reads the template and extracts the ```json ... ``` block from
+        the '## JSON Output Schema' section.
+
+        Args:
+            template_name: Filename in templates/reasoning/ (e.g., 'phase3_diagnosis_template.md')
+
+        Returns:
+            JSON schema string, or empty string if not found
+        """
+        from pathlib import Path
+        template_path = Path(__file__).parent.parent / "templates" / "reasoning" / template_name
+        if not template_path.exists():
+            logger.debug(f"Template not found: {template_path}")
+            return ""
+        try:
+            content = template_path.read_text()
+            # Find the JSON Output Schema section
+            schema_marker = "## JSON Output Schema"
+            idx = content.find(schema_marker)
+            if idx == -1:
+                return ""
+            # Extract the ```json ... ``` block after the marker
+            section = content[idx:]
+            json_start = section.find("```json")
+            if json_start == -1:
+                return ""
+            json_start += len("```json")
+            json_end = section.find("```", json_start)
+            if json_end == -1:
+                return ""
+            return section[json_start:json_end].strip()
+        except Exception as e:
+            logger.warning(f"Failed to load template schema from {template_name}: {e}")
+            return ""
+
+    @staticmethod
+    def _extract_json(response: str) -> dict:
+        """Extract JSON from a Claude response, handling markdown wrapping."""
+        json_str = response.strip()
+        if json_str.startswith("```"):
+            json_str = json_str.split("```")[1]
+            if json_str.startswith("json"):
+                json_str = json_str[4:]
+        return json.loads(json_str)
+
+    def _get_targeted_param_context(
+        self, param_names=None, output_names=None, mechanisms=None, pft=None
+    ) -> str:
+        """Get targeted parameter/output context from RAG.
+
+        Replaces the old _load_fates_parameter_definitions() approach which
+        injected ALL ~290 parameter definitions (~53K chars) into every prompt.
+        This method retrieves only the relevant parameters/outputs (~5-10K chars).
+
+        Falls back to empty string if RAG unavailable.
+        """
+        if not self.rag_retriever:
+            return ""
+        try:
+            return self.rag_retriever.get_targeted_context(
+                param_names=param_names, output_names=output_names,
+                mechanisms=mechanisms, pft=pft, include_docs=True
+            )
+        except Exception as e:
+            logger.warning(f"Targeted param context retrieval failed: {e}")
+            return ""
+
+    def _get_rag_context(self,
+                         parameters: List[str] = None,
+                         outputs: List[str] = None,
+                         mechanisms: List[str] = None,
+                         pft: int = None,
+                         query: str = None) -> str:
+        """
+        Get relevant context from RAG/GraphRAG for reasoning.
+
+        Args:
+            parameters: List of parameter names being considered
+            outputs: List of output variables being analyzed
+            mechanisms: List of FATES mechanisms relevant to the task
+            pft: Specific PFT number if applicable
+            query: Optional natural language query for additional context
+
+        Returns:
+            Formatted context string to include in prompts
+        """
+        if not self.rag_retriever:
+            return ""
+
+        try:
+            context_parts = []
+
+            # Get calibration context if we have structured entities
+            if parameters or outputs or mechanisms:
+                cal_context = self.rag_retriever.get_calibration_context(
+                    parameters=parameters,
+                    outputs=outputs,
+                    mechanisms=mechanisms,
+                    pft=pft,
+                    n_vector_results=3,
+                    graph_depth=2
+                )
+                if cal_context.get('combined'):
+                    context_parts.append(cal_context['combined'])
+
+            # Get additional context from natural language query
+            if query:
+                query_context = self.rag_retriever.get_context(
+                    query=query,
+                    n_vector_results=3,
+                    graph_depth=2,
+                    include_graph=True
+                )
+                if query_context.get('combined'):
+                    context_parts.append(query_context['combined'])
+
+            if context_parts:
+                return "## FATES Knowledge Base Context (RAG/GraphRAG)\n" + "\n\n".join(context_parts) + "\n\n"
+
+        except Exception as e:
+            logger.warning(f"RAG context retrieval failed: {e}")
+
+        return ""

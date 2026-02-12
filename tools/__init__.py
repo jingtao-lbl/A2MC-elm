@@ -29,6 +29,19 @@ except ImportError:
     get_case_path = None
     get_case_name = None
 
+# Import key functions from fates_output_variables for convenient access
+from .fates_output_variables import (
+    resolve_target_name,
+    get_variable_family,
+    get_fates_variable,
+    get_validation_factor,
+    get_preferred_level,
+    list_families,
+    TARGET_VAR_MAPPING,
+    OUTPUT_VARIABLES,
+    VAR_FACTORS,
+)
+
 # Import key functions from fates_utils for convenient access
 from .fates_utils import (
     # Constants
@@ -59,6 +72,16 @@ __all__ = [
     'workflow_status',
     'cost_functions',
     'optimize_function',
+    # FATES output variable registry
+    'resolve_target_name',
+    'get_variable_family',
+    'get_fates_variable',
+    'get_validation_factor',
+    'get_preferred_level',
+    'list_families',
+    'TARGET_VAR_MAPPING',
+    'OUTPUT_VARIABLES',
+    'VAR_FACTORS',
     # FATES utilities - Constants
     'N_SIZE_CLASSES',
     # FATES utilities - Functions

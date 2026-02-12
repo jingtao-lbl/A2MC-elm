@@ -69,6 +69,13 @@ except ImportError:
     config = None
     print("Warning: A2MC config not available")
 
+try:
+    from tools.fates_output_variables import OUTPUT_VARIABLES
+    from tools.fates_utils import get_szpf_range, N_SIZE_CLASSES
+except ImportError:
+    OUTPUT_VARIABLES = None
+    print("Warning: Could not import fates_output_variables or fates_utils")
+
 
 # =============================================================================
 # CONFIGURATION
@@ -81,62 +88,7 @@ DEFAULT_PFTS = {
     'PFT10': {'index': 9, 'name': 'Arctic_Graminoid'},
 }
 
-# SZPF dimension: 13 size classes × 12 PFTs = 156 levels
-N_SIZE_CLASSES = 13
 N_PFTS_FATES = 12  # Total PFTs in FATES parameter file
-
-# Output variables available for extraction
-OUTPUT_VARIABLES = {
-    'leaf_biomass': {
-        'site_var': 'FATES_LEAFC',
-        'pft_var': 'FATES_LEAFC_PF',
-        'szpf_var': 'FATES_LEAFC_SZPF',
-        'units': 'kg C m-2',
-        'description': 'Leaf carbon biomass by PFT'
-    },
-    'fineroot_biomass': {
-        'site_var': 'FATES_FROOTC',
-        'pft_var': 'FATES_FROOTC_PF',
-        'szpf_var': 'FATES_FROOTC_SZPF',
-        'units': 'kg C m-2',
-        'description': 'Fine root carbon biomass by PFT'
-    },
-    'abg_biomass': {
-        'site_var': 'FATES_VEGC_ABOVEGROUND',
-        'pft_var': None,  # No PFT-level version
-        'szpf_var': 'FATES_VEGC_ABOVEGROUND_SZPF',
-        'units': 'kg C m-2',
-        'description': 'Aboveground vegetation carbon by PFT'
-    },
-    'total_vegc': {
-        'site_var': 'FATES_VEGC',
-        'pft_var': None,
-        'szpf_var': 'FATES_VEGC_SZPF',
-        'units': 'kg C m-2',
-        'description': 'Total vegetation carbon by PFT'
-    },
-    'gpp': {
-        'site_var': 'FATES_GPP',
-        'pft_var': 'FATES_GPP_PF',
-        'szpf_var': None,
-        'units': 'kg C m-2 s-1',
-        'description': 'Gross primary production by PFT'
-    },
-    'npp': {
-        'site_var': 'FATES_NPP',
-        'pft_var': 'FATES_NPP_PF',
-        'szpf_var': 'FATES_NPP_SZPF',
-        'units': 'kg C m-2 s-1',
-        'description': 'Net primary production by PFT'
-    },
-    'lai': {
-        'site_var': 'FATES_LAI',
-        'pft_var': None,
-        'szpf_var': None,
-        'units': 'm2 m-2',
-        'description': 'Leaf area index (site-level only)'
-    },
-}
 
 
 # =============================================================================
@@ -165,38 +117,8 @@ def parse_case_range(case_spec: str) -> List[int]:
 
 
 def get_szpf_indices_for_pft(pft_id: int, n_size_classes: int = 13) -> Tuple[int, int]:
-    """
-    Get SZPF index range for a specific PFT.
-
-    SZPF dimension = n_size_classes × n_pfts, arranged as:
-    [PFT1_size1, PFT1_size2, ..., PFT1_size13, PFT2_size1, ..., PFT12_size13]
-
-    Args:
-        pft_id: 1-based PFT ID (1-12)
-        n_size_classes: Number of size classes (default 13)
-
-    Returns:
-        (start_idx, end_idx) for slicing (end is inclusive)
-    """
-    start = (pft_id - 1) * n_size_classes
-    end = start + n_size_classes - 1
-    return start, end
-
-
-def aggregate_szpf_to_pft(szpf_data: np.ndarray, pft_id: int) -> np.ndarray:
-    """
-    Sum SZPF data across size classes for a specific PFT.
-
-    Args:
-        szpf_data: Array with shape (..., n_szpf_levels, ...)
-        pft_id: 1-based PFT ID
-
-    Returns:
-        Summed data for the specified PFT
-    """
-    start, end = get_szpf_indices_for_pft(pft_id)
-    # Assuming SZPF is the second-to-last dimension (time, szpf, lndgrid)
-    return np.nansum(szpf_data[..., start:end+1, :], axis=-2)
+    """Get SZPF index range for a PFT. Delegates to tools.fates_utils.get_szpf_range."""
+    return get_szpf_range(pft_id)
 
 
 def get_case_path(case_num: int, ensemble_output: str, case_prefix: str,

@@ -19,7 +19,7 @@ Usage:
     # Standalone
     python screen_ensemble.py
 
-Created: January 2026
+Created: Jing Tao with Claude, January 2026
 """
 
 import numpy as np
@@ -49,6 +49,7 @@ try:
     )
     from tools.cost_functions import CostFunction, ObservationType, aggregate_costs
     from tools.fates_utils import get_szpf_range, aggregate_szpf_by_pft
+    from tools.fates_output_variables import resolve_target_name, get_variable_family, VAR_FACTORS
 except ImportError as e:
     print(f"Warning: Could not import A2MC tools: {e}")
 
@@ -180,21 +181,6 @@ class ScreeningResult:
 # Data Loading Functions
 # =============================================================================
 
-# FATES PFT mapping for size-class x PFT dimension (156 levels)
-FATES_PFTMAP_LEVSCPF = np.array([
-    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-    2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-    3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-    4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
-    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
-    6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-    7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7,
-    8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8,
-    9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9, 9,
-    10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-    11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11,
-    12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12, 12
-])
 
 
 def get_available_cases(data_dir: Path, config: ScreeningConfig) -> List[int]:
@@ -257,8 +243,8 @@ def load_nc_timeseries(case_num: int, var_name: str, config: ScreeningConfig) ->
 
 def get_pft_value_at_obs(data: np.ndarray, pft_id: int, obs_idx: int, factor: float = 1000) -> float:
     """Extract PFT-specific value at observation timestep."""
-    pft_mask = FATES_PFTMAP_LEVSCPF == pft_id
-    return np.sum(data[pft_mask, obs_idx]) * factor
+    szpf_start, szpf_end = get_szpf_range(pft_id)
+    return np.sum(data[szpf_start:szpf_end + 1, obs_idx]) * factor
 
 
 def _get_cache_path(data_dir: Path, targets: Dict[str, Target], config: ScreeningConfig) -> Path:
@@ -350,18 +336,22 @@ def load_ensemble_simulated(
 
         # Extract values for each target
         for name, target in targets.items():
-            if 'leaf' in name.lower():
-                pft_id = int(name.split('_')[0].replace('PFT', ''))
-                value = get_pft_value_at_obs(
-                    leaf_data, pft_id, config.obs_idx,
-                    factor=config.var_factors.get('FATES_LEAFC_SZPF', 1000)
-                )
-            elif 'fineroot' in name.lower() or 'froot' in name.lower():
-                pft_id = int(name.split('_')[0].replace('PFT', ''))
-                value = get_pft_value_at_obs(
-                    froot_data, pft_id, config.obs_idx,
-                    factor=config.var_factors.get('FATES_FROOTC_SZPF', 1000)
-                )
+            parts = name.split('_', 1)
+            pft_id = int(parts[0].replace('PFT', ''))
+            var_key = resolve_target_name(parts[1]) if len(parts) > 1 else ''
+
+            try:
+                family = get_variable_family(var_key)
+                nc_var = family.szpf_var or family.pft_var
+                factor = family.validation_factor
+            except KeyError:
+                simulated[name].append(np.nan)
+                continue
+
+            if nc_var == 'FATES_LEAFC_SZPF':
+                value = get_pft_value_at_obs(leaf_data, pft_id, config.obs_idx, factor=factor)
+            elif nc_var == 'FATES_FROOTC_SZPF':
+                value = get_pft_value_at_obs(froot_data, pft_id, config.obs_idx, factor=factor)
             else:
                 value = np.nan
 

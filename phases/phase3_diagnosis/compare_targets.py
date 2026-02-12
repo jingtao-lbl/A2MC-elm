@@ -41,25 +41,10 @@ _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from tools.fates_output_variables import resolve_target_name, get_variable_family, TARGET_VAR_MAPPING
+from tools.fates_utils import get_szpf_range
+
 logger = logging.getLogger(__name__)
-
-
-# Variable name mapping for common target types
-TARGET_VAR_MAPPING = {
-    'leaf': 'FATES_LEAFC_SZPF',        # Leaf carbon
-    'froot': 'FATES_FROOTC_SZPF',      # Fine root carbon
-    'abg': 'FATES_VEGC_ABOVEGROUND',   # Aboveground biomass (site-level)
-    'vegc': 'FATES_VEGC_PF',           # Total vegetation carbon
-    'lai': 'FATES_LAI',                # Leaf area index
-    'gpp': 'FATES_GPP_PF',             # Gross primary production
-}
-
-
-def get_szpf_range(pft_id: int, n_size_classes: int = 13) -> Tuple[int, int]:
-    """Get SZPF index range for a PFT."""
-    start = (pft_id - 1) * n_size_classes
-    end = start + n_size_classes - 1
-    return start, end
 
 
 def extract_target_values(
@@ -121,10 +106,11 @@ def extract_target_values(
             result[pft_key] = {'pft_id': pft_id}
 
             for target_name, target_value in pft_targets.items():
-                # Get appropriate variable name
-                var_name = TARGET_VAR_MAPPING.get(target_name.lower())
+                # Resolve alias and get variable name from registry
+                canonical = resolve_target_name(target_name)
+                var_name = TARGET_VAR_MAPPING.get(canonical)
                 if var_name is None:
-                    # Try direct variable name
+                    # Try direct variable name (e.g., user passed 'FATES_LEAFC_SZPF')
                     var_name = target_name
 
                 if var_name not in ds.variables:

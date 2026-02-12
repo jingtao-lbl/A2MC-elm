@@ -81,6 +81,13 @@ except ImportError as e:
     logger.warning(f"Could not import diagnosis tools: {e}")
     HAS_DIAGNOSIS_TOOLS = False
 
+try:
+    from tools.fates_output_variables import resolve_target_name
+except ImportError:
+    # Fallback if registry not available
+    def resolve_target_name(name):
+        return {'fineroot': 'froot'}.get(name, name)
+
 
 # =============================================================================
 # Configuration
@@ -229,6 +236,15 @@ def run_diagnosis(
 
     # Setup config
     config = config or DiagnosisConfig()
+
+    # Normalize target variable names (e.g., 'fineroot' → 'froot')
+    if config.targets:
+        normalized = {}
+        for pft_key, var_dict in config.targets.items():
+            normalized[pft_key] = {}
+            for var_name, value in var_dict.items():
+                normalized[pft_key][resolve_target_name(var_name)] = value
+        config.targets = normalized
 
     # Extract best case from screening data
     best_case = screening_data.get('best_case', {})

@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""
+Reasoning Module Prompt Constants
+
+Constants used in AI reasoning prompts:
+- DIAGNOSTIC_TOOLS_INVENTORY: Available diagnostic scripts for Claude to request
+- CUSTOM_SCRIPT_TEMPLATE: Template for custom hypothesis testing scripts
+
+Author: Jing Tao with Claude
+"""
+
+# =============================================================================
+# DIAGNOSTIC TOOLS INVENTORY
+# =============================================================================
+# This inventory is included in AI prompts so Claude knows what scripts are
+# available and can request specific diagnostics for deeper analysis.
+
+DIAGNOSTIC_TOOLS_INVENTORY = """
+## Available Diagnostic Tools
+
+You can request specific diagnostic analyses by including them in your response.
+The orchestrator will run these scripts and provide results in follow-up calls.
+
+### Parameter Analysis
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `check_edge_parameters` | Find parameters at Morris sampling bounds | Suspect parameter space is too narrow |
+| `compare_case_parameters` | Compare parameters between good/bad cases | Want to find what makes best cases different |
+| `read_case_parameters` | Get exact parameter values for a case | Need specific values for diagnosis |
+
+### PFT Limitation Analysis
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `diagnose_pft_limitations` | Full PFT diagnosis (allocation, nutrients, competition) | PFT underperforming targets |
+| `analyze_allocation_dynamics` | Check L2FR and allocation responses | Suspect allocation imbalance |
+| `analyze_nutrient_limitation` | Test N/P starvation hypotheses | Suspect nutrient limits growth |
+| `analyze_light_competition` | Check inter-PFT shading effects | Suspect competition for light |
+
+### Mortality & Collapse Analysis
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `analyze_mortality` | Decompose mortality by cause (hydraulic, carbon starvation, fire) | Vegetation declining unexpectedly |
+| `detect_collapse` | Find "Perfect Storm" patterns (rapid vegetation loss) | Suspect cascading failures |
+| `detect_perfect_storm_pattern` | Check for multi-factor collapse signature | Multiple stressors combining |
+
+### Nutrient Pool Analysis
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `analyze_nutrient_pools` | P and N pool time series | Suspect nutrient depletion |
+| `compare_uptake_vs_demand` | Check if uptake meets plant demand | Suspect uptake limitation |
+| `extract_p_pools` / `extract_n_pools` | Get specific nutrient pool data | Need detailed nutrient dynamics |
+
+### Nutrient Mass Balance
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `extract_nutrient_budget` | Full N/P budget (all inputs, outputs, pools) | Need complete nutrient accounting |
+| `calculate_budget_closure` | Check dPool/dt = Inputs - Outputs | Suspect mass imbalance or missing fluxes |
+| `analyze_pft_competition` | PFT-level uptake shares and supply/demand | Suspect inter-PFT nutrient competition |
+| `identify_nutrient_sinks` | Rank output pathways by magnitude | Need to find dominant nutrient loss paths |
+
+### Target Comparison
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `compare_biomass_targets` | Compare simulated vs observed values | Initial target assessment |
+| `calculate_target_metrics` | Compute RE, RMSE, bias for targets | Quantify error patterns |
+
+### Hypothesis Testing
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `test_hypotheses` | Test multiple competing hypotheses with quantified metrics | Evaluating multiple explanations for a pattern |
+| `test_single_hypothesis` | Test one specific hypothesis | Targeted hypothesis testing |
+| `get_default_hypotheses` | Get common hypotheses for CNP allocation issues | Starting point for hypothesis testing |
+
+### Carbon Balance Analysis
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `analyze_carbon_balance` | Detect carbon deficit (cumulative GPP vs MR) | Suspecting carbon starvation or growth constraints |
+| `detect_carbon_bottleneck` | Quick check for carbon bottleneck | Fast screening for C limitation |
+
+### Ensemble-Level Analysis
+
+| Tool | Function | Use When |
+|------|----------|----------|
+| `test_p_limitation_cascade` | Test if low vmax_p drives biomass failure (correlation, threshold, PID cascade, microbial competition) | Suspect P uptake is the primary bottleneck |
+| `test_root_turnover_impact` | Test if high fineroot turnover drives PFT#10 froot failure (cross-PFT, root profile, turnover–biomass) | Suspect root turnover is too high for a PFT |
+
+### How to Request Diagnostics
+
+In your JSON response, include:
+```json
+"requested_diagnostics": [
+    {
+        "tool": "check_edge_parameters",
+        "reason": "Best case has extreme values, need to verify bounds",
+        "priority": "high"
+    },
+    {
+        "tool": "analyze_mortality",
+        "reason": "PFT#10 biomass too low, suspect mortality issues",
+        "priority": "medium",
+        "args": {"pft_ids": [10]}
+    }
+]
+```
+
+The orchestrator will run requested diagnostics and include results in the next call.
+"""
+
+# Custom script template for hypothesis testing
+CUSTOM_SCRIPT_TEMPLATE = '''
+## Writing Custom Test Scripts
+
+IMPORTANT: Before writing a custom script, check the "Ensemble-Level Analysis" section
+in the Diagnostic Tools Inventory above. If a promoted tool already exists that matches
+your hypothesis (e.g., test_p_limitation_cascade, test_root_turnover_impact), set
+method to "custom_script" with that tool's name as script_name. The system will
+automatically use the promoted tool's verified code. You do NOT need to provide
+script_code when a promoted tool exists — if you do, it will be ignored in favor
+of the promoted version.
+
+If NO existing diagnostic tool can test your hypothesis, you can write a custom Python script.
+The script will be saved and executed by the orchestrator.
+
+### Data Reference (MUST follow exactly)
+
+#### param_matrix: np.ndarray, shape (n_cases, n_params)
+Morris parameter values. Columns match `config["param_names"]` (shorthand names).
+
+#### y_outputs: dict of np.ndarray, each shape (n_cases, n_pfts)
+Biomass Y matrices loaded from Morris sensitivity analysis.
+
+**Available keys and their meaning:**
+| Key | Description | Shape |
+|-----|-------------|-------|
+| `"leaf_biomass"` | Leaf biomass (g C/m²) | (n_cases, n_pfts) |
+| `"froot_biomass"` | Fineroot biomass (g C/m²) | (n_cases, n_pfts) |
+| `"agb_biomass"` | Aboveground biomass (g C/m²) | (n_cases, n_pfts) |
+
+**WRONG key names (do NOT use):** `"fineroot_biomass"`, `"leaf_biomass_pft10"`, `"froot_biomass_pft7"`
+
+#### PFT column mapping in y_outputs arrays
+Columns are ordered by the PFTs configured for this site. For a 3-PFT site with PFTs [7, 9, 10]:
+
+| Column Index | PFT |
+|---|---|
+| 0 | PFT#7 |
+| 1 | PFT#9 |
+| 2 | PFT#10 |
+
+**Build the mapping dynamically from config:**
+```python
+pft_ids = config.get("pft_ids", [7, 9, 10])
+PFT_COL = {pft: i for i, pft in enumerate(pft_ids)}
+# PFT_COL = {7: 0, 9: 1, 10: 2}
+
+# Access PFT#10 fineroot biomass:
+froot = y_outputs["froot_biomass"]
+froot_pft10 = froot[:, PFT_COL[10]]   # Column 2
+```
+
+**WRONG indexing (do NOT use):**
+- `froot[:, pft - 7]` — gives wrong indices (0, 2, 3) instead of (0, 1, 2)
+- `froot[:, 2]` — hardcoded; use `PFT_COL[10]` instead
+
+#### config: dict
+| Key | Type | Description |
+|-----|------|-------------|
+| `"param_names"` | list[str] | Shorthand names matching param_matrix columns |
+| `"pft_ids"` | list[int] | PFT IDs for this site, e.g. [7, 9, 10] |
+| `"use_case_dir"` | str | Path to use case directory |
+
+#### Parameter name convention
+`config["param_names"]` contains **shorthand names** from the ensemble list.
+Use the EXACT names from the "Parameters in Current Morris Ensemble" section above.
+
+Example ensemble entries:
+```
+  9. vmax_p_7      46. vmax_p_10      139. turnover_fnrt_7
+  11. pid_kp_7     48. pid_kp_10      147. fnrt_prof_a_10
+```
+
+**ALWAYS use safe lookup:**
+```python
+def _safe_index(param_names, name):
+    try:
+        return param_names.index(name)
+    except ValueError:
+        return None
+
+param_names = config["param_names"]
+idx = _safe_index(param_names, "vmax_p_10")
+if idx is not None:
+    values = param_matrix[:, idx]
+```
+
+**WRONG:** bare `param_names.index("vmax_p_10")` without try/except — crashes if not found.
+
+### Script Requirements
+
+Your script must define a `test_hypothesis` function:
+
+```python
+def test_hypothesis(param_matrix, y_outputs, screening_data, config):
+    import numpy as np
+
+    # Build PFT column mapping
+    pft_ids = config.get("pft_ids", [7, 9, 10])
+    PFT_COL = {pft: i for i, pft in enumerate(pft_ids)}
+    param_names = config["param_names"]
+
+    def _safe_index(names, name):
+        try:
+            return names.index(name)
+        except ValueError:
+            return None
+
+    # Access parameter: use EXACT shorthand
+    idx = _safe_index(param_names, "vmax_p_10")
+    if idx is None:
+        return {"supported": False, "confidence": 0.0,
+                "evidence": {"error": "vmax_p_10 not found"}, "insights": []}
+    vmax_p_values = param_matrix[:, idx]
+
+    # Access biomass: use correct key and PFT_COL
+    froot = y_outputs.get("froot_biomass")
+    if froot is None:
+        return {"supported": False, "confidence": 0.0,
+                "evidence": {"error": "froot_biomass not in y_outputs"}, "insights": []}
+    froot_pft10 = froot[:, PFT_COL[10]]
+
+    # Your analysis here...
+    corr = np.corrcoef(vmax_p_values, froot_pft10)[0, 1]
+
+    return {
+        "supported": corr > 0.3,
+        "confidence": min(0.9, abs(corr)),
+        "evidence": {"correlation": float(corr)},
+        "insights": [f"vmax_p–froot correlation: {corr:.3f}"]
+    }
+```
+
+### How to Specify a Custom Script
+
+In `existing_data_test`, set method to "custom_script" and include the code:
+
+```json
+{
+    "method": "custom_script",
+    "description": "Test if P uptake scales with vmax_p across ensemble",
+    "script_name": "test_p_uptake_scaling",
+    "script_code": "def test_hypothesis(param_matrix, y_outputs, screening_data, config):\\n    ..."
+}
+```
+
+### Guidelines for Custom Scripts
+
+1. **Keep it focused** - Test ONE specific aspect of the hypothesis
+2. **Use numpy/scipy** - Standard scientific Python libraries are available
+3. **Return structured results** - Always return the required dict format
+4. **Handle edge cases** - Check for empty arrays, missing data, None
+5. **No side effects** - Don't modify files or state outside the function
+6. **Use EXACT shorthand names** - From the "Parameters in Current Morris Ensemble" list
+7. **ALWAYS use safe lookup** - Wrap param_names.index() in try/except; NEVER use bare .index()
+8. **Use PFT_COL mapping** - Build from config["pft_ids"]; NEVER hardcode column indices
+9. **Use correct y_outputs keys** - "leaf_biomass", "froot_biomass", "agb_biomass" (2D arrays)
+10. **All evidence values must be JSON-serializable** - Use float(), int() to convert numpy scalars
+'''
