@@ -257,16 +257,28 @@ def _get_cache_path(data_dir: Path, targets: Dict[str, Target], config: Screenin
 
 
 def _is_cache_valid(cache_path: Path, data_dir: Path) -> bool:
-    """Check if cache is valid (exists and newer than data)."""
+    """Check if cache is valid (exists, not older than data, and covers all files)."""
     if not cache_path.exists():
         return False
 
-    # Check if any NC files are newer than cache
     cache_mtime = cache_path.stat().st_mtime
-    for nc_file in data_dir.glob("*.nc"):
+
+    # Check if any NC files are newer than cache
+    nc_files = list(data_dir.glob("*.nc"))
+    for nc_file in nc_files:
         if nc_file.stat().st_mtime > cache_mtime:
             return False  # Data changed since cache was created
-        break  # Just check first file for speed
+
+    # Check if cache covers all available NC files
+    if nc_files:
+        try:
+            with open(cache_path, 'rb') as f:
+                cached = pickle.load(f)
+            n_cached = len(cached.get('case_numbers', []))
+            if n_cached < len(nc_files):
+                return False  # New files added since cache was created
+        except Exception:
+            return False
 
     return True
 
