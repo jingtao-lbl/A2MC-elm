@@ -12,6 +12,7 @@ Shared utilities for the A2MC framework (used by multiple phases):
 - workflow_status: Master workflow status tracker to memory/workflow_log.json
 - extract_monthly_variables_FATES: Simulation output extraction
 - diagnose_ensemble_status: Monitor ensemble completion
+- evaluate_case: Shared case evaluation against validation targets
 - extract_knowledge: Knowledge extraction from logs
 
 Phase-specific scripts are in phases/phase{N}_{name}/ folders.
@@ -62,6 +63,14 @@ from .fates_utils import (
     identify_dimension_level,
 )
 
+# Import evaluate_case for convenient access
+try:
+    from .evaluate_case import extract_case_values, evaluate_case, find_extracted_nc
+except ImportError:
+    extract_case_values = None
+    evaluate_case = None
+    find_extracted_nc = None
+
 # Expose key functions when tools are imported as modules
 __all__ = [
     # Tools (scripts)
@@ -94,4 +103,8 @@ __all__ = [
     'convert_flux_to_annual',
     'get_variable_info',
     'identify_dimension_level',
+    # Evaluate case
+    'extract_case_values',
+    'evaluate_case',
+    'find_extracted_nc',
 ]

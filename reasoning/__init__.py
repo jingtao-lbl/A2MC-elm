@@ -28,6 +28,7 @@ from reasoning import methods as _methods
 
 ReasoningModule.diagnose = _methods.diagnose
 ReasoningModule.generate_hypothesis = _methods.generate_hypothesis
+ReasoningModule.synthesize_experiment_design = _methods.synthesize_experiment_design
 ReasoningModule.design_experiments = _methods.design_experiments
 ReasoningModule.interpret_results = _methods.interpret_results
 ReasoningModule.extract_lesson = _methods.extract_lesson

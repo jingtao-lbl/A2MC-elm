@@ -333,41 +333,35 @@ def load_ensemble_simulated(
     simulated = {name: [] for name in targets.keys()}
     case_numbers = []
 
+    # Shared evaluation utility (same logic used by Phase 5 experiment evaluation)
+    from tools.evaluate_case import extract_case_values
+
     # Process each case
     for i, case_num in enumerate(available_cases):
         if verbose and (i + 1) % 100 == 0:
             print(f"  Processing case {i+1}/{len(available_cases)}...")
 
-        # Load data
-        leaf_data = load_nc_timeseries(case_num, 'FATES_LEAFC_SZPF', config)
-        froot_data = load_nc_timeseries(case_num, 'FATES_FROOTC_SZPF', config)
+        # Build NC file path for this case
+        case_name = config.case_pattern.format(N=case_num, PHASE='TRANS')
+        nc_file = config.data_dir / config.file_pattern.format(
+            case_name=case_name,
+            year_start=config.year_start,
+            year_end=config.year_end
+        )
 
-        # Skip if invalid
-        if np.all(np.isnan(leaf_data)) or np.all(np.isnan(froot_data)):
+        if not nc_file.exists():
             continue
 
-        # Extract values for each target
-        for name, target in targets.items():
-            parts = name.split('_', 1)
-            pft_id = int(parts[0].replace('PFT', ''))
-            var_key = resolve_target_name(parts[1]) if len(parts) > 1 else ''
+        # Extract all target values from this case's NC file
+        case_values = extract_case_values(nc_file, targets, config.obs_idx)
 
-            try:
-                family = get_variable_family(var_key)
-                nc_var = family.szpf_var or family.pft_var
-                factor = family.validation_factor
-            except KeyError:
-                simulated[name].append(np.nan)
-                continue
+        # Skip if no values extracted (invalid/corrupt file)
+        if not case_values:
+            continue
 
-            if nc_var == 'FATES_LEAFC_SZPF':
-                value = get_pft_value_at_obs(leaf_data, pft_id, config.obs_idx, factor=factor)
-            elif nc_var == 'FATES_FROOTC_SZPF':
-                value = get_pft_value_at_obs(froot_data, pft_id, config.obs_idx, factor=factor)
-            else:
-                value = np.nan
-
-            simulated[name].append(value)
+        # Append values for each target (NaN for any missing)
+        for name in targets:
+            simulated[name].append(case_values.get(name, np.nan))
 
         case_numbers.append(case_num)
 

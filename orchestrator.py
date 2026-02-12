@@ -1593,7 +1593,8 @@ Review the screening log at:
             "n_cases_evaluated": 4329,
             "results_file": str(results_file),
             "best_cases": [],
-            "target_performance": {}
+            "target_performance": {},
+            "case_numbers": [],  # actual case IDs from the CSV
         }
 
         # Parse results file
@@ -1601,16 +1602,28 @@ Review the screening log at:
             with open(results_file, 'r') as f:
                 lines = f.readlines()
 
-            # Extract best case (assuming sorted by composite NRMSE)
+            # Extract all case IDs and top 10 cases
             # Format: Case_ID, Type, Composite_NRMSE, ...
-            for line in lines[1:11]:  # Top 10 cases
+            all_case_ids = []
+            for i, line in enumerate(lines[1:]):  # skip header
                 parts = line.strip().split(',')
-                if len(parts) >= 3:
-                    screening_data["best_cases"].append({
-                        "case_id": parts[0],
-                        "type": parts[1],
-                        "composite_nrmse": float(parts[2]) if parts[2] else None
-                    })
+                if len(parts) >= 3 and parts[0].strip():
+                    try:
+                        case_id = int(parts[0].strip())
+                        all_case_ids.append(case_id)
+                    except ValueError:
+                        all_case_ids.append(parts[0].strip())
+
+                    if i < 10:  # Top 10 cases
+                        screening_data["best_cases"].append({
+                            "case_id": parts[0].strip(),
+                            "type": parts[1].strip() if len(parts) > 1 else "",
+                            "composite_nrmse": float(parts[2]) if parts[2] else None
+                        })
+
+            # Store all case numbers (maps array index → actual case number)
+            screening_data["case_numbers"] = all_case_ids
+            screening_data["n_cases_evaluated"] = len(all_case_ids)
 
             # Set best case
             if screening_data["best_cases"]:
@@ -1671,9 +1684,14 @@ Review the screening log at:
             best_case_in_top10 = max(top_cases, key=lambda c: (c['n_satisfied'], -c['cost']))
 
             # Convert to dict format expected by orchestrator
+            # case_numbers: maps array index → actual case number (not all 4890
+            # cases may exist; missing cases are skipped during loading).
+            # Downstream phases (diagnosis, hypothesis) use this to reference
+            # the correct case in the Morris parameter matrix.
             screening_data = {
                 "n_cases_evaluated": result.n_valid_cases,
                 "n_available_cases": result.n_available_cases,
+                "case_numbers": result.case_numbers,  # [int] actual case IDs
                 "best_case": {
                     "case_id": best_case_in_top10['case_num'],
                     "composite_rmsre": best_case_in_top10['cost'],
@@ -2905,6 +2923,47 @@ Diagnosis Summary:{skip_header}
                 logger.info(f"  Confidence: {confidence:.2f} (threshold: {self.config.hypothesis_confidence_threshold})")
                 logger.info(f"  Skip testing cycles: {self.state.skip_testing_count}/{self.config.max_skip_testing}")
 
+                # Synthesize cumulative insights into a consolidated experiment design
+                if self.reasoning and self.state.cumulative_insights:
+                    logger.info("Synthesizing cumulative insights into consolidated experiment design...")
+                    try:
+                        synthesized = self.reasoning.synthesize_experiment_design(
+                            cumulative_insights=self.state.cumulative_insights,
+                            hypotheses=self.state.hypotheses,
+                            diagnosis=self.state.diagnoses[-1] if self.state.diagnoses else {},
+                            sensitivity_data=self.state.exploration_data.get('sensitivity_rankings', {}),
+                            previous_experiments=self.state.experiments,
+                        )
+                        if synthesized and synthesized.get('parameters'):
+                            self.state.hypotheses.append(synthesized)
+                            logger.info(f"  Synthesized hypothesis: {synthesized.get('name', 'unnamed')}")
+                            logger.info(f"  Parameters: {len(synthesized.get('parameters', []))}")
+
+                            # Log the synthesis
+                            if self._phase_logger:
+                                try:
+                                    self._phase_logger.log_hypothesis(
+                                        title="Synthesized Experiment Design",
+                                        hypothesis_name=synthesized.get('name', 'Synthesized'),
+                                        mechanism=synthesized.get('mechanism', ''),
+                                        parameters_to_modify=synthesized.get('parameters', []),
+                                        ai_reasoning=synthesized.get('synthesis_summary', ''),
+                                        design_type=synthesized.get('design_type', 'cumulative'),
+                                        expected_outcomes=synthesized.get('expected_outcomes', {}),
+                                        confidence=synthesized.get('confidence', 0),
+                                        metadata={
+                                            'synthesis': True,
+                                            'n_cycles': len(self.state.cumulative_insights),
+                                            'iteration': self.state.iteration,
+                                        }
+                                    )
+                                except Exception as e:
+                                    logger.warning(f"Could not write synthesis log: {e}")
+                        else:
+                            logger.warning("Synthesis returned no parameters, using last hypothesis")
+                    except Exception as e:
+                        logger.warning(f"Synthesis failed, using last hypothesis: {e}")
+
                 self.state.current_phase = Phase.TESTING.value
                 self.state.record_phase_transition(
                     Phase.HYPOTHESIS.value, Phase.TESTING.value,
@@ -3119,10 +3178,19 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             logger.error(f"Job monitoring failed: {e}")
 
         # --- 6. Extract and evaluate results ---
+        # Pass screening targets so evaluation can compute metrics
+        screening_targets = None
+        try:
+            from phases.phase2_screening.screen_ensemble import load_kougarok_targets
+            screening_targets = load_kougarok_targets()
+        except Exception:
+            pass
+
         try:
             experiments = extract_experiment_results(
                 experiments=experiments,
-                output_root=self.config.hpc_output_root
+                output_root=self.config.hpc_output_root,
+                targets=screening_targets
             )
         except Exception as e:
             logger.error(f"Result extraction failed: {e}")

@@ -520,6 +520,208 @@ Respond ONLY with the JSON object."""
         raise
 
 
+def synthesize_experiment_design(
+    self,
+    cumulative_insights: List[Dict],
+    hypotheses: List[Dict],
+    diagnosis: Dict,
+    sensitivity_data: Dict = None,
+    previous_experiments: List = None,
+) -> Dict:
+    """
+    Synthesize cumulative skip-testing insights into a consolidated experiment design.
+
+    Called when the skip-testing inner loop exits (confidence >= threshold or
+    max cycles reached). Consolidates all accumulated insights from 2-10
+    skip-testing cycles into a single, informed hypothesis for HPC testing.
+
+    Args:
+        cumulative_insights: List of insight dicts from skip-testing cycles,
+            each with: cycle, hypothesis_name, hypothesis_supported, confidence,
+            test_method, key_insights, evidence_summary, parameters_tested
+        hypotheses: All hypotheses generated during skip-testing
+        diagnosis: Latest diagnosis dict (from self.state.diagnoses[-1])
+        sensitivity_data: Morris/Sobol sensitivity rankings
+        previous_experiments: Previous HPC experiments (to avoid repeating)
+
+    Returns:
+        Dict matching Hypothesis structure: name, mechanism, parameters,
+        design_type, expected_outcomes, success_criteria, confidence
+    """
+    if not cumulative_insights:
+        # Nothing to synthesize - return last hypothesis as-is
+        if hypotheses:
+            last = hypotheses[-1]
+            return last if isinstance(last, dict) else last.__dict__ if hasattr(last, '__dict__') else {}
+        return {}
+
+    # Build summary of supported vs refuted hypotheses
+    supported = [i for i in cumulative_insights if i.get('hypothesis_supported')]
+    refuted = [i for i in cumulative_insights if not i.get('hypothesis_supported')]
+
+    # Get failed approaches from memory
+    failed_approaches_context = ""
+    if self.memory:
+        failed_approaches = self.memory.failed_approaches.get("failed_approaches", [])
+        if failed_approaches:
+            failed_approaches_context = "\n## FAILED APPROACHES - DO NOT PROPOSE THESE\n"
+            for fa in failed_approaches[:10]:
+                failed_approaches_context += f"- **{fa.get('approach', '?')}**: {fa.get('why_failed', 'Failed')}\n"
+            failed_approaches_context += "\n"
+
+    # Get RAG context for parameters mentioned across all insights
+    rag_context = ""
+    all_params = []
+    for insight in cumulative_insights:
+        all_params.extend(insight.get('parameters_tested', []))
+    all_params = list(set(p for p in all_params if p))[:20]
+
+    if self.rag_retriever and all_params:
+        rag_context = self._get_rag_context(
+            parameters=all_params[:10],
+            query="experiment design synthesis parameter calibration"
+        )
+
+    # Build sensitivity summary if available
+    sensitivity_summary = ""
+    if sensitivity_data:
+        sensitivity_summary = f"\n## Sensitivity Rankings\n{_build_sensitivity_summary(sensitivity_data)}\n"
+
+    # Build previous experiments summary
+    prev_exp_summary = ""
+    if previous_experiments:
+        prev_exp_summary = f"\n## Previous HPC Experiments (avoid repeating)\n{json.dumps(previous_experiments, indent=2, default=str)}\n"
+
+    # Collect all parameter modifications from hypotheses
+    all_hypothesis_params = []
+    for hyp in hypotheses:
+        h = hyp if isinstance(hyp, dict) else (hyp.__dict__ if hasattr(hyp, '__dict__') else {})
+        params = h.get('parameters', h.get('parameters_to_test', []))
+        for p in params:
+            all_hypothesis_params.append({
+                'name': p.get('name', ''),
+                'proposed': p.get('proposed', ''),
+                'current': p.get('current', ''),
+                'rationale': p.get('rationale', ''),
+                'from_hypothesis': h.get('name', 'unknown'),
+                'hypothesis_supported': any(
+                    i.get('hypothesis_supported') and p.get('name', '') in i.get('parameters_tested', [])
+                    for i in cumulative_insights
+                )
+            })
+
+    prompt = f"""You are synthesizing {len(cumulative_insights)} skip-testing cycles into ONE consolidated experiment design for HPC testing.
+
+{rag_context}{failed_approaches_context}
+
+## Cumulative Skip-Testing Insights
+
+### Supported Hypotheses ({len(supported)})
+{json.dumps(supported, indent=2, default=str)}
+
+### Refuted Hypotheses ({len(refuted)})
+{json.dumps(refuted, indent=2, default=str)}
+
+## Latest Diagnosis Context
+{json.dumps(diagnosis, indent=2, default=str)}
+
+## All Parameter Modifications Proposed Across Hypotheses
+{json.dumps(all_hypothesis_params, indent=2, default=str)}
+{sensitivity_summary}{prev_exp_summary}
+
+## Synthesis Task
+
+Consolidate all evidence into ONE hypothesis with the parameter modifications most likely to succeed.
+
+### Rules:
+1. **INCLUDE** parameters from SUPPORTED hypotheses (high confidence evidence)
+2. **EXCLUDE** parameters from REFUTED hypotheses (unless strong counter-evidence)
+3. **Resolve conflicts**: If two hypotheses suggest opposite directions for the same parameter, use the one with higher confidence
+4. **Prioritize** high-sensitivity parameters (from Morris rankings)
+5. **Consider interactions**: Parameters that were tested together and showed improvement should stay together
+6. **Set realistic values**: Stay within physically realistic bounds
+7. **Use cumulative design** by default (safest for multi-parameter changes)
+
+## Response Format
+Return a JSON object with this structure:
+```json
+{{
+    "name": "Synthesized Experiment Design (from N cycles)",
+    "mechanism": "Consolidated mechanistic explanation from all supported insights",
+    "parameters": [
+        {{
+            "name": "fates_param_name",
+            "pft": 9,
+            "current": 0.787,
+            "proposed": 0.30,
+            "rationale": "Why this change (citing which hypothesis/cycle supported it)",
+            "bounds": [0.1, 1.0],
+            "sensitivity_rank": 3
+        }}
+    ],
+    "design_type": "cumulative",
+    "expected_outcomes": {{
+        "target_name": expected_value
+    }},
+    "success_criteria": {{
+        "criterion_name": true
+    }},
+    "confidence": 0.85,
+    "synthesis_summary": "Brief summary of what was learned across all cycles",
+    "test_with_existing": false
+}}
+```
+
+Respond ONLY with the JSON object."""
+
+    try:
+        response = self.query(prompt)
+        result = self._extract_json(response)
+
+        # Ensure required fields
+        result.setdefault('name', f"Synthesized from {len(cumulative_insights)} skip-testing cycles")
+        result.setdefault('mechanism', 'Consolidated from skip-testing analysis')
+        result.setdefault('parameters', [])
+        result.setdefault('design_type', 'cumulative')
+        result.setdefault('expected_outcomes', {})
+        result.setdefault('success_criteria', {})
+        result.setdefault('confidence', max((i.get('confidence', 0) for i in cumulative_insights), default=0.5))
+        result.setdefault('test_with_existing', False)
+
+        logger.info(f"Synthesized experiment design: {result.get('name')}")
+        logger.info(f"  Parameters: {len(result.get('parameters', []))}")
+        logger.info(f"  Confidence: {result.get('confidence', 0):.2f}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Synthesis failed, falling back to merging supported insights: {e}")
+
+        # Fallback: merge all parameter modifications from supported hypotheses
+        merged_params = {}
+        for insight in supported:
+            hyp_name = insight.get('hypothesis_name', '')
+            # Find matching hypothesis
+            for hyp in hypotheses:
+                h = hyp if isinstance(hyp, dict) else (hyp.__dict__ if hasattr(hyp, '__dict__') else {})
+                if h.get('name') == hyp_name:
+                    for p in h.get('parameters', h.get('parameters_to_test', [])):
+                        pname = p.get('name', '')
+                        if pname and pname not in merged_params:
+                            merged_params[pname] = p
+
+        return {
+            'name': f"Merged from {len(supported)} supported hypotheses (fallback)",
+            'mechanism': 'Merged supported hypothesis parameters',
+            'parameters': list(merged_params.values()),
+            'design_type': 'cumulative',
+            'expected_outcomes': {},
+            'success_criteria': {},
+            'confidence': max((i.get('confidence', 0) for i in supported), default=0.5),
+            'test_with_existing': False,
+        }
+
+
 def design_experiments(self, hypothesis: Hypothesis,
                       base_case: Dict) -> List[Experiment]:
     """

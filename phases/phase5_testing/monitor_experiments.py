@@ -231,7 +231,8 @@ def extract_experiment_results(
     experiments: List[Dict],
     variables: Optional[List[str]] = None,
     analysis_period: Tuple[int, int] = (2010, 2019),
-    output_root: Optional[str] = None
+    output_root: Optional[str] = None,
+    targets: Optional[Dict] = None
 ) -> List[Dict]:
     """
     Extract results from completed experiments and evaluate against targets.
@@ -249,6 +250,8 @@ def extract_experiment_results(
         variables: Variables to extract (default: standard biomass set)
         analysis_period: Year range for mean calculation (default 2010-2019)
         output_root: HPC output directory (default from config/env)
+        targets: Validation targets dict {name: Target} from orchestrator.
+            If None, attempts to load from config.
 
     Returns:
         Updated experiment dicts with 'results' field
@@ -312,7 +315,7 @@ def extract_experiment_results(
             # Try to load and evaluate extracted data
             try:
                 results = _evaluate_experiment(
-                    case_name, output_root, analysis_period
+                    case_name, output_root, analysis_period, targets=targets
                 )
                 exp["results"] = results
             except Exception as e:
@@ -335,54 +338,89 @@ def extract_experiment_results(
 def _evaluate_experiment(
     case_name: str,
     output_root: str,
-    analysis_period: Tuple[int, int]
+    analysis_period: Tuple[int, int],
+    targets: Optional[Dict] = None
 ) -> Dict:
     """
     Load extracted data and evaluate against validation targets.
 
-    Returns dict with targets_met, total_targets, and per-target metrics.
+    Delegates to the shared tools/evaluate_case.py which is the same
+    evaluation logic used by Phase 2 screening.
+
+    Args:
+        case_name: Experiment case name
+        output_root: HPC output directory
+        analysis_period: Year range (year_start, year_end)
+        targets: Validation targets {name: Target}. If None, loads from config.
+
+    Returns:
+        Dict with targets_met, total_targets, composite_cost, and per-target metrics
     """
-    from tools.cost_functions import CostFunction
+    from tools.evaluate_case import evaluate_case, find_extracted_nc
 
-    # Look for extracted CSV/NetCDF in expected locations
-    extracted_dir = Path(output_root) / case_name / "extracted"
-    if not extracted_dir.exists():
-        # Try alternate path patterns
-        for pattern in [
-            Path(output_root) / f"*{case_name}*" / "extracted",
-            Path(output_root) / case_name,
-        ]:
-            matches = list(Path(output_root).glob(f"*{case_name}*/extracted"))
-            if matches:
-                extracted_dir = matches[0]
-                break
+    # --- 1. Load validation targets ---
+    if targets is None:
+        try:
+            from phases.phase2_screening.screen_ensemble import load_kougarok_targets
+            targets = load_kougarok_targets()
+        except ImportError:
+            pass
 
-    if not extracted_dir.exists():
+    if not targets:
         return {
-            "error": f"Extracted data directory not found for {case_name}",
+            "error": "No validation targets available",
             "targets_met": 0,
             "total_targets": 0,
             "metrics": {}
         }
 
-    # Load validation targets from config
+    # --- 2. Find the extracted NC file ---
+    # Build search directories
+    search_dirs = []
     try:
         from tools.config import config as a2mc_config
-        validation_file = a2mc_config.VALIDATION_FILE
+        extracted_dir = Path(a2mc_config.EXTRACTED_DATA)
+        if extracted_dir.exists():
+            search_dirs.append(extracted_dir)
     except (ImportError, AttributeError):
-        validation_file = os.environ.get("A2MC_VALIDATION_FILE", "")
+        pass
+    if output_root:
+        search_dirs.append(Path(output_root))
 
-    # Load extracted data and compute metrics
-    # This is a simplified evaluation - the full pipeline uses optimize_function.py
-    cost_fn = CostFunction(method="relative_error")
+    nc_file = find_extracted_nc(case_name, search_dirs)
+    if nc_file is None:
+        return {
+            "error": f"Extracted NC file not found for {case_name}",
+            "targets_met": 0,
+            "total_targets": len(targets),
+            "metrics": {}
+        }
 
-    results = {
-        "targets_met": 0,
-        "total_targets": 0,
-        "metrics": {},
-        "analysis_period": list(analysis_period),
-        "data_dir": str(extracted_dir)
-    }
+    logger.info(f"  Loading extracted data from: {nc_file}")
+
+    # --- 3. Compute observation timestep index ---
+    year_start = analysis_period[0]
+    obs_year = int(os.environ.get('A2MC_OBS_YEAR', '2016'))
+    obs_month = int(os.environ.get('A2MC_OBS_MONTH', '7'))
+    obs_idx = (obs_year - year_start) * 12 + obs_month - 1
+
+    # --- 4. Evaluate using shared utility ---
+    results = evaluate_case(nc_file, targets, obs_idx)
+
+    # Add experiment-specific metadata
+    results["analysis_period"] = list(analysis_period)
+    results["obs_timestep"] = f"{obs_year}-{obs_month:02d}"
+    results["nc_file"] = str(nc_file)
+
+    # Log results
+    n_met = results.get("targets_met", 0)
+    n_total = results.get("total_targets", 0)
+    cost = results.get("composite_cost", float("inf"))
+    logger.info(f"  Evaluation: {n_met}/{n_total} targets met, composite RMSRE={cost:.4f}")
+    for tname, m in results.get("per_target", {}).items():
+        status = "OK" if m.get("within_20pct") else "FAIL"
+        logger.info(f"    {tname}: sim={m['simulated']:.1f} obs={m['observed']:.1f} "
+                     f"RE={m['relative_error']:.3f} [{status}]")
 
     return results
 
