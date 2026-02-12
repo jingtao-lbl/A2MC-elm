@@ -402,32 +402,26 @@ Validation targets are site-specific and defined in `use_cases/{site}/README.md`
 
 ### orchestrator.py
 
-Main workflow controller with state persistence.
+Main workflow controller with state persistence. Configuration is loaded from environment variables set by `a2mc_config.sh` and site config.
 
 ```python
-from orchestrator import CalibrationOrchestrator, Phase
+from orchestrator import CalibrationOrchestrator, Config
 
-# Initialize
-orchestrator = CalibrationOrchestrator(
-    work_dir="/path/to/work",
-    param_file="/path/to/fates_params.nc",
-    output_root="/path/to/simulations"
+# Config auto-detects paths from A2MC_USE_CASE_DIR environment variable
+config = Config(
+    use_memory=True,           # Enable Adaptive Memory
+    use_reasoning=True,        # Enable Claude API reasoning
+    max_iterations=10,
+    max_skip_testing=10,       # Max Phase 3↔4 skip testing cycles
+    max_experiments=10,        # Max Phase 3→4→5→6 experiment cycles
 )
-
-# Run from current phase
-orchestrator.run()
-
-# Or run specific phase
-orchestrator.run_phase(Phase.DIAGNOSIS)
-
-# Resume from saved state
-orchestrator = CalibrationOrchestrator.load_state("/path/to/state.json")
-orchestrator.run()
+orch = CalibrationOrchestrator(config)
+orch.run()
 ```
 
 **Key Classes:**
+- `Config` - All settings (paths, HPC, sampling, AI, iteration limits)
 - `Phase` - Enum of 8 workflow phases
-- `ValidationTargets` - Dataclass with all target values
 - `WorkflowState` - Persistent state with full history
 - `CalibrationOrchestrator` - Main controller
 
@@ -438,21 +432,21 @@ Claude API interface for intelligent reasoning (split into `schemas.py`, `prompt
 ```python
 from reasoning import ReasoningModule, Diagnosis, Hypothesis
 
-# Initialize (requires AI_API_KEY env var, or uses A2MC_AI_MODEL config)
-reasoning = ReasoningModule()  # Uses config defaults
+# Initialize (uses AI_API_KEY env var and A2MC_AI_MODEL config)
+reasoning = ReasoningModule()
 
 # Diagnose calibration failure
 diagnosis = reasoning.diagnose(
     results={"leaf_pft10": 45.2, ...},
     targets={"leaf_pft10": {"mean": 82.7, "uncertainty": 0.20}, ...},
-    morris_rankings={"leaf_pft10": [{"param": "...", "mu_star": 0.45}]},
+    sensitivity_rankings={"leaf_pft10": [{"param": "...", "mu_star": 0.45}]},
     iteration=1
 )
 
 # Generate hypothesis
 hypothesis = reasoning.generate_hypothesis(
     diagnosis=diagnosis,
-    morris_data={...},
+    sensitivity_data={...},
     previous_experiments=[]
 )
 
@@ -471,27 +465,19 @@ interpretation = reasoning.interpret_results(
 ```
 
 **Output Structures:**
-- `Diagnosis` - Failing targets, causes, recommendations
-- `Hypothesis` - Name, mechanism, parameter modifications
+- `Diagnosis` - Failing targets, causes, recommendations, requested diagnostics
+- `Hypothesis` - Name, mechanism, parameter modifications, test plan
 - `Experiment` - Base case, modifications, expected results
 
-### integration.py
+### integration.py / tools/hpc_utils.py
 
-HPC-native interfaces for simulation management.
+HPC-native interfaces for simulation management. Core classes (`HPCConfig`, `HPCExecutor`, `ParameterManager`) are in `tools/hpc_utils.py`; `integration.py` provides backward-compatible imports and the `DataPipeline`/`ExperimentRunner` classes.
 
 ```python
-from integration import (
-    HPCConfig, ParameterManager, HPCExecutor,
-    DataPipeline, ExperimentRunner
-)
+from tools.hpc_utils import HPCConfig, HPCExecutor, ParameterManager
 
-# Configure for NERSC
-config = HPCConfig(
-    scratch_root="/pscratch/sd/j/jingtao",
-    cfs_root="/global/cfs/cdirs/m2467/jingtao",
-    project="m2467",
-    qos="regular"
-)
+# HPCConfig reads from A2MC_* environment variables
+config = HPCConfig()
 
 # Modify parameters
 param_mgr = ParameterManager(config)
@@ -509,17 +495,12 @@ job_id = executor.submit_case(case_name="PtCNPEn100_TRANS")
 
 # Wait for completion
 results = executor.wait_for_jobs([job_id], poll_interval=300)
-
-# Extract data
-pipeline = DataPipeline(config)
-data = pipeline.extract_case_data(case_name="PtCNPEn100_TRANS")
-evaluation = pipeline.evaluate_against_targets(data)
 ```
 
 **Key Classes:**
-- `HPCConfig` - NERSC paths, project, QOS settings
-- `ParameterManager` - Wraps modify_fates_parameters.py
+- `HPCConfig` - HPC paths, project, QOS (from env vars)
 - `HPCExecutor` - Direct sbatch/squeue execution
+- `ParameterManager` - Wraps modify_fates_parameters.py
 - `DataPipeline` - Wraps extract_monthly_variables_FATES.py
 - `ExperimentRunner` - High-level experiment coordinator
 
