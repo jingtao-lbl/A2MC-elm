@@ -138,18 +138,32 @@ use_cases/Kougarok/
 - `phase_logs/` = Data outputs (matrices, plots, CSVs) from each phase
 - `gained_knowledge/` = Structured JSON knowledge for AI to reference
 
-### Usage
+### Running the Workflow
+
+Before running, modify the two configuration files for your setup:
+
+1. **`A2MC/a2mc_config.sh`** — Machine-level settings (HPC project, E3SM path, output root, Python env)
+2. **`A2MC/use_cases/Kougarok/config/kougarok_config.sh`** — Kougarok-specific settings (PFTs, parameters, validation targets, case naming)
 
 ```bash
-# Load main A2MC config, then site-specific overrides
+# Source both configuration files (required before every run)
 source a2mc_config.sh
 source use_cases/Kougarok/config/kougarok_config.sh
 
-# Check configuration
-echo "Site: ${A2MC_SITE_NAME}"
-echo "PFTs: ${A2MC_PFTS}"
-echo "Parameters: ${A2MC_N_PARAMS}"
+# Start a new calibration run
+python orchestrator.py --run
+
+# Start from screening phase in calibration round 2 (162 params)
+python orchestrator.py --run --start-phase 2 --start-iteration 2
+
+# Resume from a saved checkpoint
+python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state.json
+
+# Monitor progress (main log file saved to use_cases/Kougarok/)
+tail -f use_cases/Kougarok/a2mc_run_*.log
 ```
+
+All screen output is automatically saved to `use_cases/Kougarok/a2mc_run_{timestamp}.log`.
 
 ---
 

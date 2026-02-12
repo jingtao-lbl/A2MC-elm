@@ -2109,10 +2109,28 @@ Diagnosis Summary:{skip_header}
             if pft_str:
                 pft_ids = [int(p.strip()) for p in pft_str.split(',')]
 
-            # Get targets from config
+            # Get targets from config, falling back to screening targets
             targets = None
             if hasattr(self.config.targets, 'biomass'):
                 targets = asdict(self.config.targets).get('biomass', {})
+            if not targets:
+                # Build targets dict from screening module's target definitions
+                try:
+                    from phases.phase2_screening.screen_ensemble import load_kougarok_targets
+                    screening_targets = load_kougarok_targets()
+                    # Convert {PFT7_leaf: Target(...)} -> {PFT7: {leaf: obs_val}}
+                    targets = {}
+                    for tname, tobj in screening_targets.items():
+                        parts = tname.split('_', 1)  # e.g. 'PFT7_leaf' -> ['PFT7', 'leaf']
+                        if len(parts) == 2:
+                            pft_key, var_name = parts
+                            if pft_key not in targets:
+                                targets[pft_key] = {}
+                            targets[pft_key][var_name] = tobj.observed
+                    if targets:
+                        logger.info(f"Loaded {sum(len(v) for v in targets.values())} targets from screening module")
+                except Exception as e:
+                    logger.warning(f"Could not load screening targets: {e}")
 
             # Get NC file path for best case (if available)
             nc_file = None
@@ -2596,7 +2614,7 @@ Diagnosis Summary:{skip_header}
                         test_config = {
                             'param_names': param_names,
                             'pft_ids': pft_ids,
-                            'use_case_dir': str(use_case_dir),
+                            'use_case_dir': str(a2mc_config.USE_CASE_DIR),
                         }
                         result = test_fn(param_matrix, y_outputs, screening_data, test_config)
                         # Format as text summary
@@ -3504,97 +3522,146 @@ Phase numbers:
     # Create output directory
     Path(config.output_dir).mkdir(parents=True, exist_ok=True)
 
-    # Initialize orchestrator
-    orchestrator = CalibrationOrchestrator(config)
+    # Set up log file to capture all screen output (print + logging)
+    # Log goes to use_cases/{site}/ (site root directory)
+    try:
+        from tools.config import config as a2mc_config
+        log_parent = Path(a2mc_config.USE_CASE_DIR)
+    except (ImportError, AttributeError):
+        log_parent = Path(os.environ.get('A2MC_USE_CASE_DIR', config.output_dir))
+    log_filename = f"a2mc_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    log_filepath = log_parent / log_filename
 
-    # Handle start phase and iteration overrides
-    if args.start_phase:
-        orchestrator.state.current_phase = args.start_phase
-        logger.info(f"Starting from phase: {args.start_phase}")
+    # Tee class: writes to both original stream and log file
+    class TeeStream:
+        """Duplicate output to both console and log file."""
+        def __init__(self, original, log_file):
+            self.original = original
+            self.log_file = log_file
+        def write(self, text):
+            self.original.write(text)
+            self.log_file.write(text)
+            self.log_file.flush()
+        def flush(self):
+            self.original.flush()
+            self.log_file.flush()
+        def fileno(self):
+            return self.original.fileno()
+        def isatty(self):
+            return self.original.isatty()
 
-        # Clear cached results for this phase so it actually re-runs
-        # (otherwise the phase sees existing results and skips execution)
-        iteration = orchestrator.state.iteration
+    log_file_handle = open(log_filepath, 'w')
+    sys.stdout = TeeStream(sys.__stdout__, log_file_handle)
+    sys.stderr = TeeStream(sys.__stderr__, log_file_handle)
 
-        # Screening: clear screening_data dict
-        if args.start_phase == 'screening':
-            if orchestrator.state.screening_data:
-                orchestrator.state.screening_data = {}
-                logger.info("Cleared cached screening results (will re-run)")
+    # Also add file handler to root logger for logging module output
+    file_handler = logging.FileHandler(log_filepath)
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logging.getLogger().addHandler(file_handler)
 
-        # Diagnosis/Hypothesis: clear from result lists
-        phase_result_lists = {
-            'diagnosis': 'diagnoses',
-            'hypothesis': 'hypotheses',
-        }
-        result_key = phase_result_lists.get(args.start_phase)
-        if result_key:
-            result_list = getattr(orchestrator.state, result_key, [])
-            if result_list and result_list[-1].get('iteration') == iteration:
-                removed = result_list.pop()
-                logger.info(f"Cleared cached {args.start_phase} result for iteration {iteration} "
-                           f"(will re-run)")
-                # Also clear downstream results for the same iteration
-                if args.start_phase == 'diagnosis':
-                    hyp_list = orchestrator.state.hypotheses
-                    if hyp_list and hyp_list[-1].get('iteration') == iteration:
-                        hyp_list.pop()
-                        logger.info(f"  Also cleared cached hypothesis for iteration {iteration}")
+    logger.info(f"Log file: {log_filepath}")
 
-    if args.start_iteration is not None:
-        orchestrator.state.calibration_round = args.start_iteration
-        logger.info(f"Calibration round: {args.start_iteration}")
-        os.environ['A2MC_CALIBRATION_ROUND'] = str(args.start_iteration)
+    try:
+        # Initialize orchestrator
+        orchestrator = CalibrationOrchestrator(config)
 
-    # Initialize sampling_design for round 2+ (simulations already complete)
-    if args.start_iteration is not None and args.start_iteration >= 2:
-        if not orchestrator.state.sampling_design.get('complete', False):
-            try:
-                from tools.config import config as a2mc_config
-                orchestrator.state.sampling_design = {
-                    'scheme': a2mc_config.SAMPLING_SCHEME,
-                    'n_parameters': a2mc_config.N_PARAMS,
-                    'n_trajectories': a2mc_config.N_TRAJECTORIES,
-                    'n_simulations': a2mc_config.TOTAL_ENSEMBLE,
-                    'complete': True,  # Simulations already exist
-                    'extracted_data_dir': a2mc_config.EXTRACTED_DATA,
-                    'ensemble_output_dir': a2mc_config.ENSEMBLE_OUTPUT,
-                    'ensemble_matrix_file': a2mc_config.ENSEMBLE_MATRIX_FILE,
-                }
-                logger.info(f"Initialized sampling_design for round {args.start_iteration}:")
-                logger.info(f"  - {a2mc_config.TOTAL_ENSEMBLE} simulations (marked complete)")
-                logger.info(f"  - Extracted data: {a2mc_config.EXTRACTED_DATA}")
-            except ImportError:
-                logger.warning("Could not load tools.config - sampling_design not initialized")
+        # Handle start phase and iteration overrides
+        if args.start_phase:
+            orchestrator.state.current_phase = args.start_phase
+            logger.info(f"Starting from phase: {args.start_phase}")
 
-    # Execute
-    if args.bootstrap:
-        # Bootstrap only: validate and exit
-        status = orchestrator.bootstrap()
-        if not status["ready"]:
-            logger.error("Bootstrap failed. Fix issues before running.")
-            return 1
-        return 0
+            # Clear cached results for this phase so it actually re-runs
+            # (otherwise the phase sees existing results and skips execution)
+            iteration = orchestrator.state.iteration
 
-    if args.init:
-        orchestrator.state.save(str(orchestrator.state_path))
-        logger.info("Workflow initialized. Use --run to start.")
-        return 0
+            # Screening: clear screening_data dict
+            if args.start_phase == 'screening':
+                if orchestrator.state.screening_data:
+                    orchestrator.state.screening_data = {}
+                    logger.info("Cleared cached screening results (will re-run)")
 
-    if args.run or args.resume:
-        # Run bootstrap check unless skipped
-        if not args.skip_bootstrap:
+            # Diagnosis/Hypothesis: clear from result lists
+            phase_result_lists = {
+                'diagnosis': 'diagnoses',
+                'hypothesis': 'hypotheses',
+            }
+            result_key = phase_result_lists.get(args.start_phase)
+            if result_key:
+                result_list = getattr(orchestrator.state, result_key, [])
+                if result_list and result_list[-1].get('iteration') == iteration:
+                    removed = result_list.pop()
+                    logger.info(f"Cleared cached {args.start_phase} result for iteration {iteration} "
+                               f"(will re-run)")
+                    # Also clear downstream results for the same iteration
+                    if args.start_phase == 'diagnosis':
+                        hyp_list = orchestrator.state.hypotheses
+                        if hyp_list and hyp_list[-1].get('iteration') == iteration:
+                            hyp_list.pop()
+                            logger.info(f"  Also cleared cached hypothesis for iteration {iteration}")
+
+        if args.start_iteration is not None:
+            orchestrator.state.calibration_round = args.start_iteration
+            logger.info(f"Calibration round: {args.start_iteration}")
+            os.environ['A2MC_CALIBRATION_ROUND'] = str(args.start_iteration)
+
+        # Initialize sampling_design for round 2+ (simulations already complete)
+        if args.start_iteration is not None and args.start_iteration >= 2:
+            if not orchestrator.state.sampling_design.get('complete', False):
+                try:
+                    from tools.config import config as a2mc_config
+                    orchestrator.state.sampling_design = {
+                        'scheme': a2mc_config.SAMPLING_SCHEME,
+                        'n_parameters': a2mc_config.N_PARAMS,
+                        'n_trajectories': a2mc_config.N_TRAJECTORIES,
+                        'n_simulations': a2mc_config.TOTAL_ENSEMBLE,
+                        'complete': True,  # Simulations already exist
+                        'extracted_data_dir': a2mc_config.EXTRACTED_DATA,
+                        'ensemble_output_dir': a2mc_config.ENSEMBLE_OUTPUT,
+                        'ensemble_matrix_file': a2mc_config.ENSEMBLE_MATRIX_FILE,
+                    }
+                    logger.info(f"Initialized sampling_design for round {args.start_iteration}:")
+                    logger.info(f"  - {a2mc_config.TOTAL_ENSEMBLE} simulations (marked complete)")
+                    logger.info(f"  - Extracted data: {a2mc_config.EXTRACTED_DATA}")
+                except ImportError:
+                    logger.warning("Could not load tools.config - sampling_design not initialized")
+
+        # Execute
+        if args.bootstrap:
+            # Bootstrap only: validate and exit
             status = orchestrator.bootstrap()
             if not status["ready"]:
-                logger.error("Bootstrap failed. Fix issues or use --skip-bootstrap to override.")
+                logger.error("Bootstrap failed. Fix issues before running.")
                 return 1
-            logger.info("\n")  # Space before run output
+            return 0
 
-        orchestrator.run()
+        if args.init:
+            orchestrator.state.save(str(orchestrator.state_path))
+            logger.info("Workflow initialized. Use --run to start.")
+            return 0
+
+        if args.run or args.resume:
+            # Run bootstrap check unless skipped
+            if not args.skip_bootstrap:
+                status = orchestrator.bootstrap()
+                if not status["ready"]:
+                    logger.error("Bootstrap failed. Fix issues or use --skip-bootstrap to override.")
+                    return 1
+                logger.info("\n")  # Space before run output
+
+            orchestrator.run()
+            return 0
+
+        parser.print_help()
         return 0
 
-    parser.print_help()
-    return 0
+    finally:
+        # Restore stdout/stderr and close log file
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+        logging.getLogger().removeHandler(file_handler)
+        file_handler.close()
+        log_file_handle.close()
 
 
 if __name__ == "__main__":

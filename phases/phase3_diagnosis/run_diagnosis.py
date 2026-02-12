@@ -470,7 +470,8 @@ def run_diagnosis_for_orchestrator(
         pft_ids = [7, 9, 10]
 
     # Extract comparison case IDs from top cases
-    top_cases = screening_data.get('top_cases', [])
+    # Orchestrator uses 'best_cases', older code may use 'top_cases'
+    top_cases = screening_data.get('best_cases', screening_data.get('top_cases', []))
     comparison_ids = [c.get('case_num', c.get('case_id'))
                       for c in top_cases[1:top_cases_for_comparison + 1]]
     comparison_ids = [c for c in comparison_ids if c]  # Filter None

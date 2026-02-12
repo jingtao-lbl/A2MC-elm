@@ -99,6 +99,13 @@ class ScreeningConfig:
             try:
                 from tools.config import config as a2mc_config
                 self.case_pattern = a2mc_config.CASE_NAME_PATTERN
+                # Debug: show where pattern came from
+                env_val = os.environ.get('A2MC_CASE_NAME_PATTERN', '')
+                if env_val:
+                    print(f"  case_pattern from env: '{env_val}'")
+                else:
+                    print(f"  case_pattern from default (A2MC_CASE_NAME_PATTERN not set): '{self.case_pattern}'")
+                    print(f"    A2MC_ENSEMBLE_PREFIX='{os.environ.get('A2MC_ENSEMBLE_PREFIX', '')}'")
             except ImportError:
                 prefix = os.environ.get('A2MC_ENSEMBLE_PREFIX', '')
                 self.case_pattern = os.environ.get(
@@ -200,7 +207,18 @@ def get_available_cases(data_dir: Path, config: ScreeningConfig) -> List[int]:
     regex_str = escaped.replace(marker, r'(\d+)') + '_all_variables_monthly'
     pattern = re.compile(regex_str)
 
-    for f in data_dir.glob('*_all_variables_monthly_*.nc'):
+    nc_files = list(data_dir.glob('*_all_variables_monthly_*.nc'))
+    if not nc_files:
+        print(f"  DEBUG: No NC files matching glob '*_all_variables_monthly_*.nc' in {data_dir}")
+        print(f"  DEBUG: Directory exists: {data_dir.exists()}, is_dir: {data_dir.is_dir()}")
+        # Try listing any files to diagnose
+        any_files = list(data_dir.iterdir())[:5] if data_dir.is_dir() else []
+        print(f"  DEBUG: First 5 entries in dir: {[f.name for f in any_files]}")
+    else:
+        print(f"  DEBUG: case_pattern='{config.case_pattern}', regex='{regex_str}'")
+        print(f"  DEBUG: {len(nc_files)} NC files found, sample: {nc_files[0].name}")
+
+    for f in nc_files:
         match = pattern.search(f.name)
         if match:
             cases.append(int(match.group(1)))
@@ -296,9 +314,14 @@ def load_ensemble_simulated(
         try:
             with open(cache_path, 'rb') as f:
                 cached = pickle.load(f)
-            if verbose:
-                print(f"  Loaded {len(cached['case_numbers'])} cases from cache")
-            return cached['simulated'], cached['case_numbers']
+            n_cached = len(cached['case_numbers'])
+            if n_cached == 0:
+                if verbose:
+                    print(f"  Cache contains 0 cases (stale), reloading from files...")
+            else:
+                if verbose:
+                    print(f"  Loaded {n_cached} cases from cache")
+                return cached['simulated'], cached['case_numbers']
         except Exception as e:
             if verbose:
                 print(f"  Cache load failed ({e}), reloading from files...")
