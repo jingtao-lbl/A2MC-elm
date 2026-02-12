@@ -527,13 +527,15 @@ def synthesize_experiment_design(
     diagnosis: Dict,
     sensitivity_data: Dict = None,
     previous_experiments: List = None,
-) -> Dict:
+) -> List[Dict]:
     """
-    Synthesize cumulative skip-testing insights into a consolidated experiment design.
+    Synthesize cumulative skip-testing insights into multiple experiment designs.
 
     Called when the skip-testing inner loop exits (confidence >= threshold or
-    max cycles reached). Consolidates all accumulated insights from 2-10
-    skip-testing cycles into a single, informed hypothesis for HPC testing.
+    max cycles reached).  Each supported hypothesis becomes a separate
+    experiment design so they can be tested independently on HPC.  The AI
+    refines each hypothesis using evidence gathered across all cycles
+    (including refuted insights and parameter interactions).
 
     Args:
         cumulative_insights: List of insight dicts from skip-testing cycles,
@@ -545,19 +547,30 @@ def synthesize_experiment_design(
         previous_experiments: Previous HPC experiments (to avoid repeating)
 
     Returns:
-        Dict matching Hypothesis structure: name, mechanism, parameters,
-        design_type, expected_outcomes, success_criteria, confidence
+        List of hypothesis dicts, each with: name, mechanism, parameters,
+        design_type, expected_outcomes, success_criteria, confidence.
+        One per distinct experiment to run on HPC.
     """
     if not cumulative_insights:
         # Nothing to synthesize - return last hypothesis as-is
         if hypotheses:
             last = hypotheses[-1]
-            return last if isinstance(last, dict) else last.__dict__ if hasattr(last, '__dict__') else {}
-        return {}
+            h = last if isinstance(last, dict) else last.__dict__ if hasattr(last, '__dict__') else {}
+            return [h] if h else []
+        return []
 
     # Build summary of supported vs refuted hypotheses
     supported = [i for i in cumulative_insights if i.get('hypothesis_supported')]
     refuted = [i for i in cumulative_insights if not i.get('hypothesis_supported')]
+
+    if not supported:
+        # No supported hypotheses - return last hypothesis for a best-effort test
+        if hypotheses:
+            last = hypotheses[-1]
+            h = last if isinstance(last, dict) else last.__dict__ if hasattr(last, '__dict__') else {}
+            h['synthesis_note'] = 'No hypotheses were supported during skip testing; testing last hypothesis as best effort'
+            return [h] if h else []
+        return []
 
     # Get failed approaches from memory
     failed_approaches_context = ""
@@ -592,25 +605,26 @@ def synthesize_experiment_design(
     if previous_experiments:
         prev_exp_summary = f"\n## Previous HPC Experiments (avoid repeating)\n{json.dumps(previous_experiments, indent=2, default=str)}\n"
 
-    # Collect all parameter modifications from hypotheses
-    all_hypothesis_params = []
+    # Collect all parameter modifications from hypotheses, grouped by hypothesis
+    hypothesis_param_groups = []
     for hyp in hypotheses:
         h = hyp if isinstance(hyp, dict) else (hyp.__dict__ if hasattr(hyp, '__dict__') else {})
         params = h.get('parameters', h.get('parameters_to_test', []))
-        for p in params:
-            all_hypothesis_params.append({
-                'name': p.get('name', ''),
-                'proposed': p.get('proposed', ''),
-                'current': p.get('current', ''),
-                'rationale': p.get('rationale', ''),
-                'from_hypothesis': h.get('name', 'unknown'),
-                'hypothesis_supported': any(
-                    i.get('hypothesis_supported') and p.get('name', '') in i.get('parameters_tested', [])
+        if params:
+            hypothesis_param_groups.append({
+                'hypothesis_name': h.get('name', 'unknown'),
+                'mechanism': h.get('mechanism', ''),
+                'parameters': params,
+                'was_supported': any(
+                    i.get('hypothesis_supported') and i.get('hypothesis_name') == h.get('name')
                     for i in cumulative_insights
                 )
             })
 
-    prompt = f"""You are synthesizing {len(cumulative_insights)} skip-testing cycles into ONE consolidated experiment design for HPC testing.
+    prompt = f"""You are synthesizing {len(cumulative_insights)} skip-testing cycles into MULTIPLE experiment designs for HPC testing.
+
+Each supported hypothesis should become its OWN experiment — do NOT merge them into one.
+This allows independent testing of different mechanistic ideas in parallel on HPC.
 
 {rag_context}{failed_approaches_context}
 
@@ -625,101 +639,124 @@ def synthesize_experiment_design(
 ## Latest Diagnosis Context
 {json.dumps(diagnosis, indent=2, default=str)}
 
-## All Parameter Modifications Proposed Across Hypotheses
-{json.dumps(all_hypothesis_params, indent=2, default=str)}
+## Hypotheses and Their Parameters
+{json.dumps(hypothesis_param_groups, indent=2, default=str)}
 {sensitivity_summary}{prev_exp_summary}
 
 ## Synthesis Task
 
-Consolidate all evidence into ONE hypothesis with the parameter modifications most likely to succeed.
+Create a SEPARATE experiment design for each distinct supported hypothesis.
 
 ### Rules:
-1. **INCLUDE** parameters from SUPPORTED hypotheses (high confidence evidence)
-2. **EXCLUDE** parameters from REFUTED hypotheses (unless strong counter-evidence)
-3. **Resolve conflicts**: If two hypotheses suggest opposite directions for the same parameter, use the one with higher confidence
+1. **One experiment per supported hypothesis** — keep them independent so we can identify which mechanism matters
+2. **Refine parameters** using all evidence gathered across cycles (adjust values based on what was learned)
+3. **EXCLUDE refuted parameters** — do not include parameters from refuted hypotheses unless strong counter-evidence exists
 4. **Prioritize** high-sensitivity parameters (from Morris rankings)
-5. **Consider interactions**: Parameters that were tested together and showed improvement should stay together
-6. **Set realistic values**: Stay within physically realistic bounds
-7. **Use cumulative design** by default (safest for multi-parameter changes)
+5. **Set realistic values**: Stay within physically realistic bounds
+6. **Use cumulative design** within each experiment (safest for multi-parameter changes)
+7. **If two supported hypotheses share parameters**: note the overlap but keep them as separate experiments
 
 ## Response Format
-Return a JSON object with this structure:
+Return a JSON array of experiment designs (one per supported hypothesis):
 ```json
-{{
-    "name": "Synthesized Experiment Design (from N cycles)",
-    "mechanism": "Consolidated mechanistic explanation from all supported insights",
-    "parameters": [
-        {{
-            "name": "fates_param_name",
-            "pft": 9,
-            "current": 0.787,
-            "proposed": 0.30,
-            "rationale": "Why this change (citing which hypothesis/cycle supported it)",
-            "bounds": [0.1, 1.0],
-            "sensitivity_rank": 3
-        }}
-    ],
-    "design_type": "cumulative",
-    "expected_outcomes": {{
-        "target_name": expected_value
-    }},
-    "success_criteria": {{
-        "criterion_name": true
-    }},
-    "confidence": 0.85,
-    "synthesis_summary": "Brief summary of what was learned across all cycles",
-    "test_with_existing": false
-}}
+[
+    {{
+        "name": "Descriptive experiment name",
+        "mechanism": "Mechanistic explanation for this specific hypothesis",
+        "parameters": [
+            {{
+                "name": "fates_param_name",
+                "pft": 9,
+                "current": 0.787,
+                "proposed": 0.30,
+                "rationale": "Why this change (citing evidence from skip testing)",
+                "bounds": [0.1, 1.0],
+                "sensitivity_rank": 3
+            }}
+        ],
+        "design_type": "cumulative",
+        "expected_outcomes": {{
+            "target_name": "expected_value_or_direction"
+        }},
+        "success_criteria": {{
+            "criterion_name": true
+        }},
+        "confidence": 0.85,
+        "source_hypothesis": "Original hypothesis name this refines",
+        "synthesis_summary": "What evidence supports this experiment"
+    }}
+]
 ```
 
-Respond ONLY with the JSON object."""
+Respond ONLY with the JSON array."""
 
     try:
         response = self.query(prompt)
         result = self._extract_json(response)
 
-        # Ensure required fields
-        result.setdefault('name', f"Synthesized from {len(cumulative_insights)} skip-testing cycles")
-        result.setdefault('mechanism', 'Consolidated from skip-testing analysis')
-        result.setdefault('parameters', [])
-        result.setdefault('design_type', 'cumulative')
-        result.setdefault('expected_outcomes', {})
-        result.setdefault('success_criteria', {})
-        result.setdefault('confidence', max((i.get('confidence', 0) for i in cumulative_insights), default=0.5))
-        result.setdefault('test_with_existing', False)
+        # Handle both list and single-dict responses
+        if isinstance(result, dict):
+            result = [result]
 
-        logger.info(f"Synthesized experiment design: {result.get('name')}")
-        logger.info(f"  Parameters: {len(result.get('parameters', []))}")
-        logger.info(f"  Confidence: {result.get('confidence', 0):.2f}")
+        if not isinstance(result, list):
+            raise ValueError(f"Expected list, got {type(result)}")
+
+        # Ensure required fields on each experiment
+        for i, exp in enumerate(result):
+            exp.setdefault('name', f"Experiment {i+1} from skip-testing synthesis")
+            exp.setdefault('mechanism', 'From skip-testing analysis')
+            exp.setdefault('parameters', [])
+            exp.setdefault('design_type', 'cumulative')
+            exp.setdefault('expected_outcomes', {})
+            exp.setdefault('success_criteria', {})
+            exp.setdefault('confidence', max((s.get('confidence', 0) for s in supported), default=0.5))
+            exp.setdefault('test_with_existing', False)
+            exp['synthesized'] = True
+
+        # Filter out experiments with no parameters
+        result = [exp for exp in result if exp.get('parameters')]
+
+        logger.info(f"Synthesized {len(result)} experiment designs from {len(cumulative_insights)} skip-testing cycles")
+        for exp in result:
+            logger.info(f"  - {exp.get('name')}: {len(exp.get('parameters', []))} params, "
+                        f"confidence={exp.get('confidence', 0):.2f}")
 
         return result
 
     except Exception as e:
-        logger.error(f"Synthesis failed, falling back to merging supported insights: {e}")
+        logger.error(f"Synthesis failed, falling back to per-hypothesis extraction: {e}")
 
-        # Fallback: merge all parameter modifications from supported hypotheses
-        merged_params = {}
+        # Fallback: create one experiment per supported hypothesis
+        experiments = []
         for insight in supported:
             hyp_name = insight.get('hypothesis_name', '')
-            # Find matching hypothesis
             for hyp in hypotheses:
                 h = hyp if isinstance(hyp, dict) else (hyp.__dict__ if hasattr(hyp, '__dict__') else {})
                 if h.get('name') == hyp_name:
-                    for p in h.get('parameters', h.get('parameters_to_test', [])):
-                        pname = p.get('name', '')
-                        if pname and pname not in merged_params:
-                            merged_params[pname] = p
+                    params = h.get('parameters', h.get('parameters_to_test', []))
+                    if params:
+                        experiments.append({
+                            'name': f"Test: {hyp_name}",
+                            'mechanism': h.get('mechanism', ''),
+                            'parameters': params,
+                            'design_type': h.get('design_type', 'cumulative'),
+                            'expected_outcomes': h.get('expected_outcomes', {}),
+                            'success_criteria': h.get('success_criteria', {}),
+                            'confidence': insight.get('confidence', 0.5),
+                            'source_hypothesis': hyp_name,
+                            'test_with_existing': False,
+                            'synthesized': True,
+                        })
+                    break  # found matching hypothesis
 
-        return {
-            'name': f"Merged from {len(supported)} supported hypotheses (fallback)",
-            'mechanism': 'Merged supported hypothesis parameters',
-            'parameters': list(merged_params.values()),
-            'design_type': 'cumulative',
-            'expected_outcomes': {},
-            'success_criteria': {},
-            'confidence': max((i.get('confidence', 0) for i in supported), default=0.5),
-            'test_with_existing': False,
-        }
+        if not experiments and hypotheses:
+            # Last resort: use last hypothesis
+            last = hypotheses[-1]
+            h = last if isinstance(last, dict) else (last.__dict__ if hasattr(last, '__dict__') else {})
+            h['synthesized'] = True
+            experiments = [h]
+
+        return experiments
 
 
 def design_experiments(self, hypothesis: Hypothesis,

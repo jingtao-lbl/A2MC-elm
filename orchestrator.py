@@ -2923,44 +2923,51 @@ Diagnosis Summary:{skip_header}
                 logger.info(f"  Confidence: {confidence:.2f} (threshold: {self.config.hypothesis_confidence_threshold})")
                 logger.info(f"  Skip testing cycles: {self.state.skip_testing_count}/{self.config.max_skip_testing}")
 
-                # Synthesize cumulative insights into a consolidated experiment design
+                # Synthesize cumulative insights into multiple experiment designs
                 if self.reasoning and self.state.cumulative_insights:
-                    logger.info("Synthesizing cumulative insights into consolidated experiment design...")
+                    logger.info("Synthesizing cumulative insights into experiment designs...")
                     try:
-                        synthesized = self.reasoning.synthesize_experiment_design(
+                        synthesized_list = self.reasoning.synthesize_experiment_design(
                             cumulative_insights=self.state.cumulative_insights,
                             hypotheses=self.state.hypotheses,
                             diagnosis=self.state.diagnoses[-1] if self.state.diagnoses else {},
                             sensitivity_data=self.state.exploration_data.get('sensitivity_rankings', {}),
                             previous_experiments=self.state.experiments,
                         )
-                        if synthesized and synthesized.get('parameters'):
-                            self.state.hypotheses.append(synthesized)
-                            logger.info(f"  Synthesized hypothesis: {synthesized.get('name', 'unnamed')}")
-                            logger.info(f"  Parameters: {len(synthesized.get('parameters', []))}")
+                        if synthesized_list:
+                            for synth in synthesized_list:
+                                if synth and synth.get('parameters'):
+                                    self.state.hypotheses.append(synth)
 
-                            # Log the synthesis
+                            n_synth = sum(1 for s in synthesized_list if s and s.get('parameters'))
+                            logger.info(f"  Synthesized {n_synth} experiment designs for HPC testing")
+
+                            # Log each synthesized experiment
                             if self._phase_logger:
-                                try:
-                                    self._phase_logger.log_hypothesis(
-                                        title="Synthesized Experiment Design",
-                                        hypothesis_name=synthesized.get('name', 'Synthesized'),
-                                        mechanism=synthesized.get('mechanism', ''),
-                                        parameters_to_modify=synthesized.get('parameters', []),
-                                        ai_reasoning=synthesized.get('synthesis_summary', ''),
-                                        design_type=synthesized.get('design_type', 'cumulative'),
-                                        expected_outcomes=synthesized.get('expected_outcomes', {}),
-                                        confidence=synthesized.get('confidence', 0),
-                                        metadata={
-                                            'synthesis': True,
-                                            'n_cycles': len(self.state.cumulative_insights),
-                                            'iteration': self.state.iteration,
-                                        }
-                                    )
-                                except Exception as e:
-                                    logger.warning(f"Could not write synthesis log: {e}")
+                                for synth in synthesized_list:
+                                    if not synth or not synth.get('parameters'):
+                                        continue
+                                    try:
+                                        self._phase_logger.log_hypothesis(
+                                            title=f"Synthesized: {synth.get('name', 'Experiment')}",
+                                            hypothesis_name=synth.get('name', 'Synthesized'),
+                                            mechanism=synth.get('mechanism', ''),
+                                            parameters_to_modify=synth.get('parameters', []),
+                                            ai_reasoning=synth.get('synthesis_summary', ''),
+                                            design_type=synth.get('design_type', 'cumulative'),
+                                            expected_outcomes=synth.get('expected_outcomes', {}),
+                                            confidence=synth.get('confidence', 0),
+                                            metadata={
+                                                'synthesis': True,
+                                                'n_cycles': len(self.state.cumulative_insights),
+                                                'iteration': self.state.iteration,
+                                                'source_hypothesis': synth.get('source_hypothesis', ''),
+                                            }
+                                        )
+                                    except Exception as e:
+                                        logger.warning(f"Could not write synthesis log: {e}")
                         else:
-                            logger.warning("Synthesis returned no parameters, using last hypothesis")
+                            logger.warning("Synthesis returned no experiment designs, using last hypothesis")
                     except Exception as e:
                         logger.warning(f"Synthesis failed, using last hypothesis: {e}")
 
@@ -3073,9 +3080,14 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             self.state.current_phase = Phase.REFINEMENT.value
             return
 
-        # --- 2. Design experiments from hypothesis ---
-        hypothesis = self.state.hypotheses[-1] if self.state.hypotheses else {}
-        if not hypothesis:
+        # --- 2. Design experiments from hypotheses ---
+        # Collect all synthesized hypotheses; fall back to the last hypothesis
+        synthesized = [h for h in self.state.hypotheses if isinstance(h, dict) and h.get('synthesized')]
+        if not synthesized:
+            last = self.state.hypotheses[-1] if self.state.hypotheses else {}
+            synthesized = [last] if last else []
+
+        if not synthesized:
             logger.warning("No hypothesis available. Cannot design experiments.")
             self.state.record_phase_transition(
                 Phase.TESTING.value, Phase.REFINEMENT.value,
@@ -3084,15 +3096,22 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             self.state.current_phase = Phase.REFINEMENT.value
             return
 
-        experiments = self._design_experiment_sequence(hypothesis)
+        # Design experiments for each hypothesis independently
+        experiments = []
+        for hyp in synthesized:
+            hyp_experiments = self._design_experiment_sequence(hyp)
+            experiments.extend(hyp_experiments)
+
         if not experiments:
-            logger.warning("No experiments designed from hypothesis.")
+            logger.warning("No experiments designed from hypotheses.")
             self.state.record_phase_transition(
                 Phase.TESTING.value, Phase.REFINEMENT.value,
                 "No experiments could be designed"
             )
             self.state.current_phase = Phase.REFINEMENT.value
             return
+
+        logger.info(f"Designed experiments from {len(synthesized)} hypotheses")
 
         # Tag each experiment with iteration
         for exp in experiments:
