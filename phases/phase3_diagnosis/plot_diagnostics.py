@@ -747,7 +747,7 @@ def plot_mortality_components(
                 _stats_box(ax, '\n'.join(stats_lines))
 
         ax.set_title(f'PFT{pft_id}: Mortality Components', fontsize=13, fontweight='bold')
-        ax.set_xlabel('Simulation Year')
+        ax.set_xlabel('Year')
         ax.set_ylabel('C Flux (g C m$^{-2}$ yr$^{-1}$)')
         ax.legend(loc='upper right', fontsize=9)
         ax.grid(True, alpha=0.2, linestyle='--')
@@ -814,8 +814,8 @@ def plot_p_mass_balance(
 
     try:
         n_time = ds.dimensions['time'].size
-        # Simulation year axis (1-indexed)
-        sim_year = np.arange(n_time) / 12.0 + 1
+        # Real calendar year axis (e.g., 1901-2019)
+        sim_year = _make_year_axis(n_time)
 
         def _read(var_name):
             """Read a variable, collapsing spatial dims, handling missing."""
@@ -902,7 +902,7 @@ def plot_p_mass_balance(
         ax.plot(sim_year, occlp, color='brown', linewidth=1.2, label='OCCLP (occluded)')
         ax.plot(sim_year, primp, color='teal', linewidth=1.2, label='PRIMP (primary)')
         ax.set_title('A. Soil Inorganic P Pools', fontweight='bold')
-        ax.set_xlabel('Simulation Year')
+        ax.set_xlabel('Year')
         ax.set_ylabel('P Pool (g P m$^{-2}$)')
         ax.legend(loc='upper right', fontsize=8)
         ax.grid(True, alpha=0.3, linestyle='--')
@@ -915,7 +915,7 @@ def plot_p_mass_balance(
                      alpha=0.7)
         ax.plot(sim_year, total_inorganic, 'k-', linewidth=1.5, label='Total')
         ax.set_title('B. Stacked Soil Inorganic P', fontweight='bold')
-        ax.set_xlabel('Simulation Year')
+        ax.set_xlabel('Year')
         ax.set_ylabel('P Pool (g P m$^{-2}$)')
         ax.legend(loc='upper right', fontsize=8)
         ax.grid(True, alpha=0.3, linestyle='--')
@@ -936,7 +936,7 @@ def plot_p_mass_balance(
                             ha='right', va='bottom',
                             bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.9))
         ax.set_title('C. Litter P Pools (WHERE P ACCUMULATES!)', fontweight='bold')
-        ax.set_xlabel('Simulation Year')
+        ax.set_xlabel('Year')
         ax.set_ylabel('P Pool (g P m$^{-2}$)')
         ax.legend(loc='upper left', fontsize=8)
         ax.grid(True, alpha=0.3, linestyle='--')
@@ -948,7 +948,7 @@ def plot_p_mass_balance(
         if not np.all(totsomp == 0):
             ax.plot(sim_year, totsomp, 'r-', linewidth=1.2, label='Total SOM P')
         ax.set_title('D. Plant P and Soil Organic P', fontweight='bold')
-        ax.set_xlabel('Simulation Year')
+        ax.set_xlabel('Year')
         ax.set_ylabel('P Pool (g P m$^{-2}$)')
         ax.legend(loc='upper right', fontsize=8)
         ax.grid(True, alpha=0.3, linestyle='--')
@@ -963,7 +963,7 @@ def plot_p_mass_balance(
         ax.plot(sim_year, sminp_leached, color='purple', linewidth=1.0,
                 label='SMINP leached', alpha=0.7)
         ax.set_title('E. P Fluxes', fontweight='bold')
-        ax.set_xlabel('Simulation Year')
+        ax.set_xlabel('Year')
         ax.set_ylabel('P Flux (g P m$^{-2}$ yr$^{-1}$)')
         ax.legend(loc='upper right', fontsize=8)
         ax.grid(True, alpha=0.3, linestyle='--')
@@ -986,7 +986,7 @@ def plot_p_mass_balance(
                           f'Δ: {delta:.1f} g P/m² ({pct:.1f}%)',
                        loc='upper left')
         ax.set_title('F. Total Ecosystem P Budget', fontweight='bold')
-        ax.set_xlabel('Simulation Year')
+        ax.set_xlabel('Year')
         ax.set_ylabel('P Pool (g P m$^{-2}$)')
         ax.legend(loc='upper right', fontsize=8)
         ax.grid(True, alpha=0.3, linestyle='--')

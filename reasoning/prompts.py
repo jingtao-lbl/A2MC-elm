@@ -185,6 +185,27 @@ The orchestrator pre-loads data and passes it to your function. You do NOT open 
 | `y_outputs["agb_biomass"]` | `MorrisAbgbiomass_*cases*.txt` | same directory |
 | `screening_data` | Phase 2 screening results (dict) | passed from orchestrator state |
 
+#### screening_data: dict (Phase 2 screening results)
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `"best_case"` | dict | Best case: `{"case_id": int, "composite_nrmse": float}` |
+| `"best_cases"` | list[dict] | Top cases ranked by composite NRMSE, each with `case_id`, `composite_nrmse` |
+| `"case_numbers"` | list[int] | All evaluated case numbers (maps array index → case number) |
+| `"n_cases_evaluated"` | int | Total number of cases evaluated |
+
+**NOTE:** Validation targets are NOT in `screening_data`. They are loaded separately
+by the orchestrator. If your script needs to classify "good" vs "bad" cases, use
+the biomass values in `y_outputs` and compare against known observed values from
+the diagnosis context — or use `screening_data["best_cases"]` to get pre-ranked cases.
+
+**Identifying good vs bad cases:**
+```python
+best_cases = screening_data.get("best_cases", [])
+best_case_ids = {int(c["case_id"]) for c in best_cases[:10]}  # Top 10
+case_numbers = screening_data.get("case_numbers", [])
+```
+
 Per-case NetCDF time series (NOT loaded into y_outputs — for reference only):
 - Location: `$A2MC_EXTRACTED_DATA/` (the extracted data directory)
 - Filename pattern: `{CASE_NAME_PATTERN}_all_variables_monthly_{startyr}_{endyr}.nc`
@@ -320,6 +341,16 @@ In `existing_data_test`, set method to "custom_script" and include the code:
 }
 ```
 
+### Naming Convention (IMPORTANT)
+
+**script_name MUST start with `test_`** (e.g., `test_p_uptake_scaling`, `test_root_depth_impact`).
+
+Scripts named `test_*.py` that define `test_hypothesis()` are auto-discovered by the orchestrator
+and automatically appear in the diagnostic tools inventory. Scripts with other naming patterns
+require manual wiring and will NOT be auto-discovered.
+
+The function MUST be named `test_hypothesis` (not `run_test`, `analyze`, etc.).
+
 ### Guidelines for Custom Scripts
 
 1. **Keep it focused** - Test ONE specific aspect of the hypothesis
@@ -332,4 +363,5 @@ In `existing_data_test`, set method to "custom_script" and include the code:
 8. **Use PFT_COL mapping** - Build from config["pft_ids"]; NEVER hardcode column indices
 9. **Use correct y_outputs keys** - "leaf_biomass", "froot_biomass", "agb_biomass" (2D arrays)
 10. **All evidence values must be JSON-serializable** - Use float(), int() to convert numpy scalars
+11. **Name starts with test_** - e.g., `test_p_uptake_scaling` (enables auto-discovery when promoted)
 '''

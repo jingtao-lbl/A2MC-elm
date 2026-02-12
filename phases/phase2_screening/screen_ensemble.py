@@ -547,42 +547,48 @@ def load_kougarok_targets() -> Dict[str, Target]:
             observed=24.55,  # 49.1 * 0.5 (dry mass to C)
             uncertainty=0.2,
             units='g C/m²',
-            description='Evergreen shrub leaf biomass'
+            description='Evergreen shrub leaf biomass',
+            obs_std=29.1,
         ),
         'PFT7_fineroot': Target(
             name='PFT7_fineroot',
             observed=174.25,  # 348.5 * 0.5
             uncertainty=0.2,
             units='g C/m²',
-            description='Evergreen shrub fine root biomass'
+            description='Evergreen shrub fine root biomass',
+            obs_std=214.0,
         ),
         'PFT9_leaf': Target(
             name='PFT9_leaf',
             observed=124.7,  # 249.4 * 0.5
             uncertainty=0.2,
             units='g C/m²',
-            description='Deciduous shrub leaf biomass'
+            description='Deciduous shrub leaf biomass',
+            obs_std=47.2,
         ),
         'PFT9_fineroot': Target(
             name='PFT9_fineroot',
             observed=187.35,  # 374.7 * 0.5
             uncertainty=0.2,
             units='g C/m²',
-            description='Deciduous shrub fine root biomass'
+            description='Deciduous shrub fine root biomass',
+            obs_std=120.4,
         ),
         'PFT10_leaf': Target(
             name='PFT10_leaf',
             observed=82.65,  # 165.3 * 0.5
             uncertainty=0.2,
             units='g C/m²',
-            description='Arctic graminoid leaf biomass'
+            description='Arctic graminoid leaf biomass',
+            obs_std=56.3,
         ),
         'PFT10_fineroot': Target(
             name='PFT10_fineroot',
             observed=382.05,  # 764.1 * 0.5
             uncertainty=0.2,
             units='g C/m²',
-            description='Arctic graminoid fine root biomass'
+            description='Arctic graminoid fine root biomass',
+            obs_std=267.1,
         ),
     }
 

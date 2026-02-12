@@ -62,6 +62,7 @@ class Target:
     weight: float = 1.0       # Weight in composite cost
     units: str = ""
     description: str = ""
+    obs_std: float = None     # Observed standard deviation (for error bars)
 
     @property
     def min_acceptable(self) -> float:

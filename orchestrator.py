@@ -1718,6 +1718,11 @@ Review the screening log at:
                     name: {'observed': t.observed, 'uncertainty': t.uncertainty}
                     for name, t in screening_targets.items()
                 }
+                # Build obs_uncertainty dict from Target.obs_std (if available)
+                obs_uncertainty = {}
+                for name, t in screening_targets.items():
+                    if hasattr(t, 'obs_std') and t.obs_std is not None:
+                        obs_uncertainty[name] = t.obs_std
                 # Build ranked_cases list from optimization result
                 ranked_cases = []
                 for idx in result.optimization_result.ranked_indices:
@@ -1742,6 +1747,7 @@ Review the screening log at:
                     pft_ids=config.pfts,
                     output_path=str(Path(fig_dir) / 'ensemble_biomass_top_cases.png'),
                     top_n=100,
+                    obs_uncertainty=obs_uncertainty if obs_uncertainty else None,
                 )
                 if fig_path:
                     screening_data['figure_paths'] = [fig_path]
@@ -2706,6 +2712,7 @@ Diagnosis Summary:{skip_header}
                             for tc in screening_data.get('best_cases', []):
                                 pass  # targets come from config
                             # Load targets from screening module
+                            obs_uncert = {}
                             try:
                                 from phases.phase2_screening.screen_ensemble import load_kougarok_targets
                                 raw_targets = load_kougarok_targets()
@@ -2713,6 +2720,9 @@ Diagnosis Summary:{skip_header}
                                     name: {'observed': t.observed, 'uncertainty': t.uncertainty}
                                     for name, t in raw_targets.items()
                                 }
+                                for name, t in raw_targets.items():
+                                    if hasattr(t, 'obs_std') and t.obs_std is not None:
+                                        obs_uncert[name] = t.obs_std
                             except Exception:
                                 simple_targets = tool_args.get('targets', {})
                             # Determine output path
@@ -2727,6 +2737,7 @@ Diagnosis Summary:{skip_header}
                                 pft_ids=pft_ids,
                                 output_path=str(Path(fig_dir) / 'ensemble_biomass_top_cases.png'),
                                 top_n=tool_args.get('top_n', 100),
+                                obs_uncertainty=obs_uncert if obs_uncert else None,
                             )
                             if fig_path:
                                 results['ensemble_biomass_figure'] = fig_path

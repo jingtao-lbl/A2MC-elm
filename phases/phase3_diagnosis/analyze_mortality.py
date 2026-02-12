@@ -32,6 +32,7 @@ Adapted from: plot_mortality_timeseries_dsp2x.py (December 2025)
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -61,7 +62,8 @@ FLUX_SCALE = KG_TO_G * SEC_PER_YEAR
 
 def extract_mortality_timeseries(
     data_files: Dict[str, str],
-    pft_ids: List[int]
+    pft_ids: List[int],
+    start_year: int = None
 ) -> Dict:
     """
     Extract mortality components across all simulation phases.
@@ -70,11 +72,13 @@ def extract_mortality_timeseries(
         data_files: Dict mapping phase name to file path
                     e.g., {'ADSP': 'adsp.nc', 'RGSP': 'rgsp.nc', 'TRANS': 'trans.nc'}
         pft_ids: List of PFT IDs to extract
+        start_year: Starting year for time axis. If None, reads from
+                    A2MC_TRANS_START_YEAR env var (default 1901).
 
     Returns:
         Dict with mortality data:
         {
-            'time': array,  # Combined time axis
+            'time': array,  # Combined time axis (real calendar years)
             'phases': {'ADSP': (0, 2400), ...},  # Index ranges per phase
             'pft_data': {
                 7: {
@@ -99,8 +103,11 @@ def extract_mortality_timeseries(
         'pft_data': {pft_id: {} for pft_id in pft_ids}
     }
 
+    if start_year is None:
+        start_year = int(os.environ.get('A2MC_TRANS_START_YEAR', '1901'))
+
     phase_data = {}
-    time_offset = 0
+    time_offset = 0.0
     current_idx = 0
 
     for phase, file_path in data_files.items():
@@ -111,8 +118,8 @@ def extract_mortality_timeseries(
         with nc.Dataset(file_path, 'r') as ds:
             n_time = ds.dimensions['time'].size
 
-            # Create time axis for this phase
-            phase_time = np.arange(n_time) / 12 + time_offset + 1
+            # Create time axis for this phase (real calendar years)
+            phase_time = start_year + np.arange(n_time) / 12 + time_offset
             time_offset += n_time / 12
 
             # Record phase bounds
