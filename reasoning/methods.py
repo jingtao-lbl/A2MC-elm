@@ -69,7 +69,8 @@ def _build_sensitivity_summary(sensitivity_rankings: Dict) -> str:
 
 
 def diagnose(self, results: Dict, targets: Dict,
-             sensitivity_rankings: Dict, iteration: int) -> Diagnosis:
+             sensitivity_rankings: Dict, iteration: int,
+             diagnostic_images: Optional[List[str]] = None) -> Diagnosis:
     """
     Analyze why calibration is failing.
 
@@ -78,6 +79,9 @@ def diagnose(self, results: Dict, targets: Dict,
         targets: Validation targets with uncertainties
         sensitivity_rankings: Parameter sensitivity rankings (from Morris/Sobol/etc.)
         iteration: Current workflow iteration
+        diagnostic_images: Optional list of paths to diagnostic PNG figures.
+            When provided, figures are sent to Claude API as images for
+            multimodal analysis (PFT overviews, mortality, P mass balance).
 
     Returns:
         Structured Diagnosis object
@@ -138,6 +142,23 @@ def diagnose(self, results: Dict, targets: Dict,
     # Build concise sensitivity summary so AI focuses on high-sensitivity params
     sensitivity_summary = _build_sensitivity_summary(sensitivity_rankings)
 
+    # Build diagnostic figures prompt section (outside f-string to avoid triple-quote nesting)
+    if diagnostic_images:
+        _figures_header = "The following diagnostic figures are attached as images. Analyze them carefully:"
+        _figures_detail = (
+            "\n- **PFT overview plots**: Check L2FR oscillation patterns (PID instability), biomass trends,"
+            "\n  nutrient limitation timing, allocation dynamics. Oscillations with amplitude >100 indicate PID instability."
+            "\n- **Mortality components**: Which mortality type dominates? When do spikes occur relative to growing season?"
+            "\n- **P mass balance**: Are P pools accumulating/depleting? Is uptake matching demand?"
+            "\n- **Carbon balance**: Is GPP sufficient to cover maintenance respiration? When do deficits occur?"
+            "\n"
+            "\nIncorporate visual observations into your diagnosis. Reference specific temporal patterns,"
+            "\noscillation severity, and anomalies visible in the plots."
+        )
+    else:
+        _figures_header = "No diagnostic figures attached for this iteration."
+        _figures_detail = ""
+
     prompt = f"""Analyze these ELM-FATES calibration results and diagnose why targets are not being met.
 
 {rag_context}{memory_context}{targeted_param_context}
@@ -164,6 +185,26 @@ Parameters with low μ* are unlikely to be primary drivers of model-data mismatc
 </details>
 
 {DIAGNOSTIC_TOOLS_INVENTORY}
+
+## Diagnostic Figures
+
+{_figures_header}
+{_figures_detail}
+
+## Comparative Case Analysis
+
+Two reference cases are provided in the results:
+- **best_case**: Case with most targets within ±20% tolerance (among top 10 by cost)
+- **lowest_cost_case**: Case with minimum composite RMSRE
+
+If these are DIFFERENT cases, analyze both:
+1. Which targets does each case satisfy under ±20% tolerance?
+2. Which targets does each case satisfy under std-range tolerance (obs ± obs_std)?
+3. What parameter differences might explain their complementary strengths?
+4. Which case is a better starting point for refinement and why?
+
+If results include `std_range_evaluation`, use it to assess whether the "lowest cost" case
+might actually be closer to a globally acceptable solution despite failing some ±20% checks.
 
 ## Previous Hypothesis Tests (if any)
 
@@ -249,6 +290,15 @@ Return a JSON object with this structure:
     ],
     "confidence": 0.85,
     "reasoning": "Summary of diagnosis logic including conceptual model",
+    "comparative_analysis": {{
+        "best_case_id": null,
+        "lowest_cost_case_id": null,
+        "recommended_starting_case": null,
+        "rationale": "Why this case is the better starting point"
+    }},
+    "visual_observations": [
+        "Key pattern observed in diagnostic figures (if attached)"
+    ],
     "requested_diagnostics": [
         {{
             "tool": "tool_name_from_inventory",
@@ -265,7 +315,11 @@ to request specific diagnostic analyses. The orchestrator will run them and prov
 
 Respond ONLY with the JSON object, no additional text."""
 
-    response = self.query(prompt)
+    # Use multimodal query if diagnostic images are provided
+    if diagnostic_images:
+        response = self.query_with_images(prompt, diagnostic_images)
+    else:
+        response = self.query(prompt)
 
     # Parse response — filter to Diagnosis dataclass fields
     try:

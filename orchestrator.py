@@ -188,6 +188,10 @@ class WorkflowState:
     # Skip Testing: Results from testing hypotheses with existing data
     hypothesis_tests: List = field(default_factory=list)
 
+    # Track which case's diagnostic figures were already analyzed by AI
+    # (avoid redundant multimodal analysis across skip-testing iterations)
+    figures_analyzed_case_id: Optional[int] = None
+
     # Cumulative insights: Key findings accumulated across skip-testing cycles
     # Each entry: {cycle, hypothesis, supported, confidence, key_insights, evidence}
     # Passed to next diagnosis so AI can build on previous findings
@@ -1498,13 +1502,15 @@ class CalibrationOrchestrator:
             best_case = screening_data.get("best_case", {})
             targets_met = best_case.get("targets_met", 0)
 
+            n_targets = screening_data.get("n_targets", targets_met)
+
             logger.info(f"Screening complete:")
             logger.info(f"  Cases evaluated: {n_cases}")
             logger.info(f"  Best case: #{best_case.get('case_id', 'N/A')}")
-            logger.info(f"  Targets met: {targets_met}/8")
+            logger.info(f"  Targets met: {targets_met}/{n_targets}")
 
             # Critical finding
-            if targets_met < 8:
+            if targets_met < n_targets:
                 logger.info(f"  CRITICAL: 0/{n_cases} cases achieve all targets")
                 logger.info(f"  → Proceeding to DIAGNOSIS phase")
 
@@ -1537,7 +1543,7 @@ class CalibrationOrchestrator:
                         target_performance=screening_data.get('target_performance', {}),
                         key_findings=[
                             f"Best case: #{best_case.get('case_id', 'N/A')}",
-                            f"Targets met: {targets_met}/8",
+                            f"Targets met: {targets_met}/{n_targets}",
                             f"Cases evaluated: {n_cases}"
                         ],
                         metadata={
@@ -1553,6 +1559,7 @@ class CalibrationOrchestrator:
         n_cases = screening_data.get("n_cases_evaluated", 0)
         best_case = screening_data.get("best_case", {})
         targets_met = best_case.get("targets_met", 0)
+        n_targets = screening_data.get("n_targets", targets_met)
 
         # Human review checkpoint after screening
         if self.config.human_review:
@@ -1564,10 +1571,10 @@ Screening Summary:
   - Cases evaluated: {n_cases}
   - Best case: #{best_case.get('case_id', 'N/A')}
   - Best composite RMSRE: {best_case.get('composite_rmsre', 'N/A'):.3f}
-  - Targets met: {targets_met}/8
+  - Targets met: {targets_met}/{n_targets}
   - Top 5 cases: {top_cases_str}
 
-{'ALL TARGETS MET - Ready for convergence!' if targets_met >= 8 else 'Not all targets met - proceeding to diagnosis.'}
+{'ALL TARGETS MET - Ready for convergence!' if targets_met >= n_targets else 'Not all targets met - proceeding to diagnosis.'}
 
 Review the screening log at:
   use_cases/{{site}}/memory/logs/phase2_screening/
@@ -1582,7 +1589,7 @@ Review the screening log at:
         # Transition to DIAGNOSIS
         self.state.record_phase_transition(
             Phase.SCREENING.value, Phase.DIAGNOSIS.value,
-            f"Best case meets {targets_met}/8 targets"
+            f"Best case meets {targets_met}/{n_targets} targets"
         )
         self.state.current_phase = Phase.DIAGNOSIS.value
         logger.info("Screening complete. Advancing to DIAGNOSIS.")
@@ -1596,6 +1603,13 @@ Review the screening log at:
             "target_performance": {},
             "case_numbers": [],  # actual case IDs from the CSV
         }
+
+        # Compute n_targets from site-specific target definitions
+        try:
+            from phases.phase2_screening.screen_ensemble import load_kougarok_targets
+            screening_data["n_targets"] = len(load_kougarok_targets())
+        except Exception:
+            screening_data["n_targets"] = 6  # fallback
 
         # Parse results file
         try:
@@ -1705,6 +1719,7 @@ Review the screening log at:
                 "best_cases": top_cases,
                 "target_performance": result.to_dict().get('targets_satisfied_distribution', {}),
                 "max_targets_satisfied": result.max_satisfied_count,
+                "n_targets": len(screening_targets),
                 "status": "completed"
             }
 
@@ -1782,6 +1797,7 @@ Review the screening log at:
         best_cases = screening_data.get("best_cases", [])[:10]
         target_perf = screening_data.get("target_performance", {})
         max_satisfied = screening_data.get("max_targets_satisfied", 0)
+        n_targets = screening_data.get("n_targets", best_case.get("targets_met", 0))
 
         # Build summary for AI
         summary = f"""## Screening Results Summary
@@ -1789,7 +1805,7 @@ Review the screening log at:
 **Ensemble Size:** {n_cases} cases evaluated
 **Best Case:** #{best_case.get('case_id', 'N/A')}
 - Composite RMSRE: {best_case.get('composite_rmsre', 'N/A'):.4f}
-- Targets Met: {best_case.get('targets_met', 0)}/8
+- Targets Met: {best_case.get('targets_met', 0)}/{n_targets}
 
 **Target Satisfaction Distribution:**
 """
@@ -1803,7 +1819,7 @@ Review the screening log at:
 |------|------|-------|-------------|
 """
         for i, case in enumerate(best_cases):
-            summary += f"| {i+1} | #{case.get('case_num', '?')} | {case.get('cost', 0):.4f} | {case.get('n_satisfied', 0)}/8 |\n"
+            summary += f"| {i+1} | #{case.get('case_num', '?')} | {case.get('cost', 0):.4f} | {case.get('n_satisfied', 0)}/{n_targets} |\n"
 
         # Get sensitivity rankings from exploration phase if available
         sensitivity_info = ""
@@ -1825,7 +1841,7 @@ Review the screening log at:
 
 Please provide:
 1. **Key Observations:** What patterns do you see in the results?
-2. **Calibration Challenges:** Why might no cases achieve all 8 targets?
+2. **Calibration Challenges:** Why might no cases achieve all {n_targets} targets?
 3. **Promising Directions:** Based on the top cases, what parameter adjustments might help?
 4. **Recommendations:** What should the diagnosis phase focus on?
 
@@ -1839,12 +1855,12 @@ Keep your analysis concise (3-4 sentences per section)."""
             return f"""## Automated Analysis
 
 **Key Observations:**
-- Best case achieves {best_case.get('targets_met', 0)}/8 targets with RMSRE {best_case.get('composite_rmsre', 'N/A'):.4f}
+- Best case achieves {best_case.get('targets_met', 0)}/{n_targets} targets with RMSRE {best_case.get('composite_rmsre', 'N/A'):.4f}
 - {target_perf.get('0', 0)} cases ({target_perf.get('0', 0)/n_cases*100:.1f}%) meet zero targets
 - Maximum targets satisfied by any case: {max_satisfied}
 
 **Calibration Challenge:**
-Multi-objective optimization with 8 biomass targets across 3 PFTs creates trade-offs where improving one PFT often degrades another.
+Multi-objective optimization with {n_targets} biomass targets across 3 PFTs creates trade-offs where improving one PFT often degrades another.
 
 **Recommendation:**
 Focus diagnosis on identifying which PFT combinations conflict and whether parameter bounds need expansion.
@@ -1897,6 +1913,30 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                     logger.warning(f"Diagnostic scripts failed: {e}")
                     diagnostic_data = None
 
+            # Collect diagnostic figure paths from diagnostic data
+            diagnostic_images = []
+            if diagnostic_data and hasattr(diagnostic_data, 'figure_paths') and diagnostic_data.figure_paths:
+                diagnostic_images = [str(p) for p in diagnostic_data.figure_paths if Path(str(p)).exists()]
+                if diagnostic_images:
+                    logger.info(f"Collected {len(diagnostic_images)} diagnostic figures for AI analysis")
+
+            # Only send images if this case hasn't been analyzed before
+            # (avoid redundant multimodal analysis across skip-testing iterations)
+            best_case_id = screening_data.get('best_case', {}).get('case_id')
+            if best_case_id and best_case_id == self.state.figures_analyzed_case_id:
+                diagnostic_images = []
+                logger.info(f"Figures for case {best_case_id} already analyzed in previous cycle — skipping multimodal")
+
+            # Build comparative case evaluation (best_case vs lowest_cost_case)
+            comparative_analysis = None
+            lowest_cost = screening_data.get('lowest_cost_case', {})
+            best_case = screening_data.get('best_case', {})
+            if (best_case.get('case_id') and lowest_cost.get('case_id')
+                    and best_case['case_id'] != lowest_cost['case_id']):
+                comparative_analysis = self._build_comparative_analysis(screening_data)
+                logger.info(f"Built comparative analysis: best_case={best_case['case_id']} vs "
+                           f"lowest_cost={lowest_cost['case_id']}")
+
             # Prepare data for Claude reasoning
             diagnosis_input = {
                 "screening_results": screening_data,
@@ -1904,9 +1944,11 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                 "targets": asdict(self.config.targets),
                 "iteration": self.state.iteration,
                 "diagnostic_data": diagnostic_data,  # Pass diagnostic results to Claude
+                "diagnostic_images": diagnostic_images,  # PNG figure paths for multimodal analysis
                 "hypothesis_tests": self.state.hypothesis_tests,  # Results from Skip Testing path
                 "previous_hypotheses": self.state.hypotheses,  # Previous hypotheses for context
                 "cumulative_insights": self.state.cumulative_insights,  # Cross-cycle synthesis
+                "comparative_analysis": comparative_analysis,  # best_case vs lowest_cost_case
             }
 
             # Use Claude API for diagnosis (if available)
@@ -1931,6 +1973,11 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                     diagnosis = self._diagnose_with_claude(diagnosis_input)
 
             self.state.diagnoses.append(diagnosis)
+
+            # Track that this case's figures have been analyzed (for skip-testing dedup)
+            if diagnostic_images and best_case_id:
+                self.state.figures_analyzed_case_id = best_case_id
+                logger.info(f"Marked case {best_case_id} figures as analyzed")
 
             # Log diagnosis
             logger.info(f"Diagnosis complete:")
@@ -2101,11 +2148,21 @@ Diagnosis Summary:{skip_header}
                 }
                 logger.info(f"Added {len(cumulative_insights)} cumulative insights to Claude reasoning")
 
+            # Add comparative analysis to results for AI reasoning
+            comparative_analysis = diagnosis_input.get("comparative_analysis")
+            if comparative_analysis:
+                results["comparative_analysis"] = comparative_analysis
+                logger.info("Added comparative case analysis to Claude reasoning")
+
+            # Get diagnostic images for multimodal analysis
+            diagnostic_images = diagnosis_input.get("diagnostic_images", [])
+
             diagnosis = self.reasoning.diagnose(
                 results=results,
                 targets=diagnosis_input["targets"],
                 sensitivity_rankings=diagnosis_input["sensitivity_rankings"],
-                iteration=diagnosis_input["iteration"]
+                iteration=diagnosis_input["iteration"],
+                diagnostic_images=diagnostic_images if diagnostic_images else None
             )
             return asdict(diagnosis) if hasattr(diagnosis, '__dict__') else diagnosis
         except Exception as e:
@@ -2136,6 +2193,118 @@ Diagnosis Summary:{skip_header}
             "confidence": 0.85,
             "reasoning": "Based on comprehensive Dec 2025 diagnostic analysis identifying triple bottleneck"
         }
+
+    def _build_comparative_analysis(self, screening_data: Dict) -> Dict:
+        """Build comparative evaluation of best_case vs lowest_cost_case.
+
+        Evaluates each reference case against targets using both ±20% tolerance
+        and obs_std-based ranges. This gives the AI a richer picture of which
+        case is a better starting point for refinement.
+
+        Args:
+            screening_data: Screening results containing best_case, lowest_cost_case,
+                and best_cases (top N list with per-target values)
+
+        Returns:
+            Dict with per-case evaluation including std-range satisfaction
+        """
+        from tools.cost_functions import within_tolerance
+
+        # Load screening targets (which have obs_std)
+        try:
+            from phases.phase2_screening.screen_ensemble import load_kougarok_targets
+            screening_targets = load_kougarok_targets()
+        except Exception as e:
+            logger.warning(f"Could not load screening targets for comparative analysis: {e}")
+            return {}
+
+        best_case = screening_data.get('best_case', {})
+        lowest_cost = screening_data.get('lowest_cost_case', {})
+        top_cases = screening_data.get('best_cases', [])
+
+        def _evaluate_case(case_id, case_info):
+            """Evaluate a single case against all targets."""
+            # Find the case's per-target values in the top_cases list
+            case_data = None
+            for tc in top_cases:
+                cid = tc.get('case_num', tc.get('case_id'))
+                if cid == case_id:
+                    case_data = tc
+                    break
+
+            if not case_data:
+                return None
+
+            per_target = {}
+            targets_met_20pct = 0
+            targets_met_std = 0
+
+            for target_name, target_obj in screening_targets.items():
+                # Per-target error is stored in top_cases as 'errors' dict or individual keys
+                sim_value = case_data.get('simulated', {}).get(target_name)
+                error = case_data.get('errors', {}).get(target_name)
+
+                # Check ±20% tolerance
+                within_20pct = False
+                within_std = False
+                if sim_value is not None:
+                    within_20pct = within_tolerance(sim_value, target_obj.observed, 0.2)
+                    # Check obs_std-based range (absolute tolerance: obs ± obs_std)
+                    if target_obj.obs_std is not None and target_obj.obs_std > 0:
+                        within_std = within_tolerance(
+                            sim_value, target_obj.observed,
+                            tolerance=target_obj.obs_std,
+                            tolerance_type='absolute'
+                        )
+                    else:
+                        within_std = within_20pct  # fallback to ±20% if no std
+                elif error is not None:
+                    # Use error value to reconstruct
+                    within_20pct = abs(error) <= 0.2
+
+                if within_20pct:
+                    targets_met_20pct += 1
+                if within_std:
+                    targets_met_std += 1
+
+                per_target[target_name] = {
+                    'observed': target_obj.observed,
+                    'obs_std': target_obj.obs_std,
+                    'simulated': sim_value,
+                    'relative_error': error,
+                    'within_20pct': within_20pct,
+                    'within_std': within_std,
+                }
+
+            return {
+                'case_id': case_id,
+                'rmsre': case_info.get('composite_rmsre', case_info.get('composite_nrmse')),
+                'targets_met_20pct': targets_met_20pct,
+                'targets_met_std': targets_met_std,
+                'total_targets': len(screening_targets),
+                'per_target': per_target,
+            }
+
+        result = {}
+        if best_case.get('case_id'):
+            eval_best = _evaluate_case(best_case['case_id'], best_case)
+            if eval_best:
+                result['best_case'] = eval_best
+
+        if lowest_cost.get('case_id'):
+            eval_lowest = _evaluate_case(lowest_cost['case_id'], lowest_cost)
+            if eval_lowest:
+                result['lowest_cost_case'] = eval_lowest
+
+        if result:
+            logger.info(f"Comparative analysis: best_case meets "
+                       f"{result.get('best_case', {}).get('targets_met_20pct', '?')}/20pct, "
+                       f"{result.get('best_case', {}).get('targets_met_std', '?')}/std; "
+                       f"lowest_cost meets "
+                       f"{result.get('lowest_cost_case', {}).get('targets_met_20pct', '?')}/20pct, "
+                       f"{result.get('lowest_cost_case', {}).get('targets_met_std', '?')}/std")
+
+        return result
 
     def _run_diagnostic_scripts(self, screening_data: Dict) -> Optional['DiagnosisResult']:
         """
@@ -2219,6 +2388,20 @@ Diagnosis Summary:{skip_header}
                             nc_file = str(nc_files[0])
                             logger.info(f"Found NC file for case {case_id}: {nc_file}")
 
+            # Also resolve NC file for lowest_cost_case (if different from best_case)
+            nc_file_lowest = None
+            lowest_cost = screening_data.get('lowest_cost_case', {})
+            lowest_cost_id = lowest_cost.get('case_id', lowest_cost.get('case_num'))
+            best_case_id = best_case.get('case_id', best_case.get('case_num')) if best_case else None
+            if lowest_cost_id and lowest_cost_id != best_case_id:
+                extracted_dir = a2mc_config.EXTRACTED_DATA
+                if extracted_dir and Path(extracted_dir).exists():
+                    pattern = f"*En{lowest_cost_id}_*all_variables*.nc"
+                    nc_files_lc = list(Path(extracted_dir).glob(pattern))
+                    if nc_files_lc:
+                        nc_file_lowest = str(nc_files_lc[0])
+                        logger.info(f"Found NC file for lowest_cost case {lowest_cost_id}: {nc_file_lowest}")
+
             # Compute plot output directory (phase_results, not logs)
             plot_output_dir = None
             plot_filename_prefix = ""
@@ -2233,7 +2416,7 @@ Diagnosis Summary:{skip_header}
                 ii = sc + 1  # 1-based inner loop counter
                 plot_filename_prefix = f"r{rr:02d}_exp{ee:02d}_iter{ii:02d}_"
 
-            # Run diagnosis
+            # Run diagnosis for best case
             result = run_diagnosis_for_orchestrator(
                 screening_data=screening_data,
                 morris_file=morris_file,
@@ -2244,9 +2427,39 @@ Diagnosis Summary:{skip_header}
                 pft_ids=pft_ids,
                 top_cases_for_comparison=5,
                 plot_output_dir=plot_output_dir,
-                plot_filename_prefix=plot_filename_prefix,
+                plot_filename_prefix=plot_filename_prefix + f"case{best_case_id}_" if best_case_id else plot_filename_prefix,
                 verbose=True
             )
+
+            # Also run PFT diagnosis for lowest_cost_case (generates comparative figures)
+            if nc_file_lowest and plot_output_dir:
+                try:
+                    # Create a modified screening_data pointing to the lowest_cost case
+                    lc_screening = screening_data.copy()
+                    lc_screening['best_case'] = lowest_cost
+                    lc_prefix = plot_filename_prefix + f"case{lowest_cost_id}_"
+
+                    lc_result = run_diagnosis_for_orchestrator(
+                        screening_data=lc_screening,
+                        morris_file=morris_file,
+                        param_names_file=param_names_file,
+                        param_bounds_file=param_bounds_file if param_bounds_file and Path(param_bounds_file).exists() else None,
+                        nc_file=nc_file_lowest,
+                        targets=targets,
+                        pft_ids=pft_ids,
+                        top_cases_for_comparison=0,  # Skip case comparison for second run
+                        plot_output_dir=plot_output_dir,
+                        plot_filename_prefix=lc_prefix,
+                        verbose=False
+                    )
+                    # Merge figure paths from lowest_cost diagnosis into main result
+                    if lc_result and hasattr(lc_result, 'figure_paths'):
+                        for fp in lc_result.figure_paths:
+                            if fp and Path(fp).exists():
+                                result.figure_paths.append(fp)
+                        logger.info(f"Added {len(lc_result.figure_paths)} figures from lowest_cost case {lowest_cost_id}")
+                except Exception as e:
+                    logger.warning(f"Could not run diagnosis for lowest_cost case {lowest_cost_id}: {e}")
 
             return result
 
@@ -3395,10 +3608,15 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
 
         logger.info("Evaluating experiment results...")
 
+        # Compute n_targets dynamically from screening data
+        n_targets = 6  # default fallback
+        if hasattr(self.state, 'screening_data') and self.state.screening_data:
+            n_targets = self.state.screening_data.get('n_targets', n_targets)
+
         # Delegate evaluation to phase script
         eval_result = evaluate_experiments(
             experiments=self.state.experiments,
-            total_targets=8,
+            total_targets=n_targets,
             reasoning_module=self.reasoning if self.config.auto_learn else None,
             memory_manager=self._memory if self.config.auto_learn else None,
             auto_learn=self.config.auto_learn
@@ -3535,10 +3753,11 @@ Refinement Summary:
         logger.info("=" * 70)
 
         best = self.state.best_experiment
+        n_targets = getattr(self.state, 'screening_data', {}).get('n_targets', '?') if hasattr(self.state, 'screening_data') and self.state.screening_data else '?'
 
         if best:
             logger.info(f"Best experiment: {best.get('name', 'N/A')}")
-            logger.info(f"Targets met: {best.get('results', {}).get('targets_met', 0)}/8")
+            logger.info(f"Targets met: {best.get('results', {}).get('targets_met', 0)}/{n_targets}")
             logger.info(f"\nParameter modifications:")
             for mod in best.get("modifications", []):
                 logger.info(f"  - {mod['parameter']}: {mod['old_value']} → {mod['new_value']}")

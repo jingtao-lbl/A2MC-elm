@@ -27,6 +27,10 @@ class Diagnosis:
     reasoning: str
     # Requested diagnostics: scripts to run for deeper analysis
     requested_diagnostics: Optional[List[Dict]] = None  # [{tool, reason, priority, args}]
+    # Comparative case analysis (best_case vs lowest_cost_case)
+    comparative_analysis: Optional[Dict] = None
+    # Visual observations from diagnostic figures (multimodal analysis)
+    visual_observations: Optional[List[str]] = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)

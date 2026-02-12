@@ -14,7 +14,9 @@ Author: Jing Tao with Claude
 
 import os
 import json
+import base64
 import logging
+from pathlib import Path
 from typing import List, Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -325,6 +327,79 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             return message.content[0].text
         except Exception as e:
             logger.error(f"Claude API error: {e}")
+            raise
+
+    def query_with_images(self, prompt: str, image_paths: List[str],
+                          max_tokens: Optional[int] = None) -> str:
+        """Send a multimodal query to Claude with text and images.
+
+        Args:
+            prompt: The text prompt to send
+            image_paths: List of paths to PNG/JPEG image files
+            max_tokens: Max tokens for response. If None, uses A2MC_AI_MAX_TOKENS config.
+
+        Returns:
+            Claude API response text. Falls back to text-only query if no
+            images can be loaded.
+        """
+        # Load and encode images
+        image_blocks = []
+        for img_path in image_paths:
+            try:
+                p = Path(img_path)
+                if not p.exists():
+                    logger.warning(f"Image not found: {img_path}")
+                    continue
+                suffix = p.suffix.lower()
+                if suffix in ('.png',):
+                    media_type = "image/png"
+                elif suffix in ('.jpg', '.jpeg'):
+                    media_type = "image/jpeg"
+                elif suffix in ('.gif',):
+                    media_type = "image/gif"
+                elif suffix in ('.webp',):
+                    media_type = "image/webp"
+                else:
+                    logger.warning(f"Unsupported image format: {suffix} ({img_path})")
+                    continue
+                data = base64.standard_b64encode(p.read_bytes()).decode("utf-8")
+                image_blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": media_type,
+                        "data": data,
+                    }
+                })
+                logger.info(f"Loaded image: {p.name} ({p.stat().st_size / 1024:.0f} KB)")
+            except Exception as e:
+                logger.warning(f"Failed to load image {img_path}: {e}")
+
+        # Fallback to text-only if no images loaded
+        if not image_blocks:
+            logger.info("No images loaded, falling back to text-only query")
+            return self.query(prompt, max_tokens=max_tokens)
+
+        if max_tokens is None:
+            if a2mc_config:
+                max_tokens = a2mc_config.AI_MAX_TOKENS
+            else:
+                max_tokens = int(os.environ.get("A2MC_AI_MAX_TOKENS", "4096"))
+
+        # Build multimodal content: images first, then text
+        content = image_blocks + [{"type": "text", "text": prompt}]
+
+        try:
+            logger.info(f"Sending multimodal query with {len(image_blocks)} images")
+            message = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=self.SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": content}]
+            )
+            return message.content[0].text
+        except Exception as e:
+            logger.error(f"Claude multimodal API error: {e}")
             raise
 
     def _load_template_schema(self, template_name: str) -> str:

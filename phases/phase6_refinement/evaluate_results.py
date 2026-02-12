@@ -32,7 +32,7 @@ def classify_outcome(targets_met: int, total_targets: int) -> str:
 
 def evaluate_experiments(
     experiments: List[Dict],
-    total_targets: int = 8,
+    total_targets: int = 6,
     reasoning_module: Optional[Any] = None,
     memory_manager: Optional[Any] = None,
     auto_learn: bool = True
