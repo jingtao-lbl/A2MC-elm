@@ -159,11 +159,17 @@ def diagnose(self, results: Dict, targets: Dict,
         _figures_header = "No diagnostic figures attached for this iteration."
         _figures_detail = ""
 
+    # Extract previous phase insights from results so they appear as a dedicated
+    # prompt section rather than buried in the JSON blob
+    _previous_phase_insights = results.pop("previous_phase_insights", "")
+
     prompt = f"""Analyze these ELM-FATES calibration results and diagnose why targets are not being met.
 
 {rag_context}{memory_context}{targeted_param_context}
 
 {self._param_list_context}
+
+{_previous_phase_insights}
 
 ## Current Results (simulated values in g C/m²)
 {json.dumps(results, indent=2)}
