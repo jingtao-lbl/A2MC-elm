@@ -336,6 +336,10 @@ def load_ensemble_simulated(
     # Shared evaluation utility (same logic used by Phase 5 experiment evaluation)
     from tools.evaluate_case import extract_case_values
 
+    # Track skipped cases for diagnostics
+    skipped_missing_file = []
+    skipped_no_values = []
+
     # Process each case
     for i, case_num in enumerate(available_cases):
         if verbose and (i + 1) % 100 == 0:
@@ -350,6 +354,7 @@ def load_ensemble_simulated(
         )
 
         if not nc_file.exists():
+            skipped_missing_file.append(case_num)
             continue
 
         # Extract all target values from this case's NC file
@@ -357,6 +362,7 @@ def load_ensemble_simulated(
 
         # Skip if no values extracted (invalid/corrupt file)
         if not case_values:
+            skipped_no_values.append(case_num)
             continue
 
         # Append values for each target (NaN for any missing)
@@ -370,6 +376,13 @@ def load_ensemble_simulated(
 
     if verbose:
         print(f"  Loaded {len(case_numbers)} valid cases")
+        n_skipped = len(skipped_missing_file) + len(skipped_no_values)
+        if n_skipped > 0:
+            print(f"  Skipped {n_skipped} invalid cases:")
+            if skipped_missing_file:
+                print(f"    - {len(skipped_missing_file)} missing NC file (constructed path not found): {skipped_missing_file}")
+            if skipped_no_values:
+                print(f"    - {len(skipped_no_values)} no values extracted (corrupt/incomplete data): {skipped_no_values}")
 
     # Save to cache for future runs
     if use_cache:

@@ -167,9 +167,10 @@ def load_morris_ensemble_data(config: Any, screening_data: Dict = None) -> Tuple
     # Y output files
     y_outputs = {}
 
-    y_files = list(Path(use_case_dir).glob("**/Morris*Biomass*.txt"))
+    # Case-insensitive glob: files may use "Biomass" or "biomass"
+    y_files = list(Path(use_case_dir).glob("**/Morris*[Bb]iomass*.txt"))
     if not y_files:
-        y_files = list(Path(use_case_dir).parent.glob("Morris*Biomass*.txt"))
+        y_files = list(Path(use_case_dir).parent.glob("Morris*[Bb]iomass*.txt"))
 
     for y_file in y_files:
         name = y_file.stem
@@ -177,7 +178,7 @@ def load_morris_ensemble_data(config: Any, screening_data: Dict = None) -> Tuple
             var_name = 'leaf_biomass'
         elif 'Fineroot' in name or 'FineRoot' in name:
             var_name = 'froot_biomass'
-        elif 'AGB' in name or 'Aboveground' in name:
+        elif 'AGB' in name or 'Aboveground' in name or 'Abg' in name:
             var_name = 'agb_biomass'
         else:
             var_name = name
@@ -187,6 +188,21 @@ def load_morris_ensemble_data(config: Any, screening_data: Dict = None) -> Tuple
             logger.info(f"  Loaded {var_name}: shape {y_outputs[var_name].shape}")
         except Exception as e:
             logger.warning(f"  Could not load {y_file}: {e}")
+
+    # Validate: at least one biomass variable must be loaded
+    biomass_keys = [k for k in y_outputs if k in ('leaf_biomass', 'froot_biomass', 'agb_biomass')]
+    if not biomass_keys:
+        searched = [str(Path(use_case_dir)), str(Path(use_case_dir).parent)]
+        logger.error(f"  No Y output (biomass) files loaded!")
+        logger.error(f"  Searched in: {searched}")
+        logger.error(f"  Glob pattern: Morris*[Bb]iomass*.txt")
+        raise FileNotFoundError(
+            f"No Morris Y output files found. "
+            f"Expected files matching Morris*biomass*.txt in {use_case_dir}. "
+            f"Check that Phase 1 extraction outputs exist in "
+            f"use_cases/{{site}}/memory/phase_results/phase1_exploration/"
+        )
+    logger.info(f"  Y outputs loaded: {biomass_keys}")
 
     # Also include screening data if available
     if screening_data:

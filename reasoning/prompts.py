@@ -28,6 +28,7 @@ The orchestrator will run these scripts and provide results in follow-up calls.
 | `check_edge_parameters` | Find parameters at Morris sampling bounds | Suspect parameter space is too narrow |
 | `compare_case_parameters` | Compare parameters between good/bad cases | Want to find what makes best cases different |
 | `read_case_parameters` | Get exact parameter values for a case | Need specific values for diagnosis |
+| `test_morris_bounds_impact` | Analyze which parameters hit bounds and their impact on target failures | Suspect parameter space is too narrow to find solutions |
 
 ### PFT Limitation Analysis
 
@@ -37,6 +38,8 @@ The orchestrator will run these scripts and provide results in follow-up calls.
 | `analyze_allocation_dynamics` | Check L2FR and allocation responses | Suspect allocation imbalance |
 | `analyze_nutrient_limitation` | Test N/P starvation hypotheses | Suspect nutrient limits growth |
 | `analyze_light_competition` | Check inter-PFT shading effects | Suspect competition for light |
+| `test_graminoid_root_persistence` | Test root turnover and distribution impact on graminoid froot biomass | Suspect root longevity or depth drives froot failure |
+| `test_l2fr_carbon_limitation` | Test L2FR–biomass feedback and carbon limitation patterns across PFTs | Suspect high L2FR starves leaves and creates carbon limitation |
 
 ### Mortality & Collapse Analysis
 
@@ -53,6 +56,8 @@ The orchestrator will run these scripts and provide results in follow-up calls.
 | `analyze_nutrient_pools` | P and N pool time series | Suspect nutrient depletion |
 | `compare_uptake_vs_demand` | Check if uptake meets plant demand | Suspect uptake limitation |
 | `extract_p_pools` / `extract_n_pools` | Get specific nutrient pool data | Need detailed nutrient dynamics |
+| `test_p_cascade` | Test phosphatase–biomass correlation and threshold effects across PFTs | Suspect phosphatase production controls P cascade |
+| `test_phosphatase_control` | Test phosphatase enzyme parameters (vmax_ptase, alpha_ptase) control of P limitation and L2FR | Suspect enzyme kinetics limit P access for graminoids |
 
 ### Nutrient Mass Balance
 
@@ -137,11 +142,29 @@ The script will be saved and executed by the orchestrator.
 
 ### Data Reference (MUST follow exactly)
 
+#### Where the data comes from (file locations)
+
+The orchestrator pre-loads data and passes it to your function. You do NOT open files yourself.
+
+| Data | Source Files | Location |
+|------|-------------|----------|
+| `param_matrix` | Morris X matrix (`*Morris*.txt`) | `use_cases/{site}/parameters/` |
+| `y_outputs["leaf_biomass"]` | `MorrisLeafbiomass_*cases*.txt` | `use_cases/{site}/memory/phase_results/phase1_exploration/` |
+| `y_outputs["froot_biomass"]` | `MorrisFinerootbiomass_*cases*.txt` | same directory |
+| `y_outputs["agb_biomass"]` | `MorrisAbgbiomass_*cases*.txt` | same directory |
+| `screening_data` | Phase 2 screening results (dict) | passed from orchestrator state |
+
+Per-case NetCDF time series (NOT loaded into y_outputs — for reference only):
+- Location: `$A2MC_EXTRACTED_DATA/` (the extracted data directory)
+- Filename pattern: `{CASE_NAME_PATTERN}_all_variables_monthly_{startyr}_{endyr}.nc`
+- Example: `Kougarok_ELM-FATES_PtCNPEn322_TRANS_all_variables_monthly_1901_2019.nc`
+- These contain full monthly output for ALL variables (biomass, fluxes, phenology, nutrients)
+
 #### param_matrix: np.ndarray, shape (n_cases, n_params)
 Morris parameter values. Columns match `config["param_names"]` (shorthand names).
 
 #### y_outputs: dict of np.ndarray, each shape (n_cases, n_pfts)
-Biomass Y matrices loaded from Morris sensitivity analysis.
+Biomass Y matrices from Phase 1 extraction (annual-mean values per case per PFT).
 
 **Available keys and their meaning:**
 | Key | Description | Shape |
