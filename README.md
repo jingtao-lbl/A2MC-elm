@@ -1,7 +1,7 @@
 # A2MC: Agentic Adaptive Multi-target Calibration
 
 **Status:** Implementation Complete
-**Version:** 1.3 (Public Release)
+**Version:** 2.16
 **Purpose:** Fully autonomous multi-target calibration of ELM-FATES using Claude API + HPC + Adaptive Memory
 
 ---
@@ -192,7 +192,7 @@ python -m venv ~/a2mc_env
 source ~/a2mc_env/bin/activate
 
 # Install anthropic and A2MC dependencies (including RAG)
-pip install anthropic numpy pandas netCDF4 scipy SALib networkx chromadb sentence-transformers pyyaml
+pip install anthropic numpy pandas xarray netCDF4 scipy SALib networkx chromadb sentence-transformers pyyaml
 
 # Set your API key (add to ~/.bashrc for persistence)
 export AI_API_KEY="your-api-key-here"
@@ -772,12 +772,14 @@ python orchestrator.py --run --start-phase 2 --start-iteration 2
 
 # Resume from a saved checkpoint
 python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state.json
-
-# Monitor progress (main log file saved to use_cases/{site}/)
-tail -f use_cases/Kougarok/a2mc_run_*.log
 ```
 
 **Tip:** Use `screen` or `tmux` for long-running sessions on HPC.
+
+```bash
+# Monitor progress (main log file saved to use_cases/{site}/)
+tail -f use_cases/Kougarok/a2mc_run_*.log
+```
 
 All screen output is automatically saved to `use_cases/{site}/a2mc_run_{timestamp}.log`.
 
@@ -997,16 +999,15 @@ A2MC/
 │   ├── extracted/         # Generic extracted lessons (YAML)
 │   └── workflow_log.json  # Master workflow status
 │
-├── rag/                   # RAG/GraphRAG System (FATES + ELM knowledge)
+├── rag/                   # RAG/GraphRAG System (generic FATES knowledge)
 │   ├── loader.py          # Document loading
-│   ├── vector_store.py    # ChromaDB wrapper (2,707 doc chunks + 560 CDL definitions)
-│   ├── knowledge_graph.py # NetworkX graph (1,299 nodes, 2,200 edges)
+│   ├── vector_store.py    # ChromaDB wrapper
+│   ├── knowledge_graph.py # NetworkX graph
 │   ├── graph_builder.py   # Build from YAML
 │   ├── hybrid_retriever.py# Combined retrieval
 │   ├── data/
 │   │   └── curated_relationships.yaml  # Knowledge source of truth
-│   ├── chroma_db/         # Vector index
-│   └── fates_knowledge_graph.json  # Serialized graph
+│   └── chroma_db/         # Vector index
 │
 ├── docs/                  # Documentation
 │   └── fates-knowledge-base/  # FATES documentation (official + wiki)
@@ -1029,45 +1030,7 @@ A2MC/
 - [ELM-FATES Technical Reference](https://fates-users-guide.readthedocs.io/)
 - [SALib Morris Sensitivity](https://salib.readthedocs.io/)
 
----
 
-## Version History
-
-- **v1.3 (2026-02-11)** - Module refactoring, RAG expansion, output variable registry
-  - `reasoning.py` monolith split into `reasoning/` package (schemas, prompts, base, methods)
-  - RAG expansion: full FATES parameter & output CDL coverage (1,299 nodes, 2,200 edges)
-  - Two-layer graph construction: auto-extract CDL (Layer 1) + curated YAML overlay (Layer 2)
-  - CDL definitions indexed in ChromaDB with filtered queries (`query_parameters`, `query_outputs`)
-  - Targeted RAG context (`get_targeted_context`) replaces raw text injection (~9K token savings/call)
-  - New `tools/fates_output_variables.py`: FATES output variable registry
-  - Promoted diagnostic tool preference for AI-generated scripts
-  - Configurable case name pattern (`A2MC_CASE_NAME_PATTERN` with `{N}` and `{PHASE}` placeholders)
-  - Phase 4 `test_with_existing_data` extracted to `phases/phase4_hypothesis/`
-  - Phase 6 evaluation logic extracted to `phases/phase6_refinement/evaluate_results.py`
-  - HPC utilities extracted to `tools/hpc_utils.py`
-  - Three-level iteration structure: calibration round (outermost) + experiment + skip-testing
-
-- **v1.2 (2026-02-09)** - Two-level iteration and diagnostic tools
-  - Two-level iteration structure: separate counters for skip testing vs HPC experiments
-  - New CLI args: `--max-skip-testing`, `--max-experiments`, `--confidence-threshold`
-  - Diagnostic Tools Inventory: Claude API can request specific diagnostic analyses
-  - Custom script generation: Claude can write Python scripts for hypothesis testing
-  - Generated scripts saved to `phases/phase3_diagnosis/generated/`
-  - Script promotion tool: `tools/promote_diagnostic_script.py`
-
-- **v1.1 (2026-02-02)** - Knowledge system enhancements
-  - Knox 2026 CNP Guidebook integrated into three-tier knowledge system
-  - Knowledge graph expanded: 220 nodes, 562 edges (added RD_Competition, 15+ output variables)
-  - Cross-site knowledge reference documentation added
-  - CNP calibration guide: vmax tuning, PID diagnostics, spinup workflow
-
-- **v1.0 (2026-01-24)** - Initial public release
-  - 7-phase calibration workflow with intelligent iteration paths
-  - RAG/GraphRAG knowledge retrieval system for FATES
-  - Adaptive Memory System for learning across sessions
-  - Morris/Sobol sensitivity analysis via SALib
-  - HPC-native execution on NERSC Perlmutter
-  - Kougarok use case example included
 
 ---
 
