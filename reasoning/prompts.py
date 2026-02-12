@@ -14,8 +14,13 @@ Author: Jing Tao with Claude
 # =============================================================================
 # This inventory is included in AI prompts so Claude knows what scripts are
 # available and can request specific diagnostics for deeper analysis.
+#
+# The Ensemble-Level Analysis section is auto-generated at runtime from
+# discover_ensemble_tests() in phases/phase3_diagnosis/__init__.py.
+# When new test_*.py scripts with test_hypothesis() are added to that
+# directory, they appear here automatically — no manual editing needed.
 
-DIAGNOSTIC_TOOLS_INVENTORY = """
+_DIAGNOSTIC_TOOLS_INVENTORY_TEMPLATE = """
 ## Available Diagnostic Tools
 
 You can request specific diagnostic analyses by including them in your response.
@@ -28,7 +33,6 @@ The orchestrator will run these scripts and provide results in follow-up calls.
 | `check_edge_parameters` | Find parameters at Morris sampling bounds | Suspect parameter space is too narrow |
 | `compare_case_parameters` | Compare parameters between good/bad cases | Want to find what makes best cases different |
 | `read_case_parameters` | Get exact parameter values for a case | Need specific values for diagnosis |
-| `test_morris_bounds_impact` | Analyze which parameters hit bounds and their impact on target failures | Suspect parameter space is too narrow to find solutions |
 
 ### PFT Limitation Analysis
 
@@ -38,8 +42,6 @@ The orchestrator will run these scripts and provide results in follow-up calls.
 | `analyze_allocation_dynamics` | Check L2FR and allocation responses | Suspect allocation imbalance |
 | `analyze_nutrient_limitation` | Test N/P starvation hypotheses | Suspect nutrient limits growth |
 | `analyze_light_competition` | Check inter-PFT shading effects | Suspect competition for light |
-| `test_graminoid_root_persistence` | Test root turnover and distribution impact on graminoid froot biomass | Suspect root longevity or depth drives froot failure |
-| `test_l2fr_carbon_limitation` | Test L2FR–biomass feedback and carbon limitation patterns across PFTs | Suspect high L2FR starves leaves and creates carbon limitation |
 
 ### Mortality & Collapse Analysis
 
@@ -56,8 +58,6 @@ The orchestrator will run these scripts and provide results in follow-up calls.
 | `analyze_nutrient_pools` | P and N pool time series | Suspect nutrient depletion |
 | `compare_uptake_vs_demand` | Check if uptake meets plant demand | Suspect uptake limitation |
 | `extract_p_pools` / `extract_n_pools` | Get specific nutrient pool data | Need detailed nutrient dynamics |
-| `test_p_cascade` | Test phosphatase–biomass correlation and threshold effects across PFTs | Suspect phosphatase production controls P cascade |
-| `test_phosphatase_control` | Test phosphatase enzyme parameters (vmax_ptase, alpha_ptase) control of P limitation and L2FR | Suspect enzyme kinetics limit P access for graminoids |
 
 ### Nutrient Mass Balance
 
@@ -92,10 +92,7 @@ The orchestrator will run these scripts and provide results in follow-up calls.
 
 ### Ensemble-Level Analysis
 
-| Tool | Function | Use When |
-|------|----------|----------|
-| `test_p_limitation_cascade` | Test if low vmax_p drives biomass failure (correlation, threshold, PID cascade, microbial competition) | Suspect P uptake is the primary bottleneck |
-| `test_root_turnover_impact` | Test if high fineroot turnover drives PFT#10 froot failure (cross-PFT, root profile, turnover–biomass) | Suspect root turnover is too high for a PFT |
+{ensemble_tools_placeholder}
 
 ### Ensemble Visualization
 
@@ -124,6 +121,40 @@ In your JSON response, include:
 
 The orchestrator will run requested diagnostics and include results in the next call.
 """
+
+
+def _build_ensemble_tools_section():
+    """Auto-generate the Ensemble-Level Analysis table from discovered tests."""
+    try:
+        from phases.phase3_diagnosis import discover_ensemble_tests
+        tools = discover_ensemble_tests()
+    except Exception:
+        tools = {}
+
+    if not tools:
+        return "| Tool | Function | Use When |\n|------|----------|----------|\n| (none discovered) | — | — |"
+
+    lines = ["| Tool | Function | Use When |",
+             "|------|----------|----------|"]
+    for name, meta in sorted(tools.items()):
+        desc = meta.get('description', name)
+        hypothesis = meta.get('hypothesis', '')
+        use_when = hypothesis if hypothesis else f"Test: {desc}"
+        lines.append(f"| `{name}` | {desc} | {use_when} |")
+    return "\n".join(lines)
+
+
+def get_diagnostic_tools_inventory():
+    """Return the full diagnostic tools inventory with auto-discovered ensemble tests."""
+    ensemble_section = _build_ensemble_tools_section()
+    return _DIAGNOSTIC_TOOLS_INVENTORY_TEMPLATE.replace(
+        "{ensemble_tools_placeholder}", ensemble_section)
+
+
+# Backward-compatible: callers that read DIAGNOSTIC_TOOLS_INVENTORY directly
+# still get the auto-populated version (evaluated once at import time).
+DIAGNOSTIC_TOOLS_INVENTORY = get_diagnostic_tools_inventory()
+
 
 # Custom script template for hypothesis testing
 CUSTOM_SCRIPT_TEMPLATE = '''

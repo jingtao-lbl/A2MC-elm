@@ -2526,7 +2526,12 @@ Diagnosis Summary:{skip_header}
                                 nc_file=nc_file, nutrient=nutrient,
                                 pft_ids=tool_args.get('pft_ids', pft_ids)
                             )
-                            budget_summary = get_balance_summary_for_ai(budget)
+                            closure = calculate_budget_closure(budget)
+                            competition = analyze_pft_competition(
+                                nc_file=nc_file, pft_ids=pft_ids, nutrient=nutrient
+                            ) if pft_ids else None
+                            sinks = identify_nutrient_sinks(budget)
+                            budget_summary = get_balance_summary_for_ai(budget, closure, competition, sinks)
                             results['nutrient_budget'] = budget_summary
                             summaries.append(f"## {nutrient} Budget\n{budget_summary}")
                         elif tool == 'calculate_budget_closure':
@@ -2732,44 +2737,39 @@ Diagnosis Summary:{skip_header}
                         logger.warning(f"  plot_ensemble_biomass failed: {e}")
                         results[f'{tool}_error'] = {'error': str(e)}
 
-                # ---- Ensemble-level hypothesis tests ----
-                elif tool in ('test_p_limitation_cascade', 'test_root_turnover_impact'):
-                    try:
-                        from phases.phase3_diagnosis import (
-                            test_p_limitation_cascade,
-                            test_root_turnover_impact,
-                        )
-                        from phases.phase4_hypothesis.test_with_existing_data import (
-                            load_morris_ensemble_data,
-                            get_morris_param_names,
-                        )
-                        test_fn = {
-                            'test_p_limitation_cascade': test_p_limitation_cascade,
-                            'test_root_turnover_impact': test_root_turnover_impact,
-                        }[tool]
-                        param_matrix, y_outputs = load_morris_ensemble_data(self.config)
-                        param_names = get_morris_param_names(self.config)
-                        test_config = {
-                            'param_names': param_names,
-                            'pft_ids': pft_ids,
-                            'use_case_dir': str(a2mc_config.USE_CASE_DIR),
-                        }
-                        result = test_fn(param_matrix, y_outputs, screening_data, test_config)
-                        # Format as text summary
-                        lines = [f"Supported: {result.get('supported', False)}",
-                                 f"Confidence: {result.get('confidence', 0.0):.2f}"]
-                        for insight in result.get('insights', []):
-                            lines.append(f"  - {insight}")
-                        summary_text = "\n".join(lines)
-                        results[tool] = summary_text
-                        summaries.append(f"## {tool}\n{summary_text}")
-                    except Exception as e:
-                        logger.warning(f"  {tool} failed: {e}")
-                        results[f'{tool}_error'] = {'error': str(e)}
-
+                # ---- Ensemble-level hypothesis tests (auto-discovered) ----
+                # Any test_*.py in phases/phase3_diagnosis/ with test_hypothesis()
+                # is automatically available — no hardcoded dispatch needed.
                 else:
-                    logger.warning(f"  Unknown diagnostic tool: {tool}")
-                    results[f'{tool}_unknown'] = {'status': 'unknown_tool'}
+                    from phases.phase3_diagnosis import load_ensemble_test
+                    test_fn = load_ensemble_test(tool)
+                    if test_fn is not None:
+                        try:
+                            from phases.phase4_hypothesis.test_with_existing_data import (
+                                load_morris_ensemble_data,
+                                get_morris_param_names,
+                            )
+                            param_matrix, y_outputs = load_morris_ensemble_data(self.config)
+                            param_names = get_morris_param_names(self.config)
+                            test_config = {
+                                'param_names': param_names,
+                                'pft_ids': pft_ids,
+                                'use_case_dir': str(a2mc_config.USE_CASE_DIR),
+                            }
+                            result = test_fn(param_matrix, y_outputs, screening_data, test_config)
+                            lines = [f"Supported: {result.get('supported', False)}",
+                                     f"Confidence: {result.get('confidence', 0.0):.2f}"]
+                            for insight in result.get('insights', []):
+                                lines.append(f"  - {insight}")
+                            summary_text = "\n".join(lines)
+                            results[tool] = summary_text
+                            summaries.append(f"## {tool}\n{summary_text}")
+                        except Exception as e:
+                            logger.warning(f"  {tool} failed: {e}")
+                            results[f'{tool}_error'] = {'error': str(e)}
+                    else:
+                        logger.warning(f"  Unknown diagnostic tool: {tool}")
+                        results[f'{tool}_unknown'] = {'status': 'unknown_tool'}
 
             except Exception as e:
                 logger.error(f"  Diagnostic {tool} failed: {e}")

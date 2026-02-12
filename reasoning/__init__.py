@@ -18,7 +18,7 @@ Author: Jing Tao with Claude
 from reasoning.schemas import Diagnosis, Hypothesis, Experiment
 
 # Prompt constants
-from reasoning.prompts import DIAGNOSTIC_TOOLS_INVENTORY, CUSTOM_SCRIPT_TEMPLATE
+from reasoning.prompts import DIAGNOSTIC_TOOLS_INVENTORY, CUSTOM_SCRIPT_TEMPLATE, get_diagnostic_tools_inventory
 
 # Core class
 from reasoning.base import ReasoningModule
@@ -43,4 +43,5 @@ __all__ = [
     'Experiment',
     'DIAGNOSTIC_TOOLS_INVENTORY',
     'CUSTOM_SCRIPT_TEMPLATE',
+    'get_diagnostic_tools_inventory',
 ]

@@ -180,6 +180,96 @@ from .test_root_turnover_impact import (
     test_hypothesis as test_root_turnover_impact,
 )
 
+
+def discover_ensemble_tests():
+    """
+    Auto-discover promoted ensemble test scripts in this directory.
+
+    Scans for test_*.py files that define a test_hypothesis() function
+    with the standard signature (param_matrix, y_outputs, screening_data, config).
+
+    Returns:
+        Dict mapping tool name to metadata:
+        {
+            'test_p_cascade': {
+                'module': 'phases.phase3_diagnosis.test_p_cascade',
+                'description': 'Test P limitation cascade ...',
+                'hypothesis': 'Arctic P-Cascade Relief Hypothesis',
+            },
+            ...
+        }
+    """
+    import importlib
+    import re
+    _dir = Path(__file__).parent
+
+    tools = {}
+    for script in sorted(_dir.glob("test_*.py")):
+        # Skip __init__, framework, and generated/
+        if script.name in ('__init__.py', 'test_hypothesis_framework.py'):
+            continue
+
+        tool_name = script.stem  # e.g., 'test_p_cascade'
+
+        # Quick check: file must contain 'def test_hypothesis('
+        content = script.read_text()
+        if 'def test_hypothesis(' not in content:
+            continue
+
+        # Extract metadata from docstring
+        description = ''
+        hypothesis = ''
+        doc_match = re.search(r'"""(.*?)"""', content, re.DOTALL)
+        if doc_match:
+            docstring = doc_match.group(1).strip()
+            for line in docstring.split('\n'):
+                line = line.strip()
+                if line.startswith('Description:'):
+                    description = line.replace('Description:', '').strip()
+                elif line.startswith('Hypothesis:'):
+                    hypothesis = line.replace('Hypothesis:', '').strip()
+            # Fallback: use first line of docstring
+            if not description:
+                first_line = docstring.split('\n')[0].strip().rstrip('.')
+                if first_line and not first_line.startswith('Auto-generated'):
+                    description = first_line
+
+        tools[tool_name] = {
+            'module': f'phases.phase3_diagnosis.{tool_name}',
+            'description': description or f'Ensemble-level hypothesis test ({tool_name})',
+            'hypothesis': hypothesis,
+        }
+
+    return tools
+
+
+def load_ensemble_test(tool_name: str):
+    """
+    Dynamically import and return the test_hypothesis function for a tool.
+
+    Args:
+        tool_name: e.g., 'test_p_cascade'
+
+    Returns:
+        The test_hypothesis callable, or None if not found.
+    """
+    import importlib
+    try:
+        module = importlib.import_module(f'phases.phase3_diagnosis.{tool_name}')
+        fn = getattr(module, 'test_hypothesis', None)
+        if fn is None:
+            _logger.warning(f"Module {tool_name} has no test_hypothesis function")
+        return fn
+    except ImportError as e:
+        _logger.debug(f"Could not import {tool_name}: {e}")
+        return None
+
+
+import logging as _logging
+from pathlib import Path
+_logger = _logging.getLogger(__name__)
+
+
 __all__ = [
     # High-level API
     'run_diagnosis',
@@ -291,4 +381,8 @@ __all__ = [
     # Ensemble-level hypothesis tests
     'test_p_limitation_cascade',
     'test_root_turnover_impact',
+
+    # Discovery API
+    'discover_ensemble_tests',
+    'load_ensemble_test',
 ]
