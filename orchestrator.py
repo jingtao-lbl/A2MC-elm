@@ -1727,10 +1727,12 @@ Review the screening log at:
                         'n_satisfied': int(result.optimization_result.n_satisfied[idx]),
                         'n_total': len(screening_targets),
                     })
-                # Determine output path in phase log directory
+                # Determine output path in phase_results directory
+                # (consistent with Phase 1 and Phase 3 which use phase_results/)
                 fig_dir = None
-                if self._phase_logger:
-                    fig_dir = self._phase_logger._get_phase_dir(2)
+                if a2mc_config.USE_CASE_DIR:
+                    fig_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase2_screening"
+                    fig_dir.mkdir(parents=True, exist_ok=True)
                 if not fig_dir:
                     fig_dir = data_dir
                 fig_path = plot_ensemble_biomass(

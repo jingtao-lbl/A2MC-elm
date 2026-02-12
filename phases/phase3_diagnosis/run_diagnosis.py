@@ -449,6 +449,56 @@ def run_diagnosis(
         except Exception as e:
             logger.warning(f"Could not run nutrient balance: {e}")
 
+    # Step 7: Additional diagnostic plots (mortality + P mass balance)
+    if config.nc_file and config.plot_output_dir:
+        if verbose:
+            print("\nStep 7: Generating additional diagnostic plots...")
+
+        Path(config.plot_output_dir).mkdir(parents=True, exist_ok=True)
+
+        # 7a. Mortality components plot
+        try:
+            from phases.phase3_diagnosis.analyze_mortality import extract_mortality_timeseries
+            from phases.phase3_diagnosis.plot_diagnostics import plot_mortality_components
+
+            mortality_data = extract_mortality_timeseries(
+                data_files={'COMBINED': config.nc_file},
+                pft_ids=config.pft_ids
+            )
+            if mortality_data.get('time') is not None and len(mortality_data.get('time', [])) > 0:
+                mort_path = str(Path(config.plot_output_dir)
+                               / f"{config.plot_filename_prefix}mortality_components.png")
+                fig_path = plot_mortality_components(
+                    mortality_data=mortality_data,
+                    pft_ids=config.pft_ids,
+                    output_path=mort_path,
+                    title_suffix=f"Case {result.case_id}"
+                )
+                if fig_path:
+                    result.figure_paths.append(fig_path)
+                    if verbose:
+                        print(f"  Mortality components: {fig_path}")
+        except Exception as e:
+            logger.warning(f"Could not generate mortality plot: {e}")
+
+        # 7b. P mass balance plot
+        try:
+            from phases.phase3_diagnosis.plot_diagnostics import plot_p_mass_balance
+
+            p_path = str(Path(config.plot_output_dir)
+                         / f"{config.plot_filename_prefix}p_mass_balance.png")
+            fig_path = plot_p_mass_balance(
+                nc_file=config.nc_file,
+                output_path=p_path,
+                title_suffix=f"Case {result.case_id}"
+            )
+            if fig_path:
+                result.figure_paths.append(fig_path)
+                if verbose:
+                    print(f"  P mass balance: {fig_path}")
+        except Exception as e:
+            logger.warning(f"Could not generate P mass balance plot: {e}")
+
     # Build combined summary
     result.combined_summary = result.get_ai_context()
 
