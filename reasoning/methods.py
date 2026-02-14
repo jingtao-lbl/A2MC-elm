@@ -584,9 +584,11 @@ def synthesize_experiment_design(
     self,
     cumulative_insights: List[Dict],
     hypotheses: List[Dict],
-    diagnosis: Dict,
+    diagnoses: List[Dict] = None,
     sensitivity_data: Dict = None,
     previous_experiments: List = None,
+    # Backward compat: accept old 'diagnosis' kwarg
+    diagnosis: Dict = None,
 ) -> List[Dict]:
     """
     Synthesize cumulative skip-testing insights into multiple experiment designs.
@@ -602,15 +604,23 @@ def synthesize_experiment_design(
             each with: cycle, hypothesis_name, hypothesis_supported, confidence,
             test_method, key_insights, evidence_summary, parameters_tested
         hypotheses: All hypotheses generated during skip-testing
-        diagnosis: Latest diagnosis dict (from self.state.diagnoses[-1])
+        diagnoses: All diagnosis dicts from skip-testing cycles.
+            The full list lets the AI see how understanding evolved across cycles.
         sensitivity_data: Morris/Sobol sensitivity rankings
         previous_experiments: Previous HPC experiments (to avoid repeating)
+        diagnosis: Deprecated — single diagnosis dict for backward compatibility.
+            Use 'diagnoses' instead.
 
     Returns:
         List of hypothesis dicts, each with: name, mechanism, parameters,
         design_type, expected_outcomes, success_criteria, confidence.
         One per distinct experiment to run on HPC.
     """
+    # Backward compat: if caller passed 'diagnosis' (singular), wrap it
+    if diagnoses is None and diagnosis is not None:
+        diagnoses = [diagnosis]
+    elif diagnoses is None:
+        diagnoses = []
     if not cumulative_insights:
         # Nothing to synthesize - return last hypothesis as-is
         if hypotheses:
@@ -665,6 +675,25 @@ def synthesize_experiment_design(
     if previous_experiments:
         prev_exp_summary = f"\n## Previous HPC Experiments (avoid repeating)\n{json.dumps(previous_experiments, indent=2, default=str)}\n"
 
+    # Build diagnosis evolution summary (all cycles, not just latest)
+    if len(diagnoses) > 1:
+        diagnosis_context = "## Diagnosis Evolution (all skip-testing cycles)\n\n"
+        for i, diag in enumerate(diagnoses):
+            cycle_num = i + 1
+            causes = diag.get('likely_causes', [])
+            confidence = diag.get('confidence', 0)
+            recs = diag.get('parameter_recommendations', [])
+            rec_names = [r.get('parameter', '?') for r in recs[:5]]
+            diagnosis_context += f"### Cycle {cycle_num} (confidence: {confidence:.2f})\n"
+            diagnosis_context += f"**Root causes:** {'; '.join(causes[:3]) if causes else 'N/A'}\n"
+            diagnosis_context += f"**Key parameters:** {', '.join(rec_names) if rec_names else 'N/A'}\n\n"
+        diagnosis_context += f"### Latest Diagnosis (Cycle {len(diagnoses)}) — Full Detail\n"
+        diagnosis_context += json.dumps(diagnoses[-1], indent=2, default=str)
+    elif diagnoses:
+        diagnosis_context = f"## Diagnosis Context\n{json.dumps(diagnoses[-1], indent=2, default=str)}"
+    else:
+        diagnosis_context = "## Diagnosis Context\n*No diagnosis available*"
+
     # Collect all parameter modifications from hypotheses, grouped by hypothesis
     hypothesis_param_groups = []
     for hyp in hypotheses:
@@ -696,8 +725,7 @@ This allows independent testing of different mechanistic ideas in parallel on HP
 ### Refuted Hypotheses ({len(refuted)})
 {json.dumps(refuted, indent=2, default=str)}
 
-## Latest Diagnosis Context
-{json.dumps(diagnosis, indent=2, default=str)}
+{diagnosis_context}
 
 ## Hypotheses and Their Parameters
 {json.dumps(hypothesis_param_groups, indent=2, default=str)}

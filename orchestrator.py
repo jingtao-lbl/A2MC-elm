@@ -3221,7 +3221,7 @@ Diagnosis Summary:{skip_header}
                         synthesized_list = self.reasoning.synthesize_experiment_design(
                             cumulative_insights=self.state.cumulative_insights,
                             hypotheses=self.state.hypotheses,
-                            diagnosis=self.state.diagnoses[-1] if self.state.diagnoses else {},
+                            diagnoses=self.state.diagnoses,
                             sensitivity_data=self.state.exploration_data.get('sensitivity_rankings', {}),
                             previous_experiments=self.state.experiments,
                         )
