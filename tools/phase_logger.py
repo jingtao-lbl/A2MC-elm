@@ -8,14 +8,19 @@ Logs capture full AI reasoning, analyses, and results for knowledge extraction.
 Log Structure (site-specific):
     use_cases/{site}/memory/logs/
     ├── phase0_design/
-    │   └── r02_20260116a_Morris_Design.md
+    │   └── r02_20260116_143052_Morris_Design.md
     ├── phase2_screening/
-    │   └── r02_iter01_20260116b_Ensemble_Screening.md
+    │   └── r02_20260116_143052_Ensemble_Screening.md
     ├── phase3_diagnosis/
-    │   └── r02_exp01_iter03_20260116c_Root_Cause_Analysis.md
+    │   └── r02_exp01_iter03_20260116_143052_Root_Cause_Analysis.md
     └── ...
 
-Filename formats:
+Filename formats (with session_id from orchestrator):
+    Phase 0-2:     r{RR}_{session_id}_Title.md
+    Phase 3 & 4:   r{RR}_exp{EE}_iter{II}_{session_id}_Title.md
+    Phase 5 & 6:   r{RR}_iter{II}_{session_id}_Title.md
+
+Fallback formats (standalone usage, no session_id):
     Phase 0-2:     r{RR}_{YYYYMMDDx}_Title.md
     Phase 3 & 4:   r{RR}_exp{EE}_iter{II}_{YYYYMMDDx}_Title.md
     Phase 5 & 6:   r{RR}_iter{II}_{YYYYMMDDx}_Title.md
@@ -24,7 +29,8 @@ Filename formats:
     EE = experiment_count (outer loop: full 3→4→5→6 cycles, only in Phase 3 & 4)
     II = iteration within experiment cycle (1-based inner loop counter, only in Phase 3 & 4)
          For Phase 5 & 6: overall iteration counter within round
-    YYYYMMDDx = date + session letter (a, b, c for same-day logs)
+    session_id = YYYYMMDD_HHMMSS timestamp matching the run log (a2mc_run_{session_id}.log)
+    YYYYMMDDx = fallback: date + session letter (a, b, c for same-day logs)
 
     exp/iter counters only appear in Phase 3 (Diagnosis) and Phase 4 (Hypothesis)
     because the inner loop (Phase 3↔4) only applies there.
@@ -106,6 +112,7 @@ class PhaseLogger:
     """
 
     def __init__(self, site_dir: str = None, site_name: str = None,
+                 session_id: str = None,
                  calibration_round: int = None, iteration: int = None,
                  experiment_count: int = None, skip_testing_count: int = None):
         """
@@ -116,6 +123,11 @@ class PhaseLogger:
                       If None, tries to get from A2MC_USE_CASE_DIR env var
             site_name: Site name for log headers (e.g., "Kougarok")
                        If None, tries to get from A2MC_SITE_NAME env var
+            session_id: Session timestamp (YYYYMMDD_HHMMSS) from orchestrator run.
+                        When set, replaces the date+letter suffix in log filenames
+                        with this timestamp, making logs directly traceable to the
+                        run log (a2mc_run_{session_id}.log).
+                        If None, falls back to date+letter convention.
             calibration_round: Outermost loop counter (Phase 0→7 redesign cycle)
                               e.g., round 1 = 138 params, round 2 = 162 params
                               If None, tries A2MC_CALIBRATION_ROUND env var (default: 1)
@@ -174,6 +186,11 @@ class PhaseLogger:
         else:
             self.skip_testing_count = int(os.environ.get('A2MC_SKIP_TESTING_COUNT', '0'))
 
+        # Session ID from orchestrator (YYYYMMDD_HHMMSS)
+        # When set, replaces date+letter in filenames for direct run log traceability
+        self.session_id = session_id if session_id else None
+
+        # Fallback: date+letter tracking (used when session_id is not set)
         self._session_letter = 'a'  # For same-day logs: a, b, c, ...
         self._last_date = None
 
@@ -185,22 +202,35 @@ class PhaseLogger:
 
     def _get_log_filename(self, phase: int, title: str) -> str:
         """
-        Generate log filename with iteration context, date, and session letter.
+        Generate log filename with iteration context and session identifier.
 
-        Phase 3 & 4: r{RR}_exp{EE}_iter{II}_{YYYYMMDDx}_Title.md
-        Phase 5 & 6: r{RR}_iter{II}_{YYYYMMDDx}_Title.md
-        Phase 0-2:   r{RR}_{YYYYMMDDx}_Title.md  (iteration always 1, omitted)
+        When session_id is set (orchestrator run):
+            Phase 3 & 4: r{RR}_exp{EE}_iter{II}_{session_id}_Title.md
+            Phase 5 & 6: r{RR}_iter{II}_{session_id}_Title.md
+            Phase 0-2:   r{RR}_{session_id}_Title.md
+
+        Fallback (no session_id, e.g., standalone usage):
+            Phase 3 & 4: r{RR}_exp{EE}_iter{II}_{YYYYMMDDx}_Title.md
+            Phase 5 & 6: r{RR}_iter{II}_{YYYYMMDDx}_Title.md
+            Phase 0-2:   r{RR}_{YYYYMMDDx}_Title.md
 
         RR = calibration_round (outermost Phase 0→7 loop, e.g., round 1=138 params)
         EE = experiment_count (outer loop, only Phase 3 & 4)
         II = iteration within experiment cycle (1-based, = skip_testing_count + 1)
+        session_id = YYYYMMDD_HHMMSS timestamp matching the run log
         """
-        today = datetime.now().strftime("%Y%m%d")
-
-        # Reset session letter if new day
-        if self._last_date != today:
-            self._session_letter = 'a'
-            self._last_date = today
+        # Determine date portion: session_id or date+letter fallback
+        if self.session_id:
+            date_part = self.session_id
+        else:
+            today = datetime.now().strftime("%Y%m%d")
+            # Reset session letter if new day
+            if self._last_date != today:
+                self._session_letter = 'a'
+                self._last_date = today
+            date_part = f"{today}{self._session_letter}"
+            # Increment session letter for next log
+            self._session_letter = chr(ord(self._session_letter) + 1)
 
         # Clean title for filename
         clean_title = title.replace(' ', '_').replace('/', '_')[:50]
@@ -219,10 +249,7 @@ class PhaseLogger:
         else:
             iter_prefix = round_prefix
 
-        filename = f"{iter_prefix}_{today}{self._session_letter}_{clean_title}.md"
-
-        # Increment session letter for next log
-        self._session_letter = chr(ord(self._session_letter) + 1)
+        filename = f"{iter_prefix}_{date_part}_{clean_title}.md"
 
         return filename
 
@@ -290,6 +317,8 @@ class PhaseLogger:
             "timestamp": datetime.now().isoformat(),
             "site": self.site_name
         }
+        if self.session_id:
+            metadata["session_id"] = self.session_id
         # Only include skip testing counters for phases where they matter
         if phase in (3, 4):
             metadata["experiment_count"] = self.experiment_count
@@ -1397,9 +1426,10 @@ def create_logger(site_dir: str = None) -> PhaseLogger:
 
 if __name__ == "__main__":
     # Test the logger
-    # With experiment_count=1 and skip_testing_count=3, filename will be:
-    #   r02_exp01_iter04_YYYYMMDD{x}_Title.md  (iter = skip + 1 = 4)
+    # With session_id and experiment_count=1, skip_testing_count=3, filename will be:
+    #   r02_exp01_iter04_20260212_143052_Title.md  (iter = skip + 1 = 4)
     logger = PhaseLogger(site_dir="use_cases/Kougarok", site_name="Kougarok",
+                         session_id="20260212_143052",
                          calibration_round=2, iteration=2,
                          experiment_count=1, skip_testing_count=3)
 

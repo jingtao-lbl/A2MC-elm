@@ -187,12 +187,26 @@ The orchestrator pre-loads data and passes it to your function. You do NOT open 
 
 #### screening_data: dict (Phase 2 screening results)
 
+**Top-level keys:**
+
 | Key | Type | Description |
 |-----|------|-------------|
-| `"best_case"` | dict | Best case: `{"case_id": int, "composite_nrmse": float}` |
-| `"best_cases"` | list[dict] | Top cases ranked by composite NRMSE, each with `case_id`, `composite_nrmse` |
-| `"case_numbers"` | list[int] | All evaluated case numbers (maps array index → case number) |
+| `"best_case"` | dict | Best case (most targets met): `{"case_id": int, "composite_rmsre": float, "targets_met": int}` |
+| `"lowest_cost_case"` | dict | Lowest-cost case: `{"case_id": int, "composite_rmsre": float, "targets_met": int}` |
+| `"best_cases"` | list[dict] | Top cases ranked by cost, each with `case_num`, `cost`, `n_satisfied` |
+| `"case_numbers"` | list[int] | All evaluated case numbers (maps param_matrix row index → case number) |
 | `"n_cases_evaluated"` | int | Total number of cases evaluated |
+| `"n_targets"` | int | Number of validation targets |
+| `"target_performance"` | dict | Distribution of targets satisfied across ensemble |
+
+**IMPORTANT:** There is NO top-level `"case_id"` key. Case IDs are NESTED inside
+`best_case`, `lowest_cost_case`, or `best_cases` entries. Accessing
+`screening_data["case_id"]` will raise KeyError.
+
+**Key name differences in best_cases entries:**
+- From `_perform_screening()`: entries have `case_num`, `cost`, `n_satisfied`
+- From legacy loader: entries have `case_id`, `composite_nrmse`
+- Always use `.get()` with fallbacks: `c.get("case_num", c.get("case_id", 0))`
 
 **NOTE:** Validation targets are NOT in `screening_data`. They are loaded separately
 by the orchestrator. If your script needs to classify "good" vs "bad" cases, use
@@ -202,8 +216,12 @@ the diagnosis context — or use `screening_data["best_cases"]` to get pre-ranke
 **Identifying good vs bad cases:**
 ```python
 best_cases = screening_data.get("best_cases", [])
-best_case_ids = {int(c["case_id"]) for c in best_cases[:10]}  # Top 10
+# Handle both key name conventions with fallback:
+best_case_ids = {int(c.get("case_num", c.get("case_id", 0))) for c in best_cases[:10]}
 case_numbers = screening_data.get("case_numbers", [])
+
+# Map case number → param_matrix row index:
+case_to_idx = {cn: i for i, cn in enumerate(case_numbers)} if case_numbers else {}
 ```
 
 Per-case NetCDF time series (NOT loaded into y_outputs — for reference only):

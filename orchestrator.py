@@ -279,6 +279,10 @@ class Config:
     max_experiments: int = 10        # Max Phase 3→4→5→6 full experiment cycles
     hypothesis_confidence_threshold: float = 0.95  # Exit skip testing when confidence >= this
     auto_skip_testing: bool = True   # Auto-continue Phase 3↔4 cycles (no checkpoint during skip testing)
+    skip_testing_stagnation_window: int = 3  # Exit early if confidence doesn't improve in N consecutive cycles
+
+    # Session identifier (YYYYMMDD_HHMMSS timestamp, set in main())
+    session_id: str = ""
 
     # Validation targets (loaded from site config)
     targets: ValidationTargets = field(default_factory=ValidationTargets)
@@ -405,6 +409,7 @@ class CalibrationOrchestrator:
                 self._phase_logger = PhaseLogger(
                     site_dir=site_dir,
                     site_name=site_name,
+                    session_id=self.config.session_id,
                     iteration=self.state.iteration,
                     experiment_count=self.state.experiment_count,
                     skip_testing_count=self.state.skip_testing_count
@@ -3178,10 +3183,34 @@ Diagnosis Summary:{skip_header}
 
             # Check if should exit skip testing and proceed to HPC
             confidence = test_result.get('confidence', 0)
-            if (confidence >= self.config.hypothesis_confidence_threshold or
-                self.state.skip_testing_count >= self.config.max_skip_testing):
 
-                logger.info(f"Exiting Skip Testing after {self.state.skip_testing_count} cycles")
+            # Stagnation detection: exit early if confidence hasn't improved
+            # across the last N consecutive cycles (avoids wasting cycles)
+            stagnation_exit = False
+            window = self.config.skip_testing_stagnation_window
+            insights = self.state.cumulative_insights
+            if len(insights) >= window and window > 0:
+                recent_confidences = [
+                    ins.get('confidence', 0) for ins in insights[-window:]
+                ]
+                max_recent = max(recent_confidences)
+                # Stagnant if all recent cycles have zero or near-zero confidence
+                # or if best recent confidence hasn't improved over earlier best
+                earlier_best = max(
+                    (ins.get('confidence', 0) for ins in insights[:-window]),
+                    default=0
+                )
+                if max_recent <= earlier_best and max_recent < self.config.hypothesis_confidence_threshold:
+                    stagnation_exit = True
+
+            if (confidence >= self.config.hypothesis_confidence_threshold or
+                self.state.skip_testing_count >= self.config.max_skip_testing or
+                stagnation_exit):
+
+                exit_reason = "confidence threshold met" if confidence >= self.config.hypothesis_confidence_threshold \
+                    else "stagnation detected" if stagnation_exit \
+                    else "max cycles reached"
+                logger.info(f"Exiting Skip Testing after {self.state.skip_testing_count} cycles ({exit_reason})")
                 logger.info(f"  Confidence: {confidence:.2f} (threshold: {self.config.hypothesis_confidence_threshold})")
                 logger.info(f"  Skip testing cycles: {self.state.skip_testing_count}/{self.config.max_skip_testing}")
 
@@ -3918,6 +3947,8 @@ Phase numbers:
                        help="Max full experiment cycles 3→4→5→6 (default: 10)")
     parser.add_argument("--confidence-threshold", type=float, default=0.95,
                        help="Hypothesis confidence threshold to exit skip testing (default: 0.95)")
+    parser.add_argument("--stagnation-window", type=int, default=3,
+                       help="Exit skip testing early if confidence stagnates for N cycles (default: 3)")
     parser.add_argument("--no-review", action="store_true", help="Skip human review points")
     parser.add_argument("--manual-skip-testing", action="store_true",
                        help="Require manual review at each skip-testing cycle (default: auto-continue)")
@@ -3976,6 +4007,9 @@ Phase numbers:
                 logger.error("  source use_cases/{site}/config/{site}_config.sh")
                 sys.exit(1)
 
+    # Generate session ID (used for both run log filename and phase log filenames)
+    session_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+
     # Create config (values from args override environment/config defaults)
     config = Config(
         state_file=state_file,
@@ -3991,7 +4025,9 @@ Phase numbers:
         n_trajectories=args.n_trajectories or 0,
         n_samples=args.n_samples or 0,
         n_levels=args.n_levels,
-        n_parameters=args.n_parameters or 0
+        n_parameters=args.n_parameters or 0,
+        skip_testing_stagnation_window=args.stagnation_window,
+        session_id=session_id
     )
 
     # Create output directory
@@ -4004,7 +4040,7 @@ Phase numbers:
         log_parent = Path(a2mc_config.USE_CASE_DIR)
     except (ImportError, AttributeError):
         log_parent = Path(os.environ.get('A2MC_USE_CASE_DIR', config.output_dir))
-    log_filename = f"a2mc_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    log_filename = f"a2mc_run_{session_id}.log"
     log_filepath = log_parent / log_filename
 
     # Tee class: writes to both original stream and log file
@@ -4029,11 +4065,18 @@ Phase numbers:
     sys.stdout = TeeStream(sys.__stdout__, log_file_handle)
     sys.stderr = TeeStream(sys.__stderr__, log_file_handle)
 
-    # Also add file handler to root logger for logging module output
-    file_handler = logging.FileHandler(log_filepath)
-    file_handler.setLevel(logging.INFO)
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logging.getLogger().addHandler(file_handler)
+    # Redirect the root logger's existing StreamHandler (created by basicConfig
+    # at import time) to use the new TeeStream stderr. This ensures logging
+    # module output goes to both the console AND the log file via TeeStream,
+    # instead of only to the original stderr (which bypasses the log file).
+    # We intentionally avoid adding a separate FileHandler because it would
+    # open a second file descriptor to the same log file, causing write
+    # position conflicts (TeeStream uses 'w' mode, FileHandler uses 'a' mode).
+    root_logger = logging.getLogger()
+    for handler in root_logger.handlers:
+        if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+            handler.stream = sys.stderr  # Now points to TeeStream
+            break
 
     logger.info(f"Log file: {log_filepath}")
 
@@ -4134,8 +4177,12 @@ Phase numbers:
         # Restore stdout/stderr and close log file
         sys.stdout = sys.__stdout__
         sys.stderr = sys.__stderr__
-        logging.getLogger().removeHandler(file_handler)
-        file_handler.close()
+        # Restore root logger's StreamHandler to original stderr
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers:
+            if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
+                handler.stream = sys.__stderr__
+                break
         log_file_handle.close()
 
 

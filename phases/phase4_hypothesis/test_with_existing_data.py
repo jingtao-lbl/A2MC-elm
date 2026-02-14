@@ -24,6 +24,25 @@ from typing import Dict, List, Optional, Any, Tuple
 logger = logging.getLogger(__name__)
 
 
+def _sanitize_numpy_types(obj):
+    """Recursively convert numpy types to native Python types for JSON serialization."""
+    import numpy as np
+    if isinstance(obj, dict):
+        return {k: _sanitize_numpy_types(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [_sanitize_numpy_types(v) for v in obj]
+    elif isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    elif isinstance(obj, (np.integer,)):
+        return int(obj)
+    elif isinstance(obj, (np.floating,)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
+
+
+
 def test_hypothesis_with_existing_data(
     hypothesis: Dict,
     config: Any,
@@ -182,6 +201,10 @@ def load_morris_ensemble_data(config: Any, screening_data: Dict = None) -> Tuple
             var_name = 'agb_biomass'
         else:
             var_name = name
+
+        # Skip duplicates (recursive glob may find same variable from multiple paths)
+        if var_name in y_outputs:
+            continue
 
         try:
             y_outputs[var_name] = np.loadtxt(y_file)
@@ -758,6 +781,9 @@ except ImportError:
                 'next_steps': ['Ensure test_hypothesis returns a dict']
             }
 
+        # Sanitize numpy types to native Python for JSON serialization
+        result = _sanitize_numpy_types(result)
+
         # Ensure required fields
         result.setdefault('hypothesis_supported', False)
         result.setdefault('confidence', 0.0)
@@ -848,6 +874,9 @@ def _execute_promoted_tool(
         if not isinstance(result, dict):
             logger.warning(f"  Promoted tool returned {type(result)}, expected dict")
             return None
+
+        # Sanitize numpy types to native Python for JSON serialization
+        result = _sanitize_numpy_types(result)
 
         result.setdefault('hypothesis_supported', False)
         result.setdefault('confidence', 0.0)
