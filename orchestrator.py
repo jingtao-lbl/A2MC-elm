@@ -1914,10 +1914,18 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
             exploration_data = self.state.exploration_data
 
             # Run diagnostic scripts to get actual parameter values and edge analysis
+            # Skip figure generation if this case's figures were already analyzed
+            best_case_id_for_guard = screening_data.get('best_case', {}).get('case_id')
+            figures_already_done = (
+                best_case_id_for_guard
+                and best_case_id_for_guard == self.state.figures_analyzed_case_id
+            )
             diagnostic_data = None
             if HAS_DIAGNOSIS_TOOLS:
                 try:
-                    diagnostic_data = self._run_diagnostic_scripts(screening_data)
+                    diagnostic_data = self._run_diagnostic_scripts(
+                        screening_data, skip_figures=figures_already_done
+                    )
                     if diagnostic_data:
                         logger.info(f"Diagnostic analysis complete:")
                         logger.info(f"  Parameters read: {len(diagnostic_data.parameters)}")
@@ -1976,6 +1984,9 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
             # Handle requested diagnostics (if AI requested additional analyses)
             requested_diagnostics = diagnosis.get('requested_diagnostics', [])
             if requested_diagnostics and HAS_DIAGNOSIS_TOOLS:
+                # Preserve visual_observations from first call
+                first_visual_obs = diagnosis.get('visual_observations')
+
                 logger.info(f"AI requested {len(requested_diagnostics)} additional diagnostics")
                 additional_context = self._execute_requested_diagnostics(
                     requested_diagnostics, screening_data
@@ -1984,7 +1995,14 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                     # Re-run diagnosis with enhanced context
                     logger.info("Re-running diagnosis with enhanced context...")
                     diagnosis_input['diagnostic_context'] = additional_context
+                    # Don't send images again — already analyzed in first call
+                    diagnosis_input['diagnostic_images'] = []
                     diagnosis = self._diagnose_with_claude(diagnosis_input)
+
+                    # Restore visual_observations if re-run didn't produce its own
+                    if first_visual_obs and not diagnosis.get('visual_observations'):
+                        diagnosis['visual_observations'] = first_visual_obs
+                        logger.info("Restored visual_observations from first diagnosis call")
 
             self.state.diagnoses.append(diagnosis)
 
@@ -2346,7 +2364,7 @@ Diagnosis Summary:{skip_header}
 
         return result
 
-    def _run_diagnostic_scripts(self, screening_data: Dict) -> Optional['DiagnosisResult']:
+    def _run_diagnostic_scripts(self, screening_data: Dict, skip_figures: bool = False) -> Optional['DiagnosisResult']:
         """
         Run Phase 3 diagnostic scripts to gather actual data.
 
@@ -2443,9 +2461,12 @@ Diagnosis Summary:{skip_header}
                         logger.info(f"Found NC file for lowest_cost case {lowest_cost_id}: {nc_file_lowest}")
 
             # Compute plot output directory (phase_results, not logs)
+            # Skip figure generation if already generated for this case
             plot_output_dir = None
             plot_filename_prefix = ""
-            if a2mc_config.USE_CASE_DIR:
+            if skip_figures:
+                logger.info("Skipping figure generation (case already analyzed in previous cycle)")
+            elif a2mc_config.USE_CASE_DIR:
                 plot_output_dir = str(
                     Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase3_diagnosis"
                 )
@@ -3080,7 +3101,8 @@ Diagnosis Summary:{skip_header}
             previous_experiments=self.state.experiments,
             iteration=self.state.iteration,
             existing_hypotheses=self.state.hypotheses,
-            existing_diagnoses=self.state.diagnoses
+            existing_diagnoses=self.state.diagnoses,
+            screening_data=self.state.screening_data
         )
 
         # Only append if this is a new hypothesis (not resumed)
@@ -3154,6 +3176,10 @@ Diagnosis Summary:{skip_header}
             logger.info(f"  Test method: {test_result.get('test_method', 'unknown')}")
             logger.info(f"  Result: {'SUPPORTED' if test_result.get('hypothesis_supported') else 'NOT SUPPORTED'}")
             logger.info(f"  Confidence: {test_result.get('confidence', 0):.2f}")
+
+            # Sanitize numpy types before storing in state (for JSON serialization)
+            from phases.phase4_hypothesis.test_with_existing_data import _sanitize_numpy_types
+            test_result = _sanitize_numpy_types(test_result)
 
             # Record test result
             self.state.hypothesis_tests.append(test_result)

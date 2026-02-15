@@ -20,7 +20,8 @@ def generate_hypothesis_with_claude(
     diagnosis: Dict,
     reasoning_module: Any,
     exploration_data: Dict,
-    previous_experiments: list
+    previous_experiments: list,
+    screening_data: Dict = None
 ) -> Dict:
     """
     Use Claude API to generate hypothesis from diagnosis.
@@ -30,6 +31,7 @@ def generate_hypothesis_with_claude(
         reasoning_module: Initialized ReasoningModule instance
         exploration_data: Sensitivity analysis data from Phase 1
         previous_experiments: List of previous experiment dicts
+        screening_data: Screening results with case IDs for context
 
     Returns:
         Hypothesis dict
@@ -41,7 +43,8 @@ def generate_hypothesis_with_claude(
         hypothesis = reasoning_module.generate_hypothesis(
             diagnosis=diagnosis_obj,
             sensitivity_data=exploration_data.get('sensitivity_rankings', {}),
-            previous_experiments=previous_experiments
+            previous_experiments=previous_experiments,
+            screening_data=screening_data
         )
         return asdict(hypothesis) if hasattr(hypothesis, '__dict__') else hypothesis
     except Exception as e:
@@ -98,7 +101,8 @@ def run_hypothesis_generation(
     previous_experiments: list,
     iteration: int,
     existing_hypotheses: list = None,
-    existing_diagnoses: list = None
+    existing_diagnoses: list = None,
+    screening_data: Dict = None
 ) -> Dict:
     """
     High-level API for hypothesis generation.
@@ -114,6 +118,7 @@ def run_hypothesis_generation(
         iteration: Current iteration number
         existing_hypotheses: List of existing hypotheses (for resume check)
         existing_diagnoses: List of existing diagnoses (for resume check)
+        screening_data: Screening results with case IDs for context
 
     Returns:
         Hypothesis dict (new or existing)
@@ -132,7 +137,8 @@ def run_hypothesis_generation(
     if reasoning_module:
         logger.info("Using Claude API for hypothesis generation...")
         hypothesis = generate_hypothesis_with_claude(
-            diagnosis, reasoning_module, exploration_data, previous_experiments
+            diagnosis, reasoning_module, exploration_data, previous_experiments,
+            screening_data=screening_data
         )
     else:
         logger.info("Using rule-based hypothesis generation...")

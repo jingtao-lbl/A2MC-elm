@@ -169,6 +169,25 @@ def diagnose(self, results: Dict, targets: Dict,
     # prompt section rather than buried in the JSON blob
     _previous_phase_insights = results.pop("previous_phase_insights", "")
 
+    # Extract diagnostic data summary for prominent placement
+    # (prevents AI from hallucinating numbers that contradict diagnostic tool output)
+    _diag_summary = ""
+    diag_ctx = results.get("diagnostic_context", {})
+    if diag_ctx:
+        edge_sum = diag_ctx.get("edge_summary", "")
+        redesign = diag_ctx.get("redesign_candidates", [])
+        _diag_summary = f"""## Diagnostic Tool Results (VERIFIED -- cite these, do NOT fabricate numbers)
+
+{edge_sum if edge_sum else "No edge parameters detected."}
+
+Redesign candidates: {len(redesign)}
+{chr(10).join(f'- {r}' for r in redesign[:10]) if redesign else '(none)'}
+
+CRITICAL: The above edge parameter counts come from actual diagnostic scripts.
+When you reference "parameters at bounds" in your diagnosis, use ONLY the counts above.
+DO NOT fabricate numbers. If the tool reports 0 edge parameters, do not claim otherwise.
+"""
+
     prompt = f"""Analyze these ELM-FATES calibration results and diagnose why targets are not being met.
 
 {rag_context}{memory_context}{targeted_param_context}
@@ -176,6 +195,8 @@ def diagnose(self, results: Dict, targets: Dict,
 {self._param_list_context}
 
 {_previous_phase_insights}
+
+{_diag_summary}
 
 ## Current Results (simulated values in g C/m²)
 {json.dumps(results, indent=2)}
@@ -332,6 +353,12 @@ Return a JSON object with this structure:
 **IMPORTANT**: If you need more data to form a confident diagnosis, use `requested_diagnostics`
 to request specific diagnostic analyses. The orchestrator will run them and provide results.
 
+**IMPORTANT**: All quantitative claims must be supported by the data provided.
+If the Diagnostic Tool Results show 0 edge parameters, do NOT claim "X parameters at bounds."
+When referencing specific parameter values or edge cases, always cite the case ID
+(e.g., "Case #322 has vmax_ptase at lower bound"). Generic claims like "parameters
+are at bounds" without case attribution are not acceptable.
+
 Respond ONLY with the JSON object, no additional text."""
 
     # Use multimodal query if diagnostic images are provided
@@ -353,7 +380,8 @@ Respond ONLY with the JSON object, no additional text."""
 
 def generate_hypothesis(self, diagnosis: Diagnosis,
                        sensitivity_data: Dict,
-                       previous_experiments: List[Dict]) -> Hypothesis:
+                       previous_experiments: List[Dict],
+                       screening_data: Dict = None) -> Hypothesis:
     """
     Generate a testable hypothesis from diagnosis.
 
@@ -361,6 +389,7 @@ def generate_hypothesis(self, diagnosis: Diagnosis,
         diagnosis: Diagnosis object from previous phase
         sensitivity_data: Full sensitivity analysis data
         previous_experiments: List of experiments already tried
+        screening_data: Screening results with case IDs for context
 
     Returns:
         Structured Hypothesis object
@@ -421,10 +450,32 @@ def generate_hypothesis(self, diagnosis: Diagnosis,
     # Build concise sensitivity summary
     sensitivity_summary = _build_sensitivity_summary(sensitivity_data)
 
+    # Build reference case context from screening data
+    _case_context = ""
+    if screening_data:
+        bc = screening_data.get('best_case', {})
+        lc = screening_data.get('lowest_cost_case', {})
+        bc_id = bc.get('case_id', 'N/A')
+        lc_id = lc.get('case_id', 'N/A')
+        bc_rmsre = bc.get('composite_rmsre', bc.get('cost', 'N/A'))
+        lc_rmsre = lc.get('composite_rmsre', lc.get('cost', 'N/A'))
+        bc_met = bc.get('targets_met', 'N/A')
+        lc_met = lc.get('targets_met', 'N/A')
+        _case_context = f"""## Reference Cases
+- **Best case:** #{bc_id} (composite_rmsre: {bc_rmsre}, targets_met: {bc_met})
+- **Lowest cost case:** #{lc_id} (composite_rmsre: {lc_rmsre}, targets_met: {lc_met})
+
+When discussing parameter values, edge cases, or diagnostic findings, ALWAYS reference
+the specific case ID (e.g., "Case #{bc_id}'s phosphatase parameters are at lower bounds").
+Do NOT make generic statements without case attribution.
+"""
+
     prompt = f"""Based on this diagnosis, generate a testable hypothesis for ELM-FATES calibration.
 {rag_context}{failed_approaches_context}{targeted_param_context}
 
 {self._param_list_context}
+
+{_case_context}
 
 ## Diagnosis
 {diagnosis.to_json()}

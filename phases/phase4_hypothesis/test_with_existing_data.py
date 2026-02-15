@@ -371,7 +371,7 @@ def test_by_case_comparison(
     else:
         insights.append(f"No clear relationship between {param_name} and outcomes in existing data")
 
-    return {
+    return _sanitize_numpy_types({
         'hypothesis_supported': supported,
         'confidence': confidence,
         'evidence': evidence,
@@ -379,7 +379,7 @@ def test_by_case_comparison(
         'next_steps': [
             'Proceed with targeted experiments' if not supported else 'Consider alternative parameters'
         ]
-    }
+    })
 
 
 def test_by_correlation(
@@ -451,7 +451,7 @@ def test_by_correlation(
     else:
         insights.append(f"No significant correlation found for {param_name}")
 
-    return {
+    return _sanitize_numpy_types({
         'hypothesis_supported': supported,
         'confidence': confidence,
         'evidence': evidence,
@@ -460,7 +460,7 @@ def test_by_correlation(
             'Parameter shows promise, proceed with experiments' if supported
             else 'Consider alternative mechanisms'
         ]
-    }
+    })
 
 
 def test_by_threshold(
@@ -537,7 +537,7 @@ def test_by_threshold(
         f"Best-performing cases have {direction} {param_name} values (z={diff_zscore:.2f})"
     ]
 
-    return {
+    return _sanitize_numpy_types({
         'hypothesis_supported': supported,
         'confidence': confidence,
         'evidence': evidence,
@@ -546,7 +546,7 @@ def test_by_threshold(
             f'Prioritize {direction} values of {param_name}' if supported
             else 'Parameter does not distinguish good from bad cases'
         ]
-    }
+    })
 
 
 def test_by_diagnostic(
@@ -618,13 +618,13 @@ def test_by_diagnostic(
                     supported = 'failure' in str(diagnostic_result.mortality_analysis).lower()
                     confidence = 0.6
 
-            return {
+            return _sanitize_numpy_types({
                 'hypothesis_supported': supported,
                 'confidence': confidence,
                 'evidence': evidence,
                 'insights': diagnostic_result.key_insights if hasattr(diagnostic_result, 'key_insights') else [],
                 'next_steps': ['Use diagnostic insights to refine hypothesis']
-            }
+            })
 
     except Exception as e:
         logger.error(f"Diagnostic test failed: {e}")
