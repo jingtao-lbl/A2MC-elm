@@ -622,6 +622,7 @@ class PhaseLogger:
                       named_discoveries: List[Dict] = None,
                       questions_for_discussion: List[str] = None,
                       figure_paths: List[str] = None,
+                      figure_analyses: List = None,
                       metadata: Dict = None) -> Path:
         """
         Log Phase 3: Diagnosis with full AI reasoning.
@@ -643,6 +644,9 @@ class PhaseLogger:
             pool_tracking: P/N/C pool tracking data (template pattern)
             named_discoveries: Named patterns found (e.g., "Perfect Storm")
             questions_for_discussion: Open questions for next steps
+            figure_analyses: AI visual observations for figures. List of dicts
+                with 'figure' (keyword matching filename) and 'analysis' (description).
+                Can also be a list of plain strings (backward compat).
             metadata: Additional metadata
         """
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -815,9 +819,35 @@ class PhaseLogger:
 ## Diagnostic Figures
 
 """
+            # Build lookup from figure_analyses for matching descriptions to figures
+            # Supports both structured dicts ({"figure": "keyword", "analysis": "..."})
+            # and plain strings (backward compat, rendered as unmatched observations)
+            analyses_lookup = {}  # keyword -> analysis text
+            unmatched_analyses = []
+            if figure_analyses:
+                for entry in figure_analyses:
+                    if isinstance(entry, dict) and entry.get('figure'):
+                        analyses_lookup[entry['figure'].lower()] = entry.get('analysis', '')
+                    elif isinstance(entry, str):
+                        unmatched_analyses.append(entry)
+
             for fig_path in figure_paths:
                 fig_name = Path(fig_path).name
                 content += f"![{fig_name}](../../phase_results/phase3_diagnosis/{fig_name})\n\n"
+
+                # Find matching analysis by checking if any keyword is in the filename
+                fig_lower = fig_name.lower()
+                for keyword, analysis in analyses_lookup.items():
+                    if keyword in fig_lower and analysis:
+                        content += f"> **AI Analysis:** {analysis}\n\n"
+                        break
+
+            # Render any unmatched plain-string observations at the end
+            if unmatched_analyses:
+                content += "### Additional Visual Observations\n\n"
+                for obs in unmatched_analyses:
+                    content += f"- {obs}\n"
+                content += "\n"
 
         if context_used:
             content += f"""

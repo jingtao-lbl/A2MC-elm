@@ -2028,6 +2028,7 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                             'experiments': len(self.state.experiments) > 0
                         },
                         figure_paths=fig_paths if fig_paths else None,
+                        figure_analyses=diagnosis.get('visual_observations'),
                         metadata={
                             'iteration': self.state.iteration,
                             'screening_data_summary': {

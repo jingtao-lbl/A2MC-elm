@@ -154,6 +154,12 @@ def diagnose(self, results: Dict, targets: Dict,
             "\n"
             "\nIncorporate visual observations into your diagnosis. Reference specific temporal patterns,"
             "\noscillation severity, and anomalies visible in the plots."
+            "\n"
+            "\n**IMPORTANT**: In `visual_observations`, provide a STRUCTURED analysis for each figure."
+            "\nEach entry must have a `figure` keyword (e.g., `pft7_diagnosis`, `pft9_diagnosis`,"
+            "\n`pft10_diagnosis`, `mortality_components`, `p_mass_balance`) and an `analysis` string"
+            "\ndescribing what you see. For two-case comparisons, prefix with case role"
+            "\n(e.g., `best_case_pft7_diagnosis`, `lowest_cost_pft10_diagnosis`)."
         )
     else:
         _figures_header = "No diagnostic figures attached for this iteration."
@@ -303,7 +309,14 @@ Return a JSON object with this structure:
         "rationale": "Why this case is the better starting point"
     }},
     "visual_observations": [
-        "Key pattern observed in diagnostic figures (if attached)"
+        {{
+            "figure": "pft7_diagnosis",
+            "analysis": "Description of key patterns observed in this PFT7 figure"
+        }},
+        {{
+            "figure": "mortality_components",
+            "analysis": "Description of mortality patterns observed"
+        }}
     ],
     "requested_diagnostics": [
         {{
