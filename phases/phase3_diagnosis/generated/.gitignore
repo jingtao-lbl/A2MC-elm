@@ -1,0 +1,3 @@
+# AI-generated hypothesis test scripts are runtime artifacts.
+# Promoted scripts live in phases/phase3_diagnosis/ directly.
+*.py
