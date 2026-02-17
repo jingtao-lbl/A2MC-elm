@@ -3087,17 +3087,21 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
                 try:
                     outcome = "completed" if exp.get("status") == "completed" else exp.get("status", "unknown")
                     self._memory.record_experiment(
-                        experiment_id=exp.get("name", "unnamed"),
-                        base_case=exp.get("base_case", "unknown"),
-                        modifications=exp.get("modifications", []),
+                        experiment=exp,
                         results=exp.get("results", {}),
-                        outcome=outcome
+                        outcome=outcome,
                     )
                     logger.debug(f"Recorded experiment '{exp.get('name')}' to memory")
                 except Exception as e:
                     logger.warning(f"Could not record experiment to memory: {e}")
 
         # --- 9. Phase logger ---
+        # Build hypothesis summary from synthesized hypotheses used for experiments
+        hyp_names = [h.get('name', 'unknown') for h in synthesized if isinstance(h, dict)]
+        hyp_summary = ', '.join(hyp_names) if hyp_names else 'unknown'
+        hyp_mechanisms = [h.get('mechanism', '') for h in synthesized if isinstance(h, dict)]
+        mechanism_summary = '; '.join(m for m in hyp_mechanisms if m) or 'unknown'
+
         try:
             exp_names = []
             results_summary = {}
@@ -3115,8 +3119,8 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
                 title=f"Iteration_{current_iter}_Testing",
                 experiments_run=exp_names,
                 results_summary=results_summary,
-                ai_reasoning=f"Hypothesis: {hypothesis.get('name', 'unknown')}\n"
-                             f"Mechanism: {hypothesis.get('mechanism', 'unknown')}"
+                ai_reasoning=f"Hypothesis: {hyp_summary}\n"
+                             f"Mechanism: {mechanism_summary}"
             )
         except Exception as e:
             logger.warning(f"Phase logging failed: {e}")
@@ -3129,7 +3133,7 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
 
             summary = f"""
   Iteration: {current_iter}
-  Hypothesis: {hypothesis.get('name', 'unknown')}
+  Hypothesis: {hyp_summary}
   Experiments: {len(experiments)} total
     Completed: {completed}
     Simulated: {simulated}

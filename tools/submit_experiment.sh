@@ -66,8 +66,8 @@ set -e
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Load configuration
-source "${SCRIPT_DIR}/a2mc_config.sh"
+# Load configuration (a2mc_config.sh is at the project root, one level up from tools/)
+source "${SCRIPT_DIR}/../a2mc_config.sh"
 
 # ========================
 # ARGUMENT PARSING
