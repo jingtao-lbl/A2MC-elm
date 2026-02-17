@@ -169,6 +169,9 @@ def diagnose(self, results: Dict, targets: Dict,
     # prompt section rather than buried in the JSON blob
     _previous_phase_insights = results.pop("previous_phase_insights", "")
 
+    # Extract evidence ledger context (Iter 2+ hypothesis-driven diagnosis)
+    _evidence_ledger_ctx = results.pop("evidence_ledger_context", "")
+
     # Extract diagnostic data summary for prominent placement
     # (prevents AI from hallucinating numbers that contradict diagnostic tool output)
     _diag_summary = ""
@@ -195,6 +198,8 @@ DO NOT fabricate numbers. If the tool reports 0 edge parameters, do not claim ot
 {self._param_list_context}
 
 {_previous_phase_insights}
+
+{_evidence_ledger_ctx}
 
 {_diag_summary}
 
@@ -653,6 +658,7 @@ def synthesize_experiment_design(
     previous_experiments: List = None,
     # Backward compat: accept old 'diagnosis' kwarg
     diagnosis: Dict = None,
+    evidence_ledger: Dict = None,
 ) -> List[Dict]:
     """
     Synthesize cumulative skip-testing insights into multiple experiment designs.
@@ -758,21 +764,30 @@ def synthesize_experiment_design(
     else:
         diagnosis_context = "## Diagnosis Context\n*No diagnosis available*"
 
-    # Collect all parameter modifications from hypotheses, grouped by hypothesis
-    hypothesis_param_groups = []
-    for hyp in hypotheses:
-        h = hyp if isinstance(hyp, dict) else (hyp.__dict__ if hasattr(hyp, '__dict__') else {})
-        params = h.get('parameters', h.get('parameters_to_test', []))
-        if params:
-            hypothesis_param_groups.append({
-                'hypothesis_name': h.get('name', 'unknown'),
-                'mechanism': h.get('mechanism', ''),
-                'parameters': params,
-                'was_supported': any(
-                    i.get('hypothesis_supported') and i.get('hypothesis_name') == h.get('name')
-                    for i in cumulative_insights
-                )
-            })
+    # Build evidence ledger section (replaces raw hypothesis_param_groups dump)
+    evidence_ledger_section = ""
+    if evidence_ledger:
+        evidence_ledger_section = format_evidence_ledger_for_prompt(evidence_ledger)
+    else:
+        # Fallback: collect param groups from hypotheses (no ledger available)
+        hypothesis_param_groups = []
+        for hyp in hypotheses:
+            h = hyp if isinstance(hyp, dict) else (hyp.__dict__ if hasattr(hyp, '__dict__') else {})
+            params = h.get('parameters', h.get('parameters_to_test', []))
+            if params:
+                hypothesis_param_groups.append({
+                    'hypothesis_name': h.get('name', 'unknown'),
+                    'mechanism': h.get('mechanism', ''),
+                    'parameters': params,
+                    'was_supported': any(
+                        i.get('hypothesis_supported') and i.get('hypothesis_name') == h.get('name')
+                        for i in cumulative_insights
+                    )
+                })
+        evidence_ledger_section = (
+            f"## Hypotheses and Their Parameters\n"
+            f"{json.dumps(hypothesis_param_groups, indent=2, default=str)}"
+        )
 
     prompt = f"""You are synthesizing {len(cumulative_insights)} skip-testing cycles into MULTIPLE experiment designs for HPC testing.
 
@@ -791,22 +806,25 @@ This allows independent testing of different mechanistic ideas in parallel on HP
 
 {diagnosis_context}
 
-## Hypotheses and Their Parameters
-{json.dumps(hypothesis_param_groups, indent=2, default=str)}
+{evidence_ledger_section}
 {sensitivity_summary}{prev_exp_summary}
 
 ## Synthesis Task
 
 Create a SEPARATE experiment design for each distinct supported hypothesis.
+Use the evidence ledger to decide which parameters to include.
 
 ### Rules:
 1. **One experiment per supported hypothesis** — keep them independent so we can identify which mechanism matters
-2. **Refine parameters** using all evidence gathered across cycles (adjust values based on what was learned)
-3. **EXCLUDE refuted parameters** — do not include parameters from refuted hypotheses unless strong counter-evidence exists
-4. **Prioritize** high-sensitivity parameters (from Morris rankings)
-5. **Set realistic values**: Stay within physically realistic bounds
-6. **Use cumulative design** within each experiment (safest for multi-parameter changes)
-7. **If two supported hypotheses share parameters**: note the overlap but keep them as separate experiments
+2. **Multi-cycle parameters (3+ cycles) are STRONG candidates** — include unless you have explicit counter-evidence (cite the cycle and evidence)
+3. **Dropped parameters (active in 2+ previous cycles but missing in latest)** require EXPLICIT justification for exclusion
+4. **Single-cycle parameters are WEAK** — include only with strong mechanistic rationale
+5. **Refine values** using all evidence gathered across cycles (adjust based on what was learned)
+6. **EXCLUDE refuted parameters** unless strong counter-evidence exists
+7. **Prioritize** high-sensitivity parameters (from Morris rankings)
+8. **Use cumulative design** within each experiment (safest for multi-parameter changes)
+9. **For each parameter you INCLUDE**: cite which cycles support it and the evidence
+10. **For each parameter you EXCLUDE from the active set**: provide a specific reason
 
 ## Response Format
 Return a JSON array of experiment designs (one per supported hypothesis):
@@ -821,7 +839,7 @@ Return a JSON array of experiment designs (one per supported hypothesis):
                 "pft": 9,
                 "current": 0.787,
                 "proposed": 0.30,
-                "rationale": "Why this change (citing evidence from skip testing)",
+                "rationale": "Why this change (citing evidence from skip testing cycles X, Y, Z)",
                 "bounds": [0.1, 1.0],
                 "sensitivity_rank": 3
             }}
@@ -835,7 +853,10 @@ Return a JSON array of experiment designs (one per supported hypothesis):
         }},
         "confidence": 0.85,
         "source_hypothesis": "Original hypothesis name this refines",
-        "synthesis_summary": "What evidence supports this experiment"
+        "synthesis_summary": "What evidence supports this experiment",
+        "excluded_parameters_justification": {{
+            "param_name": "Reason for exclusion despite evidence"
+        }}
     }}
 ]
 ```
@@ -1798,3 +1819,256 @@ def check_proposed_modifications(self, modifications: List[Dict]) -> Dict:
         "recommendations": recommendations,
         "safe_to_proceed": safe_to_proceed
     }
+
+
+# =========================================================================
+# Evidence Ledger Functions (standalone, not ReasoningModule methods)
+# =========================================================================
+
+def update_evidence_ledger(
+    ledger: Dict,
+    hypothesis: Dict,
+    cycle_num: int,
+    test_result: Optional[Dict] = None,
+) -> None:
+    """
+    Update the parameter evidence ledger after a skip-testing cycle.
+
+    Tracks which parameters have been proposed across cycles, how many times
+    each was supported, and creates an evidence trail so the AI can see
+    parameter-level history across the skip-testing inner loop.
+
+    Args:
+        ledger: The parameter_evidence_ledger dict (mutated in place).
+        hypothesis: Hypothesis dict with 'parameters' (or 'parameters_to_test').
+        cycle_num: Current skip-testing cycle number (1-based).
+        test_result: Optional test result dict with 'hypothesis_supported', 'confidence'.
+    """
+    params = hypothesis.get('parameters', hypothesis.get('parameters_to_test', []))
+    current_param_names = set()
+
+    for p in params:
+        name = p.get('name', '')
+        if not name:
+            continue
+        current_param_names.add(name)
+
+        if name not in ledger:
+            # New parameter — first time proposed
+            ledger[name] = {
+                'fates_name': p.get('fates_name', ''),
+                'pft': p.get('pft', None),
+                'first_proposed_cycle': cycle_num,
+                'last_proposed_cycle': cycle_num,
+                'times_proposed': 1,
+                'times_supported': 0,
+                'proposed_values': [p.get('proposed', p.get('new_value'))],
+                'current_status': 'active',
+                'drop_reason': None,
+                'evidence_trail': [
+                    {'cycle': cycle_num, 'action': 'proposed',
+                     'value': p.get('proposed', p.get('new_value')),
+                     'source': 'hypothesis'}
+                ],
+            }
+        else:
+            entry = ledger[name]
+            entry['last_proposed_cycle'] = cycle_num
+            entry['times_proposed'] += 1
+            entry['proposed_values'].append(p.get('proposed', p.get('new_value')))
+            entry['current_status'] = 'active'
+            entry['drop_reason'] = None
+
+            # Determine if value changed
+            prev_value = entry['proposed_values'][-2] if len(entry['proposed_values']) >= 2 else None
+            new_value = p.get('proposed', p.get('new_value'))
+            action = 'refined' if prev_value != new_value else 'kept'
+            trail_entry = {
+                'cycle': cycle_num, 'action': action,
+                'value': new_value, 'source': 'hypothesis',
+            }
+            if action == 'refined' and p.get('rationale'):
+                trail_entry['reason'] = p['rationale']
+            entry['evidence_trail'].append(trail_entry)
+
+            # Cap evidence trail at 20 entries
+            if len(entry['evidence_trail']) > 20:
+                entry['evidence_trail'] = entry['evidence_trail'][-20:]
+
+    # Mark dropped parameters (were active but not in current hypothesis)
+    for name, entry in ledger.items():
+        if name not in current_param_names and entry.get('current_status') == 'active':
+            entry['current_status'] = 'dropped'
+            entry['drop_reason'] = f'Not included in cycle {cycle_num} hypothesis'
+            entry['evidence_trail'].append({
+                'cycle': cycle_num, 'action': 'dropped',
+                'reason': entry['drop_reason'],
+            })
+            if len(entry['evidence_trail']) > 20:
+                entry['evidence_trail'] = entry['evidence_trail'][-20:]
+
+    # Update support counts from test result
+    if test_result and test_result.get('hypothesis_supported'):
+        for name in current_param_names:
+            if name in ledger:
+                ledger[name]['times_supported'] += 1
+
+
+def check_hypothesis_regression(
+    current_hypothesis: Dict,
+    previous_hypothesis: Dict,
+    ledger: Dict,
+) -> Optional[Dict]:
+    """
+    Detect if current hypothesis unjustifiably drops multi-cycle parameters.
+
+    Returns a warning dict if regression detected, None otherwise.
+    This is a warning, not a blocker — the AI may have valid reasons.
+
+    Args:
+        current_hypothesis: Current hypothesis dict.
+        previous_hypothesis: Previous hypothesis dict.
+        ledger: Parameter evidence ledger.
+
+    Returns:
+        Dict with 'dropped_params' and 'warning' if regression detected, else None.
+    """
+    prev_params = {
+        p.get('name', '') for p in
+        previous_hypothesis.get('parameters', previous_hypothesis.get('parameters_to_test', []))
+    }
+    curr_params = {
+        p.get('name', '') for p in
+        current_hypothesis.get('parameters', current_hypothesis.get('parameters_to_test', []))
+    }
+
+    dropped = prev_params - curr_params
+    if not dropped:
+        return None
+
+    # Check if dropped params were multi-cycle active
+    unjustified_drops = []
+    for param in dropped:
+        entry = ledger.get(param, {})
+        if entry.get('times_proposed', 0) >= 2:
+            unjustified_drops.append(param)
+
+    if unjustified_drops:
+        return {
+            'dropped_params': list(unjustified_drops),
+            'warning': (
+                f"Hypothesis dropped {len(unjustified_drops)} multi-cycle parameter(s) "
+                f"without justification: {', '.join(unjustified_drops)}"
+            ),
+        }
+    return None
+
+
+def format_evidence_ledger_for_prompt(
+    ledger: Dict,
+    max_params: int = 20,
+) -> str:
+    """
+    Render the evidence ledger as Markdown tables for AI prompt context.
+
+    Produces three sections: Active params, Dropped params, Single-Cycle params.
+    Caps output at top max_params by times_proposed.
+
+    Args:
+        ledger: The parameter_evidence_ledger dict.
+        max_params: Maximum number of parameters to include.
+
+    Returns:
+        Markdown string with evidence tables and selection rules.
+    """
+    if not ledger:
+        return "*No parameter evidence ledger available.*"
+
+    # Categorize
+    active = []
+    dropped = []
+    single_cycle = []
+
+    for name, entry in ledger.items():
+        status = entry.get('current_status', 'active')
+        times = entry.get('times_proposed', 0)
+        if status == 'active' and times >= 2:
+            active.append((name, entry))
+        elif status == 'dropped' and times >= 2:
+            dropped.append((name, entry))
+        else:
+            single_cycle.append((name, entry))
+
+    # Sort by times_proposed descending
+    active.sort(key=lambda x: x[1].get('times_proposed', 0), reverse=True)
+    dropped.sort(key=lambda x: x[1].get('times_proposed', 0), reverse=True)
+    single_cycle.sort(key=lambda x: x[1].get('times_proposed', 0), reverse=True)
+
+    # Cap total
+    total = len(active) + len(dropped) + len(single_cycle)
+    if total > max_params:
+        # Prioritize active, then dropped, then single-cycle
+        remaining = max_params
+        active = active[:remaining]
+        remaining -= len(active)
+        dropped = dropped[:remaining]
+        remaining -= len(dropped)
+        single_cycle = single_cycle[:remaining]
+
+    lines = [f"## Parameter Evidence Ledger ({sum(1 for _, e in ledger.items() if e.get('current_status') == 'active')} active, "
+             f"{sum(1 for _, e in ledger.items() if e.get('current_status') == 'dropped')} dropped)\n"]
+
+    # Active parameters
+    if active:
+        lines.append("### Active Parameters (recommended in 2+ cycles)")
+        lines.append("| Parameter | PFT | Times Proposed | Times Supported | Latest Value | First→Last Cycle |")
+        lines.append("|-----------|-----|---------------|-----------------|-------------|-----------------|")
+        for name, entry in active:
+            pft = entry.get('pft', '?')
+            tp = entry.get('times_proposed', 0)
+            ts = entry.get('times_supported', 0)
+            vals = entry.get('proposed_values', [])
+            latest = vals[-1] if vals else '?'
+            if isinstance(latest, float):
+                latest = f"{latest:.4g}"
+            fc = entry.get('first_proposed_cycle', '?')
+            lc = entry.get('last_proposed_cycle', '?')
+            lines.append(f"| {name} | {pft} | {tp} | {ts} | {latest} | {fc}→{lc} |")
+        lines.append("")
+
+    # Dropped parameters
+    if dropped:
+        lines.append("### Dropped Parameters (previously active, not in latest cycle)")
+        lines.append("| Parameter | PFT | Drop Reason | Was Active Cycles |")
+        lines.append("|-----------|-----|-------------|-------------------|")
+        for name, entry in dropped:
+            pft = entry.get('pft', '?')
+            reason = entry.get('drop_reason', 'Unknown')
+            fc = entry.get('first_proposed_cycle', '?')
+            lc = entry.get('last_proposed_cycle', '?')
+            tp = entry.get('times_proposed', 0)
+            lines.append(f"| {name} | {pft} | {reason} | {fc}→{lc} ({tp} cycles) |")
+        lines.append("")
+
+    # Single-cycle parameters
+    if single_cycle:
+        lines.append("### Single-Cycle Parameters (proposed once only)")
+        lines.append("| Parameter | PFT | Cycle | Supported? |")
+        lines.append("|-----------|-----|-------|-----------|")
+        for name, entry in single_cycle:
+            pft = entry.get('pft', '?')
+            fc = entry.get('first_proposed_cycle', '?')
+            ts = entry.get('times_supported', 0)
+            supported_str = 'Yes' if ts > 0 else 'No'
+            lines.append(f"| {name} | {pft} | {fc} | {supported_str} |")
+        lines.append("")
+
+    # Selection rules
+    lines.append("### Rules for Parameter Selection")
+    lines.append("1. Parameters active in 3+ cycles are **STRONG** candidates — include unless you have explicit counter-evidence (cite the cycle and evidence)")
+    lines.append("2. Parameters dropped from the latest cycle but active in 2+ previous cycles require **EXPLICIT justification** for exclusion")
+    lines.append("3. Single-cycle parameters are **WEAK** candidates — include only with strong mechanistic rationale")
+    lines.append("4. For each parameter you INCLUDE: cite which cycles support it and the evidence")
+    lines.append("5. For each parameter you EXCLUDE from the active set: provide a specific reason")
+
+    return "\n".join(lines)

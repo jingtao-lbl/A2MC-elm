@@ -24,6 +24,7 @@ Usage:
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -33,7 +34,10 @@ _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from tools.modify_fates_parameters import create_modified_parameter_file, verify_modifications
+from tools.modify_fates_parameters import (
+    build_param_lookup, resolve_parameter_name,
+    create_modified_parameter_file, verify_modifications,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +119,18 @@ def create_experiment_param_files(
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Build parameter name lookup for shorthand → full name resolution
+    param_list_file = os.environ.get('A2MC_PARAM_LIST_FILE', '')
+    param_lookup = None
+    if param_list_file and Path(param_list_file).exists():
+        try:
+            param_lookup = build_param_lookup(param_list_file)
+            logger.info(f"Loaded parameter name lookup: {len(param_lookup)} entries from {Path(param_list_file).name}")
+        except Exception as e:
+            logger.warning(f"Could not build parameter lookup: {e}. Shorthand names will not be resolved.")
+    else:
+        logger.warning("A2MC_PARAM_LIST_FILE not set or not found. Shorthand parameter names will not be resolved.")
+
     updated_experiments = []
 
     for exp in experiments:
@@ -149,21 +165,37 @@ def create_experiment_param_files(
             updated_experiments.append(exp)
             continue
 
-        # Build output filename
-        output_file = out_dir / f"fates_params_{name}.nc"
+        # Build output filename: base name stem + short experiment suffix
+        # e.g., fates_params_..._En322.nc → fates_params_..._En322_exp1.nc
+        base_stem = base_path.stem  # e.g., fates_params_api25.5.0_..._En322
+        output_file = out_dir / f"{base_stem}_{name}.nc"
 
         try:
             # Convert experiment modification format to tool format
             # Tool expects: {'param', 'pft', 'value'/'percent', 'organ'}
+            # Resolve shorthand names (e.g., 'vmax_ptase_10') to full FATES names
             tool_modifications = []
             for mod in modifications:
+                raw_name = mod["parameter"]
+                explicit_pft = mod.get("pft", None)
+                explicit_organ = mod.get("organ", None)
+
+                fates_name, pft, organ = resolve_parameter_name(
+                    raw_name, pft=explicit_pft, organ=explicit_organ,
+                    param_lookup=param_lookup,
+                )
+
+                if raw_name != fates_name:
+                    organ_str = f", organ={organ}" if organ is not None else ""
+                    logger.info(f"  Resolved '{raw_name}' → '{fates_name}' (PFT={pft}{organ_str})")
+
                 tool_mod = {
-                    "param": mod["parameter"],
-                    "pft": mod.get("pft", 0),
+                    "param": fates_name,
+                    "pft": pft,
                     "value": mod["new_value"],
                 }
-                if "organ" in mod:
-                    tool_mod["organ"] = mod["organ"]
+                if organ is not None:
+                    tool_mod["organ"] = organ
                 tool_modifications.append(tool_mod)
 
             # Create modified file
@@ -181,10 +213,10 @@ def create_experiment_param_files(
             # Verify if requested
             if verify:
                 expected = []
-                for mod, result in zip(modifications, results):
+                for tool_mod, result in zip(tool_modifications, results):
                     expected.append({
-                        "param": mod["parameter"],
-                        "pft": mod.get("pft", 0),
+                        "param": tool_mod["param"],
+                        "pft": tool_mod["pft"],
                         "expected_value": result["new_value"]
                     })
                 is_correct = verify_modifications(
@@ -211,6 +243,80 @@ def create_experiment_param_files(
                 f"{len(updated_experiments)} total")
 
     return updated_experiments
+
+
+def design_experiment_sequence(hypothesis: Dict, screening_data: Dict) -> List[Dict]:
+    """Design experiment sequence from hypothesis.
+
+    Builds a list of experiment dicts (cumulative or factorial) from a
+    hypothesis specification.  Extracted from orchestrator._design_experiment_sequence().
+
+    Args:
+        hypothesis: Hypothesis dict with 'parameters' (or 'parameters_to_test'),
+            'design_type' (or 'experimental_design'), 'name', 'expected_outcome'.
+        screening_data: Screening results; used to get base_case ID.
+
+    Returns:
+        List of experiment dicts, each with: name, hypothesis, base_case,
+        modifications, expected_outcome.
+    """
+    import itertools
+
+    design_type = hypothesis.get("design_type", hypothesis.get("experimental_design", "cumulative"))
+    params = hypothesis.get("parameters", hypothesis.get("parameters_to_test", []))
+    base_case = screening_data.get("best_case", {}).get("case_id", "2678")
+
+    experiments = []
+
+    if design_type == "cumulative":
+        # Cumulative: exp1 = A, exp2 = A+B, exp3 = A+B+C
+        cumulative_mods = []
+        for i, param in enumerate(params):
+            mod = {
+                "parameter": param["name"],
+                "old_value": param.get("current"),
+                "new_value": param.get("proposed"),
+            }
+            if "pft" in param:
+                mod["pft"] = param["pft"]
+            if "organ" in param:
+                mod["organ"] = param["organ"]
+            cumulative_mods.append(mod)
+            experiments.append({
+                "name": f"exp{i+1}",
+                "hypothesis": hypothesis.get('name', 'test'),
+                "base_case": base_case,
+                "modifications": cumulative_mods.copy(),
+                "expected_outcome": hypothesis.get("expected_outcome",
+                                                   hypothesis.get("expected_outcomes", ""))
+            })
+
+    elif design_type == "factorial":
+        # Factorial: All combinations
+        for r in range(1, len(params) + 1):
+            for combo in itertools.combinations(range(len(params)), r):
+                mods = []
+                for i in combo:
+                    mod = {
+                        "parameter": params[i]["name"],
+                        "old_value": params[i].get("current"),
+                        "new_value": params[i].get("proposed"),
+                    }
+                    if "pft" in params[i]:
+                        mod["pft"] = params[i]["pft"]
+                    if "organ" in params[i]:
+                        mod["organ"] = params[i]["organ"]
+                    mods.append(mod)
+                experiments.append({
+                    "name": f"exp{len(experiments)+1}",
+                    "hypothesis": hypothesis.get('name', 'test'),
+                    "base_case": base_case,
+                    "modifications": mods,
+                    "expected_outcome": hypothesis.get("expected_outcome",
+                                                       hypothesis.get("expected_outcomes", ""))
+                })
+
+    return experiments
 
 
 def main():

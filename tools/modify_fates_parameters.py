@@ -26,11 +26,124 @@ Created: December 9, 2025
 """
 
 import argparse
+import logging
 import netCDF4 as nc
 import numpy as np
+import re
 import shutil
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+# Organ name → 1-based index mapping (matches modify_parameter() convention)
+ORGAN_NAME_TO_INDEX = {
+    'leaf': 1,
+    'fineroot': 2,
+    'sapwood': 3,
+    'storage': 4,
+}
+
+
+def build_param_lookup(param_list_file):
+    """
+    Parse a parameter list file and build a shorthand → resolution dict.
+
+    The parameter list file has tab-separated columns:
+        No  ELM-FATES_name  Shorthand  Lower  Upper  Default  Description
+
+    Returns:
+        dict: shorthand → {'fates_name': str, 'pft': int, 'organ': int or None}
+              pft is 1-based (7, 9, 10, etc.) or 0 for global parameters.
+              organ is 1-based (1=leaf, 2=fineroot, 3=sapwood, 4=storage) or None.
+    """
+    lookup = {}
+    param_list_file = Path(param_list_file)
+
+    if not param_list_file.exists():
+        raise FileNotFoundError(f"Parameter list file not found: {param_list_file}")
+
+    with open(param_list_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#') or line.startswith('='):
+                continue
+
+            parts = line.split('\t')
+            if len(parts) < 4:
+                continue
+
+            try:
+                int(parts[0])  # Column number — skip non-data lines
+            except ValueError:
+                continue
+
+            fates_name = parts[1].strip()
+            shorthand = parts[2].strip()
+
+            # Extract PFT from shorthand suffix (_7, _9, _10, etc.)
+            pft = 0
+            pft_match = re.search(r'_(\d+)$', shorthand)
+            if pft_match:
+                pft = int(pft_match.group(1))
+
+            # Extract organ from shorthand — only when organ name immediately precedes PFT suffix
+            # e.g., stoich_nitr_leaf_7 → organ=leaf, but alloc_storage_cushion_7 → no organ
+            organ = None
+            if pft_match:
+                pft_suffix = pft_match.group(0)  # e.g., "_10"
+                for organ_name, organ_idx in ORGAN_NAME_TO_INDEX.items():
+                    if shorthand.endswith(f'_{organ_name}{pft_suffix}'):
+                        organ = organ_idx
+                        break
+
+            lookup[shorthand] = {
+                'fates_name': fates_name,
+                'pft': pft,
+                'organ': organ,
+            }
+
+    return lookup
+
+
+def resolve_parameter_name(name, pft=None, organ=None, param_lookup=None):
+    """
+    Resolve a parameter name (shorthand or full) to (fates_name, pft, organ).
+
+    Resolution order:
+    1. If name is in param_lookup → use lookup values (shorthand resolution)
+    2. If name starts with 'fates_' → pass through as full name
+    3. Otherwise → return as-is (caller will get a clear NetCDF error)
+
+    Explicit pft/organ arguments override lookup values when provided.
+
+    Args:
+        name: Parameter name (shorthand like 'vmax_ptase_10' or full like 'fates_cnp_eca_vmax_ptase')
+        pft: Explicit PFT index (overrides lookup if not None)
+        organ: Explicit organ index (overrides lookup if not None)
+        param_lookup: Dict from build_param_lookup(), or None to skip lookup
+
+    Returns:
+        tuple: (fates_name, pft, organ) where pft is int (0=global) and organ is int or None
+    """
+    resolved_name = name
+    resolved_pft = pft if pft is not None else 0
+    resolved_organ = organ
+
+    if param_lookup and name in param_lookup:
+        entry = param_lookup[name]
+        resolved_name = entry['fates_name']
+        if pft is None:
+            resolved_pft = entry['pft']
+        if organ is None:
+            resolved_organ = entry['organ']
+    elif not name.startswith('fates_'):
+        # Not in lookup and not a full FATES name — warn but pass through
+        logger.warning(f"Parameter '{name}' not found in lookup and doesn't start with 'fates_'. "
+                       f"Passing through as-is.")
+
+    return (resolved_name, resolved_pft, resolved_organ)
+
 
 def modify_parameter(nc_file, param_name, pft_index, new_value=None, percent_change=None, organ=None, verbose=True):
     """

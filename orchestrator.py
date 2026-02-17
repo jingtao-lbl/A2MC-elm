@@ -197,6 +197,11 @@ class WorkflowState:
     # Passed to next diagnosis so AI can build on previous findings
     cumulative_insights: List = field(default_factory=list)
 
+    # Parameter Evidence Ledger: tracks per-parameter evidence across skip-testing cycles
+    # Key: parameter shorthand name, Value: dict with times_proposed, evidence_trail, etc.
+    # Backward compatible: missing key in old state files → empty dict via default_factory
+    parameter_evidence_ledger: Dict = field(default_factory=dict)
+
     # History tracking
     phase_history: List = field(default_factory=list)
 
@@ -1973,6 +1978,26 @@ Focus diagnosis on identifying which PFT combinations conflict and whether param
                 "comparative_analysis": comparative_analysis,  # best_case vs lowest_cost_case
             }
 
+            # Add evidence ledger context for Iter 2+ (focused hypothesis-driven diagnosis)
+            if self.state.skip_testing_count > 0 and self.state.parameter_evidence_ledger:
+                from reasoning.methods import format_evidence_ledger_for_prompt
+                ledger = self.state.parameter_evidence_ledger
+                active_params = [k for k, v in ledger.items() if v.get('current_status') == 'active']
+                dropped_params = [k for k, v in ledger.items() if v.get('current_status') == 'dropped']
+                evidence_context = (
+                    f"\n## Evidence Ledger Context (Cycle {self.state.skip_testing_count + 1})\n\n"
+                    f"Active parameters under investigation: {', '.join(active_params) or 'None'}\n"
+                    f"Recently dropped: {', '.join(dropped_params) or 'None'}\n\n"
+                    f"Focus your diagnosis on:\n"
+                    f"1. Gathering NEW evidence for/against active parameters\n"
+                    f"2. Investigating if dropped parameters should be reinstated\n"
+                    f"3. Identifying parameter INTERACTIONS not yet tested\n\n"
+                    f"{format_evidence_ledger_for_prompt(ledger)}"
+                )
+                diagnosis_input['evidence_ledger_context'] = evidence_context
+                logger.info(f"Added evidence ledger context: {len(active_params)} active, "
+                           f"{len(dropped_params)} dropped params")
+
             # Use Claude API for diagnosis (if available)
             if self.reasoning:
                 logger.info("Using Claude API for diagnosis...")
@@ -2188,6 +2213,12 @@ Diagnosis Summary:{skip_header}
                 results["comparative_analysis"] = comparative_analysis
                 logger.info("Added comparative case analysis to Claude reasoning")
 
+            # Add evidence ledger context for focused hypothesis-driven diagnosis (Iter 2+)
+            evidence_ledger_ctx = diagnosis_input.get("evidence_ledger_context")
+            if evidence_ledger_ctx:
+                results["evidence_ledger_context"] = evidence_ledger_ctx
+                logger.info("Added evidence ledger context to Claude reasoning")
+
             # Add previous phase AI insights so diagnosis builds on earlier analysis
             prior_insights = []
             # Screening AI analysis (Phase 2)
@@ -2255,824 +2286,46 @@ Diagnosis Summary:{skip_header}
     def _build_comparative_analysis(self, screening_data: Dict) -> Dict:
         """Build comparative evaluation of best_case vs lowest_cost_case.
 
-        Evaluates each reference case against targets using both ±20% tolerance
-        and obs_std-based ranges. This gives the AI a richer picture of which
-        case is a better starting point for refinement.
-
-        Args:
-            screening_data: Screening results containing best_case, lowest_cost_case,
-                and best_cases (top N list with per-target values)
-
-        Returns:
-            Dict with per-case evaluation including std-range satisfaction
+        Thin wrapper — implementation in phases/phase3_diagnosis/comparative.py.
         """
-        from tools.cost_functions import within_tolerance
-
-        # Load screening targets (which have obs_std)
-        try:
-            from phases.phase2_screening.screen_ensemble import load_kougarok_targets
-            screening_targets = load_kougarok_targets()
-        except Exception as e:
-            logger.warning(f"Could not load screening targets for comparative analysis: {e}")
-            return {}
-
-        best_case = screening_data.get('best_case', {})
-        lowest_cost = screening_data.get('lowest_cost_case', {})
-        top_cases = screening_data.get('best_cases', [])
-
-        def _evaluate_case(case_id, case_info):
-            """Evaluate a single case against all targets."""
-            # Find the case's per-target values in the top_cases list
-            case_data = None
-            for tc in top_cases:
-                cid = tc.get('case_num', tc.get('case_id'))
-                if cid == case_id:
-                    case_data = tc
-                    break
-
-            if not case_data:
-                return None
-
-            per_target = {}
-            targets_met_20pct = 0
-            targets_met_std = 0
-
-            for target_name, target_obj in screening_targets.items():
-                # Per-target error is stored in top_cases as 'errors' dict or individual keys
-                sim_value = case_data.get('simulated', {}).get(target_name)
-                error = case_data.get('errors', {}).get(target_name)
-
-                # Check ±20% tolerance
-                within_20pct = False
-                within_std = False
-                if sim_value is not None:
-                    within_20pct = within_tolerance(sim_value, target_obj.observed, 0.2)
-                    # Check obs_std-based range (absolute tolerance: obs ± obs_std)
-                    if target_obj.obs_std is not None and target_obj.obs_std > 0:
-                        within_std = within_tolerance(
-                            sim_value, target_obj.observed,
-                            tolerance=target_obj.obs_std,
-                            tolerance_type='absolute'
-                        )
-                    else:
-                        within_std = within_20pct  # fallback to ±20% if no std
-                elif error is not None:
-                    # Use error value to reconstruct
-                    within_20pct = abs(error) <= 0.2
-
-                if within_20pct:
-                    targets_met_20pct += 1
-                if within_std:
-                    targets_met_std += 1
-
-                per_target[target_name] = {
-                    'observed': target_obj.observed,
-                    'obs_std': target_obj.obs_std,
-                    'simulated': sim_value,
-                    'relative_error': error,
-                    'within_20pct': within_20pct,
-                    'within_std': within_std,
-                }
-
-            return {
-                'case_id': case_id,
-                'rmsre': case_info.get('composite_rmsre', case_info.get('composite_nrmse')),
-                'targets_met_20pct': targets_met_20pct,
-                'targets_met_std': targets_met_std,
-                'total_targets': len(screening_targets),
-                'per_target': per_target,
-            }
-
-        result = {}
-        if best_case.get('case_id'):
-            eval_best = _evaluate_case(best_case['case_id'], best_case)
-            if eval_best:
-                result['best_case'] = eval_best
-
-        if lowest_cost.get('case_id'):
-            eval_lowest = _evaluate_case(lowest_cost['case_id'], lowest_cost)
-            if eval_lowest:
-                result['lowest_cost_case'] = eval_lowest
-
-        if result:
-            logger.info(f"Comparative analysis: best_case meets "
-                       f"{result.get('best_case', {}).get('targets_met_20pct', '?')}/20pct, "
-                       f"{result.get('best_case', {}).get('targets_met_std', '?')}/std; "
-                       f"lowest_cost meets "
-                       f"{result.get('lowest_cost_case', {}).get('targets_met_20pct', '?')}/20pct, "
-                       f"{result.get('lowest_cost_case', {}).get('targets_met_std', '?')}/std")
-
-        return result
+        from phases.phase3_diagnosis.comparative import build_comparative_analysis
+        return build_comparative_analysis(screening_data)
 
     def _run_diagnostic_scripts(self, screening_data: Dict, skip_figures: bool = False) -> Optional['DiagnosisResult']:
-        """
-        Run Phase 3 diagnostic scripts to gather actual data.
+        """Run Phase 3 diagnostic scripts to gather actual data.
 
-        This method calls the diagnosis scripts to:
-        1. Read actual parameter values for the best case
-        2. Check which parameters are at sampling bounds
-        3. Compare best case with other top cases
-        4. Run PFT-specific diagnostics (if NC file available)
-
-        Args:
-            screening_data: Screening results from Phase 2
-
-        Returns:
-            DiagnosisResult with parameter values, edge analysis, etc.
-            Returns None if diagnostic tools unavailable or fail.
+        Thin wrapper — implementation in phases/phase3_diagnosis/run_diagnostics_scripts.py.
         """
         if not HAS_DIAGNOSIS_TOOLS:
             logger.warning("Diagnosis tools not available")
             return None
-
-        try:
-            from tools.config import config as a2mc_config
-
-            # Get paths from config
-            morris_file = a2mc_config.ENSEMBLE_MATRIX_FILE
-            param_names_file = a2mc_config.PARAM_LIST_FILE
-            param_bounds_file = a2mc_config.SALIB_PROBLEM_FILE
-
-            # Validate paths exist
-            if not morris_file or not Path(morris_file).exists():
-                logger.warning(f"Morris file not found: {morris_file}")
-                return None
-            if not param_names_file or not Path(param_names_file).exists():
-                logger.warning(f"Param names file not found: {param_names_file}")
-                return None
-
-            # Get PFT IDs from config or use defaults
-            pft_ids = []
-            pft_str = os.environ.get('A2MC_PFTS', '7,9,10')
-            if pft_str:
-                pft_ids = [int(p.strip()) for p in pft_str.split(',')]
-
-            # Get targets from config, falling back to screening targets
-            targets = None
-            if hasattr(self.config.targets, 'biomass'):
-                targets = asdict(self.config.targets).get('biomass', {})
-            if not targets:
-                # Build targets dict from screening module's target definitions
-                try:
-                    from phases.phase2_screening.screen_ensemble import load_kougarok_targets
-                    screening_targets = load_kougarok_targets()
-                    # Convert {PFT7_leaf: Target(...)} -> {PFT7: {leaf: obs_val}}
-                    targets = {}
-                    for tname, tobj in screening_targets.items():
-                        parts = tname.split('_', 1)  # e.g. 'PFT7_leaf' -> ['PFT7', 'leaf']
-                        if len(parts) == 2:
-                            pft_key, var_name = parts
-                            if pft_key not in targets:
-                                targets[pft_key] = {}
-                            targets[pft_key][var_name] = tobj.observed
-                    if targets:
-                        logger.info(f"Loaded {sum(len(v) for v in targets.values())} targets from screening module")
-                except Exception as e:
-                    logger.warning(f"Could not load screening targets: {e}")
-
-            # Get NC file path for best case (if available)
-            nc_file = None
-            best_case = screening_data.get('best_case', {})
-            if best_case:
-                # Try to construct NC file path
-                case_id = best_case.get('case_id', best_case.get('case_num'))
-                if case_id:
-                    extracted_dir = a2mc_config.EXTRACTED_DATA
-                    if extracted_dir and Path(extracted_dir).exists():
-                        # Look for extracted NC file
-                        pattern = f"*En{case_id}_*all_variables*.nc"
-                        nc_files = list(Path(extracted_dir).glob(pattern))
-                        if nc_files:
-                            nc_file = str(nc_files[0])
-                            logger.info(f"Found NC file for case {case_id}: {nc_file}")
-
-            # Also resolve NC file for lowest_cost_case (if different from best_case)
-            nc_file_lowest = None
-            lowest_cost = screening_data.get('lowest_cost_case', {})
-            lowest_cost_id = lowest_cost.get('case_id', lowest_cost.get('case_num'))
-            best_case_id = best_case.get('case_id', best_case.get('case_num')) if best_case else None
-            if lowest_cost_id and lowest_cost_id != best_case_id:
-                extracted_dir = a2mc_config.EXTRACTED_DATA
-                if extracted_dir and Path(extracted_dir).exists():
-                    pattern = f"*En{lowest_cost_id}_*all_variables*.nc"
-                    nc_files_lc = list(Path(extracted_dir).glob(pattern))
-                    if nc_files_lc:
-                        nc_file_lowest = str(nc_files_lc[0])
-                        logger.info(f"Found NC file for lowest_cost case {lowest_cost_id}: {nc_file_lowest}")
-
-            # Compute plot output directory (phase_results, not logs)
-            # Skip figure generation if already generated for this case
-            plot_output_dir = None
-            plot_filename_prefix = ""
-            if skip_figures:
-                logger.info("Skipping figure generation (case already analyzed in previous cycle)")
-            elif a2mc_config.USE_CASE_DIR:
-                plot_output_dir = str(
-                    Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase3_diagnosis"
-                )
-                # Build filename prefix from iteration context
-                rr = self.state.calibration_round if hasattr(self.state, 'calibration_round') else 1
-                ee = self.state.experiment_count if hasattr(self.state, 'experiment_count') else 0
-                sc = self.state.skip_testing_count if hasattr(self.state, 'skip_testing_count') else 0
-                ii = sc + 1  # 1-based inner loop counter
-                plot_filename_prefix = f"r{rr:02d}_exp{ee:02d}_iter{ii:02d}_"
-
-            # Run diagnosis for best case
-            result = run_diagnosis_for_orchestrator(
-                screening_data=screening_data,
-                morris_file=morris_file,
-                param_names_file=param_names_file,
-                param_bounds_file=param_bounds_file if param_bounds_file and Path(param_bounds_file).exists() else None,
-                nc_file=nc_file,
-                targets=targets,
-                pft_ids=pft_ids,
-                top_cases_for_comparison=5,
-                plot_output_dir=plot_output_dir,
-                plot_filename_prefix=plot_filename_prefix + f"case{best_case_id}_" if best_case_id else plot_filename_prefix,
-                verbose=True
-            )
-
-            # Also run PFT diagnosis for lowest_cost_case (generates comparative figures)
-            if nc_file_lowest and plot_output_dir:
-                try:
-                    # Create a modified screening_data pointing to the lowest_cost case
-                    lc_screening = screening_data.copy()
-                    lc_screening['best_case'] = lowest_cost
-                    lc_prefix = plot_filename_prefix + f"case{lowest_cost_id}_"
-
-                    lc_result = run_diagnosis_for_orchestrator(
-                        screening_data=lc_screening,
-                        morris_file=morris_file,
-                        param_names_file=param_names_file,
-                        param_bounds_file=param_bounds_file if param_bounds_file and Path(param_bounds_file).exists() else None,
-                        nc_file=nc_file_lowest,
-                        targets=targets,
-                        pft_ids=pft_ids,
-                        top_cases_for_comparison=0,  # Skip case comparison for second run
-                        plot_output_dir=plot_output_dir,
-                        plot_filename_prefix=lc_prefix,
-                        verbose=False
-                    )
-                    # Merge figure paths from lowest_cost diagnosis into main result
-                    if lc_result and hasattr(lc_result, 'figure_paths'):
-                        for fp in lc_result.figure_paths:
-                            if fp and Path(fp).exists():
-                                result.figure_paths.append(fp)
-                        logger.info(f"Added {len(lc_result.figure_paths)} figures from lowest_cost case {lowest_cost_id}")
-                except Exception as e:
-                    logger.warning(f"Could not run diagnosis for lowest_cost case {lowest_cost_id}: {e}")
-
-            return result
-
-        except Exception as e:
-            logger.error(f"Error running diagnostic scripts: {e}")
-            import traceback
-            traceback.print_exc()
-            return None
+        from phases.phase3_diagnosis.run_diagnostics_scripts import run_diagnostic_scripts
+        return run_diagnostic_scripts(
+            screening_data=screening_data,
+            targets_config=self.config.targets,
+            calibration_round=getattr(self.state, 'calibration_round', 1),
+            experiment_count=getattr(self.state, 'experiment_count', 0),
+            skip_testing_count=getattr(self.state, 'skip_testing_count', 0),
+            skip_figures=skip_figures,
+        )
 
     def _execute_requested_diagnostics(
         self,
         requested_diagnostics: List[Dict],
         screening_data: Dict
     ) -> Optional[Dict]:
-        """
-        Execute diagnostic analyses requested by Claude AI.
+        """Execute diagnostic analyses requested by Claude AI.
 
-        This enables a two-phase diagnosis where Claude first analyzes
-        available data, then requests specific diagnostics for deeper insight.
-
-        Args:
-            requested_diagnostics: List of diagnostic requests from Claude
-                [{"tool": "check_edge_parameters", "reason": "...", "priority": "high", "args": {...}}]
-            screening_data: Screening results from Phase 2
-
-        Returns:
-            Dict with combined diagnostic results, or None if all fail
+        Thin wrapper — implementation in phases/phase3_diagnosis/dispatch.py.
         """
         if not HAS_DIAGNOSIS_TOOLS:
             logger.warning("Diagnostic tools not available for requested analyses")
             return None
-
-        # Import all diagnostic tools
-        try:
-            from phases.phase3_diagnosis import (
-                # Parameter analysis
-                check_parameters_at_edge,
-                compare_cases,
-                read_case_parameters,
-                get_edge_summary_for_ai,
-                get_comparison_summary_for_ai,
-                # PFT limitation
-                run_pft_diagnosis,
-                analyze_allocation_dynamics,
-                analyze_nutrient_limitation,
-                analyze_light_competition,
-                get_diagnosis_summary_for_ai,
-                # Mortality & collapse
-                diagnose_mortality_causes,
-                detect_vegetation_collapse,
-                extract_vegc_timeseries,
-                detect_perfect_storm_pattern,
-                get_mortality_summary_for_ai,
-                get_collapse_summary_for_ai,
-                # Nutrient pools
-                analyze_nutrient_depletion,
-                compare_uptake_vs_demand,
-                extract_p_pools,
-                extract_n_pools,
-                get_nutrient_summary_for_ai,
-                # Nutrient mass balance
-                extract_nutrient_budget,
-                calculate_budget_closure,
-                analyze_pft_competition,
-                identify_nutrient_sinks,
-                get_balance_summary_for_ai,
-                # Target comparison
-                compare_biomass_targets,
-                calculate_target_metrics,
-                get_target_summary_for_ai,
-                # Carbon balance
-                analyze_carbon_balance,
-                detect_carbon_bottleneck,
-                get_carbon_summary_for_ai,
-                # Hypothesis testing
-                test_hypotheses,
-                test_single_hypothesis,
-                get_hypothesis_summary_for_ai,
-            )
-            from tools.config import config as a2mc_config
-        except ImportError as e:
-            logger.error(f"Could not import diagnostic tools: {e}")
-            return None
-
-        results = {}
-        summaries = []
-
-        # Resolve NC file for best case (needed by many tools)
-        nc_file = None
-        best_case = screening_data.get('best_case', {})
-        case_id = None
-        if best_case:
-            case_id = best_case.get('case_id', best_case.get('case_num'))
-            if case_id:
-                extracted_dir = a2mc_config.EXTRACTED_DATA
-                if extracted_dir and Path(extracted_dir).exists():
-                    pattern = f"*En{case_id}_*all_variables*.nc"
-                    nc_files_found = list(Path(extracted_dir).glob(pattern))
-                    if nc_files_found:
-                        nc_file = str(nc_files_found[0])
-
-        # Get PFT IDs from config
-        pft_str = os.environ.get('A2MC_PFTS', '7,9,10')
-        pft_ids = [int(p.strip()) for p in pft_str.split(',')]
-
-        # Sort by priority (high first)
-        priority_order = {'high': 0, 'medium': 1, 'low': 2}
-        sorted_requests = sorted(
-            requested_diagnostics,
-            key=lambda x: priority_order.get(x.get('priority', 'medium'), 1)
+        from phases.phase3_diagnosis.dispatch import execute_requested_diagnostics
+        return execute_requested_diagnostics(
+            requested_diagnostics, screening_data,
+            config=self.config, phase_logger=self._phase_logger,
         )
-
-        for request in sorted_requests:
-            tool = request.get('tool', '')
-            reason = request.get('reason', '')
-            tool_args = request.get('args', {})
-            priority = request.get('priority', 'medium')
-
-            logger.info(f"Running requested diagnostic: {tool} (priority: {priority})")
-            logger.info(f"  Reason: {reason}")
-
-            try:
-                # ===== Parameter Analysis =====
-                if tool == 'check_edge_parameters':
-                    target_case = int(tool_args.get('case_id', case_id or 2678))
-                    edge_result = check_parameters_at_edge(
-                        case_id=target_case,
-                        morris_file=a2mc_config.ENSEMBLE_MATRIX_FILE,
-                        param_names=a2mc_config.PARAM_LIST_FILE,
-                        param_bounds=a2mc_config.SALIB_PROBLEM_FILE,
-                        threshold_pct=tool_args.get('threshold_pct', 1.0)
-                    )
-                    results['edge_parameters'] = edge_result
-                    summaries.append(f"## Edge Parameters Analysis\n{get_edge_summary_for_ai(edge_result)}")
-
-                elif tool == 'compare_case_parameters':
-                    case1_id = int(tool_args.get('case1_id', case_id or 2678))
-                    case2_id = tool_args.get('case2_id', None)
-                    if not case2_id:
-                        best_cases = screening_data.get('best_cases', [])
-                        if len(best_cases) > 1:
-                            case2_id = int(best_cases[-1].get('case_id', best_cases[-1].get('case_num', 1)))
-                    if case2_id:
-                        comparison = compare_cases(
-                            case1_id=case1_id,
-                            case2_id=int(case2_id),
-                            morris_file=a2mc_config.ENSEMBLE_MATRIX_FILE,
-                            param_names=a2mc_config.PARAM_LIST_FILE,
-                            param_bounds=a2mc_config.SALIB_PROBLEM_FILE,
-                            top_n=tool_args.get('top_n', 20)
-                        )
-                        results['case_comparison'] = comparison
-                        summaries.append(f"## Case Comparison\n{get_comparison_summary_for_ai(comparison)}")
-
-                elif tool == 'read_case_parameters':
-                    target_case = int(tool_args.get('case_id', case_id or 2678))
-                    params = read_case_parameters(
-                        case_id=target_case,
-                        morris_file=a2mc_config.ENSEMBLE_MATRIX_FILE,
-                        param_names=a2mc_config.PARAM_LIST_FILE or None,
-                        param_bounds=a2mc_config.SALIB_PROBLEM_FILE or None
-                    )
-                    results['case_parameters'] = params
-                    summaries.append(f"## Case {target_case} Parameters\nRead {len(params)} parameters")
-
-                # ===== PFT Limitation Analysis (require NC file) =====
-                elif tool in ('diagnose_pft_limitations', 'analyze_allocation_dynamics',
-                              'analyze_nutrient_limitation', 'analyze_light_competition'):
-                    if not nc_file:
-                        logger.warning(f"  {tool} requires NC file - not available")
-                        results[f'{tool}_skipped'] = {'status': 'nc_file_not_available'}
-                    else:
-                        pft_id = tool_args.get('pft_id', pft_ids[0] if pft_ids else 10)
-                        # run_pft_diagnosis covers all sub-analyses for a single PFT
-                        if tool == 'diagnose_pft_limitations':
-                            req_pft_ids = tool_args.get('pft_ids', pft_ids)
-                            combined_summaries = {}
-                            for pid in req_pft_ids:
-                                pft_result = run_pft_diagnosis(
-                                    nc_file=nc_file, pft_id=pid, targets=tool_args.get('targets', {})
-                                )
-                                combined_summaries[f'pft{pid}'] = get_diagnosis_summary_for_ai(pft_result)
-                            results['pft_diagnosis'] = combined_summaries
-                            summaries.append(f"## PFT Limitation Diagnosis\n" +
-                                           "\n".join(f"PFT#{p}: {s}" for p, s in combined_summaries.items()))
-                        else:
-                            pft_result = run_pft_diagnosis(
-                                nc_file=nc_file, pft_id=pft_id, targets=tool_args.get('targets', {})
-                            )
-                            label = {'analyze_allocation_dynamics': 'Allocation Dynamics',
-                                     'analyze_nutrient_limitation': 'Nutrient Limitation',
-                                     'analyze_light_competition': 'Light Competition'}[tool]
-                            pft_summary = get_diagnosis_summary_for_ai(pft_result)
-                            results[tool] = pft_summary
-                            summaries.append(f"## {label} (PFT#{pft_id})\n{pft_summary}")
-
-                # ===== Mortality & Collapse (require NC file) =====
-                elif tool in ('analyze_mortality', 'detect_collapse', 'detect_perfect_storm_pattern'):
-                    if not nc_file:
-                        logger.warning(f"  {tool} requires NC file - not available")
-                        results[f'{tool}_skipped'] = {'status': 'nc_file_not_available'}
-                    else:
-                        from phases.phase3_diagnosis import extract_mortality_timeseries
-                        data_files = {'trans': nc_file}
-
-                        if tool == 'analyze_mortality':
-                            mort_pft_ids = tool_args.get('pft_ids', pft_ids)
-                            mort_data = extract_mortality_timeseries(
-                                data_files=data_files, pft_ids=mort_pft_ids
-                            )
-                            # Diagnose each PFT
-                            mort_results = {}
-                            for pid in mort_pft_ids:
-                                mort_results[f'pft{pid}'] = diagnose_mortality_causes(
-                                    mortality_data=mort_data, pft_id=pid
-                                )
-                            results['mortality'] = mort_results
-                            summaries.append(f"## Mortality Analysis\n{get_mortality_summary_for_ai(mort_results, mort_pft_ids)}")
-                        elif tool == 'detect_collapse':
-                            vegc_data = extract_vegc_timeseries(
-                                data_files=data_files, pft_ids=tool_args.get('pft_ids', pft_ids)
-                            )
-                            # detect_vegetation_collapse needs vegc array and time array
-                            # Use vegc_data dict which contains per-PFT time series
-                            collapse_summary = f"Extracted vegc timeseries for {len(vegc_data.get('phases', {}))} phases, {len(vegc_data.get('pft_data', {}))} PFTs"
-                            results['collapse'] = collapse_summary
-                            summaries.append(f"## Collapse Detection\n{collapse_summary}")
-                        elif tool == 'detect_perfect_storm_pattern':
-                            vegc_data = extract_vegc_timeseries(
-                                data_files=data_files, pft_ids=tool_args.get('pft_ids', pft_ids)
-                            )
-                            storm_result = detect_perfect_storm_pattern(
-                                vegc_data=vegc_data,
-                                pft_id=tool_args.get('pft_id', pft_ids[0] if pft_ids else 10)
-                            )
-                            storm_summary = str(storm_result)[:500]
-                            results['perfect_storm'] = storm_summary
-                            summaries.append(f"## Perfect Storm Pattern\n{storm_summary}")
-
-                # ===== Nutrient Pool Analysis (require NC file) =====
-                elif tool in ('analyze_nutrient_pools', 'compare_uptake_vs_demand',
-                              'extract_p_pools', 'extract_n_pools'):
-                    if not nc_file:
-                        logger.warning(f"  {tool} requires NC file - not available")
-                        results[f'{tool}_skipped'] = {'status': 'nc_file_not_available'}
-                    else:
-                        data_files = {'trans': nc_file}
-                        if tool == 'analyze_nutrient_pools':
-                            # Extract pools first, then analyze depletion
-                            p_pools = extract_p_pools(data_files=data_files)
-                            depletion = analyze_nutrient_depletion(pool_data=p_pools)
-                            nutrient_summary = get_nutrient_summary_for_ai(p_pools, depletion, {})
-                            results['nutrient_pools'] = nutrient_summary
-                            summaries.append(f"## Nutrient Pool Analysis\n{nutrient_summary}")
-                        elif tool == 'compare_uptake_vs_demand':
-                            pft_id = tool_args.get('pft_id', pft_ids[0] if pft_ids else 10)
-                            nutrient = tool_args.get('nutrient', 'P')
-                            uptake_result = compare_uptake_vs_demand(
-                                nc_file=nc_file, pft_id=pft_id, nutrient=nutrient
-                            )
-                            uptake_summary = str(uptake_result)[:500]
-                            results['uptake_vs_demand'] = uptake_summary
-                            summaries.append(f"## Uptake vs Demand (PFT#{pft_id}, {nutrient})\n{uptake_summary}")
-                        elif tool == 'extract_p_pools':
-                            p_result = extract_p_pools(data_files=data_files)
-                            results['p_pools'] = f"Extracted {len(p_result.get('pools', {}))} P pool variables"
-                            summaries.append(f"## P Pool Data\nExtracted {len(p_result.get('pools', {}))} P pool variables")
-                        elif tool == 'extract_n_pools':
-                            n_result = extract_n_pools(data_files=data_files)
-                            results['n_pools'] = f"Extracted {len(n_result.get('pools', {}))} N pool variables"
-                            summaries.append(f"## N Pool Data\nExtracted {len(n_result.get('pools', {}))} N pool variables")
-
-                # ===== Nutrient Mass Balance (require NC file) =====
-                elif tool in ('extract_nutrient_budget', 'calculate_budget_closure',
-                              'analyze_pft_competition', 'identify_nutrient_sinks'):
-                    if not nc_file:
-                        logger.warning(f"  {tool} requires NC file - not available")
-                        results[f'{tool}_skipped'] = {'status': 'nc_file_not_available'}
-                    else:
-                        nutrient = tool_args.get('nutrient', 'P')
-                        if tool == 'extract_nutrient_budget':
-                            budget = extract_nutrient_budget(
-                                nc_file=nc_file, nutrient=nutrient,
-                                pft_ids=tool_args.get('pft_ids', pft_ids)
-                            )
-                            closure = calculate_budget_closure(budget)
-                            competition = analyze_pft_competition(
-                                nc_file=nc_file, pft_ids=pft_ids, nutrient=nutrient
-                            ) if pft_ids else None
-                            sinks = identify_nutrient_sinks(budget)
-                            budget_summary = get_balance_summary_for_ai(budget, closure, competition, sinks)
-                            results['nutrient_budget'] = budget_summary
-                            summaries.append(f"## {nutrient} Budget\n{budget_summary}")
-                        elif tool == 'calculate_budget_closure':
-                            budget = extract_nutrient_budget(
-                                nc_file=nc_file, nutrient=nutrient,
-                                pft_ids=tool_args.get('pft_ids', pft_ids)
-                            )
-                            closure = calculate_budget_closure(budget)
-                            closure_summary = str(closure)[:500]
-                            results['budget_closure'] = closure_summary
-                            summaries.append(f"## {nutrient} Budget Closure\n{closure_summary}")
-                        elif tool == 'analyze_pft_competition':
-                            competition = analyze_pft_competition(
-                                nc_file=nc_file, pft_ids=pft_ids, nutrient=nutrient
-                            )
-                            competition_summary = str(competition)[:500]
-                            results['pft_competition'] = competition_summary
-                            summaries.append(f"## PFT {nutrient} Competition\n{competition_summary}")
-                        elif tool == 'identify_nutrient_sinks':
-                            budget = extract_nutrient_budget(
-                                nc_file=nc_file, nutrient=nutrient,
-                                pft_ids=tool_args.get('pft_ids', pft_ids)
-                            )
-                            sinks = identify_nutrient_sinks(budget)
-                            sinks_summary = str(sinks)[:500]
-                            results['nutrient_sinks'] = sinks_summary
-                            summaries.append(f"## {nutrient} Sinks\n{sinks_summary}")
-
-                # ===== Target Comparison (require NC file) =====
-                elif tool in ('compare_biomass_targets', 'calculate_target_metrics'):
-                    if not nc_file:
-                        logger.warning(f"  {tool} requires NC file - not available")
-                        results[f'{tool}_skipped'] = {'status': 'nc_file_not_available'}
-                    else:
-                        if tool == 'compare_biomass_targets':
-                            targets_dict = tool_args.get('targets', {})
-                            target_result = compare_biomass_targets(
-                                nc_file=nc_file, targets=targets_dict,
-                                pft_ids=tool_args.get('pft_ids', pft_ids)
-                            )
-                            target_summary = get_target_summary_for_ai(target_result)
-                            results['target_comparison'] = target_summary
-                            summaries.append(f"## Target Comparison\n{target_summary}")
-                        elif tool == 'calculate_target_metrics':
-                            # Needs extracted data dict - use compare_biomass_targets first
-                            target_result = compare_biomass_targets(
-                                nc_file=nc_file, targets=tool_args.get('targets', {}),
-                                pft_ids=tool_args.get('pft_ids', pft_ids)
-                            )
-                            metrics_summary = get_target_summary_for_ai(target_result)
-                            results['target_metrics'] = metrics_summary
-                            summaries.append(f"## Target Metrics\n{metrics_summary}")
-
-                # ===== Carbon Balance (require NC file) =====
-                elif tool in ('analyze_carbon_balance', 'detect_carbon_bottleneck'):
-                    if not nc_file:
-                        logger.warning(f"  {tool} requires NC file - not available")
-                        results[f'{tool}_skipped'] = {'status': 'nc_file_not_available'}
-                    else:
-                        try:
-                            import pandas as pd
-                            import netCDF4 as nc4
-                            # Load data into DataFrame for carbon balance tools
-                            ds = nc4.Dataset(nc_file)
-                            data_dict = {}
-                            for var in ['FATES_GPP', 'FATES_AUTORESP', 'FATES_MAINT_RESP',
-                                       'FATES_GROWTH_RESP', 'FATES_NPP']:
-                                if var in ds.variables:
-                                    data_dict[var] = ds.variables[var][:].flatten()
-                            n_timesteps = len(data_dict.get('FATES_GPP', []))
-                            ds.close()
-
-                            # Derive year and doy from monthly time index
-                            # Extracted NC files have 12 months/year starting from START_YEAR
-                            start_year = int(os.environ.get('A2MC_TRANS_START_YEAR', '1901'))
-                            mid_month_doy = [16, 46, 75, 106, 136, 167, 197, 228, 259, 289, 320, 350]
-                            years = []
-                            doys = []
-                            for t in range(n_timesteps):
-                                years.append(start_year + t // 12)
-                                doys.append(mid_month_doy[t % 12])
-                            data_dict['year'] = years
-                            data_dict['doy'] = doys
-                            df = pd.DataFrame(data_dict)
-
-                            if tool == 'analyze_carbon_balance':
-                                carbon_result = analyze_carbon_balance(data=df)
-                                carbon_summary = get_carbon_summary_for_ai(carbon_result)
-                                results['carbon_balance'] = carbon_summary
-                                summaries.append(f"## Carbon Balance\n{carbon_summary}")
-                            elif tool == 'detect_carbon_bottleneck':
-                                bottleneck = detect_carbon_bottleneck(data=df)
-                                bottleneck_summary = str(bottleneck)[:500]
-                                results['carbon_bottleneck'] = bottleneck_summary
-                                summaries.append(f"## Carbon Bottleneck\n{bottleneck_summary}")
-                        except Exception as e:
-                            logger.warning(f"  Carbon balance analysis failed: {e}")
-                            results[f'{tool}_error'] = {'error': str(e)}
-
-                # ===== Hypothesis Testing (require NC file) =====
-                elif tool in ('test_hypotheses', 'test_single_hypothesis'):
-                    if not nc_file:
-                        logger.warning(f"  {tool} requires NC file - not available")
-                        results[f'{tool}_skipped'] = {'status': 'nc_file_not_available'}
-                    else:
-                        try:
-                            import pandas as pd
-                            import netCDF4 as nc4
-                            ds = nc4.Dataset(nc_file)
-                            data_dict = {}
-                            n_szpf_size_classes = 13
-                            for var in ds.variables:
-                                try:
-                                    v = ds.variables[var]
-                                    dims = v.dimensions
-                                    if v.ndim == 1 and 'time' in str(dims):
-                                        # 1D site-level: include directly
-                                        data_dict[var] = v[:]
-                                    elif v.ndim == 2 and 'time' in str(dims):
-                                        arr = v[:]
-                                        second_dim_size = arr.shape[1]
-                                        if second_dim_size == 12:
-                                            # PFT-level (time, fates_levpft): extract per PFT
-                                            for pid in pft_ids:
-                                                idx = pid - 1  # 0-based
-                                                data_dict[f"{var}_PFT{pid}"] = arr[:, idx]
-                                        elif second_dim_size == 156:
-                                            # SZPF-level (time, fates_levscpf): sum by PFT
-                                            for pid in pft_ids:
-                                                start = (pid - 1) * n_szpf_size_classes
-                                                end = start + n_szpf_size_classes
-                                                data_dict[f"{var}_PFT{pid}"] = np.nansum(arr[:, start:end], axis=1)
-                                except Exception:
-                                    pass
-                            # Add day-of-year column from time variable
-                            if 'time' in ds.variables:
-                                try:
-                                    import cftime
-                                    times = nc4.num2date(ds.variables['time'][:],
-                                                         ds.variables['time'].units,
-                                                         ds.variables['time'].calendar)
-                                    data_dict['doy'] = np.array([t.timetuple().tm_yday for t in times])
-                                except Exception:
-                                    n_time = len(ds.variables['time'][:])
-                                    # Fallback: assume monthly data, assign mid-month DOY
-                                    monthly_doy = [15, 46, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349]
-                                    data_dict['doy'] = np.array([monthly_doy[i % 12] for i in range(n_time)])
-                            ds.close()
-                            df = pd.DataFrame(data_dict)
-
-                            hyp_result = test_hypotheses(
-                                data=df,
-                                pft_id=tool_args.get('pft_id', pft_ids[0] if pft_ids else 10)
-                            )
-                            hyp_summary = get_hypothesis_summary_for_ai(hyp_result)
-                            results['hypothesis_tests'] = hyp_summary
-                            summaries.append(f"## Hypothesis Tests\n{hyp_summary}")
-                        except Exception as e:
-                            logger.warning(f"  Hypothesis testing failed: {e}")
-                            results[f'{tool}_error'] = {'error': str(e)}
-
-                # ===== Ensemble Visualization =====
-                elif tool == 'plot_ensemble_biomass':
-                    try:
-                        from phases.phase2_screening.plot_screening import (
-                            plot_ensemble_biomass_from_dir
-                        )
-                        extracted_dir = a2mc_config.EXTRACTED_DATA
-                        if extracted_dir and Path(extracted_dir).exists():
-                            # Build simple targets dict
-                            simple_targets = {}
-                            for tc in screening_data.get('best_cases', []):
-                                pass  # targets come from config
-                            # Load targets from screening module
-                            obs_uncert = {}
-                            try:
-                                from phases.phase2_screening.screen_ensemble import load_kougarok_targets
-                                raw_targets = load_kougarok_targets()
-                                simple_targets = {
-                                    name: {'observed': t.observed, 'uncertainty': t.uncertainty}
-                                    for name, t in raw_targets.items()
-                                }
-                                for name, t in raw_targets.items():
-                                    if hasattr(t, 'obs_std') and t.obs_std is not None:
-                                        obs_uncert[name] = t.obs_std
-                            except Exception:
-                                simple_targets = tool_args.get('targets', {})
-                            # Determine output path
-                            fig_dir = None
-                            if self._phase_logger:
-                                fig_dir = self._phase_logger._get_phase_dir(3)
-                            if not fig_dir:
-                                fig_dir = Path(extracted_dir)
-                            fig_path = plot_ensemble_biomass_from_dir(
-                                data_dir=extracted_dir,
-                                targets=simple_targets,
-                                pft_ids=pft_ids,
-                                output_path=str(Path(fig_dir) / 'ensemble_biomass_top_cases.png'),
-                                top_n=tool_args.get('top_n', 100),
-                                obs_uncertainty=obs_uncert if obs_uncert else None,
-                            )
-                            if fig_path:
-                                results['ensemble_biomass_figure'] = fig_path
-                                summaries.append(f"## Ensemble Biomass Figure\nSaved: {fig_path}")
-                        else:
-                            logger.warning("  plot_ensemble_biomass: extracted data dir not available")
-                    except Exception as e:
-                        logger.warning(f"  plot_ensemble_biomass failed: {e}")
-                        results[f'{tool}_error'] = {'error': str(e)}
-
-                # ---- Ensemble-level hypothesis tests (auto-discovered) ----
-                # Any test_*.py in phases/phase3_diagnosis/ with test_hypothesis()
-                # is automatically available — no hardcoded dispatch needed.
-                else:
-                    from phases.phase3_diagnosis import load_ensemble_test
-                    test_fn = load_ensemble_test(tool)
-                    if test_fn is not None:
-                        try:
-                            from phases.phase4_hypothesis.test_with_existing_data import (
-                                load_morris_ensemble_data,
-                                get_morris_param_names,
-                            )
-                            param_matrix, y_outputs = load_morris_ensemble_data(self.config)
-                            param_names = get_morris_param_names(self.config)
-                            test_config = {
-                                'param_names': param_names,
-                                'pft_ids': pft_ids,
-                                'use_case_dir': str(a2mc_config.USE_CASE_DIR),
-                            }
-                            result = test_fn(param_matrix, y_outputs, screening_data, test_config)
-                            lines = [f"Supported: {result.get('supported', False)}",
-                                     f"Confidence: {result.get('confidence', 0.0):.2f}"]
-                            for insight in result.get('insights', []):
-                                lines.append(f"  - {insight}")
-                            summary_text = "\n".join(lines)
-                            results[tool] = summary_text
-                            summaries.append(f"## {tool}\n{summary_text}")
-                        except Exception as e:
-                            logger.warning(f"  {tool} failed: {e}")
-                            results[f'{tool}_error'] = {'error': str(e)}
-                    else:
-                        logger.warning(f"  Unknown diagnostic tool: {tool}")
-                        results[f'{tool}_unknown'] = {'status': 'unknown_tool'}
-
-            except Exception as e:
-                logger.error(f"  Diagnostic {tool} failed: {e}")
-                import traceback
-                traceback.print_exc()
-                results[f'{tool}_error'] = {'error': str(e)}
-
-        # Combine summaries for AI context
-        if summaries:
-            results['_combined_summary'] = "\n\n".join(summaries)
-            logger.info(f"Completed {len(summaries)} diagnostic analyses with summaries")
-            return results
-
-        if results:
-            logger.info(f"Completed {len(results)} diagnostics (no AI summaries generated)")
-            return results
-
-        return None
 
     # =========================================================================
     # PHASE 4: HYPOTHESIS - Experimental Design
@@ -3108,6 +2361,25 @@ Diagnosis Summary:{skip_header}
         # Only append if this is a new hypothesis (not resumed)
         if not self.state.hypotheses or self.state.hypotheses[-1] is not hypothesis:
             self.state.hypotheses.append(hypothesis)
+
+        # Check for hypothesis regression (multi-cycle params dropped without justification)
+        if len(self.state.hypotheses) >= 2 and self.state.parameter_evidence_ledger:
+            from reasoning.methods import check_hypothesis_regression
+            regression = check_hypothesis_regression(
+                hypothesis, self.state.hypotheses[-2],
+                self.state.parameter_evidence_ledger,
+            )
+            if regression:
+                logger.warning(f"REGRESSION DETECTED: {regression['warning']}")
+                # Store in ledger trail for each dropped param
+                for param in regression['dropped_params']:
+                    entry = self.state.parameter_evidence_ledger.get(param, {})
+                    trail = entry.get('evidence_trail', [])
+                    trail.append({
+                        'cycle': self.state.skip_testing_count + 1,
+                        'action': 'regression_warning',
+                        'reason': regression['warning'],
+                    })
 
         # Log hypothesis
         logger.info(f"Hypothesis generated:")
@@ -3204,6 +2476,19 @@ Diagnosis Summary:{skip_header}
                        f"{hypothesis.get('name', '?')} → "
                        f"{'supported' if test_result.get('hypothesis_supported') else 'not supported'}")
 
+            # Update parameter evidence ledger
+            from reasoning.methods import update_evidence_ledger
+            update_evidence_ledger(
+                self.state.parameter_evidence_ledger,
+                hypothesis,
+                cycle_num=self.state.skip_testing_count + 1,
+                test_result=test_result,
+            )
+            n_active = sum(1 for e in self.state.parameter_evidence_ledger.values()
+                          if e.get('current_status') == 'active')
+            logger.info(f"  Evidence ledger: {len(self.state.parameter_evidence_ledger)} params tracked, "
+                       f"{n_active} active")
+
             # Increment skip testing counter (inner loop)
             self.state.skip_testing_count += 1
             self.state.iteration += 1
@@ -3251,6 +2536,7 @@ Diagnosis Summary:{skip_header}
                             diagnoses=self.state.diagnoses,
                             sensitivity_data=self.state.exploration_data.get('sensitivity_rankings', {}),
                             previous_experiments=self.state.experiments,
+                            evidence_ledger=self.state.parameter_evidence_ledger,
                         )
                         if synthesized_list:
                             for synth in synthesized_list:
@@ -3466,8 +2752,8 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
 
         logger.info(f"Case parameter files: {param_dir}/{param_pattern}")
 
-        output_dir = os.path.join(self.config.output_dir, "logs",
-                                  "phase5_testing", f"iter_{current_iter}")
+        output_dir = os.path.join(self.config.output_dir, "phase_results",
+                                  "phase5_testing")
         try:
             experiments = create_experiment_param_files(
                 experiments=experiments,
@@ -3631,62 +2917,12 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
                      f"Advancing to REFINEMENT.")
 
     def _design_experiment_sequence(self, hypothesis: Dict) -> List[Dict]:
-        """Design experiment sequence from hypothesis."""
-        design_type = hypothesis.get("design_type", hypothesis.get("experimental_design", "cumulative"))
-        params = hypothesis.get("parameters", hypothesis.get("parameters_to_test", []))
-        base_case = self.state.screening_data.get("best_case", {}).get("case_id", "2678")
+        """Design experiment sequence from hypothesis.
 
-        experiments = []
-
-        if design_type == "cumulative":
-            # Cumulative: Exp1 = A, Exp2 = A+B, Exp3 = A+B+C
-            cumulative_mods = []
-            for i, param in enumerate(params):
-                mod = {
-                    "parameter": param["name"],
-                    "old_value": param.get("current"),
-                    "new_value": param.get("proposed"),
-                }
-                if "pft" in param:
-                    mod["pft"] = param["pft"]
-                if "organ" in param:
-                    mod["organ"] = param["organ"]
-                cumulative_mods.append(mod)
-                experiments.append({
-                    "name": f"Exp{i+1}_{hypothesis.get('name', 'test')}",
-                    "base_case": base_case,
-                    "modifications": cumulative_mods.copy(),
-                    "expected_outcome": hypothesis.get("expected_outcome",
-                                                       hypothesis.get("expected_outcomes", ""))
-                })
-
-        elif design_type == "factorial":
-            # Factorial: All combinations
-            import itertools
-            for r in range(1, len(params) + 1):
-                for combo in itertools.combinations(range(len(params)), r):
-                    mods = []
-                    for i in combo:
-                        mod = {
-                            "parameter": params[i]["name"],
-                            "old_value": params[i].get("current"),
-                            "new_value": params[i].get("proposed"),
-                        }
-                        if "pft" in params[i]:
-                            mod["pft"] = params[i]["pft"]
-                        if "organ" in params[i]:
-                            mod["organ"] = params[i]["organ"]
-                        mods.append(mod)
-                    name_suffix = "+".join([params[i]["name"].split("_")[-1] for i in combo])
-                    experiments.append({
-                        "name": f"F{len(experiments)+1}_{name_suffix}",
-                        "base_case": base_case,
-                        "modifications": mods,
-                        "expected_outcome": hypothesis.get("expected_outcome",
-                                                           hypothesis.get("expected_outcomes", ""))
-                    })
-
-        return experiments
+        Thin wrapper — implementation in phases/phase5_testing/design_experiments.py.
+        """
+        from phases.phase5_testing.design_experiments import design_experiment_sequence
+        return design_experiment_sequence(hypothesis, self.state.screening_data)
 
     # =========================================================================
     # PHASE 6: REFINEMENT - Evaluate and Iterate/Converge
