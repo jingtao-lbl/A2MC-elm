@@ -283,6 +283,7 @@ class Config:
     max_skip_testing: int = 10       # Max Phase 3↔4 skip testing cycles before forcing HPC
     max_experiments: int = 10        # Max Phase 3→4→5→6 full experiment cycles
     hypothesis_confidence_threshold: float = 0.95  # Exit skip testing when confidence >= this
+    review_experiment_scripts: bool = True  # Generate reviewable scripts before HPC submission
     auto_skip_testing: bool = True   # Auto-continue Phase 3↔4 cycles (no checkpoint during skip testing)
     skip_testing_stagnation_window: int = 3  # Exit early if confidence doesn't improve in N consecutive cycles
 
@@ -3014,6 +3015,35 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             self.state.current_phase = Phase.REFINEMENT.value
             return
 
+        # --- 3.5. Generate reviewable experiment scripts ---
+        if self.config.review_experiment_scripts:
+            from phases.phase5_testing import generate_experiment_scripts
+            experiments = generate_experiment_scripts(
+                experiments=experiments,
+                output_dir=output_dir,
+            )
+            generated = sum(1 for e in experiments if e.get("script_file"))
+            logger.info(f"Generated {generated} reviewable experiment scripts in {output_dir}")
+
+            # --- 3.6. Human review of scripts ---
+            if self.config.human_review and generated > 0:
+                script_list = "\n".join(
+                    f"    {e.get('script_file', 'N/A')}" for e in experiments
+                    if e.get("script_file")
+                )
+                self._human_review_checkpoint(
+                    phase="TESTING (Script Review)",
+                    summary=f"""
+  Review the generated experiment scripts before submission:
+
+{script_list}
+
+  Parameter files are in: {output_dir}
+  Verify: paths, parameter file, xmlchange settings, user_nl_elm
+""",
+                    next_phase="SUBMISSION"
+                )
+
         # --- 4. Submit experiments to HPC ---
         try:
             experiments = submit_experiments(
@@ -3458,6 +3488,8 @@ Phase numbers:
     parser.add_argument("--stagnation-window", type=int, default=3,
                        help="Exit skip testing early if confidence stagnates for N cycles (default: 3)")
     parser.add_argument("--no-review", action="store_true", help="Skip human review points")
+    parser.add_argument("--no-script-review", action="store_true",
+                       help="Skip experiment script generation and review before HPC submission")
     parser.add_argument("--manual-skip-testing", action="store_true",
                        help="Require manual review at each skip-testing cycle (default: auto-continue)")
     parser.add_argument("--no-reasoning", action="store_true", help="Disable Claude API")
@@ -3527,6 +3559,7 @@ Phase numbers:
         max_experiments=args.max_experiments,
         hypothesis_confidence_threshold=args.confidence_threshold,
         human_review=not args.no_review,
+        review_experiment_scripts=not args.no_script_review,
         auto_skip_testing=not args.manual_skip_testing,
         use_reasoning=not args.no_reasoning,
         sampling_scheme=args.sampling_scheme or "",

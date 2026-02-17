@@ -58,6 +58,88 @@ def _extract_job_id(output: str) -> Optional[str]:
     return None
 
 
+# Path to create_case.sh (used by generate_experiment_scripts)
+CREATE_CASE_SCRIPT = _project_root / "tools" / "create_case.sh"
+
+
+def generate_experiment_scripts(
+    experiments: List[Dict],
+    output_dir: str,
+    phases: str = "ADSP RGSP TRANS",
+    reuse_build: str = "En1",
+) -> List[Dict]:
+    """
+    Generate self-contained, reviewable job scripts for each experiment.
+
+    Calls create_case.sh --write-script for each experiment, producing a
+    standalone .sh file with all environment variables resolved to literals.
+    These scripts can be reviewed before submission.
+
+    Args:
+        experiments: List of experiment dicts. Each must have:
+            - 'name': str - Experiment name
+            - 'param_file': str - Path to modified parameter file
+        output_dir: Directory to write generated scripts
+        phases: HPC phases to run (default "ADSP RGSP TRANS")
+        reuse_build: Case name whose build to reuse (default "En1")
+
+    Returns:
+        Updated experiment dicts with added 'script_file' field.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+
+    updated = []
+    for exp in experiments:
+        exp = dict(exp)  # Don't modify the original
+        name = exp.get("name", "unnamed")
+        param_file = exp.get("param_file")
+
+        if not param_file or exp.get("param_status") == "creation_failed":
+            logger.warning(f"Skipping script generation for '{name}': no valid parameter file")
+            updated.append(exp)
+            continue
+
+        script_path = os.path.join(output_dir, f"run_experiment_{name}.sh")
+
+        # Build command: create_case.sh --write-script
+        cmd = [
+            str(CREATE_CASE_SCRIPT),
+            "--case-num", name,
+            "--param-file", param_file,
+            "--phases", phases,
+            "--write-script", script_path,
+        ]
+        if reuse_build:
+            cmd.extend(["--reuse-build", reuse_build])
+
+        try:
+            logger.info(f"Generating script for '{name}': {script_path}")
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            if result.returncode == 0:
+                exp["script_file"] = script_path
+                logger.info(f"Generated: {script_path}")
+            else:
+                logger.error(f"Script generation failed for '{name}': {result.stderr}")
+                exp["script_generation_error"] = result.stderr[-500:]
+        except subprocess.TimeoutExpired:
+            logger.error(f"Script generation timed out for '{name}'")
+            exp["script_generation_error"] = "timeout"
+        except Exception as e:
+            logger.error(f"Script generation error for '{name}': {e}")
+            exp["script_generation_error"] = str(e)
+
+        updated.append(exp)
+
+    generated = sum(1 for e in updated if e.get("script_file"))
+    logger.info(f"Generated {generated}/{len(updated)} experiment scripts in {output_dir}")
+    return updated
+
+
 def submit_experiments(
     experiments: List[Dict],
     output_root: Optional[str] = None,
