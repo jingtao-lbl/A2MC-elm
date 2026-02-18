@@ -66,7 +66,7 @@ def generate_experiment_scripts(
     experiments: List[Dict],
     output_dir: str,
     phases: str = "ADSP RGSP TRANS",
-    reuse_build: str = "En1",
+    reuse_build: str = "1",
 ) -> List[Dict]:
     """
     Generate self-contained, reviewable job scripts for each experiment.
@@ -81,7 +81,7 @@ def generate_experiment_scripts(
             - 'param_file': str - Path to modified parameter file
         output_dir: Directory to write generated scripts
         phases: HPC phases to run (default "ADSP RGSP TRANS")
-        reuse_build: Case name whose build to reuse (default "En1")
+        reuse_build: Case number whose build to reuse (default "1")
 
     Returns:
         Updated experiment dicts with added 'script_file' field.
@@ -144,7 +144,7 @@ def submit_experiments(
     experiments: List[Dict],
     output_root: Optional[str] = None,
     phases: str = "ADSP RGSP TRANS",
-    reuse_build: str = "En1",
+    reuse_build: str = "1",
     submit: bool = True,
     dry_run: bool = False
 ) -> List[Dict]:
@@ -154,7 +154,7 @@ def submit_experiments(
     For each experiment:
     1. Call tools/submit_experiment.sh with --name, --param-file
     2. Runs full 3-phase spinup (ADSP→RGSP→TRANS) by default
-    3. Reuses compiled build from En1 (first Morris case) to avoid rebuilding
+    3. Reuses compiled build from case 1 (first Morris case) to avoid rebuilding
     4. Capture job_id from submission output
 
     When SLURM is not available (local machine), runs in simulated mode:
@@ -167,7 +167,7 @@ def submit_experiments(
             - 'base_case': str (optional) - Base case for restart files
         output_root: HPC output directory (default from config/env)
         phases: HPC phases to run (default "ADSP RGSP TRANS" - full spinup)
-        reuse_build: Case name whose build to reuse (default "En1", "" to build fresh)
+        reuse_build: Case number whose build to reuse (default "1", "" to build fresh)
         submit: Actually submit (vs just build cases)
         dry_run: Preview what would be done
 

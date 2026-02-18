@@ -78,7 +78,7 @@ PARAM_FILE=""
 BASE_CASE=""
 OUTPUT_ROOT="${A2MC_OUTPUT_ROOT}"
 RUN_PHASES="ADSP RGSP TRANS"  # Default: full spinup required for modified params
-REUSE_BUILD="En1"             # Default: reuse En1's build (first Morris case)
+REUSE_BUILD="1"               # Default: reuse case 1's build (first Morris case)
 RESTART_FILE=""
 DO_SUBMIT=false
 DO_WAIT=false
@@ -175,8 +175,13 @@ fi
 # If TRANS-only and no restart file specified, try to find from base case
 if [[ "$RUN_PHASES" == "TRANS" ]] && [ -z "$RESTART_FILE" ]; then
     if [ -n "$BASE_CASE" ]; then
-        # Look for base case restart file
-        POSSIBLE_RESTART="${OUTPUT_ROOT}/${A2MC_ENSEMBLE_PREFIX}_${BASE_CASE}_RGSP/run/${A2MC_ENSEMBLE_PREFIX}_${BASE_CASE}_RGSP.elm.r.0401-01-01-00000.nc"
+        # Look for base case restart file using A2MC_CASE_NAME_PATTERN
+        if [ -z "${A2MC_CASE_NAME_PATTERN:-}" ]; then
+            echo "ERROR: A2MC_CASE_NAME_PATTERN is not set. Source your site config first."
+            exit 1
+        fi
+        BASE_RGSP_CASE=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed "s/{N}/${BASE_CASE}/" | sed "s/{PHASE}/RGSP/")
+        POSSIBLE_RESTART="${A2MC_ENSEMBLE_OUTPUT}/${BASE_RGSP_CASE}/run/${BASE_RGSP_CASE}.elm.r.0401-01-01-00000.nc"
 
         if [ -f "$POSSIBLE_RESTART" ]; then
             RESTART_FILE="$POSSIBLE_RESTART"
@@ -208,7 +213,11 @@ fi
 # ========================
 
 CASE_NAME="${A2MC_ENSEMBLE_PREFIX}_${EXP_NAME}"
-CIME_OUTPUT_ROOT="${OUTPUT_ROOT}/${CASE_NAME}_experiment/"
+if [ -z "${A2MC_ENSEMBLE_OUTPUT:-}" ]; then
+    echo "ERROR: A2MC_ENSEMBLE_OUTPUT is not set. Source your site config first."
+    exit 1
+fi
+CIME_OUTPUT_ROOT="${A2MC_ENSEMBLE_OUTPUT}/"
 
 echo "========================================"
 echo "A2MC Experiment Submission"

@@ -78,6 +78,11 @@ export A2MC_TOLERANCE=0.20  # 20% tolerance
 export A2MC_TOP_N=50
 
 # -----------------------------------------------------------------------------
+# ELM Build/Namelist Options
+# -----------------------------------------------------------------------------
+export A2MC_ELM_OPTIONS="-nutrient cnp -nutrient_comp_pathway eca -soil_decomp century"
+
+# -----------------------------------------------------------------------------
 # Ensemble Paths
 # -----------------------------------------------------------------------------
 export A2MC_ENSEMBLE_NAME="Kougarok_PlantTraitsCNPEnsemble162_Morris"

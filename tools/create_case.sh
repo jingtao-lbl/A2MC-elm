@@ -20,7 +20,8 @@
 #   --submit              Submit jobs after creating cases
 #   --build-only          Only build, don't submit
 #   --skip-build          Skip building (use existing build)
-#   --reuse-build CASE    Reuse compiled build from another case (e.g., "En1")
+#   --reuse-build NUM     Reuse compiled build from case number NUM (e.g., "1")
+#                         Uses A2MC_CASE_NAME_PATTERN to resolve the full case name
 #                         Sets EXEROOT and BUILD_COMPLETE=TRUE (implies --skip-build)
 #   --config FILE         Path to custom config file
 #   --write-script PATH   Write a self-contained reviewable script to PATH
@@ -68,7 +69,7 @@ RUN_PHASES=("ADSP" "RGSP" "TRANS")
 DO_SUBMIT=false
 BUILD_ONLY=false
 SKIP_BUILD=false
-REUSE_BUILD=""  # Case name whose compiled build to reuse (e.g., "En1")
+REUSE_BUILD=""  # Case number whose compiled build to reuse (e.g., "1")
 DRY_RUN=false
 WRITE_SCRIPT=""  # Path to write self-contained script instead of executing
 
@@ -166,7 +167,11 @@ else
     BASE_CASE_NAME="${CASE_PREFIX}_En${CASE_NUM}"
 fi
 
-CIME_OUTPUT_ROOT="${OUTPUT_ROOT}/${CASE_PREFIX}_${A2MC_TOTAL_ENSEMBLE}Ensemble/"
+if [ -z "${A2MC_ENSEMBLE_OUTPUT:-}" ]; then
+    echo "ERROR: A2MC_ENSEMBLE_OUTPUT is not set. Source your site config first."
+    exit 1
+fi
+CIME_OUTPUT_ROOT="${A2MC_ENSEMBLE_OUTPUT}/"
 
 echo "========================================"
 echo "A2MC Create Case"
@@ -279,6 +284,7 @@ TRANS_END_YEAR="${A2MC_TRANS_END_YEAR}"
 
 # Ensemble settings
 ENSEMBLE_PREFIX="${A2MC_ENSEMBLE_PREFIX}"
+CASE_NAME_PATTERN="${A2MC_CASE_NAME_PATTERN}"
 
 # Build reuse
 REUSE_BUILD="${_ws_reuse_build}"
@@ -424,7 +430,11 @@ NLEOF
 
     # Build or reuse existing build
     if [ -n "$REUSE_BUILD" ]; then
-        REUSE_CASE="${ENSEMBLE_PREFIX}_${REUSE_BUILD}_${PHASE}"
+        if [ -z "${A2MC_CASE_NAME_PATTERN:-}" ]; then
+            echo "ERROR: A2MC_CASE_NAME_PATTERN is not set. Source your site config first."
+            exit 1
+        fi
+        REUSE_CASE=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed "s/{N}/${REUSE_BUILD}/" | sed "s/{PHASE}/${PHASE}/")
         REUSE_EXEROOT="${CIME_OUTPUT_ROOT}${REUSE_CASE}/bld"
         echo "Reusing build from: ${REUSE_CASE}"
         ./xmlchange EXEROOT="${REUSE_EXEROOT}"

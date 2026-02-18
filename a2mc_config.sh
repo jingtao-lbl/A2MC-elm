@@ -64,7 +64,10 @@ export A2MC_MEMORY="8G"
 export A2MC_NTASKS=1
 
 # Email notifications (optional)
-export A2MC_EMAIL="${A2MC_EMAIL:-}"
+export A2MC_EMAIL="${A2MC_EMAIL:-tjmuse@gmail.com}"
+
+# Additional ELM build/namelist options (optional)
+export A2MC_ELM_OPTIONS="${A2MC_ELM_OPTIONS:-}"
 
 # ========================
 # MODEL DEFAULTS
