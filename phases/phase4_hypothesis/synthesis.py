@@ -255,7 +255,8 @@ def write_synthesis_summary_log(
             synth_section += f"- **Source hypothesis:** {source}\n"
         synth_section += f"\n| Parameter | Current | Proposed | Rationale |\n"
         synth_section += f"|-----------|---------|----------|-----------|\n"
-        for p in synth.get('parameters', []):
+        params = synth.get('parameters', [])
+        for p in params:
             pname = p.get('name', '?')
             cur = p.get('current', '?')
             prop = p.get('proposed', '?')
@@ -265,6 +266,26 @@ def write_synthesis_summary_log(
                 rat = rat[:57] + '...'
             synth_section += f"| {pname} | {cur} | {prop} | {rat} |\n"
         synth_section += "\n"
+
+        # Add cumulative experiment breakdown for cumulative designs
+        design_type = synth.get('design_type', 'cumulative')
+        if design_type == 'cumulative' and len(params) > 1:
+            synth_section += "#### Cumulative Experiment Breakdown\n\n"
+            synth_section += "Each experiment cumulatively adds one parameter change to isolate individual effects:\n\n"
+            synth_section += "| Exp | # Params | Parameters Modified | Key Change |\n"
+            synth_section += "|-----|----------|---------------------|------------|\n"
+            cumulative_names = []
+            for j, p in enumerate(params):
+                pname = p.get('name', '?')
+                cur = p.get('current', '?')
+                prop = p.get('proposed', '?')
+                cumulative_names.append(pname)
+                if j == 0:
+                    params_str = pname
+                else:
+                    params_str = ", ".join(cumulative_names[:-1]) + f", **+{pname}**"
+                synth_section += f"| exp{j+1} | {j+1} | {params_str} | {pname}: {cur} → {prop} |\n"
+            synth_section += "\n"
 
         if synth.get('synthesis_summary'):
             synth_section += f"**Synthesis reasoning:** {synth['synthesis_summary']}\n\n"
