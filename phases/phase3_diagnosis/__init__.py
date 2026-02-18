@@ -180,6 +180,12 @@ from .test_root_turnover_impact import (
     test_hypothesis as test_root_turnover_impact,
 )
 
+# AI diagnosis helpers (extracted from orchestrator.py)
+from .ai_diagnosis import (
+    diagnose_with_claude,
+    diagnose_rule_based,
+)
+
 
 def discover_ensemble_tests():
     """
@@ -381,6 +387,10 @@ __all__ = [
     # Ensemble-level hypothesis tests
     'test_p_limitation_cascade',
     'test_root_turnover_impact',
+
+    # AI diagnosis helpers
+    'diagnose_with_claude',
+    'diagnose_rule_based',
 
     # Discovery API
     'discover_ensemble_tests',

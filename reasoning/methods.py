@@ -367,10 +367,12 @@ are at bounds" without case attribution are not acceptable.
 Respond ONLY with the JSON object, no additional text."""
 
     # Use multimodal query if diagnostic images are provided
+    # Diagnosis produces the largest JSON responses (hypotheses, evidence,
+    # recommendations), so use 8192 tokens to avoid truncation.
     if diagnostic_images:
-        response = self.query_with_images(prompt, diagnostic_images)
+        response = self.query_with_images(prompt, diagnostic_images, max_tokens=8192)
     else:
-        response = self.query(prompt)
+        response = self.query(prompt, max_tokens=8192)
 
     # Parse response — filter to Diagnosis dataclass fields
     try:
@@ -637,7 +639,8 @@ If you need a CUSTOM SCRIPT for novel analysis:
 
 Respond ONLY with the JSON object."""
 
-    response = self.query(prompt)
+    # Hypothesis JSON includes embedded test scripts, so use 8192 tokens.
+    response = self.query(prompt, max_tokens=8192)
 
     # Parse response — filter to Hypothesis dataclass fields
     try:
@@ -864,7 +867,8 @@ Return a JSON array of experiment designs (one per supported hypothesis):
 Respond ONLY with the JSON array."""
 
     try:
-        response = self.query(prompt)
+        # Synthesis produces multi-experiment JSON arrays; use 8192 tokens.
+        response = self.query(prompt, max_tokens=8192)
         result = self._extract_json(response)
 
         # Handle both list and single-dict responses

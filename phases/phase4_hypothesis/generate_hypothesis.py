@@ -36,62 +36,16 @@ def generate_hypothesis_with_claude(
     Returns:
         Hypothesis dict
     """
-    try:
-        from reasoning import Diagnosis
-        diagnosis_obj = Diagnosis(**diagnosis)
+    from reasoning import Diagnosis
+    diagnosis_obj = Diagnosis(**diagnosis)
 
-        hypothesis = reasoning_module.generate_hypothesis(
-            diagnosis=diagnosis_obj,
-            sensitivity_data=exploration_data.get('sensitivity_rankings', {}),
-            previous_experiments=previous_experiments,
-            screening_data=screening_data
-        )
-        return asdict(hypothesis) if hasattr(hypothesis, '__dict__') else hypothesis
-    except Exception as e:
-        logger.error(f"Claude hypothesis generation failed: {e}")
-        import traceback
-        logger.error(f"Traceback:\n{traceback.format_exc()}")
-        return generate_hypothesis_rule_based(diagnosis)
-
-
-def generate_hypothesis_rule_based(diagnosis: Dict, iteration: int = 0) -> Dict:
-    """
-    Rule-based hypothesis generation when Claude API unavailable.
-
-    Args:
-        diagnosis: Diagnosis dict from Phase 3
-        iteration: Current iteration number
-
-    Returns:
-        Hypothesis dict
-    """
-    if iteration == 0:
-        return {
-            "name": "Root Distribution Correction",
-            "mechanism": "Current FATES defaults make graminoids SHALLOWEST rooted "
-                        "when they should be DEEPEST. Correcting root distribution "
-                        "improves ECA capacitance and P access.",
-            "parameters_to_test": [
-                {"name": "fates_allom_fnrt_prof_a_10", "current": 11.0, "proposed": 7.0,
-                 "rationale": "Match shrub parameters; deeper roots for graminoids"},
-                {"name": "fates_allom_fnrt_prof_b_10", "current": 2.0, "proposed": 1.5,
-                 "rationale": "Match shrub parameters; deeper roots for graminoids"},
-                {"name": "fates_turnover_fnrt_10", "current": 1.0, "proposed": 5.0,
-                 "rationale": "Arctic roots live >5 years (Blume-Werry et al. 2019)"}
-            ],
-            "experimental_design": "cumulative",
-            "expected_outcome": "PFT#10 fineroot +100-200% from improved ECA capacitance",
-            "confidence": 0.75
-        }
-    else:
-        return {
-            "name": f"Iteration {iteration} Refinement",
-            "mechanism": "Fine-tuning based on previous experiment results",
-            "parameters_to_test": [],
-            "experimental_design": "factorial",
-            "expected_outcome": "Further improvement toward all targets",
-            "confidence": 0.60
-        }
+    hypothesis = reasoning_module.generate_hypothesis(
+        diagnosis=diagnosis_obj,
+        sensitivity_data=exploration_data.get('sensitivity_rankings', {}),
+        previous_experiments=previous_experiments,
+        screening_data=screening_data
+    )
+    return asdict(hypothesis) if hasattr(hypothesis, '__dict__') else hypothesis
 
 
 def run_hypothesis_generation(
@@ -134,14 +88,13 @@ def run_hypothesis_generation(
 
     logger.info("Generating hypotheses...")
 
-    if reasoning_module:
-        logger.info("Using Claude API for hypothesis generation...")
-        hypothesis = generate_hypothesis_with_claude(
-            diagnosis, reasoning_module, exploration_data, previous_experiments,
-            screening_data=screening_data
-        )
-    else:
-        logger.info("Using rule-based hypothesis generation...")
-        hypothesis = generate_hypothesis_rule_based(diagnosis, iteration)
+    if not reasoning_module:
+        raise RuntimeError("No reasoning module available — Claude API is required for hypothesis generation")
+
+    logger.info("Using Claude API for hypothesis generation...")
+    hypothesis = generate_hypothesis_with_claude(
+        diagnosis, reasoning_module, exploration_data, previous_experiments,
+        screening_data=screening_data
+    )
 
     return hypothesis

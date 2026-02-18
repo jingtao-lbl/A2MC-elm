@@ -13,6 +13,7 @@ Author: Jing Tao with Claude
 """
 
 import os
+import re
 import json
 import base64
 import logging
@@ -518,13 +519,298 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
 
     @staticmethod
     def _extract_json(response: str) -> dict:
-        """Extract JSON from a Claude response, handling markdown wrapping."""
+        """Extract JSON from a Claude response, handling markdown wrapping.
+
+        Five-tier repair strategy (each progressively more aggressive):
+        1. Direct parse (fast path for valid JSON)
+        2. Escape literal newlines/tabs inside JSON strings
+        3. Remove trailing commas before } or ]
+        4. Fix unescaped double quotes inside JSON strings
+        5. Repair truncated JSON (close open brackets/braces)
+        """
         json_str = response.strip()
         if json_str.startswith("```"):
             json_str = json_str.split("```")[1]
             if json_str.startswith("json"):
                 json_str = json_str[4:]
-        return json.loads(json_str)
+
+        # Tier 1: Direct parse
+        first_err = None
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            first_err = e
+
+        # Tier 2: Escape literal newlines/tabs inside JSON strings.
+        # Claude sometimes produces multi-line string values which are
+        # invalid JSON (strings must use \n, not literal newlines).
+        fixed = ReasoningModule._escape_newlines_in_strings(json_str)
+        if fixed != json_str:
+            try:
+                result = json.loads(fixed)
+                logger.warning("Fixed literal newlines in JSON string values")
+                return result
+            except json.JSONDecodeError:
+                pass
+        else:
+            fixed = json_str
+
+        # Tier 3: Remove trailing commas (e.g., {"a": 1,} → {"a": 1}).
+        no_trailing = re.sub(r',(\s*[}\]])', r'\1', fixed)
+        if no_trailing != fixed:
+            try:
+                result = json.loads(no_trailing)
+                logger.warning("Fixed trailing commas in JSON")
+                return result
+            except json.JSONDecodeError:
+                pass
+        else:
+            no_trailing = fixed
+
+        # Tier 4: Fix unescaped double quotes inside JSON strings.
+        # Claude sometimes puts Python code or quoted text in JSON string
+        # values without escaping the quotes — e.g., "he said "hello""
+        # which should be "he said \"hello\"". This causes "Expecting ','
+        # delimiter" because the parser thinks the string ended early.
+        quote_fixed = ReasoningModule._fix_unescaped_quotes(no_trailing)
+        if quote_fixed != no_trailing:
+            try:
+                result = json.loads(quote_fixed)
+                logger.warning("Fixed unescaped double quotes in JSON string values")
+                return result
+            except json.JSONDecodeError:
+                pass
+
+        # Tier 5: Attempt truncated JSON repair (close open structures)
+        repaired = ReasoningModule._repair_truncated_json(json_str)
+        if repaired is not None:
+            logger.warning("Repaired truncated JSON response (likely max_tokens cutoff)")
+            return repaired
+
+        # All repairs failed — log context around the error position
+        pos = first_err.pos if hasattr(first_err, 'pos') else None
+        if pos is not None:
+            start = max(0, pos - 200)
+            end = min(len(json_str), pos + 200)
+            context = json_str[start:end]
+            marker_pos = pos - start
+            logger.error(
+                f"JSON parse error at char {pos}. Context (char {start}-{end}):\n"
+                f"{context}\n"
+                f"{' ' * marker_pos}^ ERROR HERE"
+            )
+        else:
+            logger.error(f"JSON parse failed. First 500 chars: {json_str[:500]}")
+        logger.error(f"Full response length: {len(json_str)} chars")
+
+        raise first_err
+
+    @staticmethod
+    def _escape_newlines_in_strings(json_str: str) -> str:
+        """Escape literal newlines and tabs inside JSON string values.
+
+        Walks the JSON character by character, tracking whether we're inside
+        a quoted string. Replaces literal \\n and \\t with \\\\n and \\\\t
+        only when inside strings. Leaves structural whitespace untouched.
+        """
+        result = []
+        in_string = False
+        escaped = False
+        for ch in json_str:
+            if escaped:
+                result.append(ch)
+                escaped = False
+                continue
+            if ch == '\\' and in_string:
+                result.append(ch)
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                result.append(ch)
+                continue
+            if in_string:
+                if ch == '\n':
+                    result.append('\\n')
+                    continue
+                if ch == '\t':
+                    result.append('\\t')
+                    continue
+                if ch == '\r':
+                    result.append('\\r')
+                    continue
+            result.append(ch)
+        return ''.join(result)
+
+    @staticmethod
+    def _fix_unescaped_quotes(json_str: str) -> str:
+        """Fix unescaped double quotes inside JSON string values.
+
+        Walks character by character, tracking in-string state. When a "
+        inside a string is NOT followed by a JSON structural token
+        (: , } ] or whitespace then one of these), it's likely an embedded
+        quote from Python code or natural language — replace with \\".
+
+        Common cause: Claude embeds Python scripts in script_code fields
+        with unescaped quotes, e.g.:
+            "script_code": "x = df[df["col"] > 0]"
+        should be:
+            "script_code": "x = df[df[\\"col\\"] > 0]"
+        """
+        result = []
+        i = 0
+        n = len(json_str)
+        in_string = False
+
+        while i < n:
+            ch = json_str[i]
+
+            if not in_string:
+                result.append(ch)
+                if ch == '"':
+                    in_string = True
+                i += 1
+                continue
+
+            # Inside a string
+            if ch == '\\':
+                # Escape sequence — copy verbatim
+                result.append(ch)
+                i += 1
+                if i < n:
+                    result.append(json_str[i])
+                    i += 1
+                continue
+
+            if ch != '"':
+                result.append(ch)
+                i += 1
+                continue
+
+            # ch == '"' inside a string — structural close or embedded quote?
+            # Look ahead past whitespace to see what follows
+            j = i + 1
+            while j < n and json_str[j] in ' \t\n\r':
+                j += 1
+
+            if j >= n:
+                # End of input — must be structural close
+                result.append('"')
+                in_string = False
+                i += 1
+                continue
+
+            next_ch = json_str[j]
+
+            if next_ch in ':,':
+                # Colon or comma after quote — always structural
+                result.append('"')
+                in_string = False
+                i += 1
+                continue
+
+            if next_ch in '}]':
+                # Bracket/brace after quote — could be JSON structural close
+                # OR Python code like df["col"] > 0. Check what follows the
+                # } or ] to confirm: if it's another structural token or EOF,
+                # it's real JSON; otherwise it's embedded code.
+                k = j + 1
+                while k < n and json_str[k] in ' \t\n\r':
+                    k += 1
+                if k >= n or json_str[k] in ':,}]':
+                    # Proper JSON continuation → structural close
+                    result.append('"')
+                    in_string = False
+                else:
+                    # More content follows (e.g., "> 0]") → embedded quote
+                    result.append('\\"')
+                i += 1
+                continue
+
+            if next_ch == '"':
+                # Two consecutive quotes. Look past the second to decide:
+                # if the char after the second quote is structural → first
+                # quote is the real string close; otherwise → embedded quotes.
+                k = j + 1
+                while k < n and json_str[k] in ' \t\n\r':
+                    k += 1
+                if k >= n or json_str[k] in ':,}]':
+                    # Second quote followed by structural → close string
+                    result.append('"')
+                    in_string = False
+                else:
+                    # Both quotes are embedded
+                    result.append('\\"')
+                i += 1
+                continue
+
+            # Next char is a letter, digit, etc. — this quote is embedded
+            result.append('\\"')
+            i += 1
+
+        return ''.join(result)
+
+    @staticmethod
+    def _repair_truncated_json(json_str: str):
+        """Try to repair truncated JSON by closing open brackets/braces.
+
+        Returns parsed dict/list on success, None on failure.
+        """
+        # Also try with escaped newlines first
+        s = ReasoningModule._escape_newlines_in_strings(json_str)
+        s = s.rstrip()
+
+        # Strip trailing incomplete fragments back to last valid value char
+        # Valid value endings: } ] " digits true/false/null
+        while s and s[-1] not in ('}', ']', '"', '0', '1', '2', '3', '4',
+                                   '5', '6', '7', '8', '9', 'e', 'l', 'n',
+                                   '{', '['):
+            s = s[:-1]
+        if not s:
+            return None
+        # Remove trailing comma if present
+        s = s.rstrip().rstrip(',')
+        # Close any unterminated string
+        in_string = False
+        escaped = False
+        for ch in s:
+            if escaped:
+                escaped = False
+                continue
+            if ch == '\\':
+                escaped = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+        if in_string:
+            s += '"'
+        # Close open brackets/braces
+        stack = []
+        in_str = False
+        esc = False
+        for ch in s:
+            if esc:
+                esc = False
+                continue
+            if ch == '\\' and in_str:
+                esc = True
+                continue
+            if ch == '"':
+                in_str = not in_str
+                continue
+            if in_str:
+                continue
+            if ch in ('{', '['):
+                stack.append('}' if ch == '{' else ']')
+            elif ch in ('}', ']'):
+                if stack:
+                    stack.pop()
+        # Append closing characters in reverse order
+        s += ''.join(reversed(stack))
+        try:
+            return json.loads(s)
+        except json.JSONDecodeError:
+            return None
 
     def _get_targeted_param_context(
         self, param_names=None, output_names=None, mechanisms=None, pft=None

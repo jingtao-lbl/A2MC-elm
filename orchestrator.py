@@ -1119,352 +1119,50 @@ class CalibrationOrchestrator:
         logger.info("Exploration complete. Advancing to SCREENING.")
 
     def _analyze_existing_ensemble(self) -> Dict:
+        """Analyze existing sensitivity ensemble results.
+
+        Thin wrapper — implementation in phases/phase1_exploration/analyze_ensemble.py.
         """
-        Analyze existing sensitivity ensemble results.
-
-        Checks for extracted data, counts available cases, and runs
-        Morris sensitivity analysis if extraction is complete.
-
-        Returns info about extraction status and sensitivity rankings.
-        """
-        n_sims = self.config.total_ensemble
-
-        results = {
-            "n_simulations": n_sims,
-            "analysis_complete": False,
-            "sensitivity_rankings": {},
-            "extracted_cases": 0,
-            "extraction_complete": False
-        }
-
-        # Try to load results from configured location
-        try:
-            from tools.config import config as a2mc_config
-            ensemble_dir = Path(a2mc_config.ENSEMBLE_OUTPUT)
-            extracted_dir = Path(a2mc_config.EXTRACTED_DATA)
-
-            results["ensemble_output_dir"] = str(ensemble_dir)
-            results["extracted_data_dir"] = str(extracted_dir)
-
-            # Count extracted NetCDF files
-            if extracted_dir.exists():
-                # Pattern: *_PtCNPEn{N}_TRANS_all_variables_monthly_*.nc
-                nc_files = list(extracted_dir.glob("*_all_variables_monthly_*.nc"))
-                results["extracted_cases"] = len(nc_files)
-
-                if len(nc_files) > 0:
-                    logger.info(f"Found {len(nc_files)} extracted NetCDF files in: {extracted_dir}")
-
-                    # Check if extraction is reasonably complete (>90%)
-                    if len(nc_files) >= n_sims * 0.9:
-                        results["extraction_complete"] = True
-                        logger.info(f"Extraction appears complete ({len(nc_files)}/{n_sims} = {100*len(nc_files)/n_sims:.1f}%)")
-                    else:
-                        logger.warning(f"Extraction incomplete: {len(nc_files)}/{n_sims} ({100*len(nc_files)/n_sims:.1f}%)")
-                        logger.info("Run: python phases/phase1_exploration/extract_sensitivity_outputs.py")
-                else:
-                    logger.info(f"No extracted files found in: {extracted_dir}")
-                    logger.info("Running monthly variable extraction from simulation output...")
-                    extraction_result = self._run_monthly_extraction()
-                    if extraction_result.get('status') in ['completed', 'partial']:
-                        nc_files = list(extracted_dir.glob("*_all_variables_monthly_*.nc"))
-                        results["extracted_cases"] = len(nc_files)
-                        if len(nc_files) >= n_sims * 0.9:
-                            results["extraction_complete"] = True
-                        logger.info(f"Monthly extraction done: {len(nc_files)} cases extracted")
-                    else:
-                        logger.warning(f"Monthly extraction failed: {extraction_result.get('error', 'unknown')}")
-            else:
-                logger.warning(f"Extracted data directory does not exist: {extracted_dir}")
-                logger.info("Running monthly variable extraction from simulation output...")
-                extraction_result = self._run_monthly_extraction()
-                if extraction_result.get('status') in ['completed', 'partial']:
-                    extracted_dir.mkdir(parents=True, exist_ok=True)
-                    nc_files = list(extracted_dir.glob("*_all_variables_monthly_*.nc"))
-                    results["extracted_cases"] = len(nc_files)
-                    if len(nc_files) >= n_sims * 0.9:
-                        results["extraction_complete"] = True
-                    logger.info(f"Monthly extraction done: {len(nc_files)} cases extracted")
-                else:
-                    logger.warning(f"Monthly extraction failed: {extraction_result.get('error', 'unknown')}")
-
-            # Check for Morris sensitivity results (Y matrices)
-            # Look in multiple locations
-            # Pattern: Morris{Varname}_{N}cases_{start}_{end}.txt
-            # e.g., MorrisLeafbiomass_4889cases_2010_2019.txt
-            phase1_output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
-            morris_files = list(phase1_output_dir.glob("Morris*biomass*.txt")) if phase1_output_dir.exists() else []
-
-            # Also check current directory and ensemble output
-            if not morris_files:
-                morris_files = list(Path('.').glob("Morris*biomass*.txt"))
-            if not morris_files and ensemble_dir.exists():
-                morris_files = list(ensemble_dir.glob("Morris*biomass*.txt"))
-
-            if morris_files:
-                logger.info(f"Found {len(morris_files)} Morris Y matrix files")
-                results["morris_y_matrices"] = [str(f) for f in morris_files]
-
-                # Run Morris sensitivity analysis
-                results = self._run_morris_sensitivity_analysis(results, morris_files)
-
-            elif results.get("extraction_complete", False):
-                # Extraction complete but no Y matrices - need to extract from NetCDF
-                logger.info("Extraction complete but no Y matrices found. Running Y matrix extraction...")
-                results = self._run_y_matrix_extraction(results)
-
-                # Check again for Y matrices after extraction
-                morris_files = list(phase1_output_dir.glob("Morris*biomass*.txt")) if phase1_output_dir.exists() else []
-                if morris_files:
-                    logger.info(f"Found {len(morris_files)} Morris Y matrix files after extraction")
-                    results["morris_y_matrices"] = [str(f) for f in morris_files]
-                    results = self._run_morris_sensitivity_analysis(results, morris_files)
-            else:
-                # No Y matrices and extraction not marked complete — try extraction anyway
-                logger.info("No Morris Y matrices found. Attempting Y matrix extraction...")
-                results = self._run_y_matrix_extraction(results)
-
-                # Check again for Y matrices after extraction
-                morris_files = list(phase1_output_dir.glob("Morris*biomass*.txt")) if phase1_output_dir.exists() else []
-                if not morris_files:
-                    morris_files = list(Path('.').glob("Morris*biomass*.txt"))
-                if morris_files:
-                    logger.info(f"Found {len(morris_files)} Morris Y matrix files after extraction")
-                    results["morris_y_matrices"] = [str(f) for f in morris_files]
-                    results = self._run_morris_sensitivity_analysis(results, morris_files)
-                else:
-                    logger.warning("Y matrix extraction did not produce output files.")
-                    logger.warning("This may mean simulation output is not accessible from this machine.")
-                    logger.info("If running remotely, extract on HPC first:")
-                    logger.info("  python tools/extract_monthly_variables_FATES.py --case-file completed_cases.txt")
-                    logger.info("  python phases/phase1_exploration/extract_sensitivity_outputs.py")
-                    results["data_missing"] = True
-
-        except ImportError:
-            logger.debug("tools.config not available, skipping results loading")
-
-        return results
+        from phases.phase1_exploration.analyze_ensemble import analyze_existing_ensemble
+        return analyze_existing_ensemble(
+            total_ensemble=self.config.total_ensemble,
+            data_pipeline=getattr(self, 'data', None),
+        )
 
     def _run_monthly_extraction(self) -> Dict:
+        """Extract comprehensive monthly variables from simulation output.
+
+        Thin wrapper — implementation in phases/phase1_exploration/analyze_ensemble.py.
         """
-        Extract comprehensive monthly variables from simulation output.
-
-        Calls tools/extract_monthly_variables_FATES.run_monthly_extraction() to
-        produce per-case NetCDF files with all variables (biomass, nutrients,
-        fluxes, etc.) that Phase 3 diagnostic scripts need.
-
-        Falls back to integration.DataPipeline if direct import fails.
-
-        Returns:
-            Dict with 'status', 'successful_cases', 'failed_cases', 'output_dir'
-        """
-        # Primary: direct in-process call (efficient, skips already-extracted)
-        try:
-            from tools.extract_monthly_variables_FATES import run_monthly_extraction
-            logger.info("Starting monthly variable extraction from simulation output...")
-            result = run_monthly_extraction()
-            if result.get('status') in ['completed', 'partial']:
-                logger.info(f"Monthly extraction {result['status']}: "
-                            f"{result.get('total_extracted', len(result.get('successful_cases', [])))} cases")
-            else:
-                logger.warning(f"Monthly extraction failed: {result.get('error', 'unknown')}")
-            return result
-        except ImportError as e:
-            logger.warning(f"Could not import monthly extraction directly: {e}")
-
-        # Fallback: use DataPipeline (subprocess-based, slower but always available)
-        try:
-            logger.info("Falling back to DataPipeline for extraction...")
-            # Test first case before attempting all ~4890 cases
-            test_result = self.data.extract_case_data("1")
-            if not test_result.get('success'):
-                error_msg = test_result.get('error', 'extraction failed')
-                logger.error(f"Test extraction of case 1 failed: {error_msg}")
-                if 'xarray' in str(error_msg) or 'ModuleNotFoundError' in str(error_msg):
-                    logger.error("Missing Python packages. On Perlmutter, run:")
-                    logger.error("  module load python")
-                    logger.error("  # OR: conda activate <your_env>")
-                return {'status': 'failed', 'error': error_msg}
-
-            n_sims = self.config.total_ensemble
-            case_ids = [str(i) for i in range(1, n_sims + 1)]
-            results = self.data.extract_batch(case_ids)
-            n_success = sum(1 for r in results if r.get('success'))
-            status = 'completed' if n_success >= len(case_ids) * 0.9 else 'partial'
-            return {'status': status, 'total_extracted': n_success}
-        except Exception as e:
-            logger.error(f"Error during monthly extraction: {e}")
-            return {'status': 'failed', 'error': str(e)}
+        from phases.phase1_exploration.analyze_ensemble import run_monthly_extraction
+        return run_monthly_extraction(
+            data_pipeline=getattr(self, 'data', None),
+            total_ensemble=self.config.total_ensemble,
+        )
 
     def _run_y_matrix_extraction(self, results: Dict) -> Dict:
+        """Extract Y matrices from simulation outputs for Morris analysis.
+
+        Thin wrapper — implementation in phases/phase1_exploration/analyze_ensemble.py.
         """
-        Extract Y matrices from simulation outputs for Morris analysis.
-
-        Args:
-            results: Current results dict to update
-
-        Returns:
-            Updated results dict with extraction info
-        """
-        try:
-            from phases.phase1_exploration.extract_sensitivity_outputs import run_extraction
-            from tools.config import config as a2mc_config
-
-            # Output directory for Y matrices
-            output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
-
-            logger.info("Extracting Y matrices from simulation outputs...")
-
-            extraction_result = run_extraction(
-                output_vars=['leaf_biomass', 'fineroot_biomass', 'abg_biomass'],
-                output_dir=str(output_dir),
-                resume=True
-            )
-
-            if extraction_result.get('status') in ['completed', 'partial']:
-                results["y_matrix_files"] = extraction_result.get('y_matrix_files', {})
-                results["extraction_statistics"] = extraction_result.get('statistics', {})
-                logger.info(f"Y matrix extraction complete: {len(results['y_matrix_files'])} variables")
-            else:
-                logger.warning("Y matrix extraction failed")
-
-        except ImportError as e:
-            logger.warning(f"Could not import extraction module: {e}")
-        except Exception as e:
-            logger.error(f"Error during Y matrix extraction: {e}")
-
-        return results
+        from phases.phase1_exploration.analyze_ensemble import run_y_matrix_extraction
+        return run_y_matrix_extraction(results)
 
     def _run_morris_sensitivity_analysis(self, results: Dict, morris_files: List[Path]) -> Dict:
+        """Run Morris sensitivity analysis on extracted Y matrices.
+
+        Thin wrapper — implementation in phases/phase1_exploration/analyze_ensemble.py.
         """
-        Run Morris sensitivity analysis on extracted Y matrices.
-
-        Args:
-            results: Current results dict to update
-            morris_files: List of Morris Y matrix files
-
-        Returns:
-            Updated results dict with sensitivity rankings
-        """
-        try:
-            from phases.phase1_exploration.morris_sensitivity_analysis import run_sensitivity_analysis
-            from tools.config import config as a2mc_config
-
-            # Determine output directory for sensitivity results
-            output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
-            output_dir.mkdir(parents=True, exist_ok=True)
-
-            # Map Y matrix files to output variables
-            var_mapping = {
-                'leaf': 'leaf_biomass',
-                'fineroot': 'fineroot_biomass',
-                'abg': 'abg_biomass',
-                'agb': 'abg_biomass',  # Alternative naming
-            }
-
-            all_rankings = {}
-            analysis_results = []
-
-            for y_file in morris_files:
-                # Detect output variable from filename
-                y_filename = y_file.name.lower()
-                output_var = None
-
-                for key, var in var_mapping.items():
-                    if key in y_filename:
-                        output_var = var
-                        break
-
-                if not output_var:
-                    logger.warning(f"Could not determine output variable for: {y_file}")
-                    continue
-
-                logger.info(f"Running Morris analysis for {output_var}...")
-                logger.info(f"  Y matrix: {y_file}")
-
-                try:
-                    # Run sensitivity analysis
-                    sa_result = run_sensitivity_analysis(
-                        output_var=output_var,
-                        y_matrix_path=str(y_file),
-                        output_dir=str(output_dir)
-                    )
-
-                    if sa_result.get('status') == 'completed':
-                        all_rankings[output_var] = sa_result.get('rankings', {})
-                        analysis_results.append({
-                            'output_var': output_var,
-                            'n_trajectories': sa_result.get('n_complete_trajectories', 0),
-                            'plot_file': sa_result.get('plot_file'),
-                            'csv_file': sa_result.get('csv_file')
-                        })
-                        logger.info(f"  Completed: {sa_result.get('n_complete_trajectories')} trajectories")
-                    else:
-                        logger.warning(f"  Analysis failed: {sa_result.get('error', 'Unknown error')}")
-
-                except Exception as e:
-                    logger.error(f"  Error running analysis for {output_var}: {e}")
-                    continue
-
-            if all_rankings:
-                results["sensitivity_rankings"] = all_rankings
-                results["analysis_results"] = analysis_results
-                results["analysis_complete"] = True
-                logger.info(f"Morris analysis complete for {len(all_rankings)} variables")
-            else:
-                logger.warning("No sensitivity rankings computed")
-
-        except ImportError as e:
-            logger.warning(f"Could not import Morris analysis module: {e}")
-            logger.info("Install SALib: pip install SALib")
-
-        return results
+        from phases.phase1_exploration.analyze_ensemble import run_morris_sensitivity_analysis
+        return run_morris_sensitivity_analysis(results, morris_files)
 
     def _build_sensitivity_summary(self, exploration_data: Dict) -> str:
+        """Build a human-readable summary of sensitivity analysis results.
+
+        Thin wrapper — implementation in phases/phase1_exploration/analyze_ensemble.py.
         """
-        Build a human-readable summary of sensitivity analysis results.
-
-        Args:
-            exploration_data: Dict containing sensitivity rankings
-
-        Returns:
-            Markdown-formatted summary string
-        """
-        if not exploration_data.get('analysis_complete', False):
-            return "Sensitivity analysis not yet complete."
-
-        rankings = exploration_data.get('sensitivity_rankings', {})
-        if not rankings:
-            return "No sensitivity rankings available."
-
-        lines = ["## Morris Sensitivity Analysis Summary\n"]
-
-        for output_var, pft_rankings in rankings.items():
-            lines.append(f"### {output_var.replace('_', ' ').title()}\n")
-
-            for pft_name, params in pft_rankings.items():
-                if not params:
-                    continue
-
-                lines.append(f"**{pft_name}** - Top 5 most sensitive parameters:\n")
-                for i, p in enumerate(params[:5]):
-                    mu_star = p.get('mu_star', 0)
-                    sigma = p.get('sigma', 0)
-                    lines.append(f"  {i+1}. `{p['parameter']}`: μ*={mu_star:.3f}, σ={sigma:.3f}")
-                lines.append("")
-
-        # Add analysis results info
-        analysis_results = exploration_data.get('analysis_results', [])
-        if analysis_results:
-            lines.append("### Output Files\n")
-            for ar in analysis_results:
-                lines.append(f"- **{ar['output_var']}**: {ar.get('n_trajectories', 0)} trajectories")
-                if ar.get('plot_file'):
-                    lines.append(f"  - Plot: `{ar['plot_file']}`")
-                if ar.get('csv_file'):
-                    lines.append(f"  - CSV: `{ar['csv_file']}`")
-
-        return "\n".join(lines)
+        from phases.phase1_exploration.analyze_ensemble import build_sensitivity_summary
+        return build_sensitivity_summary(exploration_data)
 
     # =========================================================================
     # PHASE 2: SCREENING - Multi-Objective Filtering
@@ -1615,277 +1313,32 @@ Review the screening log at:
         logger.info("Screening complete. Advancing to DIAGNOSIS.")
 
     def _load_screening_results(self, results_file: Path) -> Dict:
-        """Load pre-computed screening results."""
-        screening_data = {
-            "n_cases_evaluated": 4329,
-            "results_file": str(results_file),
-            "best_cases": [],
-            "target_performance": {},
-            "case_numbers": [],  # actual case IDs from the CSV
-        }
+        """Load pre-computed screening results.
 
-        # Compute n_targets from site-specific target definitions
-        try:
-            from phases.phase2_screening.screen_ensemble import load_kougarok_targets
-            screening_data["n_targets"] = len(load_kougarok_targets())
-        except Exception:
-            screening_data["n_targets"] = 6  # fallback
-
-        # Parse results file
-        try:
-            with open(results_file, 'r') as f:
-                lines = f.readlines()
-
-            # Extract all case IDs and top 10 cases
-            # Format: Case_ID, Type, Composite_NRMSE, ...
-            all_case_ids = []
-            for i, line in enumerate(lines[1:]):  # skip header
-                parts = line.strip().split(',')
-                if len(parts) >= 3 and parts[0].strip():
-                    try:
-                        case_id = int(parts[0].strip())
-                        all_case_ids.append(case_id)
-                    except ValueError:
-                        all_case_ids.append(parts[0].strip())
-
-                    if i < 10:  # Top 10 cases
-                        screening_data["best_cases"].append({
-                            "case_id": parts[0].strip(),
-                            "type": parts[1].strip() if len(parts) > 1 else "",
-                            "composite_nrmse": float(parts[2]) if parts[2] else None
-                        })
-
-            # Store all case numbers (maps array index → actual case number)
-            screening_data["case_numbers"] = all_case_ids
-            screening_data["n_cases_evaluated"] = len(all_case_ids)
-
-            # Set best case
-            if screening_data["best_cases"]:
-                screening_data["best_case"] = {
-                    "case_id": screening_data["best_cases"][0]["case_id"],
-                    "composite_nrmse": screening_data["best_cases"][0]["composite_nrmse"],
-                    "targets_met": 2  # Known from previous analysis
-                }
-
-        except Exception as e:
-            logger.warning(f"Error loading screening results: {e}")
-
-        return screening_data
+        Thin wrapper — implementation in phases/phase2_screening/screening_helpers.py.
+        """
+        from phases.phase2_screening.screening_helpers import load_screening_results
+        return load_screening_results(results_file)
 
     def _perform_screening(self, targets: ValidationTargets) -> Dict:
+        """Perform new screening analysis against targets.
+
+        Thin wrapper — implementation in phases/phase2_screening/screening_helpers.py.
         """
-        Perform new screening analysis against targets.
-
-        Calls phases/phase2_screening/screen_ensemble.py to:
-        1. Load simulation outputs from EXTRACTED_DATA
-        2. Rank against validation targets
-        3. Return structured results
-        """
-        try:
-            from phases.phase2_screening.screen_ensemble import (
-                screen_ensemble, load_kougarok_targets, ScreeningConfig
-            )
-            from tools.config import config as a2mc_config
-
-            # Get data directory from config
-            data_dir = Path(a2mc_config.EXTRACTED_DATA)
-            if not data_dir.exists():
-                logger.error(f"Extracted data directory not found: {data_dir}")
-                return {"n_cases_evaluated": 0, "error": "Data directory not found"}
-
-            logger.info(f"Loading data from: {data_dir}")
-
-            # Load targets (use site-specific targets)
-            screening_targets = load_kougarok_targets()
-
-            # Configure screening
-            config = ScreeningConfig(
-                data_dir=data_dir,
-                year_start=1901,
-                year_end=2019,
-                obs_year=2016,
-                obs_month=7  # July
-            )
-
-            # Run screening
-            result = screen_ensemble(data_dir, screening_targets, config=config, top_n=100)
-
-            # Get top 10 cases by cost (RMSRE)
-            top_cases = result.get_top_cases(10)
-
-            # Find best case: most targets satisfied within top 10 by cost
-            # This balances low error with high target satisfaction
-            best_case_in_top10 = max(top_cases, key=lambda c: (c['n_satisfied'], -c['cost']))
-
-            # Convert to dict format expected by orchestrator
-            # case_numbers: maps array index → actual case number (not all 4890
-            # cases may exist; missing cases are skipped during loading).
-            # Downstream phases (diagnosis, hypothesis) use this to reference
-            # the correct case in the Morris parameter matrix.
-            screening_data = {
-                "n_cases_evaluated": result.n_valid_cases,
-                "n_available_cases": result.n_available_cases,
-                "case_numbers": result.case_numbers,  # [int] actual case IDs
-                "best_case": {
-                    "case_id": best_case_in_top10['case_num'],
-                    "composite_rmsre": best_case_in_top10['cost'],
-                    "targets_met": best_case_in_top10['n_satisfied']
-                },
-                "lowest_cost_case": {
-                    "case_id": result.best_case_num,
-                    "composite_rmsre": result.best_cost,
-                    "targets_met": int(top_cases[0]['n_satisfied']) if top_cases else 0
-                },
-                "best_cases": top_cases,
-                "target_performance": result.to_dict().get('targets_satisfied_distribution', {}),
-                "max_targets_satisfied": result.max_satisfied_count,
-                "n_targets": len(screening_targets),
-                "status": "completed"
-            }
-
-            # Generate ensemble biomass figure
-            try:
-                from phases.phase2_screening.plot_screening import (
-                    plot_ensemble_biomass, rank_cases_by_nrmse
-                )
-                # Build simple target dict from screening targets
-                simple_targets = {
-                    name: {'observed': t.observed, 'uncertainty': t.uncertainty}
-                    for name, t in screening_targets.items()
-                }
-                # Build obs_uncertainty dict from Target.obs_std (if available)
-                obs_uncertainty = {}
-                for name, t in screening_targets.items():
-                    if hasattr(t, 'obs_std') and t.obs_std is not None:
-                        obs_uncertainty[name] = t.obs_std
-                # Build ranked_cases list from optimization result
-                ranked_cases = []
-                for idx in result.optimization_result.ranked_indices:
-                    ranked_cases.append({
-                        'case_num': result.case_numbers[idx],
-                        'composite_nrmse': float(result.optimization_result.composite_cost[idx]),
-                        'n_satisfied': int(result.optimization_result.n_satisfied[idx]),
-                        'n_total': len(screening_targets),
-                    })
-                # Determine output path in phase_results directory
-                # (consistent with Phase 1 and Phase 3 which use phase_results/)
-                fig_dir = None
-                if a2mc_config.USE_CASE_DIR:
-                    fig_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase2_screening"
-                    fig_dir.mkdir(parents=True, exist_ok=True)
-                if not fig_dir:
-                    fig_dir = data_dir
-                fig_path = plot_ensemble_biomass(
-                    data_dir=str(data_dir),
-                    ranked_cases=ranked_cases,
-                    targets=simple_targets,
-                    pft_ids=config.pfts,
-                    output_path=str(Path(fig_dir) / 'ensemble_biomass_top_cases.png'),
-                    top_n=100,
-                    obs_uncertainty=obs_uncertainty if obs_uncertainty else None,
-                )
-                if fig_path:
-                    screening_data['figure_paths'] = [fig_path]
-                    logger.info(f"  Ensemble biomass figure: {fig_path}")
-            except Exception as e:
-                logger.warning(f"Could not generate ensemble biomass figure: {e}")
-
-            return screening_data
-
-        except ImportError as e:
-            logger.warning(f"Could not import screening module: {e}")
-            return {"n_cases_evaluated": 0, "error": str(e)}
-        except Exception as e:
-            logger.error(f"Screening failed: {e}")
-            import traceback
-            traceback.print_exc()
-            return {"n_cases_evaluated": 0, "error": str(e)}
+        from phases.phase2_screening.screening_helpers import perform_screening
+        return perform_screening(targets, self.config.total_ensemble)
 
     def _generate_screening_analysis(self, screening_data: Dict) -> str:
+        """Generate AI analysis of screening results.
+
+        Thin wrapper — implementation in phases/phase2_screening/screening_helpers.py.
         """
-        Generate AI analysis of screening results.
-
-        Args:
-            screening_data: Results from _perform_screening()
-
-        Returns:
-            Markdown-formatted AI analysis string
-        """
-        # Extract key metrics
-        n_cases = screening_data.get("n_cases_evaluated", 0)
-        best_case = screening_data.get("best_case", {})
-        best_cases = screening_data.get("best_cases", [])[:10]
-        target_perf = screening_data.get("target_performance", {})
-        max_satisfied = screening_data.get("max_targets_satisfied", 0)
-        n_targets = screening_data.get("n_targets", best_case.get("targets_met", 0))
-
-        # Build summary for AI
-        summary = f"""## Screening Results Summary
-
-**Ensemble Size:** {n_cases} cases evaluated
-**Best Case:** #{best_case.get('case_id', 'N/A')}
-- Composite RMSRE: {best_case.get('composite_rmsre', 'N/A'):.4f}
-- Targets Met: {best_case.get('targets_met', 0)}/{n_targets}
-
-**Target Satisfaction Distribution:**
-"""
-        for n_targets, count in sorted(target_perf.items(), key=lambda x: int(x[0]) if str(x[0]).isdigit() else 0, reverse=True):
-            pct = count / n_cases * 100 if n_cases > 0 else 0
-            summary += f"- {n_targets} targets: {count} cases ({pct:.1f}%)\n"
-
-        summary += f"""
-**Top 10 Cases:**
-| Rank | Case | RMSRE | Targets Met |
-|------|------|-------|-------------|
-"""
-        for i, case in enumerate(best_cases):
-            summary += f"| {i+1} | #{case.get('case_num', '?')} | {case.get('cost', 0):.4f} | {case.get('n_satisfied', 0)}/{n_targets} |\n"
-
-        # Get sensitivity rankings from exploration phase if available
-        sensitivity_info = ""
-        if hasattr(self.state, 'exploration_data') and self.state.exploration_data:
-            rankings = self.state.exploration_data.get('sensitivity_rankings', {})
-            if rankings:
-                sensitivity_info = "\n**Top Sensitive Parameters (from Phase 1):**\n"
-                for var, pft_rankings in list(rankings.items())[:1]:  # Just first variable
-                    for pft, params in list(pft_rankings.items())[:3]:  # Top 3 PFTs
-                        if params:
-                            top3 = [p['parameter'] for p in params[:3]]
-                            sensitivity_info += f"- {pft}: {', '.join(top3)}\n"
-
-        # Call AI for analysis
-        prompt = f"""Analyze these ELM-FATES calibration screening results and provide insights:
-
-{summary}
-{sensitivity_info}
-
-Please provide:
-1. **Key Observations:** What patterns do you see in the results?
-2. **Calibration Challenges:** Why might no cases achieve all {n_targets} targets?
-3. **Promising Directions:** Based on the top cases, what parameter adjustments might help?
-4. **Recommendations:** What should the diagnosis phase focus on?
-
-Keep your analysis concise (3-4 sentences per section)."""
-
-        try:
-            response = self.reasoning.query(prompt, max_tokens=1500)
-            return response
-        except Exception as e:
-            # Fallback to rule-based summary
-            return f"""## Automated Analysis
-
-**Key Observations:**
-- Best case achieves {best_case.get('targets_met', 0)}/{n_targets} targets with RMSRE {best_case.get('composite_rmsre', 'N/A'):.4f}
-- {target_perf.get('0', 0)} cases ({target_perf.get('0', 0)/n_cases*100:.1f}%) meet zero targets
-- Maximum targets satisfied by any case: {max_satisfied}
-
-**Calibration Challenge:**
-Multi-objective optimization with {n_targets} biomass targets across 3 PFTs creates trade-offs where improving one PFT often degrades another.
-
-**Recommendation:**
-Focus diagnosis on identifying which PFT combinations conflict and whether parameter bounds need expansion.
-
-*Note: AI analysis unavailable ({e})*"""
+        from phases.phase2_screening.screening_helpers import generate_screening_analysis
+        return generate_screening_analysis(
+            screening_data,
+            reasoning_module=self.reasoning,
+            exploration_data=self.state.exploration_data,
+        )
 
     # =========================================================================
     # PHASE 3: DIAGNOSIS - Root Cause Analysis
@@ -2141,148 +1594,25 @@ Diagnosis Summary:{skip_header}
         logger.info("Diagnosis complete. Advancing to HYPOTHESIS.")
 
     def _diagnose_with_claude(self, diagnosis_input: Dict) -> Dict:
-        """Use Claude API for diagnosis with diagnostic script context."""
-        try:
-            # Enrich results with diagnostic data if available
-            results = diagnosis_input["screening_results"].copy()
-            diagnostic_data = diagnosis_input.get("diagnostic_data")
+        """Use Claude API for diagnosis with diagnostic script context.
 
-            if diagnostic_data:
-                # Add diagnostic context to results for AI reasoning
-                results["diagnostic_context"] = {
-                    "parameters": diagnostic_data.parameters if hasattr(diagnostic_data, 'parameters') else {},
-                    "edge_summary": diagnostic_data.edge_summary if hasattr(diagnostic_data, 'edge_summary') else "",
-                    "redesign_candidates": diagnostic_data.redesign_candidates if hasattr(diagnostic_data, 'redesign_candidates') else [],
-                    "target_summary": diagnostic_data.target_summary if hasattr(diagnostic_data, 'target_summary') else "",
-                    "pft_summary": diagnostic_data.pft_summary if hasattr(diagnostic_data, 'pft_summary') else "",
-                    "combined_summary": diagnostic_data.get_ai_context() if hasattr(diagnostic_data, 'get_ai_context') else ""
-                }
-                logger.info("Added diagnostic context to Claude reasoning")
-
-            # Check for additional diagnostic context from requested diagnostics
-            additional_context = diagnosis_input.get("diagnostic_context")
-            if additional_context:
-                # Merge with existing diagnostic context
-                if "diagnostic_context" not in results:
-                    results["diagnostic_context"] = {}
-                results["diagnostic_context"]["requested_diagnostics_results"] = additional_context
-                if additional_context.get('_combined_summary'):
-                    results["diagnostic_context"]["additional_analysis"] = additional_context['_combined_summary']
-                logger.info("Added requested diagnostics context to Claude reasoning")
-
-            # Add hypothesis test results from Skip Testing path
-            hypothesis_tests = diagnosis_input.get("hypothesis_tests", [])
-            if hypothesis_tests:
-                results["hypothesis_test_results"] = hypothesis_tests
-                logger.info(f"Added {len(hypothesis_tests)} hypothesis test results to Claude reasoning")
-
-            # Add previous hypotheses for context
-            previous_hypotheses = diagnosis_input.get("previous_hypotheses", [])
-            if previous_hypotheses:
-                results["previous_hypotheses"] = previous_hypotheses
-                logger.info(f"Added {len(previous_hypotheses)} previous hypotheses to Claude reasoning")
-
-            # Add cumulative insights from skip-testing cycles for cross-cycle synthesis
-            cumulative_insights = diagnosis_input.get("cumulative_insights", [])
-            if cumulative_insights:
-                # Build a structured summary for AI consumption
-                insights_summary = []
-                for ins in cumulative_insights:
-                    insights_summary.append({
-                        'cycle': ins.get('cycle'),
-                        'hypothesis': ins.get('hypothesis_name'),
-                        'supported': ins.get('hypothesis_supported'),
-                        'confidence': ins.get('confidence'),
-                        'parameters_tested': ins.get('parameters_tested', []),
-                        'key_insights': ins.get('key_insights', ''),
-                    })
-                results["cumulative_skip_testing_insights"] = {
-                    'total_cycles': len(cumulative_insights),
-                    'insights': insights_summary,
-                    'instruction': (
-                        "IMPORTANT: These are accumulated findings from previous skip-testing cycles. "
-                        "Build on these insights rather than repeating the same analyses. "
-                        "Identify patterns across cycles, refine hypotheses based on what was "
-                        "supported/rejected, and propose NEW directions not yet explored."
-                    )
-                }
-                logger.info(f"Added {len(cumulative_insights)} cumulative insights to Claude reasoning")
-
-            # Add comparative analysis to results for AI reasoning
-            comparative_analysis = diagnosis_input.get("comparative_analysis")
-            if comparative_analysis:
-                results["comparative_analysis"] = comparative_analysis
-                logger.info("Added comparative case analysis to Claude reasoning")
-
-            # Add evidence ledger context for focused hypothesis-driven diagnosis (Iter 2+)
-            evidence_ledger_ctx = diagnosis_input.get("evidence_ledger_context")
-            if evidence_ledger_ctx:
-                results["evidence_ledger_context"] = evidence_ledger_ctx
-                logger.info("Added evidence ledger context to Claude reasoning")
-
-            # Add previous phase AI insights so diagnosis builds on earlier analysis
-            prior_insights = []
-            # Screening AI analysis (Phase 2)
-            screening_ai = self.state.screening_data.get("ai_analysis", "")
-            if screening_ai:
-                prior_insights.append(
-                    f"### Phase 2 Screening Analysis\n\n{screening_ai}"
-                )
-            # Exploration AI analysis (Phase 1) - if stored
-            exploration_ai = (self.state.exploration_data or {}).get("ai_analysis", "")
-            if exploration_ai:
-                prior_insights.append(
-                    f"### Phase 1 Exploration Analysis\n\n{exploration_ai}"
-                )
-            if prior_insights:
-                results["previous_phase_insights"] = (
-                    "## Previous Phase AI Insights\n\n"
-                    "IMPORTANT: The following insights were generated by earlier phases. "
-                    "Build on these observations — do NOT ignore or contradict them without "
-                    "explicit evidence.\n\n"
-                    + "\n\n".join(prior_insights)
-                )
-                logger.info(f"Added {len(prior_insights)} previous phase insights to Claude reasoning")
-
-            # Get diagnostic images for multimodal analysis
-            diagnostic_images = diagnosis_input.get("diagnostic_images", [])
-
-            diagnosis = self.reasoning.diagnose(
-                results=results,
-                targets=diagnosis_input["targets"],
-                sensitivity_rankings=diagnosis_input["sensitivity_rankings"],
-                iteration=diagnosis_input["iteration"],
-                diagnostic_images=diagnostic_images if diagnostic_images else None
-            )
-            return asdict(diagnosis) if hasattr(diagnosis, '__dict__') else diagnosis
-        except Exception as e:
-            logger.error(f"Claude diagnosis failed: {e}")
-            return self._diagnose_rule_based(diagnosis_input)
+        Thin wrapper — implementation in phases/phase3_diagnosis/ai_diagnosis.py.
+        """
+        from phases.phase3_diagnosis.ai_diagnosis import diagnose_with_claude
+        return diagnose_with_claude(
+            diagnosis_input=diagnosis_input,
+            reasoning_module=self.reasoning,
+            screening_data=self.state.screening_data,
+            exploration_data=self.state.exploration_data,
+        )
 
     def _diagnose_rule_based(self, diagnosis_input: Dict) -> Dict:
-        """Rule-based diagnosis when Claude API unavailable."""
-        # Based on known findings from December 2025 analysis
-        return {
-            "iteration": diagnosis_input["iteration"],
-            "failing_targets": ["froot_pft10", "leaf_pft10"],
-            "likely_causes": [
-                "P STARVATION: PFT#10 P uptake/demand ≈ 0.000005 (essentially zero)",
-                "Light competition: PFT#9 GPP is 5-10× higher than PFT#10",
-                "Excessive turnover: Default 1.0 yr vs 5.0 yr realistic for Arctic",
-                "Root distribution: Parameters BACKWARDS (graminoids should be deepest)"
-            ],
-            "parameter_recommendations": [
-                {"parameter": "fates_turnover_fnrt_10", "direction": "increase", "priority": 1},
-                {"parameter": "fates_allom_fnrt_prof_a_10", "direction": "decrease", "priority": 2},
-                {"parameter": "fates_allom_fnrt_prof_b_10", "direction": "decrease", "priority": 3}
-            ],
-            "cross_pft_conflicts": [
-                "ECA competition: PFT#9 outcompetes PFT#10 for soil P",
-                "Shared phenology parameters affect all PFTs differently"
-            ],
-            "confidence": 0.85,
-            "reasoning": "Based on comprehensive Dec 2025 diagnostic analysis identifying triple bottleneck"
-        }
+        """Rule-based diagnosis when Claude API unavailable.
+
+        Thin wrapper — implementation in phases/phase3_diagnosis/ai_diagnosis.py.
+        """
+        from phases.phase3_diagnosis.ai_diagnosis import diagnose_rule_based
+        return diagnose_rule_based(diagnosis_input)
 
     def _build_comparative_analysis(self, screening_data: Dict) -> Dict:
         """Build comparative evaluation of best_case vs lowest_cost_case.
@@ -2599,280 +1929,41 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
     # Synthesis Helper
     # =========================================================================
     def _synthesize_skip_testing_insights(self):
+        """Synthesize cumulative insights from skip-testing cycles.
+
+        Thin wrapper — implementation in phases/phase4_hypothesis/synthesis.py.
         """
-        Synthesize cumulative insights from skip-testing cycles into experiment designs.
-
-        Called when exiting the skip-testing inner loop (either via exit conditions
-        or via a hypothesis requiring HPC experiments). Uses the evidence ledger and
-        all accumulated insights to produce consolidated experiment designs that
-        the AI marks with 'synthesized': True.
-
-        Returns the number of synthesized experiments appended to state.hypotheses,
-        or 0 if synthesis was skipped/failed.
-        """
-        if not self.reasoning or not self.state.cumulative_insights:
-            return 0
-
-        logger.info("Synthesizing cumulative insights into experiment designs...")
-        try:
-            synthesized_list = self.reasoning.synthesize_experiment_design(
-                cumulative_insights=self.state.cumulative_insights,
-                hypotheses=self.state.hypotheses,
-                diagnoses=self.state.diagnoses,
-                sensitivity_data=self.state.exploration_data.get('sensitivity_rankings', {}),
-                previous_experiments=self.state.experiments,
-                evidence_ledger=self.state.parameter_evidence_ledger,
-            )
-            if synthesized_list:
-                for synth in synthesized_list:
-                    if synth and synth.get('parameters'):
-                        self.state.hypotheses.append(synth)
-
-                n_synth = sum(1 for s in synthesized_list if s and s.get('parameters'))
-                logger.info(f"  Synthesized {n_synth} experiment designs for HPC testing")
-
-                # Log each synthesized experiment + write synthesis summary
-                if self._phase_logger:
-                    for synth in synthesized_list:
-                        if not synth or not synth.get('parameters'):
-                            continue
-                        try:
-                            self._phase_logger.log_hypothesis(
-                                title=f"Synthesized: {synth.get('name', 'Experiment')}",
-                                hypothesis_name=synth.get('name', 'Synthesized'),
-                                mechanism=synth.get('mechanism', ''),
-                                parameters_to_modify=synth.get('parameters', []),
-                                ai_reasoning=synth.get('synthesis_summary', ''),
-                                design_type=synth.get('design_type', 'cumulative'),
-                                expected_outcomes=synth.get('expected_outcomes', {}),
-                                confidence=synth.get('confidence', 0),
-                                metadata={
-                                    'synthesis': True,
-                                    'n_cycles': len(self.state.cumulative_insights),
-                                    'iteration': self.state.iteration,
-                                    'source_hypothesis': synth.get('source_hypothesis', ''),
-                                    'base_case': self.state.screening_data.get('best_case', {}),
-                                    'lowest_cost_case': self.state.screening_data.get('lowest_cost_case', {}),
-                                }
-                            )
-                        except Exception as e:
-                            logger.warning(f"Could not write synthesis log: {e}")
-
-                    # Write the synthesis summary with evolution tables
-                    try:
-                        self._write_synthesis_summary_log(synthesized_list)
-                    except Exception as e:
-                        logger.warning(f"Could not write synthesis summary log: {e}")
-
-                return n_synth
-            else:
-                logger.warning("Synthesis returned no experiment designs, using last hypothesis")
-                # Still write summary log with evolution tables (no synthesized experiments)
-                if self._phase_logger:
-                    try:
-                        self._write_synthesis_summary_log([])
-                    except Exception as e:
-                        logger.warning(f"Could not write synthesis summary log: {e}")
-                return 0
-        except Exception as e:
-            logger.warning(f"Synthesis failed, using last hypothesis: {e}")
-            # Still write summary log with evolution tables
-            if self._phase_logger:
-                try:
-                    self._write_synthesis_summary_log([])
-                except Exception as e2:
-                    logger.warning(f"Could not write synthesis summary log: {e2}")
-            return 0
+        from phases.phase4_hypothesis.synthesis import synthesize_skip_testing_insights
+        state_data = {
+            'cumulative_insights': self.state.cumulative_insights,
+            'hypotheses': self.state.hypotheses,
+            'diagnoses': self.state.diagnoses,
+            'exploration_data': self.state.exploration_data or {},
+            'experiments': self.state.experiments,
+            'parameter_evidence_ledger': self.state.parameter_evidence_ledger,
+            'screening_data': self.state.screening_data,
+            'skip_testing_count': self.state.skip_testing_count,
+            'iteration': self.state.iteration,
+        }
+        return synthesize_skip_testing_insights(
+            reasoning_module=self.reasoning,
+            state_data=state_data,
+            phase_logger=self._phase_logger,
+        )
 
     def _write_synthesis_summary_log(self, synthesized_list: List[Dict]):
+        """Write synthesis summary log with evolution tables.
+
+        Thin wrapper — implementation in phases/phase4_hypothesis/synthesis.py.
         """
-        Write a synthesis summary log with diagnosis/hypothesis evolution tables
-        and synthesized experiment details. Called after synthesis completes.
-        """
-        if not self._phase_logger:
-            return
-
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        n_cycles = len(self.state.cumulative_insights)
-        n_synth = sum(1 for s in synthesized_list if s and s.get('parameters'))
-
-        # --- Build Diagnosis Evolution table ---
-        diag_rows = []
-        for i, diag in enumerate(self.state.diagnoses, 1):
-            confidence = diag.get('confidence', 0)
-            failing = diag.get('failing_targets', [])
-            n_failing = len(failing)
-            causes = diag.get('likely_causes', [])
-            # Build a concise summary of the diagnosis
-            cause_names = []
-            for c in causes[:3]:
-                if isinstance(c, dict):
-                    cause_names.append(c.get('parameter', c.get('cause', '?')))
-                elif isinstance(c, str):
-                    cause_names.append(c)
-            cause_summary = ', '.join(cause_names)
-            if len(causes) > 3:
-                cause_summary += f' (+{len(causes)-3} more)'
-            diag_rows.append((i, f"{confidence:.2f}", str(n_failing), cause_summary))
-
-        diag_table = "| Iter | Confidence | # Failing | Key Causes |\n"
-        diag_table += "|------|-----------|-----------|------------|\n"
-        for row in diag_rows:
-            diag_table += f"| {row[0]} | {row[1]} | {row[2]} | {row[3]} |\n"
-
-        # --- Build Hypothesis Evolution table ---
-        hyp_rows = []
-        for i, insight in enumerate(self.state.cumulative_insights, 1):
-            name = insight.get('hypothesis_name', 'Unknown')
-            # Truncate long names
-            if len(name) > 40:
-                name = name[:37] + '...'
-            n_params = len(insight.get('parameters_tested', []))
-            supported = insight.get('hypothesis_supported', False)
-            confidence = insight.get('confidence', 0)
-            result_str = f"{'Supported' if supported else 'Not supported'} ({confidence:.2f})"
-            hyp_rows.append((str(i), name, str(n_params), result_str))
-
-        # Add synthesized experiments to table
-        for synth in synthesized_list:
-            if not synth or not synth.get('parameters'):
-                continue
-            name = synth.get('name', 'Synthesized')
-            if len(name) > 40:
-                name = name[:37] + '...'
-            n_params = len(synth.get('parameters', []))
-            confidence = synth.get('confidence', 0)
-            hyp_rows.append(('Synth', name, str(n_params), f"→ HPC ({confidence:.2f})"))
-
-        hyp_table = "| Iter | Name | # Params | Result |\n"
-        hyp_table += "|------|------|----------|--------|\n"
-        for row in hyp_rows:
-            hyp_table += f"| {row[0]} | {row[1]} | {row[2]} | {row[3]} |\n"
-
-        # --- Build Evidence Ledger summary ---
-        ledger = self.state.parameter_evidence_ledger
-        ledger_section = ""
-        if ledger:
-            active = {k: v for k, v in ledger.items()
-                      if v.get('current_status') == 'active'}
-            dropped = {k: v for k, v in ledger.items()
-                       if v.get('current_status') == 'dropped'}
-
-            if active:
-                ledger_section += "### Active Parameters\n\n"
-                ledger_section += "| Parameter | Times Proposed | Times Supported | Status |\n"
-                ledger_section += "|-----------|---------------|-----------------|--------|\n"
-                for name, entry in sorted(active.items(),
-                                          key=lambda x: x[1].get('times_proposed', 0),
-                                          reverse=True):
-                    proposed = entry.get('times_proposed', 0)
-                    supported = entry.get('times_supported', 0)
-                    ledger_section += f"| {name} | {proposed} | {supported} | active |\n"
-                ledger_section += "\n"
-
-            if dropped:
-                ledger_section += "### Dropped Parameters\n\n"
-                ledger_section += "| Parameter | Times Proposed | Times Supported | Status |\n"
-                ledger_section += "|-----------|---------------|-----------------|--------|\n"
-                for name, entry in sorted(dropped.items(),
-                                          key=lambda x: x[1].get('times_proposed', 0),
-                                          reverse=True):
-                    proposed = entry.get('times_proposed', 0)
-                    supported = entry.get('times_supported', 0)
-                    ledger_section += f"| {name} | {proposed} | {supported} | dropped |\n"
-                ledger_section += "\n"
-
-        # --- Build Synthesized Experiments section ---
-        synth_section = ""
-        for i, synth in enumerate(synthesized_list, 1):
-            if not synth or not synth.get('parameters'):
-                continue
-            synth_section += f"### Experiment {i}: {synth.get('name', 'Unknown')}\n\n"
-            synth_section += f"- **Confidence:** {synth.get('confidence', 0):.2f}\n"
-            synth_section += f"- **Design:** {synth.get('design_type', 'cumulative')}\n"
-            source = synth.get('source_hypothesis', '')
-            if source:
-                synth_section += f"- **Source hypothesis:** {source}\n"
-            synth_section += f"\n| Parameter | Current | Proposed | Rationale |\n"
-            synth_section += f"|-----------|---------|----------|-----------|\n"
-            for p in synth.get('parameters', []):
-                pname = p.get('name', '?')
-                cur = p.get('current', '?')
-                prop = p.get('proposed', '?')
-                rat = p.get('rationale', '')
-                # Truncate long rationales for table readability
-                if isinstance(rat, str) and len(rat) > 60:
-                    rat = rat[:57] + '...'
-                synth_section += f"| {pname} | {cur} | {prop} | {rat} |\n"
-            synth_section += "\n"
-
-            if synth.get('synthesis_summary'):
-                synth_section += f"**Synthesis reasoning:** {synth['synthesis_summary']}\n\n"
-            if synth.get('excluded_parameters_justification'):
-                synth_section += "**Excluded parameters:**\n\n"
-                for param, reason in synth['excluded_parameters_justification'].items():
-                    synth_section += f"- `{param}`: {reason}\n"
-                synth_section += "\n"
-
-        # --- Assemble full log ---
-        best_case = self.state.screening_data.get('best_case', {})
-        lowest_case = self.state.screening_data.get('lowest_cost_case', {})
-        base_info = ""
-        if best_case:
-            bc_id = best_case.get('case_id', best_case.get('case_number', '?'))
-            bc_rmsre = best_case.get('rmsre', best_case.get('cost', '?'))
-            bc_met = best_case.get('targets_met', '?')
-            base_info += f"- **Best case (targets):** #{bc_id} (RMSRE {bc_rmsre}, {bc_met} targets met)\n"
-        if lowest_case:
-            lc_id = lowest_case.get('case_id', lowest_case.get('case_number', '?'))
-            lc_rmsre = lowest_case.get('rmsre', lowest_case.get('cost', '?'))
-            lc_met = lowest_case.get('targets_met', '?')
-            base_info += f"- **Lowest cost case:** #{lc_id} (RMSRE {lc_rmsre}, {lc_met} targets met)\n"
-
-        content = f"""# Skip-Testing Synthesis Summary
-
-**Site:** {self._phase_logger.site_name}
-**Phase:** 4 - Hypothesis (Synthesis)
-{self._phase_logger._format_iteration_line(phase=4)}
-**Date:** {timestamp}
-**Skip-testing cycles:** {n_cycles}
-**Synthesized experiments:** {n_synth}
-
----
-
-## Screening Baseline
-
-{base_info if base_info else "*No baseline data available*"}
-
----
-
-## Diagnosis Evolution ({n_cycles} cycles)
-
-{diag_table}
----
-
-## Hypothesis Evolution ({n_cycles} cycles + synthesis)
-
-{hyp_table}
----
-
-## Evidence Ledger
-
-{ledger_section if ledger_section else "*No evidence ledger data*"}
-
----
-
-## Synthesized Experiment Designs
-
-{synth_section if synth_section else "*No experiments synthesized*"}
-
-{self._phase_logger._format_metadata_block(4, "synthesis", {
-    'n_skip_testing_cycles': n_cycles,
-    'n_synthesized_experiments': n_synth,
-    'n_evidence_ledger_params': len(ledger),
-})}"""
-
-        self._phase_logger._write_log(4, "Synthesis_Summary", content)
+        from phases.phase4_hypothesis.synthesis import write_synthesis_summary_log
+        state_data = {
+            'cumulative_insights': self.state.cumulative_insights,
+            'diagnoses': self.state.diagnoses,
+            'parameter_evidence_ledger': self.state.parameter_evidence_ledger,
+            'screening_data': self.state.screening_data,
+        }
+        write_synthesis_summary_log(self._phase_logger, state_data, synthesized_list)
 
     # =========================================================================
     # PHASE 5: TESTING - Execute Experiments on HPC

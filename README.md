@@ -1,7 +1,7 @@
 # A2MC: Agentic Adaptive Multi-target Calibration
 
 **Status:** Implementation Complete
-**Version:** 2.16
+**Version:** 2.32
 **Purpose:** Fully autonomous multi-target calibration of ELM-FATES using Claude API + HPC + Adaptive Memory
 
 ---
