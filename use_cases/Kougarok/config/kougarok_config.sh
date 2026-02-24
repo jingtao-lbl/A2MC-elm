@@ -108,10 +108,10 @@ export A2MC_PARAM_DIR="/dvs_ro/u1/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_
 # Parameter file naming pattern ({N} = case number 1-4890)
 export A2MC_PARAM_PATTERN="fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"
 
-# Morris ensemble matrix (4890 x 162) - in A2MC phases/phase0_design/
+# Morris ensemble matrix (4890 x 162) - site-specific data
 # Note: A2MC_ROOT is two levels up from use_cases/Kougarok/config/
 export A2MC_ROOT="$(dirname "$(dirname "$A2MC_USE_CASE_DIR")")"
-export A2MC_ENSEMBLE_MATRIX_FILE="${A2MC_ROOT}/phases/phase0_design/FATES_CNPnPlantTraits_162param_Morris_4890sets.txt"
+export A2MC_ENSEMBLE_MATRIX_FILE="${A2MC_USE_CASE_DIR}/parameters/FATES_CNPnPlantTraits_162param_Morris_4890sets.txt"
 
 # -----------------------------------------------------------------------------
 # Phenology Calibration (from Dec 2025 analysis)
