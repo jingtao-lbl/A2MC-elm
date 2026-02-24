@@ -155,7 +155,8 @@ def diagnose(self, results: Dict, targets: Dict,
             "\nIncorporate visual observations into your diagnosis. Reference specific temporal patterns,"
             "\noscillation severity, and anomalies visible in the plots."
             "\n"
-            "\n**IMPORTANT**: In `visual_observations`, provide a STRUCTURED analysis for each figure."
+            "\n**IMPORTANT**: Populate `visual_observations` FIRST in your response (it appears"
+            "\nearly in the JSON format). Provide a STRUCTURED analysis for each figure."
             "\nEach entry must have a `figure` keyword (e.g., `pft7_diagnosis`, `pft9_diagnosis`,"
             "\n`pft10_diagnosis`, `mortality_components`, `p_mass_balance`) and an `analysis` string"
             "\ndescribing what you see. For two-case comparisons, prefix with case role"
@@ -282,6 +283,16 @@ Return a JSON object with this structure:
 {{
     "iteration": {iteration},
     "failing_targets": ["target1", "target2"],
+    "visual_observations": [
+        {{
+            "figure": "pft7_diagnosis",
+            "analysis": "Description of key patterns observed in this PFT7 figure"
+        }},
+        {{
+            "figure": "mortality_components",
+            "analysis": "Description of mortality patterns observed"
+        }}
+    ],
     "severity_breakdown": {{
         "critical": ["targets with >50% error"],
         "high": ["targets with 30-50% error"],
@@ -334,16 +345,6 @@ Return a JSON object with this structure:
         "recommended_starting_case": null,
         "rationale": "Why this case is the better starting point"
     }},
-    "visual_observations": [
-        {{
-            "figure": "pft7_diagnosis",
-            "analysis": "Description of key patterns observed in this PFT7 figure"
-        }},
-        {{
-            "figure": "mortality_components",
-            "analysis": "Description of mortality patterns observed"
-        }}
-    ],
     "requested_diagnostics": [
         {{
             "tool": "tool_name_from_inventory",
@@ -367,10 +368,11 @@ are at bounds" without case attribution are not acceptable.
 Respond ONLY with the JSON object, no additional text."""
 
     # Use multimodal query if diagnostic images are provided
-    # Diagnosis produces the largest JSON responses (hypotheses, evidence,
-    # recommendations), so use 8192 tokens to avoid truncation.
+    # Multimodal diagnosis needs extra output tokens: 10 images + figure analysis
+    # + full diagnosis JSON. 12288 tokens avoids truncation that drops fields
+    # near the end of the response (e.g., visual_observations, requested_diagnostics).
     if diagnostic_images:
-        response = self.query_with_images(prompt, diagnostic_images, max_tokens=8192)
+        response = self.query_with_images(prompt, diagnostic_images, max_tokens=12288)
     else:
         response = self.query(prompt, max_tokens=8192)
 
@@ -565,10 +567,14 @@ Proposing changes to low-sensitivity parameters wastes HPC compute.**
 - Propose values within physically realistic bounds
 - Include parameter bounds (min/max) and sensitivity rank where known
 
-## Skip Testing: Test with Existing Data (IMPORTANT)
+## Skip Testing: Test with Existing Data (MANDATORY FIRST STEP)
 
-Before proposing new HPC experiments, consider if this hypothesis can be tested
-using EXISTING Morris ensemble data. Set `test_with_existing: true` if ANY of these apply:
+**You MUST set `test_with_existing: true` unless the hypothesis fundamentally CANNOT be
+evaluated with existing ensemble data.** HPC experiments are expensive (hours of compute),
+so ALWAYS prefer testing with existing Morris data first. Only set `test_with_existing: false`
+if you need parameter values OUTSIDE the Morris ensemble ranges.
+
+Set `test_with_existing: true` if ANY of these apply (most hypotheses qualify):
 
 1. **Correlation check**: Can verify by comparing cases with different parameter values
    - Example: "Cases with high vmax_p should have higher P uptake"

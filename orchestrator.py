@@ -1465,6 +1465,9 @@ Review the screening log at:
             if requested_diagnostics and HAS_DIAGNOSIS_TOOLS:
                 # Preserve visual_observations from first call
                 first_visual_obs = diagnosis.get('visual_observations')
+                if not first_visual_obs and diagnosis_input.get('diagnostic_images'):
+                    logger.warning("First diagnosis call did not return visual_observations "
+                                   "despite receiving images — may indicate output truncation")
 
                 logger.info(f"AI requested {len(requested_diagnostics)} additional diagnostics")
                 additional_context = self._execute_requested_diagnostics(
@@ -2728,6 +2731,20 @@ Phase numbers:
             # Clear cached results for this phase so it actually re-runs
             # (otherwise the phase sees existing results and skips execution)
             iteration = orchestrator.state.iteration
+
+            # Screening or Diagnosis: reset skip-testing accumulators so
+            # stagnation detection starts fresh (not inheriting old history)
+            if args.start_phase in ('screening', 'diagnosis'):
+                if orchestrator.state.cumulative_insights:
+                    logger.info(f"Cleared {len(orchestrator.state.cumulative_insights)} "
+                               f"cumulative insights from previous run")
+                    orchestrator.state.cumulative_insights = []
+                if orchestrator.state.parameter_evidence_ledger:
+                    logger.info(f"Cleared parameter evidence ledger "
+                               f"({len(orchestrator.state.parameter_evidence_ledger)} params)")
+                    orchestrator.state.parameter_evidence_ledger = {}
+                orchestrator.state.skip_testing_count = 0
+                orchestrator.state.figures_analyzed_case_id = None
 
             # Screening: clear screening_data dict
             if args.start_phase == 'screening':

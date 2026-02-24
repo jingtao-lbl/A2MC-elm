@@ -71,6 +71,37 @@ def _stats_box(ax, text: str, loc: str = 'upper right'):
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
 
+def _save_plot_data_csv(columns: Dict[str, np.ndarray], csv_path: str) -> Optional[str]:
+    """Save plot data arrays as CSV alongside the figure.
+
+    Args:
+        columns: Dict mapping column names to 1-D numpy arrays (all same length)
+        csv_path: Full path for the CSV file
+
+    Returns:
+        Path to saved CSV, or None on failure
+    """
+    try:
+        Path(csv_path).parent.mkdir(parents=True, exist_ok=True)
+        col_names = list(columns.keys())
+        arrays = [columns[c] for c in col_names]
+        # Validate lengths
+        n = len(arrays[0])
+        if not all(len(a) == n for a in arrays):
+            logger.warning(f"Mismatched column lengths for {csv_path}, skipping CSV save")
+            return None
+        with open(csv_path, 'w') as f:
+            f.write(','.join(col_names) + '\n')
+            for i in range(n):
+                row = ','.join(f'{float(a[i]):.8g}' for a in arrays)
+                f.write(row + '\n')
+        logger.info(f"Saved plot data: {csv_path}")
+        return csv_path
+    except Exception as e:
+        logger.warning(f"Failed to save plot data CSV: {e}")
+        return None
+
+
 # =============================================================================
 # Individual plot functions
 # =============================================================================
@@ -642,6 +673,46 @@ def plot_pft_diagnosis(
         fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches='tight')
         plt.close(fig)
 
+        # Save underlying data as CSV alongside the figure
+        csv_columns = {}
+        n_pts = len(pft_data.get('FATES_FROOTC_SZPF', pft_data.get('FATES_LEAFC_SZPF', [])))
+        if n_pts > 0:
+            csv_columns['year'] = _make_year_axis(n_pts, start_year)
+            # Panel A & B: biomass
+            if 'FATES_FROOTC_SZPF' in pft_data:
+                csv_columns['froot_gCm2'] = pft_data['FATES_FROOTC_SZPF'] * 1000
+            if 'FATES_LEAFC_SZPF' in pft_data:
+                csv_columns['leaf_gCm2'] = pft_data['FATES_LEAFC_SZPF'] * 1000
+            # Panel C: nutrient limitation
+            if 'FATES_PDEMAND_SZPF' in pft_data and 'FATES_PUPTAKE_SZPF' in pft_data:
+                demand = pft_data['FATES_PDEMAND_SZPF']
+                csv_columns['p_uptake_demand_ratio'] = np.where(
+                    demand > 0, pft_data['FATES_PUPTAKE_SZPF'] / demand, np.nan)
+            if 'FATES_NDEMAND_SZPF' in pft_data and 'FATES_NUPTAKE_SZPF' in pft_data:
+                demand = pft_data['FATES_NDEMAND_SZPF']
+                csv_columns['n_uptake_demand_ratio'] = np.where(
+                    demand > 0, pft_data['FATES_NUPTAKE_SZPF'] / demand, np.nan)
+            # Panel D: GPP for this PFT and comparison PFTs
+            for pid in sorted(set([pft_id] + comparison_pfts)):
+                pid_data = data.get('pft_data', {}).get(pid, {})
+                if 'FATES_GPP_PF' in pid_data and len(pid_data['FATES_GPP_PF']) == n_pts:
+                    csv_columns[f'gpp_pft{pid}_gCm2day'] = pid_data['FATES_GPP_PF'] * 86400 * 1000
+            # Panel E: L2FR dynamics
+            if 'FATES_L2FR' in data and len(data['FATES_L2FR']) == n_pts:
+                csv_columns['l2fr_site'] = data['FATES_L2FR']
+            if 'FATES_L2FR_CANOPY_REC_PF' in pft_data:
+                csv_columns['l2fr_canopy'] = pft_data['FATES_L2FR_CANOPY_REC_PF']
+            if 'FATES_L2FR_USTORY_REC_PF' in pft_data:
+                csv_columns['l2fr_ustory'] = pft_data['FATES_L2FR_USTORY_REC_PF']
+            # Panel F: allocation rates
+            scale = SECONDS_PER_YEAR * 1000
+            if 'FATES_LEAF_ALLOC_SZPF' in pft_data:
+                csv_columns['leaf_alloc_gCm2yr'] = pft_data['FATES_LEAF_ALLOC_SZPF'] * scale
+            if 'FATES_FROOT_ALLOC_SZPF' in pft_data:
+                csv_columns['froot_alloc_gCm2yr'] = pft_data['FATES_FROOT_ALLOC_SZPF'] * scale
+            csv_path = output_path.replace('.png', '_data.csv')
+            _save_plot_data_csv(csv_columns, csv_path)
+
         logger.info(f"Saved diagnostic figure: {output_path}")
         return output_path
 
@@ -763,6 +834,18 @@ def plot_mortality_components(
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches='tight')
         plt.close(fig)
+
+        # Save underlying data as CSV alongside the figure
+        if len(time) > 0:
+            csv_columns = {'year': time}
+            for pft_id in pft_ids:
+                pft_data = pft_all.get(pft_id, {})
+                for comp in ['hydraulic', 'cstarvation', 'fire']:
+                    if comp in pft_data and len(pft_data[comp]) == len(time):
+                        csv_columns[f'pft{pft_id}_{comp}'] = np.clip(pft_data[comp], 0, None)
+            csv_path = output_path.replace('.png', '_data.csv')
+            _save_plot_data_csv(csv_columns, csv_path)
+
         logger.info(f"Saved mortality plot: {output_path}")
         return output_path
     plt.close(fig)
@@ -999,6 +1082,30 @@ def plot_p_mass_balance(
             Path(output_path).parent.mkdir(parents=True, exist_ok=True)
             fig.savefig(output_path, dpi=FIGURE_DPI, bbox_inches='tight')
             plt.close(fig)
+
+            # Save underlying data as CSV alongside the figure
+            csv_columns = {
+                'year': sim_year,
+                'sminp_gPm2': sminp,
+                'labilep_gPm2': labilep,
+                'secondp_gPm2': secondp,
+                'occlp_gPm2': occlp,
+                'primp_gPm2': primp,
+                'litr1p_gPm2': litr1p,
+                'litr2p_gPm2': litr2p,
+                'litr3p_gPm2': litr3p,
+                'vegp_gPm2': vegp,
+                'storep_gPm2': storep,
+                'totsomp_gPm2': totsomp,
+                'p_uptake_gPm2yr': p_uptake,
+                'p_efflux_gPm2yr': p_efflux,
+                'sminp_leached_gPm2yr': sminp_leached,
+                'total_inorganic_gPm2': total_inorganic,
+                'total_ecosystem_gPm2': total_ecosystem,
+            }
+            csv_path = output_path.replace('.png', '_data.csv')
+            _save_plot_data_csv(csv_columns, csv_path)
+
             logger.info(f"Saved P mass balance plot: {output_path}")
             return output_path
         plt.close(fig)

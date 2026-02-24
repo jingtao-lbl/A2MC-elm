@@ -30,7 +30,7 @@ class Diagnosis:
     # Comparative case analysis (best_case vs lowest_cost_case)
     comparative_analysis: Optional[Dict] = None
     # Visual observations from diagnostic figures (multimodal analysis)
-    visual_observations: Optional[List[str]] = None
+    visual_observations: Optional[List[Dict]] = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
