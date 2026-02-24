@@ -931,6 +931,25 @@ class PhaseLogger:
             content += f"- **Proposed:** {proposed}\n"
             content += f"- **Rationale:** {rationale}\n\n"
 
+        # Render validation report if available in metadata
+        if metadata and metadata.get('validation'):
+            from reasoning.validation import format_validation_for_log, format_ai_review_for_log
+            val = metadata['validation']
+            # Accept both ValidationResult objects and dicts
+            if hasattr(val, 'issues'):
+                val_section = format_validation_for_log(val)
+            else:
+                val_section = ""
+            if val_section:
+                content += f"\n---\n\n{val_section}\n"
+
+        # Render AI self-review if available in metadata
+        if metadata and metadata.get('ai_review'):
+            from reasoning.validation import format_ai_review_for_log
+            review_section = format_ai_review_for_log(metadata['ai_review'])
+            if review_section:
+                content += f"\n---\n\n{review_section}\n"
+
         if expected_outcomes:
             content += f"""
 ---

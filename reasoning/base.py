@@ -215,6 +215,89 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
 
         return ""
 
+    def _load_base_case_parameters(self, case_id: int) -> Dict[str, float]:
+        """Read actual parameter values for a specific Morris ensemble case.
+
+        Lightweight reader that reads only the needed line from the ensemble
+        matrix file, without requiring numpy. Uses the same parameter list file
+        as _load_ensemble_parameter_list to get shorthand names.
+
+        Args:
+            case_id: Case number (1-indexed, e.g., 322)
+
+        Returns:
+            Dict mapping shorthand parameter name to value, e.g.:
+            {'vmax_p_9': 5.0e-05, 'pid_kp_10': 0.001, ...}
+            Returns empty dict if files not found or case_id invalid.
+        """
+        try:
+            # Get file paths from config
+            ensemble_file = None
+            param_file = None
+            if a2mc_config:
+                ensemble_file = getattr(a2mc_config, 'ENSEMBLE_MATRIX_FILE', None)
+                param_file = getattr(a2mc_config, 'PARAM_LIST_FILE', None)
+            if not ensemble_file:
+                ensemble_file = os.environ.get('A2MC_ENSEMBLE_MATRIX_FILE', '')
+            if not param_file:
+                param_file = os.environ.get('A2MC_PARAM_LIST_FILE', '')
+
+            if not ensemble_file or not os.path.exists(ensemble_file):
+                logger.info(f"Ensemble matrix file not found: {ensemble_file}")
+                return {}
+            if not param_file or not os.path.exists(param_file):
+                logger.info(f"Parameter list file not found: {param_file}")
+                return {}
+
+            # Read parameter shorthand names from param list file
+            param_names = []
+            with open(param_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('=') or line.startswith('No\t') or line.startswith('ELM'):
+                        continue
+                    parts = line.split('\t')
+                    if len(parts) >= 3 and parts[0].isdigit():
+                        param_names.append(parts[2].strip())  # shorthand name
+
+            if not param_names:
+                logger.warning("No parameter names found in parameter list file")
+                return {}
+
+            # Read only the target line from ensemble matrix (0-indexed line = case_id - 1)
+            target_line_idx = case_id - 1
+            if target_line_idx < 0:
+                logger.warning(f"Invalid case_id {case_id} (must be >= 1)")
+                return {}
+
+            values_line = None
+            with open(ensemble_file) as f:
+                for i, line in enumerate(f):
+                    if i == target_line_idx:
+                        values_line = line.strip()
+                        break
+
+            if values_line is None:
+                logger.warning(f"Case {case_id} not found in ensemble file (only {i+1} lines)")
+                return {}
+
+            # Parse values (space or tab delimited)
+            values = values_line.split()
+            n_params = min(len(param_names), len(values))
+            result = {}
+            for j in range(n_params):
+                try:
+                    result[param_names[j]] = float(values[j])
+                except (ValueError, IndexError):
+                    continue
+
+            logger.info(f"Read {len(result)} parameter values for case #{case_id}")
+            return result
+
+        except Exception as e:
+            logger.warning(f"Could not read base case parameters for case {case_id}: {e}")
+            return {}
+
     def _build_param_name_mapping(self) -> Dict[str, tuple]:
         """Build mapping from Morris shorthand names to (official_name, pft) tuples.
 

@@ -1752,6 +1752,10 @@ Diagnosis Summary:{skip_header}
                         'diagnosis_count': len(self.state.diagnoses),
                         'base_case': self.state.screening_data.get('best_case', {}),
                         'lowest_cost_case': self.state.screening_data.get('lowest_cost_case', {}),
+                        **(
+                            {'validation': hypothesis['_validation']}
+                            if hypothesis.get('_validation') else {}
+                        ),
                     }
                 )
                 logger.info(f"  Phase log written: {log_path}")

@@ -459,6 +459,7 @@ def generate_hypothesis(self, diagnosis: Diagnosis,
 
     # Build reference case context from screening data
     _case_context = ""
+    _base_case_params_context = ""
     if screening_data:
         bc = screening_data.get('best_case', {})
         lc = screening_data.get('lowest_cost_case', {})
@@ -476,6 +477,36 @@ When discussing parameter values, edge cases, or diagnostic findings, ALWAYS ref
 the specific case ID (e.g., "Case #{bc_id}'s phosphatase parameters are at lower bounds").
 Do NOT make generic statements without case attribution.
 """
+        # Read actual base case parameter values on demand from ensemble file
+        if bc_id != 'N/A':
+            base_case_params = self._load_base_case_parameters(int(bc_id))
+            if base_case_params:
+                relevant_set = set(p for p in param_names if p)
+                relevant_lines = []
+                other_lines = []
+                for pname, pval in sorted(base_case_params.items()):
+                    line = f"  {pname}: {pval}"
+                    if pname in relevant_set:
+                        relevant_lines.append(line)
+                    else:
+                        other_lines.append(line)
+
+                _base_case_params_context = f"""## Base Case #{bc_id} — Actual Parameter Values
+
+**CRITICAL: Use these ACTUAL values as the "current" field when recommending parameter changes.**
+**Do NOT guess or infer current values from bounds or defaults — use the values below.**
+
+### Diagnosis-Relevant Parameters (related to recommended changes)
+{chr(10).join(relevant_lines) if relevant_lines else '  (none matched — check full list below)'}
+
+<details>
+<summary>All {len(base_case_params)} parameter values for Case #{bc_id}</summary>
+
+{chr(10).join(relevant_lines + other_lines)}
+</details>
+"""
+                logger.info(f"Added {len(base_case_params)} base case parameter values to hypothesis prompt "
+                            f"({len(relevant_lines)} diagnosis-relevant)")
 
     prompt = f"""Based on this diagnosis, generate a testable hypothesis for ELM-FATES calibration.
 {rag_context}{failed_approaches_context}{targeted_param_context}
@@ -483,6 +514,7 @@ Do NOT make generic statements without case attribution.
 {self._param_list_context}
 
 {_case_context}
+{_base_case_params_context}
 
 ## Diagnosis
 {diagnosis.to_json()}
@@ -645,8 +677,41 @@ Respond ONLY with the JSON object."""
     # Parse response — filter to Hypothesis dataclass fields
     try:
         data = self._extract_json(response)
+
+        # --- Layer 1 validation: auto-fix + error detection ---
+        from reasoning.validation import (
+            validate_hypothesis_parameters, load_parameter_bounds,
+            build_reprompt_context,
+        )
+        # Load base case params (may already exist from prompt building above)
+        _val_base_params = {}
+        if screening_data:
+            _val_bc_id = screening_data.get('best_case', {}).get('case_id', 'N/A')
+            if _val_bc_id != 'N/A':
+                _val_base_params = self._load_base_case_parameters(int(_val_bc_id))
+        _val_bounds = load_parameter_bounds()
+
+        _val_result = None
+        if _val_base_params or _val_bounds:
+            _val_result = validate_hypothesis_parameters(data, _val_base_params, _val_bounds)
+
+            # If errors remain after auto-fix, re-prompt once
+            if _val_result.has_errors:
+                reprompt_ctx = build_reprompt_context(
+                    _val_result, data, _val_base_params, _val_bounds)
+                logger.warning(f"Hypothesis validation found {_val_result.n_errors} error(s), re-prompting once")
+                retry_response = self.query(prompt + reprompt_ctx, max_tokens=8192)
+                data = self._extract_json(retry_response)
+                # Re-validate the retry (auto-fix only, no further re-prompt)
+                _val_result = validate_hypothesis_parameters(data, _val_base_params, _val_bounds)
+                if _val_result.has_errors:
+                    logger.warning(f"Retry still has {_val_result.n_errors} error(s): {_val_result.summary()}")
+
         known = {f.name for f in fields(Hypothesis)}
-        return Hypothesis(**{k: v for k, v in data.items() if k in known})
+        hyp = Hypothesis(**{k: v for k, v in data.items() if k in known})
+        # Attach validation result as non-dataclass attribute for caller access
+        hyp._validation = _val_result
+        return hyp
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse hypothesis response: {e}")
         raise
@@ -662,6 +727,7 @@ def synthesize_experiment_design(
     # Backward compat: accept old 'diagnosis' kwarg
     diagnosis: Dict = None,
     evidence_ledger: Dict = None,
+    screening_data: Dict = None,
 ) -> List[Dict]:
     """
     Synthesize cumulative skip-testing insights into multiple experiment designs.
@@ -792,12 +858,30 @@ def synthesize_experiment_design(
             f"{json.dumps(hypothesis_param_groups, indent=2, default=str)}"
         )
 
+    # Read base case parameter values on demand for synthesis prompt
+    _synth_base_params = ""
+    if screening_data:
+        bc_id = screening_data.get('best_case', {}).get('case_id', 'N/A')
+        if bc_id != 'N/A':
+            base_case_params = self._load_base_case_parameters(int(bc_id))
+            if base_case_params:
+                param_lines = [f"  {pname}: {pval}" for pname, pval in sorted(base_case_params.items())]
+                _synth_base_params = f"""## Base Case #{bc_id} — Actual Parameter Values
+
+**CRITICAL: Use these ACTUAL values as the "current" field for each parameter.**
+**Do NOT guess or infer current values from bounds or defaults.**
+
+{chr(10).join(param_lines)}
+"""
+                logger.info(f"Added {len(base_case_params)} base case parameter values to synthesis prompt")
+
     prompt = f"""You are synthesizing {len(cumulative_insights)} skip-testing cycles into MULTIPLE experiment designs for HPC testing.
 
 Each supported hypothesis should become its OWN experiment — do NOT merge them into one.
 This allows independent testing of different mechanistic ideas in parallel on HPC.
 
 {rag_context}{failed_approaches_context}
+{_synth_base_params}
 
 ## Cumulative Skip-Testing Insights
 
@@ -892,6 +976,24 @@ Respond ONLY with the JSON array."""
 
         # Filter out experiments with no parameters
         result = [exp for exp in result if exp.get('parameters')]
+
+        # --- Layer 1 validation: auto-fix synthesized experiments ---
+        from reasoning.validation import (
+            validate_experiment_designs, load_parameter_bounds,
+        )
+        _synth_base_params = {}
+        if screening_data:
+            _synth_bc_id = screening_data.get('best_case', {}).get('case_id', 'N/A')
+            if _synth_bc_id != 'N/A':
+                _synth_base_params = self._load_base_case_parameters(int(_synth_bc_id))
+        _synth_bounds = load_parameter_bounds()
+
+        if (_synth_base_params or _synth_bounds) and result:
+            val_results = validate_experiment_designs(result, _synth_base_params, _synth_bounds)
+            for exp, vr in zip(result, val_results):
+                if not vr.is_clean:
+                    exp['_validation'] = vr
+                    logger.info(f"  Synthesis validation '{exp.get('name', '?')}': {vr.summary()}")
 
         logger.info(f"Synthesized {len(result)} experiment designs from {len(cumulative_insights)} skip-testing cycles")
         for exp in result:

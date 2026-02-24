@@ -45,7 +45,11 @@ def generate_hypothesis_with_claude(
         previous_experiments=previous_experiments,
         screening_data=screening_data
     )
-    return asdict(hypothesis) if hasattr(hypothesis, '__dict__') else hypothesis
+    result = asdict(hypothesis) if hasattr(hypothesis, '__dict__') else hypothesis
+    # Propagate validation result from Layer 1 (attached by methods.py)
+    if hasattr(hypothesis, '_validation') and hypothesis._validation is not None:
+        result['_validation'] = hypothesis._validation
+    return result
 
 
 def run_hypothesis_generation(

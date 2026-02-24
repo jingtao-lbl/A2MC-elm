@@ -20,6 +20,14 @@ from reasoning.schemas import Diagnosis, Hypothesis, Experiment
 # Prompt constants
 from reasoning.prompts import DIAGNOSTIC_TOOLS_INVENTORY, CUSTOM_SCRIPT_TEMPLATE, get_diagnostic_tools_inventory
 
+# Validation (Layer 1 + Layer 2)
+from reasoning.validation import (
+    validate_hypothesis_parameters, validate_experiment_designs,
+    load_parameter_bounds, ai_review_experiment,
+    format_validation_for_log, format_ai_review_for_log,
+    ValidationIssue, ValidationResult,
+)
+
 # Core class
 from reasoning.base import ReasoningModule
 
@@ -44,4 +52,12 @@ __all__ = [
     'DIAGNOSTIC_TOOLS_INVENTORY',
     'CUSTOM_SCRIPT_TEMPLATE',
     'get_diagnostic_tools_inventory',
+    'validate_hypothesis_parameters',
+    'validate_experiment_designs',
+    'load_parameter_bounds',
+    'ai_review_experiment',
+    'format_validation_for_log',
+    'format_ai_review_for_log',
+    'ValidationIssue',
+    'ValidationResult',
 ]

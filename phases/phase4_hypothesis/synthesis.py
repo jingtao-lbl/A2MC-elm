@@ -67,8 +67,29 @@ def synthesize_skip_testing_insights(
             sensitivity_data=exploration_data.get('sensitivity_rankings', {}),
             previous_experiments=experiments,
             evidence_ledger=evidence_ledger,
+            screening_data=screening_data,
         )
         if synthesized_list:
+            # --- Layer 2: AI self-review for synthesized experiments ---
+            try:
+                from reasoning.validation import (
+                    ai_review_experiment, load_parameter_bounds,
+                )
+                _review_bounds = load_parameter_bounds()
+                # Load base case params for review context
+                _review_base_params = {}
+                _review_bc_id = screening_data.get('best_case', {}).get('case_id', 'N/A')
+                if _review_bc_id != 'N/A' and reasoning_module:
+                    _review_base_params = reasoning_module._load_base_case_parameters(int(_review_bc_id))
+
+                for synth in synthesized_list:
+                    if synth and synth.get('parameters') and reasoning_module:
+                        review = ai_review_experiment(
+                            reasoning_module, synth, _review_base_params, _review_bounds)
+                        synth['_ai_review'] = review
+            except Exception as e:
+                logger.warning(f"AI self-review failed: {e}")
+
             for synth in synthesized_list:
                 if synth and synth.get('parameters'):
                     hypotheses.append(synth)
@@ -82,6 +103,20 @@ def synthesize_skip_testing_insights(
                     if not synth or not synth.get('parameters'):
                         continue
                     try:
+                        # Build metadata with validation + AI review if available
+                        _synth_metadata = {
+                            'synthesis': True,
+                            'n_cycles': len(cumulative_insights),
+                            'iteration': state_data.get('iteration', 0),
+                            'source_hypothesis': synth.get('source_hypothesis', ''),
+                            'base_case': screening_data.get('best_case', {}),
+                            'lowest_cost_case': screening_data.get('lowest_cost_case', {}),
+                        }
+                        if synth.get('_validation'):
+                            _synth_metadata['validation'] = synth['_validation']
+                        if synth.get('_ai_review'):
+                            _synth_metadata['ai_review'] = synth['_ai_review']
+
                         phase_logger.log_hypothesis(
                             title=f"Synthesized: {synth.get('name', 'Experiment')}",
                             hypothesis_name=synth.get('name', 'Synthesized'),
@@ -91,14 +126,7 @@ def synthesize_skip_testing_insights(
                             design_type=synth.get('design_type', 'cumulative'),
                             expected_outcomes=synth.get('expected_outcomes', {}),
                             confidence=synth.get('confidence', 0),
-                            metadata={
-                                'synthesis': True,
-                                'n_cycles': len(cumulative_insights),
-                                'iteration': state_data.get('iteration', 0),
-                                'source_hypothesis': synth.get('source_hypothesis', ''),
-                                'base_case': screening_data.get('best_case', {}),
-                                'lowest_cost_case': screening_data.get('lowest_cost_case', {}),
-                            }
+                            metadata=_synth_metadata
                         )
                     except Exception as e:
                         logger.warning(f"Could not write synthesis log: {e}")
