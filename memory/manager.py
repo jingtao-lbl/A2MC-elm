@@ -64,7 +64,8 @@ class MemoryManager:
             default={"failed_approaches": []}
         )
 
-        logger.info(f"MemoryManager initialized with {len(self.discoveries)} discoveries, "
+        n_disc = sum(1 for v in self.discoveries.values() if isinstance(v, dict))
+        logger.info(f"MemoryManager initialized with {n_disc} discoveries, "
                    f"{len(self.experiments.get('experiments', []))} experiments")
 
     # ==================== QUERY METHODS ====================
@@ -260,7 +261,7 @@ class MemoryManager:
                     param_cautions.extend(p_data.get("cautions", []))
 
             # Check discoveries that implicate this parameter
-            for name, disc in self.discoveries.items():
+            for name, disc in self._discovery_entries().items():
                 params_involved = [p.lower() for p in disc.get("parameters_involved", [])]
                 if any(param_lower in p for p in params_involved):
                     if disc.get("do_not_repeat"):
@@ -318,10 +319,11 @@ class MemoryManager:
 
     def get_all_discoveries(self, verified_only: bool = False) -> Dict[str, Dict]:
         """Get all discoveries, optionally filtering to verified only."""
+        entries = self._discovery_entries()
         if verified_only:
-            return {k: v for k, v in self.discoveries.items()
+            return {k: v for k, v in entries.items()
                    if v.get("verified", False)}
-        return self.discoveries.copy()
+        return entries
 
     # ==================== UPDATE METHODS ====================
 
@@ -580,10 +582,10 @@ class MemoryManager:
         """Get memory statistics."""
         return {
             "discoveries": {
-                "total": len(self.discoveries),
-                "verified": sum(1 for d in self.discoveries.values()
+                "total": len(self._discovery_entries()),
+                "verified": sum(1 for d in self._discovery_entries().values()
                                if d.get("verified")),
-                "auto_discovered": sum(1 for d in self.discoveries.values()
+                "auto_discovered": sum(1 for d in self._discovery_entries().values()
                                       if d.get("source") == "auto_discovered")
             },
             "experiments": {
@@ -599,6 +601,11 @@ class MemoryManager:
 
     # ==================== PRIVATE HELPERS ====================
 
+    def _discovery_entries(self) -> Dict[str, Dict]:
+        """Return only discovery entries (dicts), filtering out metadata fields
+        like 'version', 'site', 'description' that are stored as strings."""
+        return {k: v for k, v in self.discoveries.items() if isinstance(v, dict)}
+
     def _find_relevant_discoveries(self, targets: List[str]) -> List[tuple]:
         """Find discoveries relevant to given targets."""
         relevant = []
@@ -607,7 +614,7 @@ class MemoryManager:
 
         target_set = set(t.lower() for t in targets)
 
-        for name, disc in self.discoveries.items():
+        for name, disc in self._discovery_entries().items():
             affects = [a.lower() for a in disc.get("affects", [])]
             if any(t in affects or any(t in a for a in affects) for t in target_set):
                 relevant.append((name, disc))
@@ -622,7 +629,7 @@ class MemoryManager:
 
         param_set = set(p.lower() for p in parameters)
 
-        for name, disc in self.discoveries.items():
+        for name, disc in self._discovery_entries().items():
             params_involved = [p.lower() for p in disc.get("parameters_involved", [])]
             # Check if any of the specified parameters are involved
             if any(any(p in pi or pi in p for pi in params_involved) for p in param_set):

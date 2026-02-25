@@ -66,11 +66,18 @@ def diagnose_with_claude(
             results["hypothesis_test_results"] = hypothesis_tests
             logger.info(f"Added {len(hypothesis_tests)} hypothesis test results to Claude reasoning")
 
-        # Add previous hypotheses for context
+        # Add previous hypotheses for context (strip non-serializable fields)
         previous_hypotheses = diagnosis_input.get("previous_hypotheses", [])
         if previous_hypotheses:
-            results["previous_hypotheses"] = previous_hypotheses
-            logger.info(f"Added {len(previous_hypotheses)} previous hypotheses to Claude reasoning")
+            clean_hypotheses = []
+            for h in previous_hypotheses:
+                if isinstance(h, dict):
+                    clean_hypotheses.append({k: v for k, v in h.items()
+                                             if not k.startswith('_')})
+                else:
+                    clean_hypotheses.append(h)
+            results["previous_hypotheses"] = clean_hypotheses
+            logger.info(f"Added {len(clean_hypotheses)} previous hypotheses to Claude reasoning")
 
         # Add cumulative insights from skip-testing cycles for cross-cycle synthesis
         cumulative_insights = diagnosis_input.get("cumulative_insights", [])

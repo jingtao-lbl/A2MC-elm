@@ -392,6 +392,9 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
     def query(self, prompt: str, max_tokens: Optional[int] = None) -> str:
         """Send a query to Claude and return the response.
 
+        Uses streaming to avoid the 10-minute timeout on long requests
+        (e.g., multimodal diagnosis with many images + large max_tokens).
+
         Args:
             prompt: The prompt to send
             max_tokens: Max tokens for response. If None, uses A2MC_AI_MAX_TOKENS config.
@@ -402,13 +405,13 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             else:
                 max_tokens = int(os.environ.get("A2MC_AI_MAX_TOKENS", "4096"))
         try:
-            message = self.client.messages.create(
+            with self.client.messages.stream(
                 model=self.model,
                 max_tokens=max_tokens,
                 system=self.SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": prompt}]
-            )
-            return message.content[0].text
+            ) as stream:
+                return stream.get_final_text()
         except Exception as e:
             logger.error(f"Claude API error: {e}")
             raise
@@ -551,13 +554,13 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
         try:
             logger.info(f"Sending multimodal query with {len(image_blocks)} images "
                         f"(total ~{total_kb:.0f} KB compressed)")
-            message = self.client.messages.create(
+            with self.client.messages.stream(
                 model=self.model,
                 max_tokens=max_tokens,
                 system=self.SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": content}]
-            )
-            return message.content[0].text
+            ) as stream:
+                return stream.get_final_text()
         except Exception as e:
             logger.error(f"Claude multimodal API error: {e}")
             raise
