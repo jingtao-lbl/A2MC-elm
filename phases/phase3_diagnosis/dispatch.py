@@ -507,7 +507,7 @@ def execute_requested_diagnostics(
                             load_morris_ensemble_data,
                             get_morris_param_names,
                         )
-                        param_matrix, y_outputs = load_morris_ensemble_data(config)
+                        param_matrix, y_outputs, _ensemble_ranges = load_morris_ensemble_data(config)
                         param_names = get_morris_param_names(config)
                         test_config = {
                             'param_names': param_names,

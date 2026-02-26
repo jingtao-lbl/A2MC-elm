@@ -161,10 +161,19 @@ fi
 # CASE NAME GENERATION
 # ========================
 
-if [ -n "$CASE_SUFFIX" ]; then
-    BASE_CASE_NAME="${CASE_PREFIX}_En${CASE_NUM}_${CASE_SUFFIX}"
+# Derive BASE_CASE_NAME from A2MC_CASE_NAME_PATTERN for naming consistency.
+# Pattern example: "Kougarok_ELM-FATES_PtCNPEn{N}_{PHASE}"
+# Strip _{PHASE} to get the base, replace {N} with CASE_NUM.
+if [ -n "${A2MC_CASE_NAME_PATTERN:-}" ]; then
+    # Derive from pattern: strip {PHASE} placeholder, substitute {N}
+    BASE_CASE_NAME=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed 's/_{PHASE}//' | sed "s/{N}/${CASE_NUM}/")
 else
+    # Fallback when pattern is not set
     BASE_CASE_NAME="${CASE_PREFIX}_En${CASE_NUM}"
+fi
+
+if [ -n "$CASE_SUFFIX" ]; then
+    BASE_CASE_NAME="${BASE_CASE_NAME}_${CASE_SUFFIX}"
 fi
 
 if [ -z "${A2MC_ENSEMBLE_OUTPUT:-}" ]; then
@@ -430,11 +439,11 @@ NLEOF
 
     # Build or reuse existing build
     if [ -n "$REUSE_BUILD" ]; then
-        if [ -z "${A2MC_CASE_NAME_PATTERN:-}" ]; then
-            echo "ERROR: A2MC_CASE_NAME_PATTERN is not set. Source your site config first."
+        if [ -z "${CASE_NAME_PATTERN:-}" ]; then
+            echo "ERROR: CASE_NAME_PATTERN is not set. Source your site config first."
             exit 1
         fi
-        REUSE_CASE=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed "s/{N}/${REUSE_BUILD}/" | sed "s/{PHASE}/${PHASE}/")
+        REUSE_CASE=$(echo "${CASE_NAME_PATTERN}" | sed "s/{N}/${REUSE_BUILD}/" | sed "s/{PHASE}/${PHASE}/")
         REUSE_EXEROOT="${CIME_OUTPUT_ROOT}${REUSE_CASE}/bld"
         echo "Reusing build from: ${REUSE_CASE}"
         ./xmlchange EXEROOT="${REUSE_EXEROOT}"
@@ -683,9 +692,14 @@ EOF
 
     # Build or reuse existing build
     if [ -n "$REUSE_BUILD" ]; then
-        # Reuse compiled binary from another case (e.g., En1)
-        # This is the standard pattern: En1 builds, all others reuse
-        REUSE_CASE="${CASE_PREFIX}_${REUSE_BUILD}_${PHASE}"
+        # Reuse compiled binary from another case
+        # Use CASE_NAME_PATTERN to resolve the full case name (consistent with --write-script)
+        if [ -n "${A2MC_CASE_NAME_PATTERN:-}" ]; then
+            REUSE_CASE=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed "s/{N}/${REUSE_BUILD}/" | sed "s/{PHASE}/${PHASE}/")
+        else
+            echo "ERROR: A2MC_CASE_NAME_PATTERN is not set. Source your site config first."
+            exit 1
+        fi
         REUSE_EXEROOT="${CIME_OUTPUT_ROOT}${REUSE_CASE}/bld"
         echo "Reusing build from: ${REUSE_CASE}"
         ./xmlchange EXEROOT="${REUSE_EXEROOT}"

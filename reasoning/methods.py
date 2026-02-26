@@ -779,12 +779,27 @@ def synthesize_experiment_design(
     refuted = [i for i in cumulative_insights if not i.get('hypothesis_supported')]
 
     if not supported:
-        # No supported hypotheses - return last hypothesis for a best-effort test
+        # No supported hypotheses - return best-effort hypothesis with most parameters
         if hypotheses:
-            last = hypotheses[-1]
-            h = last if isinstance(last, dict) else last.__dict__ if hasattr(last, '__dict__') else {}
-            h['synthesis_note'] = 'No hypotheses were supported during skip testing; testing last hypothesis as best effort'
-            return [h] if h else []
+            # Find the hypothesis with the most parameters (prefer recent ones)
+            best_hyp = None
+            best_n_params = 0
+            for hyp in reversed(hypotheses):
+                h = hyp if isinstance(hyp, dict) else (hyp.__dict__ if hasattr(hyp, '__dict__') else {})
+                params = h.get('parameters', h.get('parameters_to_test', []))
+                if len(params) > best_n_params:
+                    best_n_params = len(params)
+                    best_hyp = h
+                # Take the first (most recent) one with parameters if none has many
+                if best_hyp is None and params:
+                    best_hyp = h
+                    best_n_params = len(params)
+            if best_hyp is None:
+                # All hypotheses have 0 params — fall back to last one
+                last = hypotheses[-1]
+                best_hyp = last if isinstance(last, dict) else (last.__dict__ if hasattr(last, '__dict__') else {})
+            best_hyp['synthesis_note'] = 'No hypotheses were supported during skip testing; testing best-effort hypothesis with most parameters'
+            return [best_hyp] if best_hyp else []
         return []
 
     # Get failed approaches from memory
@@ -1942,6 +1957,7 @@ def update_evidence_ledger(
     hypothesis: Dict,
     cycle_num: int,
     test_result: Optional[Dict] = None,
+    untestable_params: Optional[list] = None,
 ) -> None:
     """
     Update the parameter evidence ledger after a skip-testing cycle.
@@ -1955,7 +1971,13 @@ def update_evidence_ledger(
         hypothesis: Hypothesis dict with 'parameters' (or 'parameters_to_test').
         cycle_num: Current skip-testing cycle number (1-based).
         test_result: Optional test result dict with 'hypothesis_supported', 'confidence'.
+        untestable_params: Optional list of params outside ensemble range.
+            These are marked 'untestable' instead of supported/refuted.
     """
+    # Build set of untestable parameter names for quick lookup
+    untestable_names = set()
+    if untestable_params:
+        untestable_names = {p['name'] for p in untestable_params if 'name' in p}
     params = hypothesis.get('parameters', hypothesis.get('parameters_to_test', []))
     current_param_names = set()
 
@@ -2020,9 +2042,20 @@ def update_evidence_ledger(
                 entry['evidence_trail'] = entry['evidence_trail'][-20:]
 
     # Update support counts from test result
-    if test_result and test_result.get('hypothesis_supported'):
+    if test_result:
         for name in current_param_names:
-            if name in ledger:
+            if name not in ledger:
+                continue
+            if name in untestable_names:
+                # Param was outside ensemble range — mark as untestable, not refuted
+                ledger[name]['evidence_trail'].append({
+                    'cycle': cycle_num, 'action': 'untestable',
+                    'reason': 'Proposed value outside Morris ensemble range',
+                    'value': ledger[name]['proposed_values'][-1] if ledger[name]['proposed_values'] else None,
+                })
+                if len(ledger[name]['evidence_trail']) > 20:
+                    ledger[name]['evidence_trail'] = ledger[name]['evidence_trail'][-20:]
+            elif test_result.get('hypothesis_supported'):
                 ledger[name]['times_supported'] += 1
 
 

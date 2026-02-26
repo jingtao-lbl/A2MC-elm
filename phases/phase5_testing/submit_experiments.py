@@ -20,6 +20,7 @@ Usage:
 """
 
 import argparse
+import glob
 import json
 import logging
 import os
@@ -62,11 +63,42 @@ def _extract_job_id(output: str) -> Optional[str]:
 CREATE_CASE_SCRIPT = _project_root / "tools" / "create_case.sh"
 
 
+def _validate_script_env_vars() -> None:
+    """Warn if critical environment variables for script generation are missing."""
+    critical_vars = {
+        'A2MC_ELM_OPTIONS': 'ELM build options (e.g., -nutrient cnp)',
+        'A2MC_E3SM_ROOT': 'E3SM/ELM installation path',
+        'A2MC_CASE_NAME_PATTERN': 'Case naming pattern for build reuse',
+    }
+    missing = []
+    for var, desc in critical_vars.items():
+        val = os.environ.get(var, '')
+        if not val:
+            missing.append(f"  {var}: {desc}")
+    if missing:
+        logger.warning(
+            "Missing environment variables for script generation:\n"
+            + "\n".join(missing)
+            + "\n  Ensure site config is sourced (--config flag or source *_config.sh)"
+        )
+
+
+def _detect_site_config() -> str:
+    """Auto-detect site config path from A2MC_USE_CASE_DIR."""
+    use_case_dir = os.environ.get('A2MC_USE_CASE_DIR', '')
+    if not use_case_dir:
+        return ""
+    config_dir = os.path.join(use_case_dir, 'config')
+    configs = glob.glob(os.path.join(config_dir, '*_config.sh'))
+    return configs[0] if configs else ""
+
+
 def generate_experiment_scripts(
     experiments: List[Dict],
     output_dir: str,
     phases: str = "ADSP RGSP TRANS",
     reuse_build: str = "1",
+    site_config: str = "",
 ) -> List[Dict]:
     """
     Generate self-contained, reviewable job scripts for each experiment.
@@ -82,10 +114,23 @@ def generate_experiment_scripts(
         output_dir: Directory to write generated scripts
         phases: HPC phases to run (default "ADSP RGSP TRANS")
         reuse_build: Case number whose build to reuse (default "1")
+        site_config: Path to site config file (e.g., kougarok_config.sh).
+            If empty, auto-detected from A2MC_USE_CASE_DIR.
 
     Returns:
         Updated experiment dicts with added 'script_file' field.
     """
+    # Auto-detect site config if not provided
+    if not site_config:
+        site_config = _detect_site_config()
+    if site_config:
+        logger.info(f"Using site config: {site_config}")
+    else:
+        logger.warning("No site config found — scripts may have empty ELM_OPTIONS")
+
+    # Validate critical env vars before generating scripts
+    _validate_script_env_vars()
+
     os.makedirs(output_dir, exist_ok=True)
 
     updated = []
@@ -102,13 +147,20 @@ def generate_experiment_scripts(
         script_path = os.path.join(output_dir, f"run_experiment_{name}.sh")
 
         # Build command: create_case.sh --write-script
+        # Use base_case as --case-num so the case name reflects its lineage
+        # (e.g., PtCNPEn322_exp1 instead of Enexp1)
+        base_case = str(exp.get("base_case", ""))
         cmd = [
             str(CREATE_CASE_SCRIPT),
-            "--case-num", name,
+            "--case-num", base_case if base_case else name,
             "--param-file", param_file,
             "--phases", phases,
             "--write-script", script_path,
         ]
+        if base_case:
+            cmd.extend(["--case-suffix", name])
+        if site_config:
+            cmd.extend(["--config", site_config])
         if reuse_build:
             cmd.extend(["--reuse-build", reuse_build])
 

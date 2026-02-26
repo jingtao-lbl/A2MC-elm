@@ -996,6 +996,135 @@ class PhaseLogger:
 
         return self._write_log(4, title, content)
 
+    def log_experiment_design(self,
+                             title: str,
+                             hypothesis_name: str,
+                             mechanism: str,
+                             design_type: str,
+                             base_case: str,
+                             experiments: list,
+                             metadata: Dict = None) -> Path:
+        """Log Phase 5: Experiment design summary (before submission).
+
+        Called after experiments are designed and parameter files are created,
+        but before HPC submission.  Produces a Markdown table showing per-
+        experiment parameter modifications.
+
+        Args:
+            title: Log title
+            hypothesis_name: Name of the hypothesis being tested
+            mechanism: Mechanistic explanation
+            design_type: cumulative / factorial / single
+            base_case: Base case ID
+            experiments: List of experiment dicts from design_experiment_sequence,
+                each with 'name', 'modifications' (list of {parameter, old_value,
+                new_value, pft?}), and optionally 'param_file'.
+            metadata: Additional metadata dict
+        """
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        content = f"""# {title}
+
+**Site:** {self.site_name}
+**Phase:** 5 - Testing (Experiment Design)
+{self._format_iteration_line(phase=5)}
+**Date:** {timestamp}
+
+---
+
+## Hypothesis
+
+**Name:** {hypothesis_name}
+**Mechanism:** {mechanism}
+**Design:** {design_type}
+**Base Case:** {base_case}
+
+---
+
+## Experiment Summary
+
+| Exp | Parameters Modified | Changes |
+|-----|-------------------|---------|
+"""
+        for exp in experiments:
+            name = exp.get('name', '?')
+            mods = exp.get('modifications', [])
+            # Build parameter names column
+            param_names = []
+            changes = []
+            for m in mods:
+                pname = m.get('parameter', '?')
+                pft = m.get('pft', '')
+                if pft:
+                    param_names.append(f"`{pname}` PFT{pft}")
+                else:
+                    param_names.append(f"`{pname}`")
+                old = m.get('old_value', '?')
+                new = m.get('new_value', '?')
+                # Compute percent change
+                try:
+                    old_f = float(old)
+                    new_f = float(new)
+                    if old_f != 0:
+                        pct = (new_f - old_f) / old_f * 100
+                        changes.append(f"{old} → {new} ({pct:+.1f}%)")
+                    else:
+                        changes.append(f"{old} → {new}")
+                except (ValueError, TypeError):
+                    changes.append(f"{old} → {new}")
+
+            params_str = ", ".join(param_names)
+            changes_str = "; ".join(changes)
+            content += f"| {name} | {params_str} | {changes_str} |\n"
+
+        # Detailed per-experiment breakdown
+        content += """
+---
+
+## Experiment Details
+
+"""
+        for exp in experiments:
+            name = exp.get('name', '?')
+            mods = exp.get('modifications', [])
+            param_file = exp.get('param_file', '')
+            content += f"### {name}\n\n"
+            if param_file:
+                content += f"**Parameter file:** `{Path(param_file).name}`\n\n"
+            content += "| Parameter | PFT | Old Value | New Value | Change |\n"
+            content += "|-----------|-----|-----------|-----------|--------|\n"
+            for m in mods:
+                pname = m.get('parameter', '?')
+                pft = m.get('pft', '')
+                old = m.get('old_value', '?')
+                new = m.get('new_value', '?')
+                try:
+                    old_f = float(old)
+                    new_f = float(new)
+                    if old_f != 0:
+                        pct = (new_f - old_f) / old_f * 100
+                        change = f"{pct:+.1f}%"
+                    else:
+                        change = "N/A"
+                except (ValueError, TypeError):
+                    change = ""
+                content += f"| `{pname}` | {pft} | {old} | {new} | {change} |\n"
+            content += "\n"
+
+        if metadata:
+            content += f"""---
+
+## Metadata
+
+```json
+{json.dumps(metadata, indent=2, default=str)}
+```
+"""
+
+        content += self._format_metadata_block(5, "testing_design", metadata)
+
+        return self._write_log(5, title, content)
+
     def log_testing(self,
                     title: str,
                     experiments_run: List[str],

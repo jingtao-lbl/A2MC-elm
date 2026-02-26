@@ -72,7 +72,7 @@ def test_hypothesis_with_existing_data(
 
     # Load Morris ensemble data
     try:
-        param_matrix, y_outputs = load_morris_ensemble_data(config, screening_data)
+        param_matrix, y_outputs, ensemble_ranges = load_morris_ensemble_data(config, screening_data)
         logger.info(f"  Loaded {len(param_matrix)} parameter sets")
     except Exception as e:
         logger.error(f"Failed to load Morris data: {e}")
@@ -82,11 +82,41 @@ def test_hypothesis_with_existing_data(
             'test_method': method,
             'evidence': {'error': str(e)},
             'insights': [],
-            'next_steps': ['Fix data loading before retrying']
+            'next_steps': ['Fix data loading before retrying'],
+            'untestable_params': [],
         }
 
     # Dispatch to appropriate test method
     param_names = get_morris_param_names(config)
+
+    # Check which proposed params are outside ensemble range (untestable)
+    untestable_params = []
+    params = _get_hypothesis_params(hypothesis)
+    if ensemble_ranges:
+        for p in params:
+            name = p.get('name', '')
+            proposed = p.get('proposed', p.get('new_value'))
+            if name in ensemble_ranges and proposed is not None:
+                try:
+                    proposed_val = float(proposed)
+                except (ValueError, TypeError):
+                    continue
+                emin = ensemble_ranges[name]['min']
+                emax = ensemble_ranges[name]['max']
+                if proposed_val < emin or proposed_val > emax:
+                    untestable_params.append({
+                        'name': name,
+                        'proposed': proposed_val,
+                        'ensemble_min': emin,
+                        'ensemble_max': emax,
+                        'reason': f'Proposed {proposed_val} outside ensemble [{emin}, {emax}]'
+                    })
+
+        if untestable_params:
+            logger.warning(f"  {len(untestable_params)}/{len(params)} params outside ensemble range — UNTESTABLE")
+            for up in untestable_params:
+                logger.warning(f"    {up['name']}: proposed={up['proposed']}, "
+                             f"range=[{up['ensemble_min']}, {up['ensemble_max']}]")
 
     if method == 'comparison':
         result = test_by_case_comparison(
@@ -118,6 +148,7 @@ def test_hypothesis_with_existing_data(
 
     result['test_method'] = method
     result['hypothesis_name'] = hypothesis.get('name', 'Unknown')
+    result['untestable_params'] = untestable_params
 
     return result
 
@@ -131,7 +162,8 @@ def load_morris_ensemble_data(config: Any, screening_data: Dict = None) -> Tuple
         screening_data: Optional screening data to include
 
     Returns:
-        (param_matrix, y_outputs) tuple
+        (param_matrix, y_outputs, ensemble_ranges) tuple where ensemble_ranges
+        is a dict mapping parameter shorthand names to {'min': float, 'max': float}.
     """
     import numpy as np
 
@@ -231,7 +263,18 @@ def load_morris_ensemble_data(config: Any, screening_data: Dict = None) -> Tuple
     if screening_data:
         y_outputs['_screening'] = screening_data
 
-    return param_matrix, y_outputs
+    # Compute per-parameter ensemble ranges for out-of-range detection
+    ensemble_ranges = {}
+    param_names = get_morris_param_names(config)
+    if param_names and len(param_matrix.shape) > 1:
+        for i, name in enumerate(param_names):
+            if i < param_matrix.shape[1]:
+                ensemble_ranges[name] = {
+                    'min': float(np.min(param_matrix[:, i])),
+                    'max': float(np.max(param_matrix[:, i])),
+                }
+
+    return param_matrix, y_outputs, ensemble_ranges
 
 
 def get_morris_param_names(config: Any) -> List[str]:
@@ -269,7 +312,10 @@ def get_morris_param_names(config: Any) -> List[str]:
                         if name and (name[0].isalpha() or name[0] == '_'):
                             names.append(name)
                     # Simple one-name-per-line format
-                    elif '\t' not in line and line[0:1].isalpha():
+                    # Parameter names are word chars only (e.g. vmax_p_10) —
+                    # reject header text that contains spaces, colons, dots, etc.
+                    elif ('\t' not in line and line[0:1].isalpha()
+                          and all(c.isalnum() or c == '_' for c in line)):
                         names.append(line)
             if names:
                 return names

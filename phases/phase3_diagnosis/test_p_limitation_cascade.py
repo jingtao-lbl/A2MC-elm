@@ -235,24 +235,29 @@ def test_hypothesis(param_matrix, y_outputs, screening_data, config):
     pidkp10_idx = pid_kp_idx.get(10)
     if pft10_col is not None and pft10_col < leaf.shape[1]:
         pft10_bio = leaf[:, pft10_col] + froot[:, pft10_col]
-        pft10_fail = pft10_bio < np.percentile(pft10_bio, 25)
+        # Guard: when many cases have zero biomass (PFT collapse), the 25th
+        # percentile can be ~0, making (bio < 0) all-False → empty mask →
+        # np.mean(empty) warning.  Use <= to include the zero cases, and
+        # guard the downstream means with np.any() checks.
+        pft10_fail = pft10_bio <= np.percentile(pft10_bio, 25)
 
-        if vmax10_idx is not None:
-            failed_vmax = np.mean(param_matrix[pft10_fail, vmax10_idx])
-            success_vmax = np.mean(param_matrix[~pft10_fail, vmax10_idx])
-            evidence['PFT10_vmax_p_failed_mean'] = float(failed_vmax)
-            evidence['PFT10_vmax_p_success_mean'] = float(success_vmax)
+        if np.any(pft10_fail) and np.any(~pft10_fail):
+            if vmax10_idx is not None:
+                failed_vmax = np.mean(param_matrix[pft10_fail, vmax10_idx])
+                success_vmax = np.mean(param_matrix[~pft10_fail, vmax10_idx])
+                evidence['PFT10_vmax_p_failed_mean'] = float(failed_vmax)
+                evidence['PFT10_vmax_p_success_mean'] = float(success_vmax)
 
-        if pidkp10_idx is not None:
-            failed_kp = np.mean(param_matrix[pft10_fail, pidkp10_idx])
-            success_kp = np.mean(param_matrix[~pft10_fail, pidkp10_idx])
-            evidence['PFT10_pid_kp_failed_mean'] = float(failed_kp)
-            evidence['PFT10_pid_kp_success_mean'] = float(success_kp)
-            if success_kp > 0 and failed_kp > success_kp * 1.3:
-                insights.append(
-                    f"PFT#10 failed cases have {failed_kp/success_kp:.1f}x "
-                    f"higher pid_kp (PID overreaction)"
-                )
+            if pidkp10_idx is not None:
+                failed_kp = np.mean(param_matrix[pft10_fail, pidkp10_idx])
+                success_kp = np.mean(param_matrix[~pft10_fail, pidkp10_idx])
+                evidence['PFT10_pid_kp_failed_mean'] = float(failed_kp)
+                evidence['PFT10_pid_kp_success_mean'] = float(success_kp)
+                if success_kp > 0 and failed_kp > success_kp * 1.3:
+                    insights.append(
+                        f"PFT#10 failed cases have {failed_kp/success_kp:.1f}x "
+                        f"higher pid_kp (PID overreaction)"
+                    )
 
     # ====================================================================
     # Verdict

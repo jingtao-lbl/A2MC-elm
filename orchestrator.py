@@ -1791,6 +1791,40 @@ Diagnosis Summary:{skip_header}
             from phases.phase4_hypothesis.test_with_existing_data import _sanitize_numpy_types
             test_result = _sanitize_numpy_types(test_result)
 
+            # =================================================================
+            # UNTESTABLE CHECK: If most proposed params are outside the Morris
+            # ensemble range, skip-testing CAN'T evaluate the hypothesis.
+            # Exit immediately → HPC experiments with hypothesis intact.
+            # =================================================================
+            untestable = test_result.get('untestable_params', [])
+            total_params = len(hypothesis.get('parameters',
+                               hypothesis.get('parameters_to_test', [])))
+
+            if untestable and len(untestable) >= max(1, total_params // 2):
+                logger.info("=" * 60)
+                logger.info(f"UNTESTABLE: {len(untestable)}/{total_params} proposed params "
+                           f"outside Morris ensemble range")
+                logger.info("Existing data CANNOT evaluate this hypothesis — "
+                           "proceeding to HPC experiments with hypothesis intact")
+                logger.info("=" * 60)
+                for up in untestable:
+                    logger.info(f"  {up['name']}: proposed={up['proposed']}, "
+                               f"ensemble=[{up['ensemble_min']}, {up['ensemble_max']}]")
+
+                # Convert hypothesis directly to experiment (bypass synthesis)
+                h = hypothesis if isinstance(hypothesis, dict) else hypothesis.__dict__
+                self.state.experiments = [h]
+
+                self.state.current_phase = Phase.TESTING.value
+                self.state.record_phase_transition(
+                    Phase.HYPOTHESIS.value, Phase.TESTING.value,
+                    f"Hypothesis untestable with existing data "
+                    f"({len(untestable)}/{total_params} params outside ensemble range), "
+                    f"proceeding to HPC"
+                )
+                logger.info("Advancing to TESTING phase (HPC experiments).")
+                return
+
             # Record test result
             self.state.hypothesis_tests.append(test_result)
 
@@ -1821,6 +1855,7 @@ Diagnosis Summary:{skip_header}
                 hypothesis,
                 cycle_num=self.state.skip_testing_count + 1,
                 test_result=test_result,
+                untestable_params=test_result.get('untestable_params'),
             )
             n_active = sum(1 for e in self.state.parameter_evidence_ledger.values()
                           if e.get('current_status') == 'active')
@@ -2113,17 +2148,53 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             self.state.current_phase = Phase.REFINEMENT.value
             return
 
-        # --- 3.5. Generate reviewable experiment scripts ---
+        # --- 3.5. Log experiment design summary ---
+        if self._phase_logger:
+            try:
+                self._phase_logger.set_iteration_context(
+                    calibration_round=self.state.calibration_round,
+                    iteration=self.state.iteration,
+                    experiment_count=self.state.experiment_count,
+                    skip_testing_count=self.state.skip_testing_count
+                )
+                hyp = synthesized[0] if synthesized else {}
+                log_path = self._phase_logger.log_experiment_design(
+                    title="Experiment_Design",
+                    hypothesis_name=hyp.get('name', 'Unknown'),
+                    mechanism=hyp.get('mechanism', ''),
+                    design_type=hyp.get('design_type',
+                                        hyp.get('experimental_design', 'cumulative')),
+                    base_case=str(self.state.screening_data.get('best_case', {}).get('case_id', '?')),
+                    experiments=experiments,
+                    metadata={
+                        'iteration': current_iter,
+                        'n_experiments': len(experiments),
+                        'n_hypotheses': len(synthesized),
+                        'base_case': self.state.screening_data.get('best_case', {}),
+                    }
+                )
+                logger.info(f"  Experiment design log: {log_path}")
+            except Exception as e:
+                logger.warning(f"Could not write experiment design log: {e}")
+
+        # --- 3.6 Generate reviewable experiment scripts ---
         if self.config.review_experiment_scripts:
             from phases.phase5_testing import generate_experiment_scripts
+            # Auto-detect site config for proper ELM_OPTIONS resolution
+            import glob as _glob
+            _site_cfg_dir = os.path.join(
+                os.environ.get('A2MC_USE_CASE_DIR', ''), 'config')
+            _site_cfgs = _glob.glob(os.path.join(_site_cfg_dir, '*_config.sh'))
+            _site_config = _site_cfgs[0] if _site_cfgs else ""
             experiments = generate_experiment_scripts(
                 experiments=experiments,
                 output_dir=output_dir,
+                site_config=_site_config,
             )
             generated = sum(1 for e in experiments if e.get("script_file"))
             logger.info(f"Generated {generated} reviewable experiment scripts in {output_dir}")
 
-            # --- 3.6. Human review of scripts ---
+            # --- 3.7. Human review of scripts ---
             if self.config.human_review and generated > 0:
                 script_list = "\n".join(
                     f"    {e.get('script_file', 'N/A')}" for e in experiments
