@@ -12,27 +12,23 @@ Log Structure (site-specific):
     ├── phase2_screening/
     │   └── r02_20260116_143052_Ensemble_Screening.md
     ├── phase3_diagnosis/
-    │   └── r02_exp01_iter03_20260116_143052_Root_Cause_Analysis.md
+    │   └── r02_c01_iter03_20260116_143052_Root_Cause_Analysis.md
     └── ...
 
 Filename formats (with session_id from orchestrator):
-    Phase 0-2:     r{RR}_{session_id}_Title.md
-    Phase 3 & 4:   r{RR}_exp{EE}_iter{II}_{session_id}_Title.md
-    Phase 5 & 6:   r{RR}_iter{II}_{session_id}_Title.md
+    Phase 0-2:       r{RR}_{session_id}_Title.md
+    Phase 3, 4, 5, 6: r{RR}_c{EE}_iter{II}_{session_id}_Title.md
 
 Fallback formats (standalone usage, no session_id):
-    Phase 0-2:     r{RR}_{YYYYMMDDx}_Title.md
-    Phase 3 & 4:   r{RR}_exp{EE}_iter{II}_{YYYYMMDDx}_Title.md
-    Phase 5 & 6:   r{RR}_iter{II}_{YYYYMMDDx}_Title.md
+    Phase 0-2:       r{RR}_{YYYYMMDDx}_Title.md
+    Phase 3, 4, 5, 6: r{RR}_c{EE}_iter{II}_{YYYYMMDDx}_Title.md
 
     RR = calibration_round (outermost Phase 0→7 loop, e.g., round 1=138 params, round 2=162 params)
-    EE = experiment_count (outer loop: full 3→4→5→6 cycles, only in Phase 3 & 4)
-    II = iteration within experiment cycle (1-based inner loop counter, only in Phase 3 & 4)
-         For Phase 5 & 6: overall iteration counter within round
+    EE = experiment_count (outer loop: full 3→4→5→6 experiment cycles)
+    II = iteration within experiment cycle (Phase 3 & 4: skip_testing_count + 1;
+         Phase 5 & 6: overall iteration counter within round)
     session_id = YYYYMMDD_HHMMSS timestamp matching the run log (a2mc_run_{session_id}.log)
     YYYYMMDDx = fallback: date + session letter (a, b, c for same-day logs)
-
-    exp/iter counters only appear in Phase 3 (Diagnosis) and Phase 4 (Hypothesis)
     because the inner loop (Phase 3↔4) only applies there.
 
 Note:
@@ -205,18 +201,16 @@ class PhaseLogger:
         Generate log filename with iteration context and session identifier.
 
         When session_id is set (orchestrator run):
-            Phase 3 & 4: r{RR}_exp{EE}_iter{II}_{session_id}_Title.md
-            Phase 5 & 6: r{RR}_iter{II}_{session_id}_Title.md
+            Phase 3-6:   r{RR}_c{EE}_iter{II}_{session_id}_Title.md
             Phase 0-2:   r{RR}_{session_id}_Title.md
 
         Fallback (no session_id, e.g., standalone usage):
-            Phase 3 & 4: r{RR}_exp{EE}_iter{II}_{YYYYMMDDx}_Title.md
-            Phase 5 & 6: r{RR}_iter{II}_{YYYYMMDDx}_Title.md
+            Phase 3-6:   r{RR}_c{EE}_iter{II}_{YYYYMMDDx}_Title.md
             Phase 0-2:   r{RR}_{YYYYMMDDx}_Title.md
 
         RR = calibration_round (outermost Phase 0→7 loop, e.g., round 1=138 params)
-        EE = experiment_count (outer loop, only Phase 3 & 4)
-        II = iteration within experiment cycle (1-based, = skip_testing_count + 1)
+        EE = experiment_count (outer loop experiment cycle)
+        II = iteration (Phase 3&4: skip_testing_count+1; Phase 5&6: overall iteration)
         session_id = YYYYMMDD_HHMMSS timestamp matching the run log
         """
         # Determine date portion: session_id or date+letter fallback
@@ -242,10 +236,11 @@ class PhaseLogger:
         round_prefix = f"r{self.calibration_round:02d}"
         if phase in (3, 4):
             iter_in_exp = self.skip_testing_count + 1  # 1-based inner loop counter
-            iter_prefix = (f"{round_prefix}_exp{self.experiment_count:02d}"
+            iter_prefix = (f"{round_prefix}_c{self.experiment_count:02d}"
                            f"_iter{iter_in_exp:02d}")
         elif phase in (5, 6):
-            iter_prefix = f"{round_prefix}_iter{self.current_iteration:02d}"
+            iter_prefix = (f"{round_prefix}_c{self.experiment_count:02d}"
+                           f"_iter{self.current_iteration:02d}")
         else:
             iter_prefix = round_prefix
 
@@ -1586,13 +1581,12 @@ class PhaseLogger:
         # Build glob pattern
         round_part = f"r{calibration_round:02d}" if calibration_round is not None else "r*"
 
-        if phase in (3, 4):
-            exp_part = f"_exp{experiment_count:02d}" if experiment_count is not None else "_exp*"
+        if phase in (3, 4, 5, 6):
+            exp_part = f"_c{experiment_count:02d}" if experiment_count is not None else "_c*"
             iter_part = f"_iter{iteration:02d}" if iteration is not None else "_iter*"
             pattern = f"{round_part}{exp_part}{iter_part}_*.md"
         else:
-            iter_part = f"_iter{iteration:02d}" if iteration is not None else "_iter*"
-            pattern = f"{round_part}{iter_part}_*.md"
+            pattern = f"{round_part}_*.md"
 
         return sorted(phase_dir.glob(pattern))
 

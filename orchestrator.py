@@ -2094,11 +2094,16 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
 
         logger.info(f"Designed experiments from {len(synthesized)} hypotheses")
 
-        # Tag each experiment with iteration
+        # Tag each experiment with iteration and prefix names with cycle number
+        # to avoid collisions across experiment cycles (c0_exp1, c1_exp1, etc.)
+        cycle = self.state.experiment_count
         for exp in experiments:
             exp["iteration"] = current_iter
+            old_name = exp.get("name", "unnamed")
+            exp["name"] = f"c{cycle}_{old_name}"
 
-        logger.info(f"Designed {len(experiments)} experiments for iteration {current_iter}")
+        logger.info(f"Designed {len(experiments)} experiments for iteration {current_iter} "
+                     f"(cycle {cycle})")
 
         # --- 3. Create modified parameter files ---
         # Each experiment uses its base_case's parameter file (not the default template)
@@ -2224,6 +2229,10 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             submitted = sum(1 for e in experiments
                            if e.get("submission_status") in ("submitted", "simulated"))
             logger.info(f"Submitted {submitted}/{len(experiments)} experiments")
+            for exp in experiments:
+                jid = exp.get("job_id", "N/A")
+                sts = exp.get("submission_status", "unknown")
+                logger.info(f"  {exp.get('name','?')}: job_id={jid} ({sts})")
         except Exception as e:
             logger.error(f"Experiment submission failed: {e}")
             for exp in experiments:

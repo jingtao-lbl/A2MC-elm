@@ -141,7 +141,7 @@ def run_diagnostic_scripts(
             ee = experiment_count
             sc = skip_testing_count
             ii = sc + 1  # 1-based inner loop counter
-            plot_filename_prefix = f"r{rr:02d}_exp{ee:02d}_iter{ii:02d}_"
+            plot_filename_prefix = f"r{rr:02d}_c{ee:02d}_iter{ii:02d}_"
 
         # Run diagnosis for best case
         result = run_diagnosis_for_orchestrator(
