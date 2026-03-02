@@ -27,7 +27,11 @@ try:
     import anthropic
 except ImportError:
     anthropic = None
-    print("Warning: anthropic package not installed. Run: pip install anthropic")
+
+try:
+    import openai as openai_module
+except ImportError:
+    openai_module = None
 
 # Configuration
 try:
@@ -106,6 +110,14 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             A2MC_AI_MAX_TOKENS: Max tokens for responses (default: 4096)
             AI_API_KEY: API key (or use A2MC_AI_API_KEY_ENV to specify different var)
         """
+        # Resolve provider
+        if a2mc_config:
+            self.provider = a2mc_config.AI_PROVIDER
+            self.base_url = a2mc_config.AI_BASE_URL
+        else:
+            self.provider = os.environ.get('A2MC_AI_PROVIDER', 'anthropic')
+            self.base_url = os.environ.get('A2MC_AI_BASE_URL', '') or None
+
         # Resolve API key
         if api_key:
             self.api_key = api_key
@@ -114,24 +126,52 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
         else:
             self.api_key = os.environ.get("AI_API_KEY")
 
-        # Resolve model
+        # Resolve model (auto-derive from provider if not set)
         if model:
             self.model = model
         elif a2mc_config:
             self.model = a2mc_config.AI_MODEL
         else:
-            self.model = os.environ.get("A2MC_AI_MODEL", "claude-sonnet-4-20250514")
+            explicit = os.environ.get("A2MC_AI_MODEL", "")
+            if explicit:
+                self.model = explicit
+            else:
+                _model_defaults = {
+                    'anthropic': 'claude-opus-4-20250514',
+                    'openai': 'gpt-4o',
+                    'cborg': 'anthropic/claude-sonnet',
+                }
+                self.model = _model_defaults.get(self.provider, 'claude-opus-4-20250514')
 
         self.memory = memory
         self.use_rag = use_rag
 
-        if anthropic is None:
-            raise ImportError("anthropic package required. Install with: pip install anthropic")
-
         if not self.api_key:
-            raise ValueError("AI_API_KEY not found in environment. Set it with: export AI_API_KEY='your-key'")
+            key_env = a2mc_config.AI_API_KEY_ENV if a2mc_config else 'AI_API_KEY'
+            raise ValueError(f"API key not found. Set it with: export {key_env}='your-key'")
 
-        self.client = anthropic.Anthropic(api_key=self.api_key)
+        # Create client based on provider
+        if self.provider == 'anthropic':
+            if anthropic is None:
+                raise ImportError("anthropic package required. Install: pip install anthropic")
+            kwargs = {'api_key': self.api_key}
+            if self.base_url:
+                kwargs['base_url'] = self.base_url
+            self.client = anthropic.Anthropic(**kwargs)
+            self._sdk = 'anthropic'
+        elif self.provider in ('openai', 'cborg'):
+            if openai_module is None:
+                raise ImportError("openai package required. Install: pip install openai")
+            kwargs = {'api_key': self.api_key}
+            if self.base_url:
+                kwargs['base_url'] = self.base_url
+            elif self.provider == 'cborg':
+                kwargs['base_url'] = 'https://api.cborg.lbl.gov'
+            self.client = openai_module.OpenAI(**kwargs)
+            self._sdk = 'openai'
+        else:
+            raise ValueError(f"Unknown AI provider: {self.provider}. "
+                             f"Supported: anthropic, openai, cborg")
 
         # Initialize RAG retriever if enabled
         self.rag_retriever = None
@@ -158,7 +198,8 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
         memory_status = "with memory" if memory else "without memory"
         rag_status = "with RAG" if self.rag_retriever else "without RAG"
         param_status = f", {len(self._param_list_context.splitlines())} params loaded" if self._param_list_context else ""
-        logger.info(f"Reasoning module initialized {memory_status}, {rag_status}{param_status}, model: {self.model}")
+        logger.info(f"Reasoning module initialized {memory_status}, {rag_status}{param_status}, "
+                    f"provider: {self.provider}, model: {self.model}")
 
     def _load_parameter_list(self) -> str:
         """Load only the Morris ensemble parameter list.
@@ -405,15 +446,26 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             else:
                 max_tokens = int(os.environ.get("A2MC_AI_MAX_TOKENS", "4096"))
         try:
-            with self.client.messages.stream(
-                model=self.model,
-                max_tokens=max_tokens,
-                system=self.SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": prompt}]
-            ) as stream:
-                return stream.get_final_text()
+            if self._sdk == 'anthropic':
+                with self.client.messages.stream(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    system=self.SYSTEM_PROMPT,
+                    messages=[{"role": "user", "content": prompt}]
+                ) as stream:
+                    return stream.get_final_text()
+            else:  # openai SDK (openai / cborg providers)
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    messages=[
+                        {"role": "system", "content": self.SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"Claude API error: {e}")
+            logger.error(f"AI API error ({self.provider}): {e}")
             raise
 
     @staticmethod
@@ -548,21 +600,42 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             else:
                 max_tokens = int(os.environ.get("A2MC_AI_MAX_TOKENS", "4096"))
 
-        # Build multimodal content: images first, then text
-        content = image_blocks + [{"type": "text", "text": prompt}]
-
         try:
             logger.info(f"Sending multimodal query with {len(image_blocks)} images "
                         f"(total ~{total_kb:.0f} KB compressed)")
-            with self.client.messages.stream(
-                model=self.model,
-                max_tokens=max_tokens,
-                system=self.SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": content}]
-            ) as stream:
-                return stream.get_final_text()
+
+            if self._sdk == 'anthropic':
+                # Anthropic format: image blocks + text block
+                content = image_blocks + [{"type": "text", "text": prompt}]
+                with self.client.messages.stream(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    system=self.SYSTEM_PROMPT,
+                    messages=[{"role": "user", "content": content}]
+                ) as stream:
+                    return stream.get_final_text()
+            else:  # openai SDK (openai / cborg providers)
+                # OpenAI vision format: convert Anthropic image blocks to data URLs
+                oai_content = []
+                for block in image_blocks:
+                    src = block["source"]
+                    data_url = f"data:{src['media_type']};base64,{src['data']}"
+                    oai_content.append({
+                        "type": "image_url",
+                        "image_url": {"url": data_url}
+                    })
+                oai_content.append({"type": "text", "text": prompt})
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=max_tokens,
+                    messages=[
+                        {"role": "system", "content": self.SYSTEM_PROMPT},
+                        {"role": "user", "content": oai_content}
+                    ]
+                )
+                return response.choices[0].message.content
         except Exception as e:
-            logger.error(f"Claude multimodal API error: {e}")
+            logger.error(f"AI multimodal API error ({self.provider}): {e}")
             raise
 
     def _load_template_schema(self, template_name: str) -> str:

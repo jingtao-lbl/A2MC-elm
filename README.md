@@ -82,20 +82,40 @@ export A2MC_OUTPUT_ROOT="/path/to/output" # Simulation output root
 
 ### Step 5: Configure AI Settings
 
-Set your AI API key (required for AI-driven phases 2, 3, 4, 6):
+AI reasoning is required for phases 2, 3, 4, and 6. Two things to configure:
+
+**5a. Choose your AI provider** — edit `A2MC_AI_PROVIDER` in `a2mc_config.sh` (one-time):
 
 ```bash
-# Required: Set your API key
-export AI_API_KEY="sk-ant-api03-..."
-
-# Optional: Change AI model (default: claude-sonnet-4-20250514)
-export A2MC_AI_MODEL="claude-sonnet-4-20250514"   # Balanced (default)
-export A2MC_AI_MODEL="claude-opus-4-20250514"    # Most capable
-export A2MC_AI_MODEL="claude-haiku-3-20240307"   # Fastest/cheapest
-
-# Add to ~/.bashrc for persistence
-echo 'export AI_API_KEY="your-key-here"' >> ~/.bashrc
+# In a2mc_config.sh, set ONE of these (default is anthropic):
+export A2MC_AI_PROVIDER="anthropic"   # Direct Anthropic API (default)
+# export A2MC_AI_PROVIDER="openai"    # Direct OpenAI API
+# export A2MC_AI_PROVIDER="cborg"     # Berkeley Lab CBorg proxy
 ```
+
+Each provider has a default model (set automatically when you source `a2mc_config.sh`):
+
+| Provider | Default Model | Other Models |
+|----------|---------------|--------------|
+| `anthropic` | `claude-opus-4-20250514` | `claude-sonnet-4-20250514`, `claude-haiku-3-20240307` |
+| `openai` | `gpt-4o` | `gpt-4o-mini`, `o3-mini` |
+| `cborg` | `anthropic/claude-sonnet` | `openai/gpt-4o`, `openai/gpt-4o-mini`, `lbl/llama` |
+
+To override the model, set `A2MC_AI_MODEL` in `a2mc_config.sh`.
+
+**5b. Set your API key** — add to `~/.bashrc` (one-time, must be done before sourcing `a2mc_config.sh`):
+
+```bash
+# Add the API key for your chosen provider to ~/.bashrc:
+echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.bashrc   # for anthropic
+# echo 'export OPENAI_API_KEY="sk-..."' >> ~/.bashrc        # for openai
+# echo 'export CBORG_API_KEY="sk-..."' >> ~/.bashrc         # for cborg
+
+# Then reload:
+source ~/.bashrc
+```
+
+**Note:** Keep your API key visible only to yourself (e.g., `chmod 600 ~/.bashrc`).
 
 ### Step 6: Run A2MC
 
@@ -191,14 +211,17 @@ module load python
 python -m venv ~/a2mc_env
 source ~/a2mc_env/bin/activate
 
-# Install anthropic and A2MC dependencies (including RAG)
-pip install anthropic numpy pandas xarray netCDF4 scipy SALib networkx chromadb sentence-transformers pyyaml Pillow
+# Install A2MC dependencies (including RAG)
+# anthropic SDK for Anthropic provider; openai SDK for OpenAI/CBorg providers
+pip install anthropic openai numpy pandas xarray netCDF4 scipy SALib networkx chromadb sentence-transformers pyyaml Pillow
 
 # Set your API key (add to ~/.bashrc for persistence)
-export AI_API_KEY="your-api-key-here"
+# Use the env var matching your provider: ANTHROPIC_API_KEY, OPENAI_API_KEY, or CBORG_API_KEY
+export ANTHROPIC_API_KEY="your-api-key-here"
 
 # Verify installation
-python -c "import anthropic; print(anthropic.__version__)"
+python -c "import anthropic; print('anthropic', anthropic.__version__)"
+python -c "import openai; print('openai', openai.__version__)"
 ```
 
 **Note:** The virtual environment is auto-activated when you `source a2mc_config.sh`.
@@ -432,7 +455,7 @@ Claude API interface for intelligent reasoning (split into `schemas.py`, `prompt
 ```python
 from reasoning import ReasoningModule, Diagnosis, Hypothesis
 
-# Initialize (uses AI_API_KEY env var and A2MC_AI_MODEL config)
+# Initialize (uses provider-specific API key env var and A2MC_AI_MODEL config)
 reasoning = ReasoningModule()
 
 # Diagnose calibration failure
@@ -721,13 +744,16 @@ cd A2MC
 module load python
 python -m venv ~/a2mc_env
 source ~/a2mc_env/bin/activate
-pip install anthropic netCDF4 numpy scipy SALib pandas networkx chromadb sentence-transformers pyyaml Pillow
+pip install anthropic openai netCDF4 numpy scipy SALib pandas networkx chromadb sentence-transformers pyyaml Pillow
 
 # 3. Set API key (add to ~/.bashrc for persistence)
-export AI_API_KEY="sk-ant-..."
+# Use the env var matching your provider (see a2mc_config.sh → A2MC_AI_PROVIDER):
+#   anthropic → ANTHROPIC_API_KEY, openai → OPENAI_API_KEY, cborg → CBORG_API_KEY
+echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.bashrc
+source ~/.bashrc
 
 # 4. Verify setup
-python -c "import anthropic; print('Anthropic OK')"
+python -c "import anthropic; print('Anthropic SDK OK')"
 python -c "from orchestrator import CalibrationOrchestrator; print('Orchestrator OK')"
 ```
 
@@ -737,7 +763,7 @@ python -c "from orchestrator import CalibrationOrchestrator; print('Orchestrator
 
 Before running, modify the two configuration files for your setup:
 
-1. **`a2mc_config.sh`** — Machine-level settings (HPC project, E3SM path, output root, Python env)
+1. **`a2mc_config.sh`** — Machine-level settings (HPC project, E3SM path, output root, Python env, **AI provider**)
 2. **`use_cases/{site}/config/{site}_config.sh`** — Site-specific settings (PFTs, parameters, validation targets, case naming)
 
 ```bash

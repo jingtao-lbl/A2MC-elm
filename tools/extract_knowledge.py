@@ -246,23 +246,66 @@ class KnowledgeExtractor:
         else:
             self.phase_logger = None
 
-        # API key for Claude
-        self.api_key = api_key or os.environ.get('AI_API_KEY')
-        self.model = os.environ.get('A2MC_AI_MODEL', 'claude-sonnet-4-20250514')
+        # Resolve AI provider settings
+        self.provider = os.environ.get('A2MC_AI_PROVIDER', 'anthropic')
+        explicit_model = os.environ.get('A2MC_AI_MODEL', '')
+        if explicit_model:
+            self.model = explicit_model
+        else:
+            _model_defaults = {
+                'anthropic': 'claude-opus-4-20250514',
+                'openai': 'gpt-4o',
+                'cborg': 'anthropic/claude-sonnet',
+            }
+            self.model = _model_defaults.get(self.provider, 'claude-opus-4-20250514')
 
-        # Initialize Anthropic client
+        # Resolve API key (explicit arg > config-derived env var)
+        if api_key:
+            self.api_key = api_key
+        else:
+            # Derive key env var name from provider
+            key_env = os.environ.get('A2MC_AI_API_KEY_ENV', '')
+            if not key_env:
+                key_defaults = {
+                    'anthropic': 'ANTHROPIC_API_KEY',
+                    'openai': 'OPENAI_API_KEY',
+                    'cborg': 'CBORG_API_KEY',
+                }
+                key_env = key_defaults.get(self.provider, 'AI_API_KEY')
+            self.api_key = os.environ.get(key_env)
+
+        # Initialize AI client based on provider
         self._client = None
+        self._sdk = None
         if self.api_key:
             try:
-                import anthropic
-                self._client = anthropic.Anthropic(api_key=self.api_key)
-            except ImportError:
-                logger.warning("anthropic package not installed")
+                if self.provider == 'anthropic':
+                    import anthropic
+                    kwargs = {'api_key': self.api_key}
+                    base_url = os.environ.get('A2MC_AI_BASE_URL', '')
+                    if base_url:
+                        kwargs['base_url'] = base_url
+                    self._client = anthropic.Anthropic(**kwargs)
+                    self._sdk = 'anthropic'
+                elif self.provider in ('openai', 'cborg'):
+                    import openai
+                    kwargs = {'api_key': self.api_key}
+                    base_url = os.environ.get('A2MC_AI_BASE_URL', '')
+                    if base_url:
+                        kwargs['base_url'] = base_url
+                    elif self.provider == 'cborg':
+                        kwargs['base_url'] = 'https://api.cborg.lbl.gov'
+                    self._client = openai.OpenAI(**kwargs)
+                    self._sdk = 'openai'
+                else:
+                    logger.warning(f"Unknown AI provider: {self.provider}")
+            except ImportError as e:
+                logger.warning(f"Required SDK not installed for provider '{self.provider}': {e}")
             except Exception as e:
-                logger.warning(f"Could not initialize Anthropic client: {e}")
+                logger.warning(f"Could not initialize AI client: {e}")
 
         logger.info(f"KnowledgeExtractor initialized (site={self.site_dir.name}, "
-                   f"api={'available' if self._client else 'not available'})")
+                   f"provider={self.provider}, api={'available' if self._client else 'not available'})")
 
     def extract_from_phase(self, phase: Union[int, str]) -> Dict[str, List[Dict]]:
         """
@@ -399,16 +442,24 @@ class KnowledgeExtractor:
         prompt = EXTRACTION_PROMPT.format(log_content=content)
 
         try:
-            response = self._client.messages.create(
-                model=self.model,
-                max_tokens=4096,
-                messages=[
-                    {"role": "user", "content": prompt}
-                ]
-            )
-
-            # Extract text from response
-            response_text = response.content[0].text.strip()
+            if self._sdk == 'anthropic':
+                response = self._client.messages.create(
+                    model=self.model,
+                    max_tokens=4096,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                response_text = response.content[0].text.strip()
+            else:  # openai SDK (openai / cborg providers)
+                response = self._client.chat.completions.create(
+                    model=self.model,
+                    max_tokens=4096,
+                    messages=[
+                        {"role": "user", "content": prompt}
+                    ]
+                )
+                response_text = response.choices[0].message.content.strip()
 
             # Parse JSON from response
             json_str = response_text

@@ -238,16 +238,33 @@ class A2MCConfig:
     # ========================
 
     @property
+    def AI_PROVIDER(self) -> str:
+        """
+        AI provider: 'anthropic', 'openai', or 'cborg'.
+
+        - anthropic: Uses Anthropic SDK, hits api.anthropic.com
+        - openai:    Uses OpenAI SDK, hits api.openai.com
+        - cborg:     Uses OpenAI SDK, hits api.cborg.lbl.gov (Berkeley Lab proxy)
+        """
+        return os.environ.get('A2MC_AI_PROVIDER', 'anthropic')
+
+    @property
     def AI_MODEL(self) -> str:
         """
-        AI model to use for reasoning (Claude API).
-
-        Examples:
-        - claude-sonnet-4-20250514 (default, balanced)
-        - claude-opus-4-20250514 (most capable)
-        - claude-haiku-3-20240307 (fastest, cheapest)
+        AI model to use for reasoning. Auto-derived from provider if not set:
+          anthropic → claude-opus-4-20250514
+          openai    → gpt-4o
+          cborg     → anthropic/claude-sonnet
         """
-        return os.environ.get('A2MC_AI_MODEL', 'claude-sonnet-4-20250514')
+        explicit = os.environ.get('A2MC_AI_MODEL', '')
+        if explicit:
+            return explicit
+        defaults = {
+            'anthropic': 'claude-opus-4-20250514',
+            'openai': 'gpt-4o',
+            'cborg': 'anthropic/claude-sonnet',
+        }
+        return defaults.get(self.AI_PROVIDER, 'claude-opus-4-20250514')
 
     @property
     def AI_MAX_TOKENS(self) -> int:
@@ -255,15 +272,37 @@ class A2MCConfig:
         return int(os.environ.get('A2MC_AI_MAX_TOKENS', '4096'))
 
     @property
+    def AI_BASE_URL(self) -> Optional[str]:
+        """
+        Custom API base URL. Auto-set for cborg provider.
+
+        Returns None to use SDK defaults for anthropic/openai providers.
+        """
+        url = os.environ.get('A2MC_AI_BASE_URL', '')
+        if url:
+            return url
+        if self.AI_PROVIDER == 'cborg':
+            return 'https://api.cborg.lbl.gov'
+        return None
+
+    @property
     def AI_API_KEY_ENV(self) -> str:
         """
         Environment variable name containing the API key.
-        Default: AI_API_KEY
-
-        Users should set their API key in this env var.
-        Supports any AI provider (Anthropic, OpenAI, etc.)
+        Auto-derived from provider if not explicitly set:
+          anthropic → ANTHROPIC_API_KEY
+          openai    → OPENAI_API_KEY
+          cborg     → CBORG_API_KEY
         """
-        return os.environ.get('A2MC_AI_API_KEY_ENV', 'AI_API_KEY')
+        explicit = os.environ.get('A2MC_AI_API_KEY_ENV', '')
+        if explicit:
+            return explicit
+        defaults = {
+            'anthropic': 'ANTHROPIC_API_KEY',
+            'openai': 'OPENAI_API_KEY',
+            'cborg': 'CBORG_API_KEY',
+        }
+        return defaults.get(self.AI_PROVIDER, 'AI_API_KEY')
 
     def get_ai_api_key(self) -> Optional[str]:
         """Get the AI API key from the configured environment variable"""
@@ -374,8 +413,12 @@ class A2MCConfig:
         print(f"  SAMPLING_SCHEME: {self.SAMPLING_SCHEME}")
         print("")
         print("AI Configuration:")
+        print(f"  AI_PROVIDER:     {self.AI_PROVIDER}")
         print(f"  AI_MODEL:        {self.AI_MODEL}")
         print(f"  AI_MAX_TOKENS:   {self.AI_MAX_TOKENS}")
+        base_url = self.AI_BASE_URL
+        if base_url:
+            print(f"  AI_BASE_URL:     {base_url}")
         print(f"  API_KEY_ENV:     {self.AI_API_KEY_ENV}")
         api_key = self.get_ai_api_key()
         print(f"  API_KEY_SET:     {'Yes' if api_key else 'No'}")

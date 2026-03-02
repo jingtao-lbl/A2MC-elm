@@ -137,21 +137,38 @@ calculate_ensemble_size() {
 # ========================
 # AI CONFIGURATION
 # ========================
-# Claude API model for reasoning module
-# Options:
-#   claude-sonnet-4-20250514 (default, balanced performance/cost)
-#   claude-opus-4-20250514   (most capable, highest cost)
-#   claude-haiku-3-20240307  (fastest, lowest cost)
-export A2MC_AI_MODEL="${A2MC_AI_MODEL:-claude-opus-4-20250514}"
+# AI provider: "anthropic" (direct), "openai" (direct), or "cborg" (LBL proxy)
+#   anthropic - Uses Anthropic SDK, hits api.anthropic.com; this is the default.
+#   openai    - Uses OpenAI SDK, hits api.openai.com
+#   cborg     - Uses OpenAI SDK, hits api.cborg.lbl.gov (Berkeley Lab proxy)
+export A2MC_AI_PROVIDER="${A2MC_AI_PROVIDER:-anthropic}"
+
+# AI model — each provider has its own default; override with: export A2MC_AI_MODEL="your-model"
+# Available models per provider:
+#   anthropic: claude-opus-4-20250514 (default), claude-sonnet-4-20250514, claude-haiku-3-20240307
+#   openai:    gpt-4o (default), gpt-4o-mini, o3-mini
+#   cborg:     anthropic/claude-sonnet (default), openai/gpt-4o, openai/gpt-4o-mini, lbl/llama
+if [ -z "${A2MC_AI_MODEL:-}" ]; then
+    case "${A2MC_AI_PROVIDER}" in
+        anthropic) export A2MC_AI_MODEL="claude-opus-4-20250514" ;;
+        openai)    export A2MC_AI_MODEL="gpt-4o" ;;
+        cborg)     export A2MC_AI_MODEL="anthropic/claude-sonnet" ;;
+        *)         export A2MC_AI_MODEL="claude-opus-4-20250514" ;;
+    esac
+fi
+
+# API base URL override (only needed for custom endpoints)
+# CBorg auto-sets to https://api.cborg.lbl.gov when empty
+export A2MC_AI_BASE_URL="${A2MC_AI_BASE_URL:-}"
 
 # Maximum tokens for AI responses
 export A2MC_AI_MAX_TOKENS="${A2MC_AI_MAX_TOKENS:-4096}"
 
-# Environment variable containing your AI API key
-# Default: AI_API_KEY
-# Users should set their API key: export AI_API_KEY="sk-ant-..."
-# Supports any AI provider (Anthropic, OpenAI, etc.)
-export A2MC_AI_API_KEY_ENV="${A2MC_AI_API_KEY_ENV:-AI_API_KEY}"
+# API key env var name (auto-derived from provider if empty):
+#   anthropic → ANTHROPIC_API_KEY
+#   openai    → OPENAI_API_KEY
+#   cborg     → CBORG_API_KEY
+export A2MC_AI_API_KEY_ENV="${A2MC_AI_API_KEY_ENV:-}"
 
 # ========================
 # USE CASE DIRECTORY
@@ -218,13 +235,29 @@ print_config() {
     fi
     echo ""
     echo "AI Configuration:"
+    echo "  Provider: ${A2MC_AI_PROVIDER}"
     echo "  Model: ${A2MC_AI_MODEL}"
     echo "  Max tokens: ${A2MC_AI_MAX_TOKENS}"
-    echo "  API key env: ${A2MC_AI_API_KEY_ENV}"
-    if [ -n "${!A2MC_AI_API_KEY_ENV:-}" ]; then
+    if [ -n "${A2MC_AI_BASE_URL}" ]; then
+        echo "  Base URL: ${A2MC_AI_BASE_URL}"
+    elif [ "${A2MC_AI_PROVIDER}" = "cborg" ]; then
+        echo "  Base URL: https://api.cborg.lbl.gov (auto)"
+    fi
+    # Derive API key env var name if not explicitly set
+    local _key_env="${A2MC_AI_API_KEY_ENV}"
+    if [ -z "${_key_env}" ]; then
+        case "${A2MC_AI_PROVIDER}" in
+            anthropic) _key_env="ANTHROPIC_API_KEY" ;;
+            openai)    _key_env="OPENAI_API_KEY" ;;
+            cborg)     _key_env="CBORG_API_KEY" ;;
+            *)         _key_env="AI_API_KEY" ;;
+        esac
+    fi
+    echo "  API key env: ${_key_env}"
+    if [ -n "${!_key_env:-}" ]; then
         echo "  API key set: Yes"
     else
-        echo "  API key set: No (set ${A2MC_AI_API_KEY_ENV})"
+        echo "  API key set: No (set ${_key_env})"
     fi
     echo "========================================"
 }
