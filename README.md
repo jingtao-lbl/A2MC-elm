@@ -168,17 +168,18 @@ The framework runs entirely on NERSC HPC (no SSH tunneling) and uses the Anthrop
 │  │        │ Redesign:                       ┌─────────────────┤           │ │
 │  │        │ Expand params                   │                 │           │ │
 │  │        │                                 │           ┌─────▼─────┐     │ │
-│  │   ┌────┴────┐    ┌───────────┐    ┌──────┴──────┐    │  Phase 4  │     │ │
-│  │   │ Phase 7 │◄───│  Phase 5  │◄───│   Phase 6   │◄───│HYPOTHESIS │     │ │
-│  │   │CONVERGED│    │  TESTING  │    │ REFINEMENT  │    └─────┬─────┘     │ │
-│  │   └─────────┘    └───────────┘    └──────┬──────┘          │           │ │
-│  │                                          │                 │           │ │
-│  │                          Rethink:        │    Skip test:   │           │ │
-│  │                          Hypothesis      │    Use existing │           │ │
-│  │                          proven wrong    └────────┬────────┘           │ │
-│  │                                                   │                    │ │
-│  │                                                   ▼                    │ │
-│  │                                           Back to Phase 3              │ │
+│  │   ┌────┴────┐    ┌──────────────┐    ┌───────────┐    │  Phase 4  │     │ │
+│  │   │ Phase 7 │◄───│   Phase 6    │◄───│  Phase 5  │◄───│HYPOTHESIS │     │ │
+│  │   │CONVERGED│    │  REFINEMENT  │    │  TESTING  │    └─────┬─────┘     │ │
+│  │   └─────────┘    └──────┬───────┘    └───────────┘          │           │ │
+│  │                         │                                   │           │ │
+│  │                Rethink: │                      Skip test:   │           │ │
+│  │                Hypothesis                      Use existing │           │ │
+│  │                proven wrong                                 │           │ │
+│  │                         └───────────────────────┬───────────┘           │ │
+│  │                                                 │                      │ │
+│  │                                                 ▼                      │ │
+│  │                                         Back to Phase 3                │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
 │                                      │                                      │
 │            ┌─────────────────────────┼─────────────────────────┐            │
@@ -201,7 +202,7 @@ The framework runs entirely on NERSC HPC (no SSH tunneling) and uses the Anthrop
 
 ## Tech Notes
 
-### Install Anthropic on NERSC Perlmutter
+### Install Anthropic and OpenAI on NERSC Perlmutter
 
 ```bash
 # Load Python module
