@@ -431,12 +431,6 @@ NLEOF
         cp "${FORCING_DIR}"/user_datm.streams.txt* ./ 2>/dev/null || true
     fi
 
-    # Setup case
-    ./case.setup
-
-    # Preview namelists
-    ./preview_namelists
-
     # Build or reuse existing build
     if [ -n "$REUSE_BUILD" ]; then
         if [ -z "${CASE_NAME_PATTERN:-}" ]; then
@@ -448,9 +442,19 @@ NLEOF
         echo "Reusing build from: ${REUSE_CASE}"
         ./xmlchange EXEROOT="${REUSE_EXEROOT}"
         ./xmlchange BUILD_COMPLETE=TRUE
-    elif [ "$SKIP_BUILD" = false ]; then
-        echo "Building case..."
-        ./case.build
+
+        # Setup and preview after EXEROOT is set
+        ./case.setup
+        ./preview_namelists
+    else
+        # Setup and preview before building
+        ./case.setup
+        ./preview_namelists
+
+        if [ "$SKIP_BUILD" = false ]; then
+            echo "Building case..."
+            ./case.build
+        fi
     fi
 
     # Create placeholder restart file for RGSP/TRANS
@@ -684,12 +688,6 @@ EOF
         cp "${A2MC_FORCING_DIR}"/user_datm.streams.txt* ./ 2>/dev/null || true
     fi
 
-    # Setup case
-    ./case.setup
-
-    # Preview namelists
-    ./preview_namelists
-
     # Build or reuse existing build
     if [ -n "$REUSE_BUILD" ]; then
         # Reuse compiled binary from another case
@@ -704,9 +702,19 @@ EOF
         echo "Reusing build from: ${REUSE_CASE}"
         ./xmlchange EXEROOT="${REUSE_EXEROOT}"
         ./xmlchange BUILD_COMPLETE=TRUE
-    elif [ "$SKIP_BUILD" = false ]; then
-        echo "Building case..."
-        ./case.build
+
+        # Setup and preview after EXEROOT is set
+        ./case.setup
+        ./preview_namelists
+    else
+        # Setup and preview before building
+        ./case.setup
+        ./preview_namelists
+
+        if [ "$SKIP_BUILD" = false ]; then
+            echo "Building case..."
+            ./case.build
+        fi
     fi
 
     # Create placeholder restart file for RGSP/TRANS
