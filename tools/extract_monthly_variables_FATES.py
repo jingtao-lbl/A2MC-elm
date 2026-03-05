@@ -13,7 +13,7 @@ File Structure:
   - Output: NetCDF with all variables (CSV for 1D/PFT only, NetCDF for all including SZPF)
 
 Usage:
-cd /global/homes/j/jingtao/Program/PythonScripts
+cd ./A2MC/tools
 module load python
 
 # Extract specific cases
@@ -26,6 +26,7 @@ python extract_monthly_variables_FATES.py --cases 845_exp1 845_exp2 845_exp3 845
 
 python extract_monthly_variables_FATES.py --cases 2678_phen2675stc3pidfix 
 python extract_monthly_variables_FATES.py --cases 2678_phen2675stc3pidfix_turnover5 
+python extract_monthly_variables_FATES.py --cases 322_c0_exp1 322_c0_exp2 322_c0_exp3 322_c0_exp4 322_c0_exp5
 
 Author: Jing Tao
 Date: December 12, 2025

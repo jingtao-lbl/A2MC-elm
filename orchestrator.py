@@ -2029,6 +2029,7 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
         - Default phase: TRANS only (uses existing spinup restart files)
         """
         from phases.phase5_testing import (
+            check_experiment_status,
             create_experiment_param_files,
             submit_experiments,
             wait_for_experiments,
@@ -2046,168 +2047,181 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
 
         # --- 1. Resume-skip check ---
         current_iter = self.state.iteration
+        resumed = False
+        experiments = []
+        synthesized = []
         existing_exps = [
             e for e in self.state.experiments
             if e.get("iteration") == current_iter
             and e.get("status") not in (None, "placeholder")
         ]
         if existing_exps:
-            logger.info(f"Found {len(existing_exps)} experiments from iteration "
-                        f"{current_iter} with non-placeholder status. Skipping to transition.")
-            self.state.record_phase_transition(
-                Phase.TESTING.value, Phase.REFINEMENT.value,
-                f"Resumed: {len(existing_exps)} experiments already exist for iteration {current_iter}"
-            )
-            self.state.current_phase = Phase.REFINEMENT.value
-            return
+            # Check if ALL experiments are fully processed (have extraction_status)
+            all_extracted = all(e.get("extraction_status") for e in existing_exps)
+            if all_extracted:
+                logger.info(f"Found {len(existing_exps)} fully-processed experiments from "
+                            f"iteration {current_iter}. Skipping to refinement.")
+                self.state.record_phase_transition(
+                    Phase.TESTING.value, Phase.REFINEMENT.value,
+                    f"Resumed: {len(existing_exps)} experiments already extracted for iteration {current_iter}"
+                )
+                self.state.current_phase = Phase.REFINEMENT.value
+                return
+            else:
+                # Experiments exist but aren't fully processed — resume from wait
+                resumed = True
+                experiments = existing_exps  # References into self.state.experiments
+                logger.info(f"Resuming {len(experiments)} experiments from iteration "
+                            f"{current_iter} (not yet fully processed)")
 
-        # --- 2. Design experiments from hypotheses ---
-        # Collect all synthesized hypotheses; fall back to the last hypothesis
-        synthesized = [h for h in self.state.hypotheses if isinstance(h, dict) and h.get('synthesized')]
-        if not synthesized:
-            last = self.state.hypotheses[-1] if self.state.hypotheses else {}
-            synthesized = [last] if last else []
+        if not resumed:
+            # --- 2. Design experiments from hypotheses ---
+            # Collect all synthesized hypotheses; fall back to the last hypothesis
+            synthesized = [h for h in self.state.hypotheses if isinstance(h, dict) and h.get('synthesized')]
+            if not synthesized:
+                last = self.state.hypotheses[-1] if self.state.hypotheses else {}
+                synthesized = [last] if last else []
 
-        if not synthesized:
-            logger.warning("No hypothesis available. Cannot design experiments.")
-            self.state.record_phase_transition(
-                Phase.TESTING.value, Phase.REFINEMENT.value,
-                "No hypothesis to test"
-            )
-            self.state.current_phase = Phase.REFINEMENT.value
-            return
+            if not synthesized:
+                logger.warning("No hypothesis available. Cannot design experiments.")
+                self.state.record_phase_transition(
+                    Phase.TESTING.value, Phase.REFINEMENT.value,
+                    "No hypothesis to test"
+                )
+                self.state.current_phase = Phase.REFINEMENT.value
+                return
 
-        # Design experiments for each hypothesis independently
-        experiments = []
-        for hyp in synthesized:
-            hyp_experiments = self._design_experiment_sequence(hyp)
-            experiments.extend(hyp_experiments)
+            # Design experiments for each hypothesis independently
+            experiments = []
+            for hyp in synthesized:
+                hyp_experiments = self._design_experiment_sequence(hyp)
+                experiments.extend(hyp_experiments)
 
-        if not experiments:
-            logger.warning("No experiments designed from hypotheses.")
-            self.state.record_phase_transition(
-                Phase.TESTING.value, Phase.REFINEMENT.value,
-                "No experiments could be designed"
-            )
-            self.state.current_phase = Phase.REFINEMENT.value
-            return
+            if not experiments:
+                logger.warning("No experiments designed from hypotheses.")
+                self.state.record_phase_transition(
+                    Phase.TESTING.value, Phase.REFINEMENT.value,
+                    "No experiments could be designed"
+                )
+                self.state.current_phase = Phase.REFINEMENT.value
+                return
 
-        logger.info(f"Designed experiments from {len(synthesized)} hypotheses")
+            logger.info(f"Designed experiments from {len(synthesized)} hypotheses")
 
-        # Tag each experiment with iteration and prefix names with cycle number
-        # to avoid collisions across experiment cycles (c0_exp1, c1_exp1, etc.)
-        cycle = self.state.experiment_count
-        for exp in experiments:
-            exp["iteration"] = current_iter
-            old_name = exp.get("name", "unnamed")
-            exp["name"] = f"c{cycle}_{old_name}"
-
-        logger.info(f"Designed {len(experiments)} experiments for iteration {current_iter} "
-                     f"(cycle {cycle})")
-
-        # --- 3. Create modified parameter files ---
-        # Each experiment uses its base_case's parameter file (not the default template)
-        param_dir = os.environ.get('A2MC_PARAM_DIR', '')
-        param_pattern = os.environ.get('A2MC_PARAM_PATTERN', '')
-
-        if not param_dir or not param_pattern:
-            try:
-                from tools.config import config as a2mc_config
-                if not param_dir:
-                    param_dir = a2mc_config.PARAM_DIR
-                if not param_pattern:
-                    param_pattern = a2mc_config.PARAM_PATTERN
-            except (ImportError, AttributeError):
-                pass
-
-        if not param_dir or not param_pattern:
-            logger.error("A2MC_PARAM_DIR and A2MC_PARAM_PATTERN must be configured. "
-                         "Experiments require case-specific parameter files.")
+            # Tag each experiment with iteration and prefix names with cycle number
+            # to avoid collisions across experiment cycles (c0_exp1, c1_exp1, etc.)
+            cycle = self.state.experiment_count
             for exp in experiments:
-                exp["status"] = "no_param_config"
                 exp["iteration"] = current_iter
-                self.state.experiments.append(exp)
-            self.state.current_phase = Phase.REFINEMENT.value
-            return
+                old_name = exp.get("name", "unnamed")
+                exp["name"] = f"c{cycle}_{old_name}"
 
-        logger.info(f"Case parameter files: {param_dir}/{param_pattern}")
+            logger.info(f"Designed {len(experiments)} experiments for iteration {current_iter} "
+                         f"(cycle {cycle})")
 
-        output_dir = os.path.join(self.config.output_dir, "phase_results",
-                                  "phase5_testing")
-        try:
-            experiments = create_experiment_param_files(
-                experiments=experiments,
-                output_dir=output_dir,
-                verify=True,
-                param_dir=param_dir,
-                param_pattern=param_pattern,
-            )
-            created = sum(1 for e in experiments if e.get("param_status") == "created")
-            logger.info(f"Created {created}/{len(experiments)} parameter files")
-        except Exception as e:
-            logger.error(f"Parameter file creation failed: {e}")
-            for exp in experiments:
-                exp["status"] = "param_creation_failed"
-                exp["error"] = str(e)
-                self.state.experiments.append(exp)
-            self.state.current_phase = Phase.REFINEMENT.value
-            return
+            # --- 3. Create modified parameter files ---
+            # Each experiment uses its base_case's parameter file (not the default template)
+            param_dir = os.environ.get('A2MC_PARAM_DIR', '')
+            param_pattern = os.environ.get('A2MC_PARAM_PATTERN', '')
 
-        # --- 3.5. Log experiment design summary ---
-        if self._phase_logger:
+            if not param_dir or not param_pattern:
+                try:
+                    from tools.config import config as a2mc_config
+                    if not param_dir:
+                        param_dir = a2mc_config.PARAM_DIR
+                    if not param_pattern:
+                        param_pattern = a2mc_config.PARAM_PATTERN
+                except (ImportError, AttributeError):
+                    pass
+
+            if not param_dir or not param_pattern:
+                logger.error("A2MC_PARAM_DIR and A2MC_PARAM_PATTERN must be configured. "
+                             "Experiments require case-specific parameter files.")
+                for exp in experiments:
+                    exp["status"] = "no_param_config"
+                    exp["iteration"] = current_iter
+                    self.state.experiments.append(exp)
+                self.state.current_phase = Phase.REFINEMENT.value
+                return
+
+            logger.info(f"Case parameter files: {param_dir}/{param_pattern}")
+
+            output_dir = os.path.join(self.config.output_dir, "phase_results",
+                                      "phase5_testing")
             try:
-                self._phase_logger.set_iteration_context(
-                    calibration_round=self.state.calibration_round,
-                    iteration=self.state.iteration,
-                    experiment_count=self.state.experiment_count,
-                    skip_testing_count=self.state.skip_testing_count
-                )
-                hyp = synthesized[0] if synthesized else {}
-                log_path = self._phase_logger.log_experiment_design(
-                    title="Experiment_Design",
-                    hypothesis_name=hyp.get('name', 'Unknown'),
-                    mechanism=hyp.get('mechanism', ''),
-                    design_type=hyp.get('design_type',
-                                        hyp.get('experimental_design', 'cumulative')),
-                    base_case=str(self.state.screening_data.get('best_case', {}).get('case_id', '?')),
+                experiments = create_experiment_param_files(
                     experiments=experiments,
-                    metadata={
-                        'iteration': current_iter,
-                        'n_experiments': len(experiments),
-                        'n_hypotheses': len(synthesized),
-                        'base_case': self.state.screening_data.get('best_case', {}),
-                    }
+                    output_dir=output_dir,
+                    verify=True,
+                    param_dir=param_dir,
+                    param_pattern=param_pattern,
                 )
-                logger.info(f"  Experiment design log: {log_path}")
+                created = sum(1 for e in experiments if e.get("param_status") == "created")
+                logger.info(f"Created {created}/{len(experiments)} parameter files")
             except Exception as e:
-                logger.warning(f"Could not write experiment design log: {e}")
+                logger.error(f"Parameter file creation failed: {e}")
+                for exp in experiments:
+                    exp["status"] = "param_creation_failed"
+                    exp["error"] = str(e)
+                    self.state.experiments.append(exp)
+                self.state.current_phase = Phase.REFINEMENT.value
+                return
 
-        # --- 3.6 Generate reviewable experiment scripts ---
-        if self.config.review_experiment_scripts:
-            from phases.phase5_testing import generate_experiment_scripts
-            # Auto-detect site config for proper ELM_OPTIONS resolution
-            import glob as _glob
-            _site_cfg_dir = os.path.join(
-                os.environ.get('A2MC_USE_CASE_DIR', ''), 'config')
-            _site_cfgs = _glob.glob(os.path.join(_site_cfg_dir, '*_config.sh'))
-            _site_config = _site_cfgs[0] if _site_cfgs else ""
-            experiments = generate_experiment_scripts(
-                experiments=experiments,
-                output_dir=output_dir,
-                site_config=_site_config,
-            )
-            generated = sum(1 for e in experiments if e.get("script_file"))
-            logger.info(f"Generated {generated} reviewable experiment scripts in {output_dir}")
+            # --- 3.5. Log experiment design summary ---
+            if self._phase_logger:
+                try:
+                    self._phase_logger.set_iteration_context(
+                        calibration_round=self.state.calibration_round,
+                        iteration=self.state.iteration,
+                        experiment_count=self.state.experiment_count,
+                        skip_testing_count=self.state.skip_testing_count
+                    )
+                    hyp = synthesized[0] if synthesized else {}
+                    log_path = self._phase_logger.log_experiment_design(
+                        title="Experiment_Design",
+                        hypothesis_name=hyp.get('name', 'Unknown'),
+                        mechanism=hyp.get('mechanism', ''),
+                        design_type=hyp.get('design_type',
+                                            hyp.get('experimental_design', 'cumulative')),
+                        base_case=str(self.state.screening_data.get('best_case', {}).get('case_id', '?')),
+                        experiments=experiments,
+                        metadata={
+                            'iteration': current_iter,
+                            'n_experiments': len(experiments),
+                            'n_hypotheses': len(synthesized),
+                            'base_case': self.state.screening_data.get('best_case', {}),
+                        }
+                    )
+                    logger.info(f"  Experiment design log: {log_path}")
+                except Exception as e:
+                    logger.warning(f"Could not write experiment design log: {e}")
 
-            # --- 3.7. Human review of scripts ---
-            if self.config.human_review and generated > 0:
-                script_list = "\n".join(
-                    f"    {e.get('script_file', 'N/A')}" for e in experiments
-                    if e.get("script_file")
+            # --- 3.6 Generate reviewable experiment scripts ---
+            if self.config.review_experiment_scripts:
+                from phases.phase5_testing import generate_experiment_scripts
+                # Auto-detect site config for proper ELM_OPTIONS resolution
+                import glob as _glob
+                _site_cfg_dir = os.path.join(
+                    os.environ.get('A2MC_USE_CASE_DIR', ''), 'config')
+                _site_cfgs = _glob.glob(os.path.join(_site_cfg_dir, '*_config.sh'))
+                _site_config = _site_cfgs[0] if _site_cfgs else ""
+                experiments = generate_experiment_scripts(
+                    experiments=experiments,
+                    output_dir=output_dir,
+                    site_config=_site_config,
                 )
-                self._human_review_checkpoint(
-                    phase="TESTING (Script Review)",
-                    summary=f"""
+                generated = sum(1 for e in experiments if e.get("script_file"))
+                logger.info(f"Generated {generated} reviewable experiment scripts in {output_dir}")
+
+                # --- 3.7. Human review of scripts ---
+                if self.config.human_review and generated > 0:
+                    script_list = "\n".join(
+                        f"    {e.get('script_file', 'N/A')}" for e in experiments
+                        if e.get("script_file")
+                    )
+                    self._human_review_checkpoint(
+                        phase="TESTING (Script Review)",
+                        summary=f"""
   Review the generated experiment scripts before submission:
 
 {script_list}
@@ -2215,33 +2229,49 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
   Parameter files are in: {output_dir}
   Verify: paths, parameter file, xmlchange settings, user_nl_elm
 """,
-                    next_phase="SUBMISSION"
+                        next_phase="SUBMISSION"
+                    )
+
+            # --- 4. Submit experiments to HPC ---
+            try:
+                experiments = submit_experiments(
+                    experiments=experiments,
+                    output_root=self.config.hpc_output_root,
+                    phases="ADSP RGSP TRANS",  # Full spinup required for modified params
+                    submit=True
                 )
+                submitted = sum(1 for e in experiments
+                               if e.get("submission_status") in ("submitted", "simulated"))
+                logger.info(f"Submitted {submitted}/{len(experiments)} experiments")
+                for exp in experiments:
+                    jid = exp.get("job_id", "N/A")
+                    sts = exp.get("submission_status", "unknown")
+                    logger.info(f"  {exp.get('name','?')}: job_id={jid} ({sts})")
+            except Exception as e:
+                logger.error(f"Experiment submission failed: {e}")
+                for exp in experiments:
+                    if not exp.get("submission_status"):
+                        exp["submission_status"] = "submission_failed"
+                        exp["status"] = "submission_failed"
+                        exp["error"] = str(e)
 
-        # --- 4. Submit experiments to HPC ---
-        try:
-            experiments = submit_experiments(
-                experiments=experiments,
-                output_root=self.config.hpc_output_root,
-                phases="ADSP RGSP TRANS",  # Full spinup required for modified params
-                submit=True
-            )
-            submitted = sum(1 for e in experiments
-                           if e.get("submission_status") in ("submitted", "simulated"))
-            logger.info(f"Submitted {submitted}/{len(experiments)} experiments")
+            # --- 4a. Early state save: persist job_ids immediately after submission ---
             for exp in experiments:
-                jid = exp.get("job_id", "N/A")
-                sts = exp.get("submission_status", "unknown")
-                logger.info(f"  {exp.get('name','?')}: job_id={jid} ({sts})")
-        except Exception as e:
-            logger.error(f"Experiment submission failed: {e}")
-            for exp in experiments:
-                if not exp.get("submission_status"):
-                    exp["submission_status"] = "submission_failed"
-                    exp["status"] = "submission_failed"
-                    exp["error"] = str(e)
+                if exp.get("status") is None:
+                    exp["status"] = "submitted"
+                self.state.experiments.append(exp)
+            self.state.save(str(self.state_path))
+            logger.info(f"State saved with {len(experiments)} submitted experiments "
+                        f"(job_ids preserved for resume)")
 
-        # --- 5. Wait for all jobs to complete ---
+        # --- 5. Check experiment status (refresh on resume) ---
+        if resumed:
+            experiments = check_experiment_status(experiments)
+            for e in experiments:
+                logger.info(f"  {e.get('name','?')}: job_id={e.get('job_id','N/A')} "
+                            f"status={e.get('job_status', 'UNKNOWN')}")
+
+        # --- 5a. Wait for all jobs to complete ---
         try:
             experiments = wait_for_experiments(
                 experiments=experiments,
@@ -2287,7 +2317,9 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             else:
                 exp["status"] = exp.get("job_status", "unknown")
 
-            self.state.experiments.append(exp)
+            # Only append if not already in state (e.g., saved in step 4a or loaded on resume)
+            if not any(exp is existing for existing in self.state.experiments):
+                self.state.experiments.append(exp)
 
         # --- 8. Record to adaptive memory ---
         if self._memory and self.config.auto_learn:
