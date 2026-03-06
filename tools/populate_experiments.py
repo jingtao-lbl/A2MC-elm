@@ -28,12 +28,18 @@ Author: Jing Tao with Claude
 
 import argparse
 import json
+import os
 import re
 import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
+
+# Ensure repo root is on sys.path so "from tools..." and "from phases..." work
+_repo_root = str(Path(__file__).resolve().parent.parent)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 
 def parse_experiment_design_log(log_path: str) -> Dict:

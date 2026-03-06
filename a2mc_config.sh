@@ -141,18 +141,19 @@ calculate_ensemble_size() {
 #   anthropic - Uses Anthropic SDK, hits api.anthropic.com; this is the default.
 #   openai    - Uses OpenAI SDK, hits api.openai.com
 #   cborg     - Uses OpenAI SDK, hits api.cborg.lbl.gov (Berkeley Lab proxy)
-export A2MC_AI_PROVIDER="${A2MC_AI_PROVIDER:-anthropic}"
+export A2MC_AI_PROVIDER="anthropic"
+#export A2MC_AI_PROVIDER="cborg"
 
 # AI model — each provider has its own default; override with: export A2MC_AI_MODEL="your-model"
 # Available models per provider:
 #   anthropic: claude-opus-4-20250514 (default), claude-sonnet-4-20250514, claude-haiku-3-20240307
 #   openai:    gpt-4o (default), gpt-4o-mini, o3-mini
-#   cborg:     anthropic/claude-sonnet (default), openai/gpt-4o, openai/gpt-4o-mini, lbl/llama
+#   cborg:     anthropic/claude-opus (default), anthropic/claude-sonnet, openai/gpt-4o, openai/gpt-4o-mini, lbl/llama
 if [ -z "${A2MC_AI_MODEL:-}" ]; then
     case "${A2MC_AI_PROVIDER}" in
         anthropic) export A2MC_AI_MODEL="claude-opus-4-20250514" ;;
         openai)    export A2MC_AI_MODEL="gpt-4o" ;;
-        cborg)     export A2MC_AI_MODEL="anthropic/claude-sonnet" ;;
+        cborg)     export A2MC_AI_MODEL="anthropic/claude-opus" ;;
         *)         export A2MC_AI_MODEL="claude-opus-4-20250514" ;;
     esac
 fi

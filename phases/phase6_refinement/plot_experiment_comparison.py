@@ -31,8 +31,15 @@ Author: Jing Tao with Claude
 """
 
 import logging
+import os
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional
+
+# Ensure repo root is on sys.path so "from phases..." and "from tools..." work
+_repo_root = str(Path(__file__).resolve().parent.parent.parent)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 import numpy as np
 
@@ -390,9 +397,18 @@ def plot_experiment_comparison(
         fig.suptitle(title, fontweight='bold', fontsize=14, y=0.98)
         plt.tight_layout(rect=[0, 0, 1, 0.96])
 
-        # Save
+        # Save — default to phase_results/phase6_refinement/ under use case dir
         if output_path is None:
-            output_path = str(data_dir / f'experiment_comparison_{baseline_case}.png')
+            try:
+                _use_case_dir = os.environ.get('A2MC_USE_CASE_DIR', '')
+                if _use_case_dir:
+                    _results_dir = Path(_use_case_dir) / 'memory' / 'phase_results' / 'phase6_refinement'
+                else:
+                    from tools.config import config as _cfg
+                    _results_dir = Path(_cfg.USE_CASE_DIR) / 'memory' / 'phase_results' / 'phase6_refinement'
+            except (ImportError, AttributeError):
+                _results_dir = data_dir
+            output_path = str(_results_dir / f'experiment_comparison_{baseline_case}.png')
         Path(output_path).parent.mkdir(parents=True, exist_ok=True)
         plt.savefig(output_path, dpi=FIGURE_DPI, bbox_inches='tight')
         plt.close(fig)

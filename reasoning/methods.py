@@ -262,18 +262,33 @@ hypotheses were tested using existing ensemble data (Skip Testing path). Use the
    - MEDIUM: 20-30% error, needs attention
    - LOW: <20% error, within acceptable range
 
-2. **Form 4-6 hypotheses BEFORE deep analysis.** Each hypothesis should:
-   - State a specific FATES mechanism (PID_Controller, ECA_Competition, Storage_Allocation, etc.)
-   - Predict which targets it affects
-   - Be testable with parameter modifications
+2. **Mechanism Inventory (REQUIRED):** Before deep analysis, enumerate ALL plausible
+   mechanisms that could explain the failures. For each mechanism, rate likelihood
+   (high/medium/low) and note what evidence would confirm/refute it. Format as a table:
 
-3. **For each hypothesis, present evidence FOR and AGAINST** using quantitative data from the results and sensitivity rankings.
+   | # | Mechanism | Likelihood | Confirming Evidence | Refuting Evidence |
+   |---|-----------|------------|--------------------|--------------------|
+
+   Consider at least these mechanism categories:
+   - Nutrient limitation (P starvation, N competition, soil chemistry)
+   - Carbon balance (GPP vs respiration, storage depletion)
+   - Allocation dynamics (PID controller, L2FR, storage priorities)
+   - Competition (light, nutrient, PFT interactions)
+   - Mortality (C starvation, hydraulic, background)
+   - Phenology (timing, growing season length)
+
+3. **For each mechanism in the inventory, present evidence FOR and AGAINST** using
+   quantitative data from the results and sensitivity rankings.
 
 4. **Rank root causes** by confidence and evidence strength.
 
 5. **Provide a conceptual model** (ASCII diagram) showing the causal chain from root cause to failing targets.
 
 6. Consider cross-PFT conflicts and shared parameter effects.
+
+7. **Identify which mechanisms are independent vs interacting.** Some mechanisms may
+   form a causal chain (e.g., soil P bottleneck → P starvation → PID reallocation →
+   biomass collapse). Note these chains — they require coordinated, not isolated, fixes.
 
 IMPORTANT: If the knowledge base shows failed approaches, DO NOT recommend those approaches.
 
@@ -415,6 +430,22 @@ def generate_hypothesis(self, diagnosis: Diagnosis,
                     failed_approaches_context += f"  Alternatives: {', '.join(fa['alternatives'][:2])}\n"
             failed_approaches_context += "\n"
 
+    # Get discovery context from memory (mechanistic insights from past calibration)
+    discovery_context = ""
+    if self.memory:
+        # Extract target names from diagnosis
+        target_names = [t.get('name', '') for t in diagnosis.failing_targets] if diagnosis.failing_targets else []
+        # Also extract parameter names from recommendations
+        rec_params = [rec.get('parameter', '') for rec in diagnosis.parameter_recommendations]
+        rec_params = [p for p in rec_params if p]
+        disc_text = self.memory.get_relevant_context(
+            targets=target_names,
+            parameters=rec_params,
+            max_chars=4000
+        )
+        if disc_text.strip():
+            discovery_context = f"\n## DISCOVERIES FROM PREVIOUS CALIBRATION\n\n{disc_text}\n\n**Use these discoveries to inform your hypothesis.** If a discovery describes a mechanism\nthat explains the current diagnosis, incorporate it. If a discovery warns about a specific\napproach, avoid it.\n\n"
+
     # Get RAG context for parameters mentioned in diagnosis AND sensitivity
     rag_context = ""
     targeted_param_context = ""
@@ -511,7 +542,7 @@ Do NOT make generic statements without case attribution.
                             f"({len(relevant_lines)} diagnosis-relevant)")
 
     prompt = f"""Based on this diagnosis, generate a testable hypothesis for ELM-FATES calibration.
-{rag_context}{failed_approaches_context}{targeted_param_context}
+{rag_context}{discovery_context}{failed_approaches_context}{targeted_param_context}
 
 {self._param_list_context}
 
@@ -541,12 +572,16 @@ Proposing changes to low-sensitivity parameters wastes HPC compute.**
 
 1. **Consider at least 3 possible hypotheses** before selecting the best one for testing.
    For each, briefly note the mechanism, expected effect, and risk level.
+   **DIVERSITY REQUIREMENT:** Your hypothesis MUST target a DIFFERENT mechanism than
+   previous experiments listed above. If all major mechanisms have been explored, you may
+   refine the highest-confidence one with new evidence.
 
 2. **Select the BEST hypothesis** based on:
    - Highest expected impact on failing targets
    - Strongest mechanistic evidence from diagnosis
    - Lowest risk of cross-PFT degradation
    - Not previously failed (check failed approaches above)
+   - Targets a DIFFERENT mechanism from previous experiments
 
 3. **Assess risk** for the selected hypothesis:
    - LOW: PFT-specific parameter, well-understood mechanism
@@ -812,6 +847,30 @@ def synthesize_experiment_design(
                 failed_approaches_context += f"- **{fa.get('approach', '?')}**: {fa.get('why_failed', 'Failed')}\n"
             failed_approaches_context += "\n"
 
+    # Get discovery context from memory for synthesis
+    discovery_context = ""
+    if self.memory:
+        # Extract target names from diagnoses and parameter names from insights
+        synth_targets = []
+        synth_params = []
+        for diag in diagnoses:
+            for t in diag.get('failing_targets', []):
+                if isinstance(t, dict):
+                    synth_targets.append(t.get('name', ''))
+                elif isinstance(t, str):
+                    synth_targets.append(t)
+        for insight in cumulative_insights:
+            synth_params.extend(insight.get('parameters_tested', []))
+        synth_targets = [t for t in synth_targets if t]
+        synth_params = list(set(p for p in synth_params if p))[:15]
+        disc_text = self.memory.get_relevant_context(
+            targets=synth_targets,
+            parameters=synth_params,
+            max_chars=3000
+        )
+        if disc_text.strip():
+            discovery_context = f"\n{disc_text}\n\n"
+
     # Get RAG context for parameters mentioned across all insights
     rag_context = ""
     all_params = []
@@ -901,7 +960,7 @@ def synthesize_experiment_design(
 Each supported hypothesis should become its OWN experiment — do NOT merge them into one.
 This allows independent testing of different mechanistic ideas in parallel on HPC.
 
-{rag_context}{failed_approaches_context}
+{rag_context}{discovery_context}{failed_approaches_context}
 {_synth_base_params}
 
 ## Cumulative Skip-Testing Insights
@@ -916,6 +975,17 @@ This allows independent testing of different mechanistic ideas in parallel on HP
 
 {evidence_ledger_section}
 {sensitivity_summary}{prev_exp_summary}
+
+## Composite Mechanistic Picture (REQUIRED before designing experiments)
+
+Before designing experiments, synthesize ALL skip-testing insights into a unified
+mechanistic model. Address these questions:
+- Which mechanisms are independent vs interacting?
+- Which must be addressed first (prerequisite) vs can be tested in parallel?
+- Do any discoveries from previous calibration work explain patterns seen in skip-testing?
+
+This composite picture should inform your experiment design — some experiments may need
+to address MULTIPLE interacting mechanisms if they form a causal chain.
 
 ## Synthesis Task
 

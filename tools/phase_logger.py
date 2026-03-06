@@ -230,8 +230,10 @@ class PhaseLogger:
         clean_title = title.replace(' ', '_').replace('/', '_')[:50]
 
         # Build prefix:
-        # - Phases 3 & 4: round + exp + iter (iter = skip_testing_count + 1, 1-based)
-        # - Phases 5 & 6: round + iteration
+        # - Phases 3 & 4: round + cycle + iter (three loops: r, c, iter)
+        #   iter = skip_testing_count + 1 (inner Phase 3↔4 loop, 1-based)
+        # - Phases 5 & 6: round + cycle only (two loops: r, c)
+        #   Only one Phase 5 and one Phase 6 per experiment cycle, so iter is not needed
         # - Phases 0-2: round only (iteration is always 1)
         round_prefix = f"r{self.calibration_round:02d}"
         if phase in (3, 4):
@@ -239,8 +241,7 @@ class PhaseLogger:
             iter_prefix = (f"{round_prefix}_c{self.experiment_count:02d}"
                            f"_iter{iter_in_exp:02d}")
         elif phase in (5, 6):
-            iter_prefix = (f"{round_prefix}_c{self.experiment_count:02d}"
-                           f"_iter{self.current_iteration:02d}")
+            iter_prefix = f"{round_prefix}_c{self.experiment_count:02d}"
         else:
             iter_prefix = round_prefix
 
@@ -284,17 +285,20 @@ class PhaseLogger:
         """
         Format the iteration context line for log headers.
 
-        Always shows calibration round and iteration.
-        For phases 3 & 4, also includes experiment and skip testing counters.
+        - Phases 3 & 4: round + cycle + iteration (three loops)
+        - Phases 5 & 6: round + cycle (two loops)
+        - Phases 0-2: round only
         """
         if phase in (3, 4):
             iter_in_exp = self.skip_testing_count + 1  # 1-based inner loop counter
             return (f"**Round:** {self.calibration_round} | "
-                    f"**Experiment:** {self.experiment_count} | "
+                    f"**Cycle:** {self.experiment_count} | "
                     f"**Iteration:** {iter_in_exp}")
-        else:
+        elif phase in (5, 6):
             return (f"**Round:** {self.calibration_round} | "
-                    f"**Iteration:** {self.current_iteration}")
+                    f"**Cycle:** {self.experiment_count}")
+        else:
+            return f"**Round:** {self.calibration_round}"
 
     def _format_metadata_block(self, phase: int, phase_name: str,
                                extra: Dict = None) -> str:

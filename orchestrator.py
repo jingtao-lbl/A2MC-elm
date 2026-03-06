@@ -1432,6 +1432,21 @@ Review the screening log at:
                 "comparative_analysis": comparative_analysis,  # best_case vs lowest_cost_case
             }
 
+            # Add experiment cycle summary for c1+ (cross-cycle knowledge continuity)
+            if self.state.experiment_count > 0 and self.state.experiments:
+                cycle_summary = self._build_experiment_cycle_summary()
+                if cycle_summary:
+                    diagnosis_input['previous_phase_insights'] = (
+                        f"## Previous Experiment Cycle Results (CRITICAL — build on these)\n\n"
+                        f"{cycle_summary}\n\n"
+                        f"Your diagnosis MUST:\n"
+                        f"1. Explain why the previous experiment did/didn't work\n"
+                        f"2. Identify which mechanisms remain unaddressed\n"
+                        f"3. Propose DIFFERENT approaches from what was already tried\n"
+                        f"4. Check if known failure modes recurred (e.g., vegetation collapse, P trapped in litter)\n"
+                    )
+                    logger.info(f"Added experiment cycle summary for c{self.state.experiment_count}")
+
             # Add evidence ledger context for Iter 2+ (focused hypothesis-driven diagnosis)
             if self.state.skip_testing_count > 0 and self.state.parameter_evidence_ledger:
                 from reasoning.methods import format_evidence_ledger_for_prompt
@@ -1616,6 +1631,50 @@ Diagnosis Summary:{skip_header}
         """
         from phases.phase3_diagnosis.ai_diagnosis import diagnose_rule_based
         return diagnose_rule_based(diagnosis_input)
+
+    def _build_experiment_cycle_summary(self) -> str:
+        """Build a narrative summary of previous experiment cycles for cross-cycle continuity.
+
+        Aggregates: hypotheses tested, experiment outcomes, lessons learned,
+        failed approaches added, and new discoveries from previous cycles.
+        """
+        lines = []
+        for i, exp in enumerate(self.state.experiments):
+            exp_name = exp.get('name', exp.get('id', f'Experiment {i+1}'))
+            outcome = exp.get('outcome', 'unknown')
+            lines.append(f"### Experiment {i+1}: {exp_name}")
+            lines.append(f"**Outcome:** {outcome}")
+
+            # Modifications
+            mods = exp.get('modifications', [])
+            if mods:
+                mod_strs = [f"{m.get('parameter','?')}: {m.get('old_value','?')} → {m.get('new_value','?')}"
+                           for m in mods[:5]]
+                lines.append(f"**Parameter changes:** {'; '.join(mod_strs)}")
+
+            # Results
+            results = exp.get('results', {})
+            if results:
+                result_strs = [f"{k}: {v}" for k, v in list(results.items())[:5]]
+                lines.append(f"**Results:** {'; '.join(result_strs)}")
+
+            # Lesson
+            if exp.get('lesson'):
+                lines.append(f"**Lesson:** {exp['lesson']}")
+
+            lines.append("")
+
+        # Add recent diagnoses context
+        if self.state.diagnoses:
+            last_diag = self.state.diagnoses[-1]
+            causes = last_diag.get('likely_causes', [])
+            if causes:
+                lines.append("### Latest Diagnosis Root Causes")
+                for c in causes[:3]:
+                    lines.append(f"- {c}")
+                lines.append("")
+
+        return "\n".join(lines)
 
     def _build_comparative_analysis(self, screening_data: Dict) -> Dict:
         """Build comparative evaluation of best_case vs lowest_cost_case.

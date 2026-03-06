@@ -82,11 +82,13 @@ def run_hypothesis_generation(
         Hypothesis dict (new or existing)
     """
     # Check if hypothesis already exists for this iteration (resuming after checkpoint)
+    # Only skip generation if the last hypothesis was truly generated for the
+    # current iteration — do NOT use len(hypotheses) >= len(diagnoses) as a
+    # heuristic, because hypotheses accumulate across experiment cycles
+    # (including synthesized ones) and that check is almost always true.
     if existing_hypotheses:
         last_hyp = existing_hypotheses[-1]
-        if last_hyp.get('iteration', None) == iteration or (
-            existing_diagnoses and len(existing_hypotheses) >= len(existing_diagnoses)
-        ):
+        if last_hyp.get('iteration', None) == iteration:
             logger.info("Hypothesis already generated for this iteration (resuming from checkpoint)")
             return last_hyp
 

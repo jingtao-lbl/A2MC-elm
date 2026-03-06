@@ -3,6 +3,7 @@
   "_schema_version": "1.0",
   "_last_updated": "2026-02-02",
   "_source": "Knox 2026 CNP Guidebook + A2MC calibration experience",
+  "_affects_convention": "Use official FATES/ELM variable names in 'affects' (e.g., FATES_FROOTC, FATES_LEAFC_PF, LABILEP_vr). Use 'affects_pfts' (optional, 1-indexed) to specify which PFTs are impacted (e.g., [7, 10]). Omit or leave empty for all PFTs. See docs/a2mc_reference/fates_data_reference.md.",
 
   "discoveries": [
     {

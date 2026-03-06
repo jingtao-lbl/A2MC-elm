@@ -128,6 +128,12 @@ class MemoryManager:
                         mech = mech[:300] + "..."
                     sections.append(f"**Mechanism:** {mech}")
 
+                if disc.get("affects_pfts"):
+                    sections.append(f"**Affected PFTs:** {', '.join(f'PFT#{p}' for p in disc['affects_pfts'])}")
+
+                if disc.get("affects"):
+                    sections.append(f"**Affected variables:** {', '.join(disc['affects'])}")
+
                 if disc.get("implications"):
                     sections.append("**Implications:**")
                     for imp in disc["implications"][:3]:
@@ -607,17 +613,62 @@ class MemoryManager:
         return {k: v for k, v in self.discoveries.items() if isinstance(v, dict)}
 
     def _find_relevant_discoveries(self, targets: List[str]) -> List[tuple]:
-        """Find discoveries relevant to given targets."""
+        """Find discoveries relevant to given targets.
+
+        Maps validation target names (e.g., 'PFT10_fineroot') to FATES variable
+        families (FATES_FROOTC, FATES_FROOTC_PF, FATES_FROOTC_SZPF) for matching
+        against discovery 'affects' fields that use official FATES/ELM variable names.
+        Also filters by 'affects_pfts' when both discovery and targets specify PFTs.
+        """
         relevant = []
         if not targets:
             return relevant
 
         target_set = set(t.lower() for t in targets)
+        target_vars = set()   # FATES variable names (lowered)
+        target_pfts = set()   # PFT IDs (1-indexed ints)
+
+        # Map validation targets to FATES variable families
+        try:
+            from tools.fates_output_variables import resolve_target_name, get_variable_family
+            import re
+            for t in targets:
+                match = re.match(r"PFT(\d+)_(\w+)", t)
+                if match:
+                    pft_id = int(match.group(1))
+                    target_pfts.add(pft_id)
+                    var_type = match.group(2).lower()
+                    try:
+                        canonical = resolve_target_name(var_type)
+                        family = get_variable_family(canonical)
+                        for var in [family.site_var, family.pft_var, family.szpf_var]:
+                            if var:
+                                target_vars.add(var.lower())
+                    except KeyError:
+                        pass
+        except ImportError:
+            pass
+
+        # Combine original target names + resolved FATES variable names
+        all_search_terms = target_set | target_vars
 
         for name, disc in self._discovery_entries().items():
             affects = [a.lower() for a in disc.get("affects", [])]
-            if any(t in affects or any(t in a for a in affects) for t in target_set):
-                relevant.append((name, disc))
+            # Check variable name match (substring matching for flexibility)
+            var_match = any(
+                t in affects or any(t in a for a in affects)
+                for t in all_search_terms
+            )
+            if not var_match:
+                continue
+
+            # Filter by affects_pfts if both sides specify PFTs
+            disc_pfts = disc.get("affects_pfts")
+            if disc_pfts and target_pfts:
+                if not target_pfts.intersection(disc_pfts):
+                    continue
+
+            relevant.append((name, disc))
 
         return relevant
 
