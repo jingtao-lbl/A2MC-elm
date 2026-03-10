@@ -195,7 +195,8 @@ def wait_for_experiments(
         return experiments
 
     start_time = time.time()
-    logger.info(f"Waiting for {len(submitted)} experiments (timeout={timeout}s, "
+    timeout_str = f"{timeout}s" if timeout > 0 else "unlimited"
+    logger.info(f"Waiting for {len(submitted)} experiments (timeout={timeout_str}, "
                 f"poll={poll_interval}s)...")
 
     while True:
@@ -213,11 +214,11 @@ def wait_for_experiments(
             break
 
         elapsed = time.time() - start_time
-        if elapsed > timeout:
+        if timeout > 0 and elapsed > timeout:
             logger.warning(f"Timeout ({timeout}s) reached. "
                            f"{len(still_running)} experiments still running.")
             for exp in still_running:
-                exp["job_status"] = "TIMEOUT"
+                exp["job_status"] = "WAIT_TIMEOUT"
             break
 
         logger.info(f"  {len(still_running)}/{len(submitted)} still running "

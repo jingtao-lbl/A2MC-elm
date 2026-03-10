@@ -2445,36 +2445,41 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
                 sts = exp.get("submission_status", "unknown")
                 job_summary += f"\n    {exp.get('name', '?')}: job_id={jid} ({sts})"
 
-            logger.info("")
-            logger.info("=" * 70)
-            logger.info("  EXPERIMENTS SUBMITTED — Choose next action")
-            logger.info("=" * 70)
-            logger.info(f"  {len(experiments)} experiments submitted to HPC:{job_summary}")
-            logger.info("")
-            logger.info("  OPTIONS:")
-            logger.info("    [w] Wait for jobs to complete (polls every 24h, timeout 48h)")
-            logger.info("    [q] Quit now and resume later with: python orchestrator.py --resume")
-            logger.info("=" * 70)
+            if self.config.human_review:
+                logger.info("")
+                logger.info("=" * 70)
+                logger.info("  EXPERIMENTS SUBMITTED — Choose next action")
+                logger.info("=" * 70)
+                logger.info(f"  {len(experiments)} experiments submitted to HPC:{job_summary}")
+                logger.info("")
+                logger.info("  OPTIONS:")
+                logger.info("    [w] Wait for jobs to complete (polls every 6h until done)")
+                logger.info("    [q] Quit now and resume later with: python orchestrator.py --resume")
+                logger.info("=" * 70)
 
-            try:
-                choice = input("\nEnter choice: ").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                choice = "q"
+                try:
+                    choice = input("\nEnter choice: ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    choice = "q"
 
-            if choice != "w":
-                logger.info("Quitting workflow. Jobs continue running on HPC.")
-                logger.info("Resume after completion: python orchestrator.py --resume")
-                self.state.save(str(self.state_path))
-                return
+                if choice != "w":
+                    logger.info("Quitting workflow. Jobs continue running on HPC.")
+                    logger.info("Resume after completion: python orchestrator.py --resume")
+                    self.state.save(str(self.state_path))
+                    return
+            else:
+                logger.info(f"  {len(experiments)} experiments submitted:{job_summary}")
 
-            logger.info("Entering wait mode (polling every 24h, timeout 48h)...")
+            logger.info("Entering wait mode (polling every 6h until all jobs finish)...")
 
         # --- 5b. Wait for all jobs to complete ---
+        # No timeout — keep polling every 6h until all jobs complete or fail.
+        # User can Ctrl+C to interrupt; state is saved, --resume will recover.
         try:
             experiments = wait_for_experiments(
                 experiments=experiments,
-                poll_interval=86400,   # Poll every 24 hours
-                timeout=172800         # Timeout after 48 hours
+                poll_interval=21600,   # Poll every 6 hours
+                timeout=0             # 0 = no timeout, wait indefinitely
             )
         except Exception as e:
             logger.error(f"Job monitoring failed: {e}")
