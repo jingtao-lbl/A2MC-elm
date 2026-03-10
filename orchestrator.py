@@ -2431,12 +2431,50 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
                 logger.info(f"  {e.get('name','?')}: job_id={e.get('job_id','N/A')} "
                             f"status={e.get('job_status', 'UNKNOWN')}")
 
-        # --- 5a. Wait for all jobs to complete ---
+        # --- 5a. Post-submission checkpoint: wait or quit ---
+        # Check if any experiments are still pending (not yet completed)
+        completed_jobs = sum(1 for e in experiments
+                            if e.get("job_status") in ("COMPLETED", "SIMULATED_COMPLETE"))
+        pending_jobs = len(experiments) - completed_jobs
+
+        if pending_jobs > 0 and not resumed:
+            # Fresh submission — ask user whether to wait or quit
+            job_summary = ""
+            for exp in experiments:
+                jid = exp.get("job_id", "N/A")
+                sts = exp.get("submission_status", "unknown")
+                job_summary += f"\n    {exp.get('name', '?')}: job_id={jid} ({sts})"
+
+            logger.info("")
+            logger.info("=" * 70)
+            logger.info("  EXPERIMENTS SUBMITTED — Choose next action")
+            logger.info("=" * 70)
+            logger.info(f"  {len(experiments)} experiments submitted to HPC:{job_summary}")
+            logger.info("")
+            logger.info("  OPTIONS:")
+            logger.info("    [w] Wait for jobs to complete (polls every 24h, timeout 48h)")
+            logger.info("    [q] Quit now and resume later with: python orchestrator.py --resume")
+            logger.info("=" * 70)
+
+            try:
+                choice = input("\nEnter choice: ").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                choice = "q"
+
+            if choice != "w":
+                logger.info("Quitting workflow. Jobs continue running on HPC.")
+                logger.info("Resume after completion: python orchestrator.py --resume")
+                self.state.save(str(self.state_path))
+                return
+
+            logger.info("Entering wait mode (polling every 24h, timeout 48h)...")
+
+        # --- 5b. Wait for all jobs to complete ---
         try:
             experiments = wait_for_experiments(
                 experiments=experiments,
-                poll_interval=self.config.poll_interval,
-                timeout=86400  # 24 hours
+                poll_interval=86400,   # Poll every 24 hours
+                timeout=172800         # Timeout after 48 hours
             )
         except Exception as e:
             logger.error(f"Job monitoring failed: {e}")
