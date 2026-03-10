@@ -271,11 +271,10 @@ def extract_experiment_results(
         name = exp.get("name", "unnamed")
         job_status = exp.get("job_status", "UNKNOWN")
 
-        # Skip non-completed experiments
-        if job_status not in ("COMPLETED", "SIMULATED_COMPLETE"):
-            if job_status in ("FAILED", "TIMEOUT", "CANCELLED"):
-                exp["extraction_status"] = "skipped_job_failed"
-                exp["results"] = {"error": f"Job {job_status}"}
+        # Skip definitively failed experiments
+        if job_status in ("FAILED", "TIMEOUT", "CANCELLED"):
+            exp["extraction_status"] = "skipped_job_failed"
+            exp["results"] = {"error": f"Job {job_status}"}
             continue
 
         # Simulated mode: no real output to extract
@@ -289,6 +288,12 @@ def extract_experiment_results(
                 "metrics": {}
             }
             continue
+
+        # For non-COMPLETED jobs (UNKNOWN, NO_JOB, etc.), try extraction anyway —
+        # the job may have completed while the orchestrator was offline
+        if job_status not in ("COMPLETED",):
+            logger.info(f"'{name}': job_status={job_status}, attempting extraction "
+                       f"(job may have completed while offline)")
 
         # Real extraction
         case_name = exp.get("case_name", name)

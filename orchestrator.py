@@ -2405,6 +2405,25 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             logger.info(f"State saved with {len(experiments)} submitted experiments "
                         f"(job_ids preserved for resume)")
 
+        # --- 4b. Recover job IDs from submission_output if missing ---
+        if resumed:
+            from phases.phase5_testing.submit_experiments import _extract_job_id
+            for exp in experiments:
+                if not exp.get("job_id") and exp.get("submission_output"):
+                    recovered_id = _extract_job_id(exp["submission_output"])
+                    if recovered_id:
+                        exp["job_id"] = recovered_id
+                        logger.info(f"  Recovered job_id={recovered_id} for '{exp.get('name','?')}' "
+                                   f"from submission_output")
+
+        # --- 4c. Derive case_name if missing (needed for extraction) ---
+        for exp in experiments:
+            if not exp.get("case_name"):
+                base = exp.get("base_case", "")
+                name = exp.get("name", "")
+                if base and name:
+                    exp["case_name"] = f"{base}_{name}"
+
         # --- 5. Check experiment status (refresh on resume) ---
         if resumed:
             experiments = check_experiment_status(experiments)
