@@ -551,13 +551,23 @@ class KnowledgeExtractor:
                     if isinstance(bounds, list) and len(bounds) == 2:
                         bounds = {'min': bounds[0], 'max': bounds[1]}
 
+                    # Convert pft field to parameter_pft list
+                    pft_val = param.get('pft')
+                    parameter_pft = None
+                    if pft_val is not None:
+                        try:
+                            parameter_pft = [int(pft_val)]
+                        except (ValueError, TypeError):
+                            pass
+
                     self.memory.add_parameter_info(
                         param_name,
+                        parameter_pft=parameter_pft,
+                        affects_pfts=param.get('affects_pfts'),
                         insights=[param.get('insight', '')],
                         bounds=bounds,
                         interactions=param.get('interactions', []),
                         source=source,
-                        pft=param.get('pft'),
                         caution=param.get('caution')
                     )
             except Exception as e:

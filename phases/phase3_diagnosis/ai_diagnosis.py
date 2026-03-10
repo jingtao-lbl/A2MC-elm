@@ -117,6 +117,12 @@ def diagnose_with_claude(
             results["evidence_ledger_context"] = evidence_ledger_ctx
             logger.info("Added evidence ledger context to Claude reasoning")
 
+        # Add previous phase log (full Markdown from Phase 2 or previous Phase 3)
+        previous_phase_log = diagnosis_input.get("previous_phase_log")
+        if previous_phase_log:
+            results["previous_phase_log"] = previous_phase_log
+            logger.info(f"Added previous phase log ({len(previous_phase_log)} chars) to Claude reasoning")
+
         # Add previous phase AI insights so diagnosis builds on earlier analysis
         prior_insights = []
         # Screening AI analysis (Phase 2)

@@ -124,7 +124,8 @@ def resolve_parameter_name(name, pft=None, organ=None, param_lookup=None):
         param_lookup: Dict from build_param_lookup(), or None to skip lookup
 
     Returns:
-        tuple: (fates_name, pft, organ) where pft is int (0=global) and organ is int or None
+        tuple: (fates_name, pft, organ) where pft is int (0=global) and organ is
+               int, list[int] (retrans → [1,2] for leaf+fineroot), or None
     """
     resolved_name = name
     resolved_pft = pft if pft is not None else 0
@@ -137,6 +138,46 @@ def resolve_parameter_name(name, pft=None, organ=None, param_lookup=None):
             resolved_pft = entry['pft']
         if organ is None:
             resolved_organ = entry['organ']
+    elif name.startswith('fates_') and param_lookup and organ is None:
+        # Full FATES name passed — try reverse lookup to find organ info.
+        # This handles cases where AI proposes e.g. 'fates_stoich_phos' without
+        # specifying organ, but the param_lookup has organ-specific entries like
+        # 'stoich_phos_leaf_10' that map to the same fates_name.
+        target_pft = pft if pft is not None else 0
+        matching_organs = set()
+        for entry in param_lookup.values():
+            if entry['fates_name'] == name and entry['pft'] == target_pft and entry['organ'] is not None:
+                matching_organs.add(entry['organ'])
+
+        if len(matching_organs) == 1:
+            resolved_organ = matching_organs.pop()
+            organ_names = {v: k for k, v in ORGAN_NAME_TO_INDEX.items()}
+            logger.info(f"Auto-resolved organ for '{name}' PFT {target_pft}: "
+                        f"organ={resolved_organ} ({organ_names.get(resolved_organ, '?')})")
+        elif len(matching_organs) > 1:
+            # Multiple organs found.
+            # For retrans params: same value applies to leaf+fineroot (senescing
+            # tissues only), so return both organs as a list.
+            RETRANS_PARAMS = {
+                'fates_cnp_turnover_nitr_retrans',
+                'fates_cnp_turnover_phos_retrans',
+            }
+            if name in RETRANS_PARAMS:
+                resolved_organ = sorted(matching_organs)  # [1, 2]
+                organ_names = {v: k for k, v in ORGAN_NAME_TO_INDEX.items()}
+                organs_str = ', '.join(f"{o}={organ_names.get(o, '?')}" for o in resolved_organ)
+                logger.info(f"Retrans param '{name}' PFT {target_pft}: "
+                            f"auto-resolved to organs [{organs_str}] (senescing tissues)")
+            else:
+                # Non-retrans: cannot guess, require explicit specification
+                organ_names = {v: k for k, v in ORGAN_NAME_TO_INDEX.items()}
+                organs_str = ', '.join(f"{o}={organ_names.get(o, '?')}" for o in sorted(matching_organs))
+                raise ValueError(
+                    f"Parameter '{name}' PFT {target_pft} is organ-dependent but no organ "
+                    f"was specified. Available organs: {organs_str}. "
+                    f"The AI hypothesis must include 'organ' field "
+                    f"(1=leaf, 2=fineroot, 3=sapwood, 4=storage)."
+                )
     elif not name.startswith('fates_'):
         # Not in lookup and not a full FATES name — warn but pass through
         logger.warning(f"Parameter '{name}' not found in lookup and doesn't start with 'fates_'. "
@@ -401,33 +442,59 @@ def verify_modifications(nc_file, expected_modifications, verbose=True):
         for mod in expected_modifications:
             param = mod['param']
             pft = mod.get('pft', 0)
+            organ = mod.get('organ', None)
             expected_value = mod.get('expected_value', None)
 
-            # Get array index (0-based)
-            array_index = (pft - 1) if pft > 0 else None
+            # Get array indices (0-based)
+            pft_array_index = (pft - 1) if pft > 0 else None
+            organ_array_index = (organ - 1) if organ is not None and organ > 0 else None
 
             # Get variable
             var = ncfile.variables[param]
 
-            # Get actual value
-            if array_index is not None:
-                actual_value = float(var[array_index])
-            else:
+            # Get actual value based on dimensions (mirrors modify_parameter logic)
+            if len(var.shape) == 0:
                 actual_value = float(var[:])
+            elif len(var.shape) == 1:
+                if pft_array_index is not None:
+                    actual_value = float(var[pft_array_index])
+                else:
+                    actual_value = float(var[:])
+            elif len(var.shape) == 2:
+                dim_names = var.dimensions
+                if 'fates_plant_organs' in dim_names and 'fates_pft' in dim_names:
+                    organ_dim_idx = dim_names.index('fates_plant_organs')
+                    pft_dim_idx = dim_names.index('fates_pft')
+                    if organ_dim_idx == 0 and pft_dim_idx == 1:
+                        actual_value = float(var[organ_array_index, pft_array_index])
+                    else:
+                        actual_value = float(var[pft_array_index, organ_array_index])
+                elif 'fates_leafage_class' in dim_names and 'fates_pft' in dim_names:
+                    leafage_dim_idx = dim_names.index('fates_leafage_class')
+                    pft_dim_idx = dim_names.index('fates_pft')
+                    if leafage_dim_idx == 0 and pft_dim_idx == 1:
+                        actual_value = float(var[0, pft_array_index])
+                    else:
+                        actual_value = float(var[pft_array_index, 0])
+                else:
+                    actual_value = float(var[pft_array_index])
+            else:
+                actual_value = float(var[pft_array_index])
 
             # Check if matches expected
+            organ_str = f", organ {organ}" if organ is not None else ""
             if expected_value is not None:
                 is_correct = np.isclose(actual_value, expected_value, rtol=1e-6)
                 status = "✓" if is_correct else "✗"
 
                 if verbose:
-                    print(f"  {status} {param}[PFT {pft}]: {actual_value:.6e} (expected: {expected_value:.6e})")
+                    print(f"  {status} {param}[PFT {pft}{organ_str}]: {actual_value:.6e} (expected: {expected_value:.6e})")
 
                 if not is_correct:
                     all_correct = False
             else:
                 if verbose:
-                    print(f"  ℹ {param}[PFT {pft}]: {actual_value:.6e} (not verified)")
+                    print(f"  ℹ {param}[PFT {pft}{organ_str}]: {actual_value:.6e} (not verified)")
 
     if verbose:
         if all_correct:

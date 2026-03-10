@@ -51,12 +51,26 @@ def _is_hpc() -> bool:
 
 
 def _extract_job_id(output: str) -> Optional[str]:
-    """Extract SLURM job ID from submission output."""
-    # Patterns: "Submitted batch job 12345678" or "with id 12345678"
-    match = re.search(r"(?:Submitted batch job|with id)\s+(\d+)", output)
-    if match:
-        return match.group(1)
-    return None
+    """Extract SLURM job ID from submission output (stdout + stderr).
+
+    Supports multiple output formats:
+    - sbatch direct: "Submitted batch job 12345678"
+    - CIME case.submit: "Submitted job id is 12345678"
+    - CIME alternate: "with id 12345678"
+    - create_case.sh: "Phase TRANS submitted: Job ID 12345678"
+    """
+    # Try all known patterns; return the LAST match (final phase's job ID)
+    patterns = [
+        r"Submitted batch job\s+(\d+)",
+        r"Submitted job id is\s+(\d+)",
+        r"with id\s+(\d+)",
+        r"Job ID\s+(\d+)",
+    ]
+    last_job_id = None
+    for pattern in patterns:
+        for match in re.finditer(pattern, output):
+            last_job_id = match.group(1)
+    return last_job_id
 
 
 # Path to create_case.sh (used by generate_experiment_scripts)
@@ -309,7 +323,9 @@ def submit_experiments(
             )
 
             if result.returncode == 0:
-                job_id = _extract_job_id(result.stdout)
+                # Search both stdout and stderr (CIME prints job IDs to stderr)
+                combined_output = result.stdout + "\n" + result.stderr
+                job_id = _extract_job_id(combined_output)
                 exp["job_id"] = job_id
                 exp["submission_status"] = "submitted" if submit else "built"
                 exp["submission_output"] = result.stdout[-500:]  # Last 500 chars

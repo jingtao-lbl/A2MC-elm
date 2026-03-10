@@ -192,20 +192,31 @@ class MemoryManager:
         if parameters:
             param_knowledge_sections = []
             for param in parameters[:10]:  # Limit to 10 parameters
-                param_lower = param.lower()
+                param_lower = self._strip_pft_suffix(param.lower())
                 for p_name, p_data in self.parameters.get("parameters", {}).items():
-                    if param_lower in p_name.lower():
-                        knowledge = p_data.get("knowledge", [])
-                        cautions = p_data.get("cautions", [])
-                        if knowledge or cautions:
-                            param_knowledge_sections.append(f"### {p_name}")
-                            for k in knowledge[:3]:
-                                param_knowledge_sections.append(
-                                    f"- [{k.get('type', '?')}] {k.get('content', '')}"
-                                )
-                            for c in cautions[:2]:
-                                param_knowledge_sections.append(f"- **CAUTION:** {c}")
-                            param_knowledge_sections.append("")
+                    if param_lower in p_name.lower() or p_name.lower() in param_lower:
+                        # Build header with PFT context
+                        header = f"### {p_name}"
+                        pft_info = p_data.get("parameter_pft")
+                        if pft_info:
+                            header += f" (PFT {', '.join(f'#{p}' for p in pft_info)})"
+                        param_knowledge_sections.append(header)
+
+                        # Show insights (Schema A: list of strings)
+                        for ins in p_data.get("insights", [])[:3]:
+                            param_knowledge_sections.append(f"- {ins}")
+
+                        # Show knowledge entries (Schema B: list of dicts)
+                        for k in p_data.get("knowledge", [])[:3]:
+                            param_knowledge_sections.append(
+                                f"- [{k.get('type', '?')}] {k.get('content', '')}"
+                            )
+
+                        # Show cautions
+                        for c in p_data.get("cautions", [])[:2]:
+                            param_knowledge_sections.append(f"- **CAUTION:** {c}")
+
+                        param_knowledge_sections.append("")
 
             if param_knowledge_sections:
                 sections.append("## Parameter-Specific Knowledge\n")
@@ -261,9 +272,10 @@ class MemoryManager:
             param_lower = param.lower()
             param_cautions = []
 
-            # Check parameter definitions
+            # Check parameter definitions (strip PFT suffix for matching)
+            stripped = self._strip_pft_suffix(param_lower)
             for p_name, p_data in self.parameters.get("parameters", {}).items():
-                if param_lower in p_name.lower():
+                if stripped in p_name.lower() or p_name.lower() in stripped:
                     param_cautions.extend(p_data.get("cautions", []))
 
             # Check discoveries that implicate this parameter
@@ -367,7 +379,17 @@ class MemoryManager:
         if outcome == "catastrophic_collapse":
             record["repeat_warning"] = "CATASTROPHIC FAILURE - DO NOT REPEAT"
 
-        self.experiments["experiments"].append(record)
+        # Update existing entry with same ID (avoid duplicates), or append new
+        existing_idx = None
+        for i, existing in enumerate(self.experiments["experiments"]):
+            if existing.get("id") == exp_id:
+                existing_idx = i
+                break
+        if existing_idx is not None:
+            self.experiments["experiments"][existing_idx] = record
+            logger.debug(f"Updated existing experiment record: {exp_id}")
+        else:
+            self.experiments["experiments"].append(record)
         self._save("experiments.json", self.experiments)
 
         logger.info(f"Recorded experiment: {exp_id} (outcome: {outcome})")
@@ -495,18 +517,26 @@ class MemoryManager:
         logger.info(f"Updated verification for {name}: verified={verified}")
         return True
 
-    def add_parameter_info(self, name: str, **attributes) -> None:
+    def add_parameter_info(self, name: str, parameter_pft: Optional[List[int]] = None,
+                           affects_pfts: Optional[List[int]] = None, **attributes) -> None:
         """
         Add or update parameter information.
 
         Args:
-            name: Parameter name
-            **attributes: Parameter attributes (description, units, valid_range, etc.)
+            name: Parameter name (official FATES name, no PFT suffix)
+            parameter_pft: List of PFT IDs whose knob was turned (e.g., [10])
+            affects_pfts: List of PFT IDs that respond to changes (e.g., [7, 9, 10])
+            **attributes: Parameter attributes (insights, bounds, interactions, etc.)
         """
         if name not in self.parameters["parameters"]:
             self.parameters["parameters"][name] = {}
 
-        self.parameters["parameters"][name].update(attributes)
+        entry = self.parameters["parameters"][name]
+        if parameter_pft is not None:
+            entry["parameter_pft"] = parameter_pft
+        if affects_pfts is not None:
+            entry["affects_pfts"] = affects_pfts
+        entry.update(attributes)
         self._save("parameters.json", self.parameters)
 
     def add_parameter_knowledge(self, parameter: str, knowledge_type: str,
@@ -606,6 +636,17 @@ class MemoryManager:
         }
 
     # ==================== PRIVATE HELPERS ====================
+
+    @staticmethod
+    def _strip_pft_suffix(name: str) -> str:
+        """Strip trailing PFT suffix (_7, _9, _10) from parameter names for matching.
+
+        Morris shorthand uses suffixes like 'pid_kp_10' but official FATES names
+        don't include PFT suffixes. This enables matching queries like
+        'fates_cnp_pid_kp_10' against stored key 'fates_cnp_pid_kp'.
+        """
+        import re
+        return re.sub(r'_(?:7|9|10)$', '', name)
 
     def _discovery_entries(self) -> Dict[str, Dict]:
         """Return only discovery entries (dicts), filtering out metadata fields

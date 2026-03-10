@@ -189,14 +189,29 @@ def create_experiment_param_files(
                     organ_str = f", organ={organ}" if organ is not None else ""
                     logger.info(f"  Resolved '{raw_name}' → '{fates_name}' (PFT={pft}{organ_str})")
 
-                tool_mod = {
-                    "param": fates_name,
-                    "pft": pft,
-                    "value": mod["new_value"],
-                }
-                if organ is not None:
-                    tool_mod["organ"] = organ
-                tool_modifications.append(tool_mod)
+                # organ can be int, list[int] (retrans → [1,2]), or None
+                if isinstance(organ, list):
+                    # Retrans params: apply same value to each organ
+                    for org in organ:
+                        tool_mod = {
+                            "param": fates_name,
+                            "pft": pft,
+                            "value": mod["new_value"],
+                            "organ": org,
+                        }
+                        tool_modifications.append(tool_mod)
+                    organ_names = {1: 'leaf', 2: 'fineroot', 3: 'sapwood', 4: 'storage'}
+                    organs_str = '+'.join(organ_names.get(o, str(o)) for o in organ)
+                    logger.info(f"  Retrans '{fates_name}' PFT {pft} → applied to {organs_str}")
+                else:
+                    tool_mod = {
+                        "param": fates_name,
+                        "pft": pft,
+                        "value": mod["new_value"],
+                    }
+                    if organ is not None:
+                        tool_mod["organ"] = organ
+                    tool_modifications.append(tool_mod)
 
             # Create modified file
             results = create_modified_parameter_file(
@@ -214,11 +229,14 @@ def create_experiment_param_files(
             if verify:
                 expected = []
                 for tool_mod, result in zip(tool_modifications, results):
-                    expected.append({
+                    entry = {
                         "param": tool_mod["param"],
                         "pft": tool_mod["pft"],
-                        "expected_value": result["new_value"]
-                    })
+                        "expected_value": result["new_value"],
+                    }
+                    if "organ" in tool_mod:
+                        entry["organ"] = tool_mod["organ"]
+                    expected.append(entry)
                 is_correct = verify_modifications(
                     str(output_file), expected, verbose=True
                 )

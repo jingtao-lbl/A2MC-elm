@@ -455,9 +455,6 @@ def execute_requested_diagnostics(
             # ===== Ensemble Visualization =====
             elif tool == 'plot_ensemble_biomass':
                 try:
-                    from phases.phase2_screening.plot_screening import (
-                        plot_ensemble_biomass_from_dir
-                    )
                     extracted_dir = a2mc_config.EXTRACTED_DATA
                     if extracted_dir and Path(extracted_dir).exists():
                         simple_targets = {}
@@ -480,14 +477,39 @@ def execute_requested_diagnostics(
                             fig_dir = phase_logger._get_phase_dir(3)
                         if not fig_dir:
                             fig_dir = Path(extracted_dir)
-                        fig_path = plot_ensemble_biomass_from_dir(
-                            data_dir=extracted_dir,
-                            targets=simple_targets,
-                            pft_ids=pft_ids,
-                            output_path=str(Path(fig_dir) / 'ensemble_biomass_top_cases.png'),
-                            top_n=tool_args.get('top_n', 100),
-                            obs_uncertainty=obs_uncert if obs_uncert else None,
-                        )
+                        output_path = str(Path(fig_dir) / 'ensemble_biomass_top_cases.png')
+                        top_n = tool_args.get('top_n', 100)
+
+                        # Reuse Phase 2 ranked_cases if available (avoids
+                        # re-ranking all 4890 cases from scratch)
+                        pre_ranked = screening_data.get('ranked_cases') if screening_data else None
+                        if pre_ranked:
+                            from phases.phase2_screening.plot_screening import (
+                                plot_ensemble_biomass
+                            )
+                            logger.info(f"  Using pre-ranked cases from screening ({len(pre_ranked)} cases)")
+                            fig_path = plot_ensemble_biomass(
+                                data_dir=extracted_dir,
+                                ranked_cases=pre_ranked,
+                                targets=simple_targets,
+                                pft_ids=pft_ids,
+                                output_path=output_path,
+                                top_n=top_n,
+                                obs_uncertainty=obs_uncert if obs_uncert else None,
+                            )
+                        else:
+                            from phases.phase2_screening.plot_screening import (
+                                plot_ensemble_biomass_from_dir
+                            )
+                            logger.info("  No pre-ranked cases; ranking from scratch")
+                            fig_path = plot_ensemble_biomass_from_dir(
+                                data_dir=extracted_dir,
+                                targets=simple_targets,
+                                pft_ids=pft_ids,
+                                output_path=output_path,
+                                top_n=top_n,
+                                obs_uncertainty=obs_uncert if obs_uncert else None,
+                            )
                         if fig_path:
                             results['ensemble_biomass_figure'] = fig_path
                             summaries.append(f"## Ensemble Biomass Figure\nSaved: {fig_path}")

@@ -281,6 +281,65 @@ class PhaseLogger:
         if skip_testing_count is not None:
             self.skip_testing_count = skip_testing_count
 
+    def read_phase_log(self, phase: int, session_id: str = None,
+                       max_chars: int = 8000) -> Optional[str]:
+        """
+        Read the most recent log file for a given phase, optionally filtered
+        by session_id.
+
+        When session_id is provided, only logs from that session are considered
+        (matching the YYYYMMDD_HHMMSS pattern in the filename). This ensures
+        we read the log from the *current* orchestrator run, not stale logs
+        from previous runs.
+
+        When session_id is None, uses self.session_id as default filter.
+        Pass session_id="" (empty string) to explicitly skip filtering and
+        get the most recent log regardless of session — useful for cross-phase
+        reads where the previous phase ran in a different session.
+
+        Args:
+            phase: Phase number (0-7)
+            session_id: Session timestamp to match (e.g., "20260226_125323").
+                        None = use self.session_id; "" = no filter (most recent).
+            max_chars: Maximum characters to return (truncates from the end).
+
+        Returns:
+            Log file content as string, or None if no matching log found.
+        """
+        phase_dir = self._get_phase_dir(phase)
+        if not phase_dir.exists():
+            return None
+
+        # None → use self.session_id; "" → no filter
+        sid = self.session_id if session_id is None else session_id
+
+        # Find matching log files
+        md_files = sorted(phase_dir.glob("r*.md"), key=lambda p: p.stat().st_mtime)
+        if not md_files:
+            return None
+
+        if sid:
+            # Filter to logs from this session
+            matching = [f for f in md_files if sid in f.name]
+            if not matching:
+                logger.debug(f"No phase {phase} logs matching session_id={sid}")
+                return None
+            # Use the most recent matching file (last by mtime)
+            target = matching[-1]
+        else:
+            # No session filter — use most recent
+            target = md_files[-1]
+
+        try:
+            content = target.read_text()
+            if len(content) > max_chars:
+                content = content[:max_chars] + f"\n\n... [truncated at {max_chars} chars]"
+            logger.info(f"Read phase {phase} log: {target.name} ({len(content)} chars)")
+            return content
+        except Exception as e:
+            logger.warning(f"Could not read phase log {target}: {e}")
+            return None
+
     def _format_iteration_line(self, phase: int = None) -> str:
         """
         Format the iteration context line for log headers.
@@ -622,6 +681,11 @@ class PhaseLogger:
                       questions_for_discussion: List[str] = None,
                       figure_paths: List[str] = None,
                       figure_analyses: List = None,
+                      # Rich diagnosis fields from AI JSON
+                      severity_breakdown: Dict = None,
+                      root_causes: List[Dict] = None,
+                      key_insights: List[str] = None,
+                      comparative_analysis: Dict = None,
                       metadata: Dict = None) -> Path:
         """
         Log Phase 3: Diagnosis with full AI reasoning.
@@ -674,6 +738,65 @@ class PhaseLogger:
 """
         for i, cause in enumerate(likely_causes, 1):
             content += f"{i}. {cause}\n"
+
+        if severity_breakdown:
+            content += """
+---
+
+## Severity Breakdown
+
+"""
+            for level in ['critical', 'high', 'medium', 'low']:
+                targets = severity_breakdown.get(level, [])
+                if targets:
+                    content += f"**{level.upper()}:** {', '.join(targets)}\n\n"
+
+        if root_causes:
+            content += """
+---
+
+## Root Causes (Ranked)
+
+| Rank | Cause | Mechanism | Confidence | Affected Targets |
+|------|-------|-----------|------------|-----------------|
+"""
+            for rc in root_causes:
+                rank = rc.get('rank', '?')
+                cause = rc.get('cause', '')
+                mechanism = rc.get('mechanism', '')
+                conf = rc.get('confidence', 0)
+                affected = ', '.join(rc.get('affected_targets', []))
+                content += f"| {rank} | {cause} | {mechanism} | {conf:.2f} | {affected} |\n"
+            content += "\n"
+
+        if key_insights:
+            content += """
+---
+
+## Key Insights
+
+"""
+            for i, insight in enumerate(key_insights, 1):
+                content += f"{i}. {insight}\n"
+            content += "\n"
+
+        if comparative_analysis:
+            content += """
+---
+
+## Comparative Case Analysis
+
+"""
+            best_id = comparative_analysis.get('best_case_id', 'N/A')
+            lc_id = comparative_analysis.get('lowest_cost_case_id', 'N/A')
+            rec = comparative_analysis.get('recommended_starting_case', 'N/A')
+            rationale = comparative_analysis.get('rationale', '')
+            content += f"- **Best case (targets):** #{best_id}\n"
+            content += f"- **Lowest cost case:** #{lc_id}\n"
+            content += f"- **Recommended starting case:** #{rec}\n"
+            if rationale:
+                content += f"- **Rationale:** {rationale}\n"
+            content += "\n"
 
         content += f"""
 ---

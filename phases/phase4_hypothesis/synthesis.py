@@ -219,7 +219,13 @@ def write_synthesis_summary_log(
         n_params = len(insight.get('parameters_tested', []))
         supported = insight.get('hypothesis_supported', False)
         confidence = insight.get('confidence', 0)
-        result_str = f"{'Supported' if supported else 'Not supported'} ({confidence:.2f})"
+        untestable = insight.get('untestable_params', [])
+        if supported:
+            result_str = f"Supported ({confidence:.2f})"
+        elif untestable:
+            result_str = f"Untestable ({confidence:.2f})"
+        else:
+            result_str = f"Not supported ({confidence:.2f})"
         hyp_rows.append((str(i), name, str(n_params), result_str))
 
     # Add synthesized experiments to table

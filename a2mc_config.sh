@@ -97,6 +97,16 @@ export A2MC_TRANS_END_YEAR=2019
 export A2MC_DATM_MODE="CLMGSWP3v1"
 
 # ========================
+# ITERATION CONTROL
+# ========================
+# Max skip-testing cycles (Phase 3↔4 inner loop, no HPC testing runs)
+export A2MC_MAX_SKIP_TESTING=10
+# Max full experiment cycles (Phase 3→4→5→6 outer loop, with HPC runs)
+export A2MC_MAX_EXPERIMENTS=10
+# Confidence threshold to exit skip-testing early (0.0–1.0)
+export A2MC_CONFIDENCE_THRESHOLD=0.95
+
+# ========================
 # SAMPLING DEFAULTS
 # ========================
 # Sampling scheme: "morris", "lhs" (Latin Hypercube), "sobol", or "custom"
@@ -141,29 +151,33 @@ calculate_ensemble_size() {
 #   anthropic - Uses Anthropic SDK, hits api.anthropic.com; this is the default.
 #   openai    - Uses OpenAI SDK, hits api.openai.com
 #   cborg     - Uses OpenAI SDK, hits api.cborg.lbl.gov (Berkeley Lab proxy)
-export A2MC_AI_PROVIDER="anthropic"
-#export A2MC_AI_PROVIDER="cborg"
+#export A2MC_AI_PROVIDER="anthropic"
+export A2MC_AI_PROVIDER="cborg"
 
-# AI model — each provider has its own default; override with: export A2MC_AI_MODEL="your-model"
+# AI model — auto-derived from provider unless explicitly overridden AFTER this block.
+# To override: export A2MC_AI_MODEL="your-model" AFTER sourcing this file.
 # Available models per provider:
 #   anthropic: claude-opus-4-20250514 (default), claude-sonnet-4-20250514, claude-haiku-3-20240307
 #   openai:    gpt-4o (default), gpt-4o-mini, o3-mini
-#   cborg:     anthropic/claude-opus (default), anthropic/claude-sonnet, openai/gpt-4o, openai/gpt-4o-mini, lbl/llama
-if [ -z "${A2MC_AI_MODEL:-}" ]; then
-    case "${A2MC_AI_PROVIDER}" in
-        anthropic) export A2MC_AI_MODEL="claude-opus-4-20250514" ;;
-        openai)    export A2MC_AI_MODEL="gpt-4o" ;;
-        cborg)     export A2MC_AI_MODEL="anthropic/claude-opus" ;;
-        *)         export A2MC_AI_MODEL="claude-opus-4-20250514" ;;
-    esac
-fi
+#   cborg:     anthropic/claude-sonnet(default), anthropic/claude-opus, openai/gpt-4o, openai/gpt-4o-mini, lbl/llama
+case "${A2MC_AI_PROVIDER}" in
+    anthropic) export A2MC_AI_MODEL="claude-opus-4-20250514" ;;
+    openai)    export A2MC_AI_MODEL="gpt-4o" ;;
+    cborg)     export A2MC_AI_MODEL="anthropic/claude-sonnet" ;;
+    *)         export A2MC_AI_MODEL="claude-opus-4-20250514" ;;
+esac
 
 # API base URL override (only needed for custom endpoints)
 # CBorg auto-sets to https://api.cborg.lbl.gov when empty
 export A2MC_AI_BASE_URL="${A2MC_AI_BASE_URL:-}"
 
-# Maximum tokens for AI responses
+# Maximum tokens for AI responses (default for most calls)
 export A2MC_AI_MAX_TOKENS="${A2MC_AI_MAX_TOKENS:-4096}"
+
+# Maximum tokens for diagnosis responses (Phase 3)
+# Diagnosis JSON is large: hypotheses with evidence, root causes, severity,
+# comparative analysis, visual observations, etc. Needs more than default.
+export A2MC_AI_DIAG_MAX_TOKENS="${A2MC_AI_DIAG_MAX_TOKENS:-16384}"
 
 # API key env var name (auto-derived from provider if empty):
 #   anthropic → ANTHROPIC_API_KEY
@@ -274,11 +288,27 @@ validate_config() {
 
     if [ -z "${A2MC_SITE_NAME:-}" ]; then
         echo "WARNING: No site configuration loaded"
-        echo "  Run: source use_cases/{site}/config/{site}_config.sh"
+        echo "  Run: source use_cases/<site>/config/<site>_config.sh"
     fi
 
     return $errors
 }
 
+# Discover available site configs
+_A2MC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_A2MC_SITES=()
+for _cfg in "${_A2MC_DIR}"/use_cases/*/config/*_config.sh; do
+    [ -f "$_cfg" ] && _A2MC_SITES+=("$_cfg")
+done
+
 echo "A2MC base configuration loaded."
-echo "Next: source use_cases/{site}/config/{site}_config.sh"
+if [ ${#_A2MC_SITES[@]} -gt 0 ]; then
+    echo "Available site configs:"
+    for _cfg in "${_A2MC_SITES[@]}"; do
+        _rel="${_cfg#${_A2MC_DIR}/}"
+        echo "  source ${_rel}"
+    done
+else
+    echo "Next: source use_cases/{site}/config/{site}_config.sh"
+fi
+unset _A2MC_DIR _A2MC_SITES _cfg _rel

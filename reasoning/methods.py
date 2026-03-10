@@ -19,6 +19,7 @@ Author: Jing Tao with Claude
 
 import json
 import logging
+import os
 from dataclasses import fields
 from typing import List, Dict, Optional
 
@@ -166,6 +167,9 @@ def diagnose(self, results: Dict, targets: Dict,
         _figures_header = "No diagnostic figures attached for this iteration."
         _figures_detail = ""
 
+    # Extract previous phase log so AI can see the full narrative from the prior phase
+    _previous_phase_log = results.pop("previous_phase_log", "")
+
     # Extract previous phase insights from results so they appear as a dedicated
     # prompt section rather than buried in the JSON blob
     _previous_phase_insights = results.pop("previous_phase_insights", "")
@@ -197,6 +201,8 @@ DO NOT fabricate numbers. If the tool reports 0 edge parameters, do not claim ot
 {rag_context}{memory_context}{targeted_param_context}
 
 {self._param_list_context}
+
+{_previous_phase_log}
 
 {_previous_phase_insights}
 
@@ -293,46 +299,14 @@ hypotheses were tested using existing ensemble data (Skip Testing path). Use the
 IMPORTANT: If the knowledge base shows failed approaches, DO NOT recommend those approaches.
 
 ## Response Format
-Return a JSON object with this structure:
+Return a JSON object with this structure. IMPORTANT: Required fields appear FIRST.
+Write them before the verbose optional sections to avoid truncation.
 ```json
 {{
     "iteration": {iteration},
+    "confidence": 0.85,
+    "reasoning": "Summary of diagnosis logic including conceptual model",
     "failing_targets": ["target1", "target2"],
-    "visual_observations": [
-        {{
-            "figure": "pft7_diagnosis",
-            "analysis": "Description of key patterns observed in this PFT7 figure"
-        }},
-        {{
-            "figure": "mortality_components",
-            "analysis": "Description of mortality patterns observed"
-        }}
-    ],
-    "severity_breakdown": {{
-        "critical": ["targets with >50% error"],
-        "high": ["targets with 30-50% error"],
-        "medium": ["targets with 20-30% error"],
-        "low": ["targets with <20% error"]
-    }},
-    "hypotheses": [
-        {{
-            "id": "H1",
-            "statement": "Specific mechanism hypothesis",
-            "mechanism": "FATES_Mechanism_Name",
-            "evidence_for": ["Quantitative evidence supporting this"],
-            "evidence_against": ["Evidence contradicting this"],
-            "confidence": 0.8
-        }}
-    ],
-    "root_causes": [
-        {{
-            "rank": 1,
-            "cause": "Root cause description",
-            "mechanism": "FATES_Mechanism_Name",
-            "confidence": 0.85,
-            "affected_targets": ["target1", "target2"]
-        }}
-    ],
     "likely_causes": [
         "Mechanistic explanation 1",
         "Mechanistic explanation 2"
@@ -346,20 +320,49 @@ Return a JSON object with this structure:
             "caution": "potential side effects"
         }}
     ],
-    "key_insights": [
-        "Named insight (e.g., Triple Bottleneck Pattern)"
-    ],
     "cross_pft_conflicts": [
         "Description of any shared parameter conflicts"
     ],
-    "confidence": 0.85,
-    "reasoning": "Summary of diagnosis logic including conceptual model",
+    "key_insights": [
+        "Named insight (e.g., Triple Bottleneck Pattern)"
+    ],
+    "severity_breakdown": {{
+        "critical": ["targets with >50% error"],
+        "high": ["targets with 30-50% error"],
+        "medium": ["targets with 20-30% error"],
+        "low": ["targets with <20% error"]
+    }},
+    "root_causes": [
+        {{
+            "rank": 1,
+            "cause": "Root cause description",
+            "mechanism": "FATES_Mechanism_Name",
+            "confidence": 0.85,
+            "affected_targets": ["target1", "target2"]
+        }}
+    ],
     "comparative_analysis": {{
         "best_case_id": null,
         "lowest_cost_case_id": null,
         "recommended_starting_case": null,
         "rationale": "Why this case is the better starting point"
     }},
+    "hypotheses": [
+        {{
+            "id": "H1",
+            "statement": "Specific mechanism hypothesis",
+            "mechanism": "FATES_Mechanism_Name",
+            "evidence_for": ["Quantitative evidence supporting this"],
+            "evidence_against": ["Evidence contradicting this"],
+            "confidence": 0.8
+        }}
+    ],
+    "visual_observations": [
+        {{
+            "figure": "pft7_diagnosis",
+            "analysis": "Description of key patterns observed in this PFT7 figure"
+        }}
+    ],
     "requested_diagnostics": [
         {{
             "tool": "tool_name_from_inventory",
@@ -386,16 +389,36 @@ Respond ONLY with the JSON object, no additional text."""
     # Multimodal diagnosis needs extra output tokens: 10 images + figure analysis
     # + full diagnosis JSON. 12288 tokens avoids truncation that drops fields
     # near the end of the response (e.g., visual_observations, requested_diagnostics).
+    # Diagnosis JSON is large: severity, root_causes, hypotheses with evidence,
+    # reasoning, comparative_analysis, visual_observations, requested_diagnostics.
+    # Configurable via A2MC_AI_DIAG_MAX_TOKENS (default 16384).
+    _diag_tokens = int(os.environ.get("A2MC_AI_DIAG_MAX_TOKENS", "16384"))
     if diagnostic_images:
-        response = self.query_with_images(prompt, diagnostic_images, max_tokens=12288)
+        response = self.query_with_images(prompt, diagnostic_images, max_tokens=_diag_tokens)
     else:
-        response = self.query(prompt, max_tokens=8192)
+        response = self.query(prompt, max_tokens=_diag_tokens)
 
     # Parse response — filter to Diagnosis dataclass fields
     try:
         data = self._extract_json(response)
         known = {f.name for f in fields(Diagnosis)}
-        return Diagnosis(**{k: v for k, v in data.items() if k in known})
+        filtered = {k: v for k, v in data.items() if k in known}
+        # Fill in required fields if missing (truncation recovery)
+        _required_defaults = {
+            'iteration': iteration,
+            'failing_targets': [],
+            'likely_causes': [],
+            'parameter_recommendations': [],
+            'cross_pft_conflicts': [],
+            'confidence': 0.5,
+            'reasoning': '',
+        }
+        for key, default in _required_defaults.items():
+            if key not in filtered:
+                logger.warning(f"Diagnosis response missing '{key}' — filling default "
+                               f"(likely max_tokens truncation)")
+                filtered[key] = default
+        return Diagnosis(**filtered)
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse diagnosis response: {e}")
         logger.error(f"Response was: {response}")
@@ -434,7 +457,7 @@ def generate_hypothesis(self, diagnosis: Diagnosis,
     discovery_context = ""
     if self.memory:
         # Extract target names from diagnosis
-        target_names = [t.get('name', '') for t in diagnosis.failing_targets] if diagnosis.failing_targets else []
+        target_names = [t if isinstance(t, str) else t.get('name', '') for t in diagnosis.failing_targets] if diagnosis.failing_targets else []
         # Also extract parameter names from recommendations
         rec_params = [rec.get('parameter', '') for rec in diagnosis.parameter_recommendations]
         rec_params = [p for p in rec_params if p]
@@ -510,36 +533,68 @@ When discussing parameter values, edge cases, or diagnostic findings, ALWAYS ref
 the specific case ID (e.g., "Case #{bc_id}'s phosphatase parameters are at lower bounds").
 Do NOT make generic statements without case attribution.
 """
-        # Read actual base case parameter values on demand from ensemble file
+        # Read base case parameter values — only pass diagnosis-relevant +
+        # top 10 sensitive per target to keep the prompt concise.
         if bc_id != 'N/A':
             base_case_params = self._load_base_case_parameters(int(bc_id))
             if base_case_params:
-                relevant_set = set(p for p in param_names if p)
-                relevant_lines = []
-                other_lines = []
-                for pname, pval in sorted(base_case_params.items()):
-                    line = f"  {pname}: {pval}"
-                    if pname in relevant_set:
-                        relevant_lines.append(line)
-                    else:
-                        other_lines.append(line)
+                # Build set of params to include:
+                # 1) Diagnosis-recommended (already in param_names)
+                include_set = set(p for p in param_names if p)
+                # 2) Top 10 sensitive params per PFT per output variable
+                for output_rankings in sensitivity_data.values():
+                    if isinstance(output_rankings, dict):
+                        for pft_params in output_rankings.values():
+                            if isinstance(pft_params, list):
+                                include_set.update(
+                                    p.get('parameter', p.get('param', ''))
+                                    for p in pft_params[:10]
+                                )
+                    elif isinstance(output_rankings, list):
+                        include_set.update(
+                            p.get('parameter', p.get('param', ''))
+                            for p in output_rankings[:10]
+                        )
+                include_set.discard('')
 
-                _base_case_params_context = f"""## Base Case #{bc_id} — Actual Parameter Values
+                # include_set may contain FATES names (from diagnosis, e.g.
+                # 'fates_cnp_vmax_p') or shorthands (from sensitivity, e.g.
+                # 'vmax_p_10'). base_case_params keys are shorthands. Use
+                # build_param_lookup() reverse mapping to expand FATES names
+                # to their matching shorthands.
+                try:
+                    from tools.modify_fates_parameters import build_param_lookup
+                    _plf = os.environ.get('A2MC_PARAM_LIST_FILE', '')
+                    param_lookup = build_param_lookup(_plf)
+                    # Reverse: fates_name → set of shorthands
+                    fates_to_shorthands = {}
+                    for shorthand, entry in param_lookup.items():
+                        fates_to_shorthands.setdefault(entry['fates_name'], set()).add(shorthand)
+                    # Expand any FATES names in include_set to their shorthands
+                    expanded = set()
+                    for p in include_set:
+                        if p in fates_to_shorthands:
+                            expanded.update(fates_to_shorthands[p])
+                        else:
+                            expanded.add(p)
+                    include_set = expanded
+                except Exception:
+                    pass  # Fall back to direct matching
+
+                included_lines = []
+                for pname, pval in sorted(base_case_params.items()):
+                    if pname in include_set:
+                        included_lines.append(f"  {pname}: {pval}")
+
+                _base_case_params_context = f"""## Base Case #{bc_id} — Actual Parameter Values ({len(included_lines)} params: diagnosis-relevant + top sensitive)
 
 **CRITICAL: Use these ACTUAL values as the "current" field when recommending parameter changes.**
 **Do NOT guess or infer current values from bounds or defaults — use the values below.**
 
-### Diagnosis-Relevant Parameters (related to recommended changes)
-{chr(10).join(relevant_lines) if relevant_lines else '  (none matched — check full list below)'}
-
-<details>
-<summary>All {len(base_case_params)} parameter values for Case #{bc_id}</summary>
-
-{chr(10).join(relevant_lines + other_lines)}
-</details>
+{chr(10).join(included_lines) if included_lines else '  (no matching parameters found)'}
 """
-                logger.info(f"Added {len(base_case_params)} base case parameter values to hypothesis prompt "
-                            f"({len(relevant_lines)} diagnosis-relevant)")
+                logger.info(f"Added {len(included_lines)}/{len(base_case_params)} base case parameter values "
+                            f"to hypothesis prompt (diagnosis-relevant + top sensitive)")
 
     prompt = f"""Based on this diagnosis, generate a testable hypothesis for ELM-FATES calibration.
 {rag_context}{discovery_context}{failed_approaches_context}{targeted_param_context}
@@ -602,6 +657,35 @@ Proposing changes to low-sensitivity parameters wastes HPC compute.**
 - Propose values within physically realistic bounds
 - Include parameter bounds (min/max) and sensitivity rank where known
 
+## CRITICAL: Organ-Dependent Parameters
+Some FATES parameters have an organ dimension (fates_plant_organs × fates_pft).
+For these parameters you MUST include the `"organ"` field:
+- `"organ": 1` = leaf
+- `"organ": 2` = fineroot
+- `"organ": 3` = sapwood
+- `"organ": 4` = storage
+
+**Two categories of organ-dependent parameters:**
+
+**Category A — Different values per organ** (stoichiometry, allocation priority):
+`fates_stoich_phos`, `fates_stoich_nitr`, `fates_alloc_organ_priority`
+These have DIFFERENT values for leaf vs fineroot. Specify each organ separately:
+```json
+{{"name": "fates_stoich_phos", "pft": 10, "organ": 1, "current": 0.003, "proposed": 0.0015, "rationale": "reduce leaf P demand"}}
+{{"name": "fates_stoich_phos", "pft": 10, "organ": 2, "current": 0.0009, "proposed": 0.0007, "rationale": "reduce fineroot P demand"}}
+```
+
+**Category B — Same value for leaf + fineroot** (retranslocation):
+`fates_cnp_turnover_nitr_retrans`, `fates_cnp_turnover_phos_retrans`
+Retranslocation only applies to senescing tissues (leaf and fineroot), NOT sapwood or storage.
+You MUST provide TWO entries with the SAME proposed value — one for organ=1 (leaf), one for organ=2 (fineroot):
+```json
+{{"name": "fates_cnp_turnover_phos_retrans", "pft": 10, "organ": 1, "current": 0.7, "proposed": 0.89, "rationale": "increase P recycling in leaves"}}
+{{"name": "fates_cnp_turnover_phos_retrans", "pft": 10, "organ": 2, "current": 0.7, "proposed": 0.89, "rationale": "increase P recycling in fineroots"}}
+```
+
+For non-organ parameters, set `"organ": null` or omit it.
+
 ## Skip Testing: Test with Existing Data (MANDATORY FIRST STEP)
 
 **You MUST set `test_with_existing: true` unless the hypothesis fundamentally CANNOT be
@@ -646,6 +730,7 @@ Return a JSON object with this structure:
         {{
             "name": "fates_param_name",
             "pft": 9,
+            "organ": null,
             "current": 0.787,
             "proposed": 0.30,
             "rationale": "Why this change should help",
@@ -738,6 +823,9 @@ Respond ONLY with the JSON object."""
 
             # If errors remain after auto-fix, re-prompt once
             if _val_result.has_errors:
+                for issue in _val_result.issues:
+                    if issue.severity == "error":
+                        logger.warning(f"  Validation error: {issue.parameter} ({issue.check}): {issue.detail}")
                 reprompt_ctx = build_reprompt_context(
                     _val_result, data, _val_base_params, _val_bounds)
                 logger.warning(f"Hypothesis validation found {_val_result.n_errors} error(s), re-prompting once")
@@ -747,6 +835,20 @@ Respond ONLY with the JSON object."""
                 _val_result = validate_hypothesis_parameters(data, _val_base_params, _val_bounds)
                 if _val_result.has_errors:
                     logger.warning(f"Retry still has {_val_result.n_errors} error(s): {_val_result.summary()}")
+                    for issue in _val_result.issues:
+                        if issue.severity == "error":
+                            logger.warning(f"  Unresolved: {issue.parameter} ({issue.check}): {issue.detail}")
+                    # Strip parameters with unresolved errors to prevent downstream crashes
+                    error_params = {issue.parameter for issue in _val_result.issues if issue.severity == "error"}
+                    if error_params and 'parameters' in data:
+                        before_count = len(data['parameters'])
+                        data['parameters'] = [
+                            p for p in data['parameters']
+                            if p.get('name', p.get('parameter', '')) not in error_params
+                        ]
+                        stripped = before_count - len(data['parameters'])
+                        if stripped:
+                            logger.warning(f"  Stripped {stripped} parameter(s) with unresolved errors: {error_params}")
 
         known = {f.name for f in fields(Hypothesis)}
         hyp = Hypothesis(**{k: v for k, v in data.items() if k in known})
@@ -938,22 +1040,36 @@ def synthesize_experiment_design(
             f"{json.dumps(hypothesis_param_groups, indent=2, default=str)}"
         )
 
-    # Read base case parameter values on demand for synthesis prompt
+    # Read base case parameter values — only include params mentioned in
+    # hypotheses (not all 162) since synthesis works with Phase 4 outputs.
     _synth_base_params = ""
     if screening_data:
         bc_id = screening_data.get('best_case', {}).get('case_id', 'N/A')
         if bc_id != 'N/A':
             base_case_params = self._load_base_case_parameters(int(bc_id))
             if base_case_params:
-                param_lines = [f"  {pname}: {pval}" for pname, pval in sorted(base_case_params.items())]
-                _synth_base_params = f"""## Base Case #{bc_id} — Actual Parameter Values
+                # Collect param names from all hypotheses
+                synth_include = set()
+                for hyp in hypotheses:
+                    h = hyp if isinstance(hyp, dict) else (hyp.__dict__ if hasattr(hyp, '__dict__') else {})
+                    for p in h.get('parameters', h.get('parameters_to_test', [])):
+                        pname = p.get('name', p.get('parameter', ''))
+                        if pname:
+                            synth_include.add(pname)
+                synth_include.discard('')
+
+                param_lines = [f"  {pname}: {pval}"
+                               for pname, pval in sorted(base_case_params.items())
+                               if pname in synth_include]
+                _synth_base_params = f"""## Base Case #{bc_id} — Actual Parameter Values ({len(param_lines)} params from hypotheses)
 
 **CRITICAL: Use these ACTUAL values as the "current" field for each parameter.**
 **Do NOT guess or infer current values from bounds or defaults.**
 
-{chr(10).join(param_lines)}
+{chr(10).join(param_lines) if param_lines else '  (no matching parameters found)'}
 """
-                logger.info(f"Added {len(base_case_params)} base case parameter values to synthesis prompt")
+                logger.info(f"Added {len(param_lines)}/{len(base_case_params)} base case parameter values "
+                            f"to synthesis prompt (hypothesis-relevant only)")
 
     prompt = f"""You are synthesizing {len(cumulative_insights)} skip-testing cycles into MULTIPLE experiment designs for HPC testing.
 
@@ -1003,6 +1119,9 @@ Use the evidence ledger to decide which parameters to include.
 8. **Use cumulative design** within each experiment (safest for multi-parameter changes)
 9. **For each parameter you INCLUDE**: cite which cycles support it and the evidence
 10. **For each parameter you EXCLUDE from the active set**: provide a specific reason
+11. **Organ-dependent parameters** MUST include `"organ"` field:
+    - `fates_stoich_phos`, `fates_stoich_nitr`, `fates_alloc_organ_priority`: specify organ per entry (1=leaf, 2=fineroot, 3=sapwood, 4=storage)
+    - `fates_cnp_turnover_nitr_retrans`, `fates_cnp_turnover_phos_retrans`: retranslocation only applies to senescing tissues — provide TWO entries with the SAME value, one for organ=1 (leaf) and one for organ=2 (fineroot)
 
 ## Response Format
 Return a JSON array of experiment designs (one per supported hypothesis):
@@ -1015,6 +1134,7 @@ Return a JSON array of experiment designs (one per supported hypothesis):
             {{
                 "name": "fates_param_name",
                 "pft": 9,
+                "organ": null,
                 "current": 0.787,
                 "proposed": 0.30,
                 "rationale": "Why this change (citing evidence from skip testing cycles X, Y, Z)",
@@ -1080,11 +1200,51 @@ Respond ONLY with the JSON array."""
         _synth_bounds = load_parameter_bounds()
 
         if (_synth_base_params or _synth_bounds) and result:
+            from reasoning.validation import build_reprompt_context
             val_results = validate_experiment_designs(result, _synth_base_params, _synth_bounds)
+            has_errors = False
             for exp, vr in zip(result, val_results):
                 if not vr.is_clean:
                     exp['_validation'] = vr
                     logger.info(f"  Synthesis validation '{exp.get('name', '?')}': {vr.summary()}")
+                    if vr.has_errors:
+                        has_errors = True
+
+            # Re-prompt once if any experiment has validation errors
+            if has_errors:
+                error_lines = ["\n## VALIDATION ERRORS in synthesized experiments — Please fix and re-generate\n"]
+                for exp, vr in zip(result, val_results):
+                    if vr.has_errors:
+                        error_lines.append(f"### Experiment: {exp.get('name', '?')}")
+                        for issue in vr.issues:
+                            if issue.severity == "error":
+                                error_lines.append(f"- **{issue.parameter}** ({issue.check}): {issue.detail}")
+                error_lines.append("\nPlease regenerate the complete JSON array with these corrections.")
+                error_lines.append("Respond ONLY with the corrected JSON array.")
+                reprompt_ctx = "\n".join(error_lines)
+
+                logger.warning(f"Synthesis validation found errors, re-prompting once")
+                retry_response = self.query(prompt + reprompt_ctx, max_tokens=8192)
+                result = self._extract_json(retry_response)
+                if isinstance(result, dict):
+                    result = [result]
+                result = [exp for exp in result if exp.get('parameters')]
+                # Re-validate (auto-fix only, no further re-prompt)
+                val_results = validate_experiment_designs(result, _synth_base_params, _synth_bounds)
+                for exp, vr in zip(result, val_results):
+                    if not vr.is_clean:
+                        logger.info(f"  Retry validation '{exp.get('name', '?')}': {vr.summary()}")
+                    if vr.has_errors:
+                        # Strip parameters with unresolved errors
+                        error_params = {i.parameter for i in vr.issues if i.severity == "error"}
+                        before = len(exp.get('parameters', []))
+                        exp['parameters'] = [
+                            p for p in exp.get('parameters', [])
+                            if p.get('parameter', p.get('name', '')) not in error_params
+                        ]
+                        stripped = before - len(exp['parameters'])
+                        if stripped:
+                            logger.warning(f"  Stripped {stripped} param(s) from '{exp.get('name', '?')}': {error_params}")
 
         logger.info(f"Synthesized {len(result)} experiment designs from {len(cumulative_insights)} skip-testing cycles")
         for exp in result:

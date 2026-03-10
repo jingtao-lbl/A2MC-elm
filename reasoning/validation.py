@@ -174,6 +174,47 @@ def _extract_pft_from_shorthand(shorthand: str) -> Optional[int]:
 # Layer 1: Python validation (zero API cost)
 # ---------------------------------------------------------------------------
 
+def expand_retrans_parameters(hypothesis: Dict) -> int:
+    """Expand retrans parameters tagged with _expand_retrans into leaf+fineroot entries.
+
+    When a retranslocation parameter (fates_cnp_turnover_nitr_retrans or
+    fates_cnp_turnover_phos_retrans) is proposed without an organ, validation
+    marks it with ``_expand_retrans=True``.  This function replaces that single
+    entry with two entries — one for organ=1 (leaf) and one for organ=2
+    (fineroot) — both with the same proposed value.
+
+    Mutates hypothesis['parameters'] in place.
+
+    Returns:
+        Number of parameters expanded (each counts as 1 → 2 entries).
+    """
+    params = hypothesis.get('parameters', [])
+    if not params:
+        return 0
+
+    expanded_count = 0
+    new_params = []
+    for p in params:
+        if p.pop('_expand_retrans', False):
+            # Create leaf entry (organ=1)
+            leaf_entry = dict(p)
+            leaf_entry['organ'] = 1
+            new_params.append(leaf_entry)
+            # Create fineroot entry (organ=2)
+            froot_entry = dict(p)
+            froot_entry['organ'] = 2
+            new_params.append(froot_entry)
+            expanded_count += 1
+            logger.info(f"Auto-expanded '{p.get('name', '?')}' PFT {p.get('pft', '?')} "
+                        f"→ organ=1 (leaf) + organ=2 (fineroot), value={p.get('proposed', '?')}")
+        else:
+            new_params.append(p)
+
+    if expanded_count:
+        hypothesis['parameters'] = new_params
+    return expanded_count
+
+
 def validate_hypothesis_parameters(
     hypothesis: Dict,
     base_case_params: Dict[str, float],
@@ -188,6 +229,7 @@ def validate_hypothesis_parameters(
     - PFT mismatch (suffix ≠ pft field) → error
     - Magnitude > 1000x change → error
     - Magnitude 100-1000x change → warning
+    - Missing organ for organ-dependent params → error (or auto-expand for retrans)
 
     Auto-fixes mutate the hypothesis dict in place.
 
@@ -207,6 +249,11 @@ def validate_hypothesis_parameters(
 
     for param in params:
         _validate_single_parameter(param, base_case_params, param_bounds, result)
+
+    # Auto-expand retrans parameters tagged by Check 6 (leaf + fineroot)
+    n_expanded = expand_retrans_parameters(hypothesis)
+    if n_expanded:
+        logger.info(f"Auto-expanded {n_expanded} retranslocation parameter(s) to leaf+fineroot entries")
 
     if result.issues:
         logger.info(f"Hypothesis validation: {result.summary()}")
@@ -358,6 +405,49 @@ def _validate_single_parameter(
         except (ValueError, TypeError):
             pass
 
+    # --- Check 6: Missing organ for organ-dependent parameters ---
+    # Parameters with (fates_plant_organs × fates_pft) dimensions require an organ field.
+    #
+    # Retranslocation params (nitr_retrans, phos_retrans) only apply to senescing
+    # tissues: leaf (organ=1) and fineroot (organ=2).  When proposed without organ,
+    # we mark for auto-expansion into two entries (same value, organ 1 + 2).
+    # The actual duplication is done by expand_retrans_parameters() after validation.
+    #
+    # Other organ-dependent params (stoich, alloc_organ_priority) have different
+    # values per organ, so a missing organ is a real error.
+    ORGAN_DEPENDENT_PARAMS = {
+        'fates_alloc_organ_priority',
+        'fates_cnp_turnover_nitr_retrans',
+        'fates_cnp_turnover_phos_retrans',
+        'fates_stoich_nitr',
+        'fates_stoich_phos',
+    }
+    RETRANS_PARAMS = {
+        'fates_cnp_turnover_nitr_retrans',
+        'fates_cnp_turnover_phos_retrans',
+    }
+    fates_name = name if name.startswith('fates_') else bounds_info.get('fates_name', '')
+    if fates_name in ORGAN_DEPENDENT_PARAMS and param.get('organ') is None:
+        if fates_name in RETRANS_PARAMS:
+            # Auto-fixable: mark for leaf+fineroot expansion
+            result.issues.append(ValidationIssue(
+                parameter=name,
+                check="retrans missing organ (auto-expand leaf+fineroot)",
+                severity="auto_fix",
+                detail=(f"'{fates_name}' retranslocation applies to senescing tissues only. "
+                        f"Auto-expanding to organ=1 (leaf) + organ=2 (fineroot) with same value."),
+            ))
+            # Tag the param dict so expand_retrans_parameters() can find it
+            param['_expand_retrans'] = True
+        else:
+            result.issues.append(ValidationIssue(
+                parameter=name,
+                check="missing organ",
+                severity="error",
+                detail=(f"'{fates_name}' is organ-dependent (fates_plant_organs × fates_pft). "
+                        f"Must include 'organ': 1=leaf, 2=fineroot, 3=sapwood, 4=storage"),
+            ))
+
 
 # ---------------------------------------------------------------------------
 # Re-prompt context builder
@@ -405,6 +495,11 @@ def build_reprompt_context(
         elif "magnitude" in err.check:
             actual = base_case_params.get(name, '?')
             lines.append(f"- `{name}`: current value is {actual}; propose a value within reasonable magnitude (< 1000x change)")
+        elif "missing organ" in err.check:
+            lines.append(f"- `{name}`: MUST include `\"organ\"` field: 1=leaf, 2=fineroot, 3=sapwood, 4=storage. "
+                         f"For stoich/priority params, specify the organ you want to change. "
+                         f"For retranslocation params, provide TWO entries with organ=1 (leaf) "
+                         f"and organ=2 (fineroot) with the same value.")
 
     lines.append("\nPlease regenerate the complete JSON with these corrections.")
     lines.append("Respond ONLY with the corrected JSON object.")

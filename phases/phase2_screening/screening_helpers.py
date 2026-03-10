@@ -204,6 +204,10 @@ def perform_screening(targets, total_ensemble: int) -> Dict:
             if fig_path:
                 screening_data['figure_paths'] = [fig_path]
                 logger.info(f"  Ensemble biomass figure: {fig_path}")
+            # Save top-ranked cases so Phase 3 can reuse without re-ranking
+            # all 4890 cases from scratch.  Keep top 200 (covers any
+            # reasonable top_n while keeping state file under 20KB).
+            screening_data['ranked_cases'] = ranked_cases[:200]
         except Exception as e:
             logger.warning(f"Could not generate ensemble biomass figure: {e}")
 

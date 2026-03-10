@@ -167,6 +167,7 @@ class WorkflowState:
 
     started_at: str = ""
     updated_at: str = ""
+    a2mc_version: str = ""  # Git describe tag (set at startup)
 
     # Phase 0: Design (generic sampling design)
     sampling_design: Dict = field(default_factory=dict)
@@ -210,18 +211,54 @@ class WorkflowState:
             self.started_at = datetime.now().isoformat()
 
     def save(self, path: str):
-        """Save state to JSON file."""
+        """Save state to JSON file, stripping bulky transient data."""
         self.updated_at = datetime.now().isoformat()
+        data = asdict(self)
+        self._strip_transient_data(data)
         with open(path, 'w') as f:
-            json.dump(asdict(self), f, indent=2)
+            json.dump(data, f, indent=2)
         logger.info(f"State saved to {path}")
+
+    @staticmethod
+    def _strip_transient_data(data: dict):
+        """Remove bulky data that can be regenerated, to keep state file small.
+
+        Strips:
+        - screening_data.case_numbers: list of 4890 ints (28KB) that is always
+          a sequential range regenerable from n_cases_evaluated.
+        - hypotheses[*].existing_data_test.script_code: Python scripts (3-4KB each)
+          already saved to disk in phases/phase3_diagnosis/generated/.
+        """
+        sd = data.get('screening_data', {})
+        if 'case_numbers' in sd:
+            del sd['case_numbers']
+
+        for hyp in data.get('hypotheses', []):
+            edt = hyp.get('existing_data_test')
+            if isinstance(edt, dict):
+                # Add path hint so AI can find the script on disk
+                script_name = edt.get('script_name', '')
+                if script_name and 'script_path' not in edt:
+                    edt['script_path'] = f"phases/phase3_diagnosis/generated/{script_name}"
+                # Strip bulky inline code (already saved to script_path)
+                edt.pop('script_code', None)
 
     @classmethod
     def load(cls, path: str) -> 'WorkflowState':
-        """Load state from JSON file."""
+        """Load state from JSON file, reconstructing stripped transient data."""
         with open(path, 'r') as f:
             data = json.load(f)
+        cls._reconstruct_transient_data(data)
         return cls(**data)
+
+    @staticmethod
+    def _reconstruct_transient_data(data: dict):
+        """Reconstruct transient data stripped by _strip_transient_data."""
+        sd = data.get('screening_data', {})
+        if sd and 'case_numbers' not in sd:
+            n = sd.get('n_cases_evaluated', 0)
+            if n > 0:
+                sd['case_numbers'] = list(range(1, n + 1))
 
     def record_phase_transition(self, from_phase: str, to_phase: str, reason: str):
         """Record phase transition in history."""
@@ -1418,11 +1455,39 @@ Review the screening log at:
                 logger.info(f"Built comparative analysis: best_case={best_case['case_id']} vs "
                            f"lowest_cost={lowest_cost['case_id']}")
 
+            # Read previous phase logs so AI has full context from earlier phases
+            previous_phase_log = None
+            if self._phase_logger:
+                # First iteration: read Phase 2 screening log (may be from earlier session)
+                # Subsequent iterations: read the previous diagnosis log (same session)
+                if self.state.skip_testing_count == 0:
+                    # Cross-phase: don't filter by session_id (Phase 2 may have run
+                    # in a different session if we restarted from Phase 3)
+                    previous_phase_log = self._phase_logger.read_phase_log(
+                        2, session_id=""
+                    )
+                else:
+                    previous_phase_log = self._phase_logger.read_phase_log(3)
+
+            # Load actual validation targets for AI reasoning
+            # (self.config.targets is a stub; real targets come from screening module)
+            diagnosis_targets = {}
+            try:
+                from phases.phase2_screening.screen_ensemble import load_kougarok_targets
+                raw_targets = load_kougarok_targets()
+                diagnosis_targets = {
+                    name: {'observed': t.observed, 'uncertainty': t.uncertainty,
+                           'units': t.units, 'description': t.description}
+                    for name, t in raw_targets.items()
+                }
+            except Exception:
+                diagnosis_targets = asdict(self.config.targets)
+
             # Prepare data for Claude reasoning
             diagnosis_input = {
                 "screening_results": screening_data,
                 "sensitivity_rankings": exploration_data.get("sensitivity_rankings", {}),
-                "targets": asdict(self.config.targets),
+                "targets": diagnosis_targets,
                 "iteration": self.state.iteration,
                 "diagnostic_data": diagnostic_data,  # Pass diagnostic results to Claude
                 "diagnostic_images": diagnostic_images,  # PNG figure paths for multimodal analysis
@@ -1431,6 +1496,12 @@ Review the screening log at:
                 "cumulative_insights": self.state.cumulative_insights,  # Cross-cycle synthesis
                 "comparative_analysis": comparative_analysis,  # best_case vs lowest_cost_case
             }
+
+            if previous_phase_log:
+                phase_label = "Phase 2 Screening" if self.state.skip_testing_count == 0 else "Previous Diagnosis"
+                diagnosis_input["previous_phase_log"] = (
+                    f"## {phase_label} Log (from this session)\n\n{previous_phase_log}"
+                )
 
             # Add experiment cycle summary for c1+ (cross-cycle knowledge continuity)
             if self.state.experiment_count > 0 and self.state.experiments:
@@ -1542,8 +1613,16 @@ Review the screening log at:
                             'rag': self.reasoning.rag_retriever is not None if self.reasoning else False,
                             'experiments': len(self.state.experiments) > 0
                         },
+                        hypotheses=diagnosis.get('hypotheses'),
+                        named_discoveries=[
+                            {'name': ins, 'description': ''} for ins in diagnosis.get('key_insights', [])
+                        ] if diagnosis.get('key_insights') else None,
                         figure_paths=fig_paths if fig_paths else None,
                         figure_analyses=diagnosis.get('visual_observations'),
+                        severity_breakdown=diagnosis.get('severity_breakdown'),
+                        root_causes=diagnosis.get('root_causes'),
+                        key_insights=diagnosis.get('key_insights'),
+                        comparative_analysis=diagnosis.get('comparative_analysis'),
                         metadata={
                             'iteration': self.state.iteration,
                             'screening_data_summary': {
@@ -1900,6 +1979,9 @@ Diagnosis Summary:{skip_header}
                 'parameters_tested': [
                     p.get('name', '') for p in hypothesis.get('parameters',
                         hypothesis.get('parameters_to_test', []))
+                ],
+                'untestable_params': [
+                    p.get('name', '') for p in test_result.get('untestable_params', [])
                 ],
             }
             self.state.cumulative_insights.append(insight_entry)
@@ -2429,6 +2511,7 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             completed = sum(1 for e in experiments if e.get("status") == "completed")
             failed = sum(1 for e in experiments if "failed" in str(e.get("status", "")))
             simulated = sum(1 for e in experiments if e.get("status") == "simulated")
+            submitted = sum(1 for e in experiments if e.get("status") == "submitted")
 
             summary = f"""
   Iteration: {current_iter}
@@ -2436,16 +2519,30 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
   Experiments: {len(experiments)} total
     Completed: {completed}
     Simulated: {simulated}
-    Failed: {failed}
+    Submitted (pending): {submitted}
+    Failed: {failed}"""
 
-  Results Summary:"""
-            for exp in experiments:
-                met = exp.get("results", {}).get("targets_met", "?")
-                total = exp.get("results", {}).get("total_targets", "?")
-                summary += f"\n    {exp.get('name', '?')}: {exp.get('status', '?')} (targets: {met}/{total})"
+            if completed + simulated > 0:
+                summary += "\n\n  Results Summary:"
+                for exp in experiments:
+                    met = exp.get("results", {}).get("targets_met", "?")
+                    total = exp.get("results", {}).get("total_targets", "?")
+                    summary += f"\n    {exp.get('name', '?')}: {exp.get('status', '?')} (targets: {met}/{total})"
+            else:
+                summary += "\n\n  Job Status:"
+                for exp in experiments:
+                    jid = exp.get("job_id", "N/A")
+                    sts = exp.get("status", exp.get("job_status", "unknown"))
+                    summary += f"\n    {exp.get('name', '?')}: {sts} (job_id: {jid})"
+                if submitted > 0:
+                    summary += f"\n\n  NOTE: {submitted} jobs still running on HPC."
+                    summary += "\n  Use [q] to quit and resume later with: python orchestrator.py --resume"
+
+            # Checkpoint label reflects actual state
+            checkpoint_label = "TESTING" if completed + simulated > 0 else "TESTING (SUBMITTED)"
 
             self._human_review_checkpoint(
-                phase="TESTING",
+                phase=checkpoint_label,
                 summary=summary,
                 next_phase="REFINEMENT"
             )
@@ -2748,12 +2845,15 @@ Phase numbers:
                        help="Output directory (default: auto-detected from A2MC_USE_CASE_DIR)")
     parser.add_argument("--max-iterations", type=int, default=10,
                        help="Max total iterations (backward compatibility)")
-    parser.add_argument("--max-skip-testing", type=int, default=10,
-                       help="Max Phase 3↔4 skip testing cycles (default: 10)")
-    parser.add_argument("--max-experiments", type=int, default=10,
-                       help="Max full experiment cycles 3→4→5→6 (default: 10)")
-    parser.add_argument("--confidence-threshold", type=float, default=0.95,
-                       help="Hypothesis confidence threshold to exit skip testing (default: 0.95)")
+    parser.add_argument("--max-skip-testing", type=int,
+                       default=int(os.environ.get("A2MC_MAX_SKIP_TESTING", "10")),
+                       help="Max Phase 3↔4 skip testing cycles (default: from A2MC_MAX_SKIP_TESTING or 10)")
+    parser.add_argument("--max-experiments", type=int,
+                       default=int(os.environ.get("A2MC_MAX_EXPERIMENTS", "10")),
+                       help="Max full experiment cycles 3→4→5→6 (default: from A2MC_MAX_EXPERIMENTS or 10)")
+    parser.add_argument("--confidence-threshold", type=float,
+                       default=float(os.environ.get("A2MC_CONFIDENCE_THRESHOLD", "0.95")),
+                       help="Hypothesis confidence threshold to exit skip testing (default: from A2MC_CONFIDENCE_THRESHOLD or 0.95)")
     parser.add_argument("--stagnation-window", type=int, default=3,
                        help="Exit skip testing early if confidence stagnates for N cycles (default: 3)")
     parser.add_argument("--no-review", action="store_true", help="Skip human review points")
@@ -2890,9 +2990,23 @@ Phase numbers:
 
     logger.info(f"Log file: {log_filepath}")
 
+    # Capture A2MC version (git describe) for provenance
+    a2mc_version = "unknown"
+    try:
+        import subprocess as _sp
+        a2mc_root = Path(__file__).resolve().parent
+        a2mc_version = _sp.check_output(
+            ["git", "describe", "--tags", "--always", "--dirty"],
+            cwd=str(a2mc_root), stderr=_sp.DEVNULL
+        ).decode().strip()
+    except Exception:
+        pass
+    logger.info(f"A2MC version: {a2mc_version}")
+
     try:
         # Initialize orchestrator
         orchestrator = CalibrationOrchestrator(config)
+        orchestrator.state.a2mc_version = a2mc_version
 
         # Handle start phase and iteration overrides
         if args.start_phase:

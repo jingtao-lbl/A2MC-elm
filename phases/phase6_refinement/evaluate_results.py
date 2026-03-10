@@ -101,9 +101,7 @@ def evaluate_experiments(
         if memory_manager and auto_learn:
             try:
                 memory_manager.record_experiment(
-                    experiment_id=exp.get("name", "unknown"),
-                    base_case=exp.get("base_case", "unknown"),
-                    modifications=exp.get("modifications", []),
+                    experiment=exp,
                     results=results,
                     outcome=outcome
                 )
