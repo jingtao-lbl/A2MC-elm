@@ -234,7 +234,15 @@ Per-case NetCDF time series (NOT loaded into y_outputs — for reference only):
 Morris parameter values. Columns match `config["param_names"]` (shorthand names).
 
 #### y_outputs: dict of np.ndarray, each shape (n_cases, n_pfts)
-Biomass Y matrices from Phase 1 extraction (annual-mean values per case per PFT).
+Biomass Y matrices from Phase 1 extraction (aggregated values per case per PFT).
+
+**CRITICAL: y_outputs values are AGGREGATED over a multi-year period** (e.g., mean of
+2010-2019), as configured in `phases/phase1_exploration/extract_sensitivity_outputs.py`.
+They are NOT observation-timestep values. Diagnostic scripts and Phase 5 evaluation
+compare against a specific observation timestep (e.g., July 2016). These can differ
+significantly — especially for collapsing vegetation where annual means may appear
+non-zero while the observation-timestep value is near zero. When comparing cases,
+always prefer diagnostic script outputs over y_outputs values for accuracy.
 
 **Available keys and their meaning:**
 | Key | Description | Shape |
