@@ -145,16 +145,21 @@ class WorkflowStatus:
         memory/workflow_log.json
     """
 
-    def __init__(self, log_dir: str = "memory", auto_load: bool = True):
+    def __init__(self, log_dir: str = "memory", auto_load: bool = True,
+                 session_tag: str = ""):
         """
         Initialize workflow status tracker.
 
         Args:
             log_dir: Directory containing workflow_log.json
             auto_load: If True, load existing log if present
+            session_tag: Session tag (e.g., "s0309h23") for session-specific log files
         """
         self.log_dir = Path(log_dir)
-        self.log_file = self.log_dir / "workflow_log.json"
+        if session_tag:
+            self.log_file = self.log_dir / f"workflow_log_{session_tag}.json"
+        else:
+            self.log_file = self.log_dir / "workflow_log.json"
         self.phase_results_dir = self.log_dir / "phase_results"
 
         # Initialize or load log

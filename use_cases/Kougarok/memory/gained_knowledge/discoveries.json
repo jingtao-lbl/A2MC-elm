@@ -9,15 +9,17 @@
     "confidence": 0.95,
     "verified": false,
     "date_added": "2026-01-18T08:30:13.075263",
-    "description": "PFT#10 fine root underestimation caused by three simultaneous bottlenecks: catastrophic P starvation (uptake/demand \u2248 0.000005), strong light competition from PFT#9 (5-10\u00d7 GPP advantage), and excessive fine root turnover rate (1 year vs 5 year realistic)",
-    "mechanism": "P starvation prevents biomass production \u2192 small leaf area loses light competition \u2192 low GPP reduces C for growth \u2192 less root growth reduces P uptake \u2192 positive feedback loop. Turnover rate controls steady-state biomass = allocation/turnover",
+    "description": "PFT#10 fine root underestimation caused by three simultaneous bottlenecks: catastrophic P starvation (uptake/demand ≈ 0.000005), strong light competition from PFT#9 (5-10× GPP advantage), and excessive fine root turnover rate (1 year vs 5 year realistic)",
+    "mechanism": "P starvation prevents biomass production → small leaf area loses light competition → low GPP reduces C for growth → less root growth reduces P uptake → positive feedback loop. Turnover rate controls steady-state biomass = allocation/turnover",
     "affects": [
       "FATES_FROOTC",
       "FATES_LEAFC",
       "FATES_GPP",
       "FATES_PUPTAKE_SZPF"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -36,7 +38,9 @@
       "FATES_FROOTC",
       "FATES_VEGC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -48,7 +52,7 @@
     "verified": false,
     "date_added": "2026-01-18T08:30:13.084459",
     "description": "Fine root turnover rate is first-order control on standing biomass, more important than allocation rate",
-    "mechanism": "Steady-state biomass = Allocation rate / Turnover rate. Test2 had lowest allocation (27.28 g C/m\u00b2/yr) but highest biomass (120.48 g C/m\u00b2) due to 5\u00d7 lower turnover rate",
+    "mechanism": "Steady-state biomass = Allocation rate / Turnover rate. Test2 had lowest allocation (27.28 g C/m²/yr) but highest biomass (120.48 g C/m²) due to 5× lower turnover rate",
     "affects": [
       "FATES_FROOTC"
     ],
@@ -64,11 +68,13 @@
     "verified": false,
     "date_added": "2026-01-18T08:20:14.974807",
     "description": "fates_turnover_fnrt was NOT included in the 138-parameter Morris ensemble, causing systematic bias in ALL 4329 simulation cases",
-    "mechanism": "All simulations used same turnover rate (1.0 year for PFT#10) which is 5\u00d7 too fast compared to literature values. Morris optimization could not discover this bottleneck because parameter was not varied",
+    "mechanism": "All simulations used same turnover rate (1.0 year for PFT#10) which is 5× too fast compared to literature values. Morris optimization could not discover this bottleneck because parameter was not varied",
     "affects": [
       "FATES_FROOTC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -79,14 +85,16 @@
     "confidence": 0.8,
     "verified": false,
     "date_added": "2026-01-18T08:20:14.975514",
-    "description": "P uptake parameters (vmax_p, vmax_ptase, alpha_ptase) ARE in Morris ensemble, yet ALL cases show extremely low P uptake (uptake/demand \u2248 0.000005), indicating severe P limitation that Morris ranges cannot overcome",
-    "mechanism": "Even with P uptake parameters in optimization space, PFT#10 P uptake/demand ratio \u2248 5 parts per million across all cases. This is NOT zero but extremely small. Possible causes: Morris ranges too narrow, soil P depletion, PFT competition, or catch-22 (need roots to get P, need P to grow roots)",
+    "description": "P uptake parameters (vmax_p, vmax_ptase, alpha_ptase) ARE in Morris ensemble, yet ALL cases show extremely low P uptake (uptake/demand ≈ 0.000005), indicating severe P limitation that Morris ranges cannot overcome",
+    "mechanism": "Even with P uptake parameters in optimization space, PFT#10 P uptake/demand ratio ≈ 5 parts per million across all cases. This is NOT zero but extremely small. Possible causes: Morris ranges too narrow, soil P depletion, PFT competition, or catch-22 (need roots to get P, need P to grow roots)",
     "affects": [
       "FATES_PUPTAKE_SZPF",
       "FATES_FROOTC",
       "FATES_LEAFC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -103,7 +111,10 @@
       "FATES_FROOTC",
       "FATES_LEAFC"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -121,7 +132,11 @@
       "FATES_LEAFC",
       "FATES_VEGC_ABOVEGROUND"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -139,7 +154,11 @@
       "FATES_FROOTC",
       "FATES_VEGC_ABOVEGROUND"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -157,7 +176,11 @@
       "FATES_FROOTC",
       "FATES_VEGC_ABOVEGROUND"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -193,7 +216,11 @@
       "FATES_FROOTC",
       "FATES_VEGC_ABOVEGROUND"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -204,12 +231,14 @@
     "confidence": 0.9,
     "verified": false,
     "date_added": "2026-01-18T08:23:37.476127",
-    "description": "PFT#9 crown area parameter is 2nd most important for PFT#10 fineroot biomass with strong negative effect (\u03bc=-17.7)",
+    "description": "PFT#9 crown area parameter is 2nd most important for PFT#10 fineroot biomass with strong negative effect (μ=-17.7)",
     "mechanism": "Larger PFT#9 crowns shade graminoids, reducing photosynthesis and subsequently root growth",
     "affects": [
       "FATES_FROOTC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -220,12 +249,14 @@
     "confidence": 0.7,
     "verified": false,
     "date_added": "2026-01-18T08:23:37.477239",
-    "description": "Alpha_ptase_7 has NEGATIVE effect on leaf biomass (\u03bc=-73.5) despite increasing P availability",
+    "description": "Alpha_ptase_7 has NEGATIVE effect on leaf biomass (μ=-73.5) despite increasing P availability",
     "mechanism": "Higher phosphatase activity may involve C costs of enzyme production, P-induced allocation shifts, or P mineralization favoring competitors",
     "affects": [
       "FATES_LEAFC"
     ],
-    "affects_pfts": [7],
+    "affects_pfts": [
+      7
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -243,7 +274,9 @@
       "FATES_FROOTC",
       "FATES_VEGC_ABOVEGROUND"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -261,7 +294,11 @@
       "FATES_FROOTC",
       "FATES_VEGC_ABOVEGROUND"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -279,7 +316,11 @@
       "FATES_FROOTC",
       "FATES_LAI"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -296,7 +337,9 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [9],
+    "affects_pfts": [
+      9
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -308,12 +351,15 @@
     "verified": false,
     "date_added": "2026-01-18T08:24:06.948462",
     "description": "Phenology parameters in exponential functions create extreme sensitivity - small changes in phen_c cause large timing changes due to exponential amplification",
-    "mechanism": "GDD_threshold = phen_a + phen_b \u00d7 exp(phen_c \u00d7 nchilldays). At 165 chilling days, small phen_c change (0.00361) gets amplified by exp function then multiplied by large phen_b (638), causing 52-day timing shift",
+    "mechanism": "GDD_threshold = phen_a + phen_b × exp(phen_c × nchilldays). At 165 chilling days, small phen_c change (0.00361) gets amplified by exp function then multiplied by large phen_b (638), causing 52-day timing shift",
     "affects": [
       "FATES_LAI",
       "FATES_LEAFC"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -324,13 +370,16 @@
     "confidence": 0.9,
     "verified": false,
     "date_added": "2026-01-18T08:24:06.950924",
-    "description": "Arctic winter accumulates ~165 chilling days, causing GDD threshold to collapse to near-zero (~0.5\u00b0C-days), triggering premature leaf-on",
-    "mechanism": "High chilling days drive exponential term toward zero: exp(-0.01352 \u00d7 165) = 0.107, making threshold = -68 + 638 \u00d7 0.107 \u2248 0.5\u00b0C-days",
+    "description": "Arctic winter accumulates ~165 chilling days, causing GDD threshold to collapse to near-zero (~0.5°C-days), triggering premature leaf-on",
+    "mechanism": "High chilling days drive exponential term toward zero: exp(-0.01352 × 165) = 0.107, making threshold = -68 + 638 × 0.107 ≈ 0.5°C-days",
     "affects": [
       "FATES_LAI",
       "FATES_GPP"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -392,8 +441,8 @@
     "confidence": 0.95,
     "verified": false,
     "date_added": "2026-01-18T08:24:31.303187",
-    "description": "FATES simulates negative NPP (-0.05 g C/m\u00b2/day) during DOY 100-140 when MODIS observations show real plants successfully growing (starting DOY 127)",
-    "mechanism": "Maintenance respiration (0.08 g C/m\u00b2/day) exceeds extremely low GPP (0.03 g C/m\u00b2/day) in early spring, creating carbon deficit when real plants are building leaf area",
+    "description": "FATES simulates negative NPP (-0.05 g C/m²/day) during DOY 100-140 when MODIS observations show real plants successfully growing (starting DOY 127)",
+    "mechanism": "Maintenance respiration (0.08 g C/m²/day) exceeds extremely low GPP (0.03 g C/m²/day) in early spring, creating carbon deficit when real plants are building leaf area",
     "affects": [
       "FATES_NPP",
       "FATES_LAI",
@@ -412,7 +461,7 @@
     "verified": false,
     "date_added": "2026-01-18T08:25:18.407097",
     "description": "Case #3643 shows spring carbon starvation (MR > GPP during DOY 100-140) preventing LAI growth despite optimized parameters",
-    "mechanism": "Even with maintresp_nonleaf_baserate at lower bound (1.296e-6), spring MR (0.05 g C/m\u00b2/day) exceeds spring GPP (0.03 g C/m\u00b2/day), creating cumulative deficit of -0.73 g C/m\u00b2 by DOY 127",
+    "mechanism": "Even with maintresp_nonleaf_baserate at lower bound (1.296e-6), spring MR (0.05 g C/m²/day) exceeds spring GPP (0.03 g C/m²/day), creating cumulative deficit of -0.73 g C/m² by DOY 127",
     "affects": [
       "FATES_NPP",
       "FATES_LAI",
@@ -431,13 +480,16 @@
     "verified": false,
     "date_added": "2026-01-18T08:24:31.307095",
     "description": "FATES allocation framework requires positive NPP before growth allocation, preventing storage-investment strategy that real Arctic plants use",
-    "mechanism": "Real plants invest stored C to build initial leaves \u2192 more leaves increase GPP \u2192 creates positive NPP \u2192 enables continued growth. FATES cannot do this because allocation requires positive NPP first",
+    "mechanism": "Real plants invest stored C to build initial leaves → more leaves increase GPP → creates positive NPP → enables continued growth. FATES cannot do this because allocation requires positive NPP first",
     "affects": [
       "FATES_LEAFC",
       "FATES_LAI",
       "FATES_NPP"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -467,7 +519,7 @@
     "verified": false,
     "date_added": "2026-01-18T08:24:56.621924",
     "description": "21% of parameters (29 out of 138) are at their Morris sampling bounds, preventing further optimization of carbon balance despite already-optimized phenology and stoichiometry",
-    "mechanism": "Critical parameters for carbon balance (maintresp_nonleaf_baserate at lower bound, leaf_slatop_10 at lower bound) cannot be adjusted further within Morris parameter space to fix spring carbon starvation (MR 0.05 > GPP 0.03 g C/m\u00b2/day)",
+    "mechanism": "Critical parameters for carbon balance (maintresp_nonleaf_baserate at lower bound, leaf_slatop_10 at lower bound) cannot be adjusted further within Morris parameter space to fix spring carbon starvation (MR 0.05 > GPP 0.03 g C/m²/day)",
     "affects": [
       "FATES_NPP",
       "FATES_GPP",
@@ -484,12 +536,15 @@
     "confidence": 0.9,
     "verified": false,
     "date_added": "2026-01-18T08:24:56.628217",
-    "description": "Case #3643 has phenology parameters very close to Dec 7 optimized values (phen_chilltemp 2.256\u00b0C vs optimized 2.262\u00b0C), indicating phenology timing is not the constraint",
+    "description": "Case #3643 has phenology parameters very close to Dec 7 optimized values (phen_chilltemp 2.256°C vs optimized 2.262°C), indicating phenology timing is not the constraint",
     "mechanism": "Case #3643 is from phenology-calibrated Morris sets with already-optimized phenology parameters, achieving RMSE 4.2 days. The 13-day early cold status (DOY 114 vs MODIS 127) is acceptable given model structure",
     "affects": [
       "FATES_LAI"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -500,8 +555,8 @@
     "confidence": 0.9,
     "verified": false,
     "date_added": "2026-01-18T08:24:56.629618",
-    "description": "Spring carbon deficit (-0.73 g C/m\u00b2 by DOY 127) prevents LAI growth allocation despite correct phenology timing and optimized stoichiometry",
-    "mechanism": "Spring maintenance respiration (0.05 g C/m\u00b2/day) exceeds GPP (0.03 g C/m\u00b2/day) during DOY 100-140, creating cumulative carbon deficit that prevents positive NPP needed for growth allocation until DOY 195",
+    "description": "Spring carbon deficit (-0.73 g C/m² by DOY 127) prevents LAI growth allocation despite correct phenology timing and optimized stoichiometry",
+    "mechanism": "Spring maintenance respiration (0.05 g C/m²/day) exceeds GPP (0.03 g C/m²/day) during DOY 100-140, creating cumulative carbon deficit that prevents positive NPP needed for growth allocation until DOY 195",
     "affects": [
       "FATES_LAI",
       "FATES_NPP",
@@ -518,8 +573,8 @@
     "confidence": 0.95,
     "verified": false,
     "date_added": "2026-01-18T08:25:18.403917",
-    "description": "FATES already implements Q10 temperature adjustment for maintenance respiration, but uses inappropriate 20\u00b0C reference temperature for Arctic",
-    "mechanism": "Current formula: MR(T) = baserate \u00d7 Q10^((T - 20\u00b0C) / 10\u00b0C). At Arctic spring temperatures (5\u00b0C), this gives 65-72% reduction from 20\u00b0C baseline, but still produces MR > GPP",
+    "description": "FATES already implements Q10 temperature adjustment for maintenance respiration, but uses inappropriate 20°C reference temperature for Arctic",
+    "mechanism": "Current formula: MR(T) = baserate × Q10^((T - 20°C) / 10°C). At Arctic spring temperatures (5°C), this gives 65-72% reduction from 20°C baseline, but still produces MR > GPP",
     "affects": [
       "FATES_AUTORESP",
       "FATES_NPP"
@@ -542,7 +597,10 @@
       "FATES_NPP",
       "FATES_LAI"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -560,7 +618,11 @@
       "FATES_FROOTC",
       "FATES_VEGC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -594,7 +656,10 @@
       "FATES_NH4UPTAKE_SZPF",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -611,7 +676,11 @@
       "FATES_MORTALITY_BACKGROUND_SZPF",
       "FATES_VEGC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -627,7 +696,11 @@
     "affects": [
       "FATES_VEGC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -639,7 +712,7 @@
     "verified": false,
     "date_added": "2026-01-18T08:26:04.611004",
     "description": "Reducing maintenance respiration by 90% triggers catastrophic ecosystem collapse over 20-year timescale",
-    "mechanism": "Lower MR \u2192 Less tissue maintenance \u2192 Faster biomass loss \u2192 Lower GPP \u2192 Less carbon for growth \u2192 Death spiral feedback loop",
+    "mechanism": "Lower MR → Less tissue maintenance → Faster biomass loss → Lower GPP → Less carbon for growth → Death spiral feedback loop",
     "affects": [
       "FATES_GPP",
       "FATES_AUTORESP",
@@ -647,7 +720,11 @@
       "FATES_FROOTC",
       "FATES_NPP"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -664,7 +741,9 @@
       "FATES_LEAFC",
       "FATES_STOREC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -676,11 +755,13 @@
     "verified": false,
     "date_added": "2026-01-18T08:26:04.614516",
     "description": "Reducing PID gain by 50% consistently improves PFT#10 (graminoid) leaf biomass by 30-58%",
-    "mechanism": "Lower PID gain \u2192 Less aggressive root allocation \u2192 More carbon available for leaves",
+    "mechanism": "Lower PID gain → Less aggressive root allocation → More carbon available for leaves",
     "affects": [
       "FATES_LEAFC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -691,13 +772,16 @@
     "confidence": 0.8,
     "verified": false,
     "date_added": "2026-01-18T08:26:04.615698",
-    "description": "Spring carbon allocation follows Storage refill \u2192 Root turnover replacement \u2192 NEW leaf growth order, causing insufficient spring LAI buildup",
+    "description": "Spring carbon allocation follows Storage refill → Root turnover replacement → NEW leaf growth order, causing insufficient spring LAI buildup",
     "mechanism": "By the time allocation reaches leaf growth, spring growing season is half over and carbon is depleted",
     "affects": [
       "FATES_LAI",
       "FATES_LEAFC"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -725,14 +809,16 @@
     "confidence": 0.95,
     "verified": false,
     "date_added": "2026-01-18T08:26:26.181387",
-    "description": "PFT#10 (Arctic Graminoid) has fundamentally different biomass allocation than shrubs, with 5.5\u00d7 higher fineroot:leaf ratio",
+    "description": "PFT#10 (Arctic Graminoid) has fundamentally different biomass allocation than shrubs, with 5.5× higher fineroot:leaf ratio",
     "mechanism": "Graminoids allocate much more carbon to belowground structures, requiring very different parameter values than shrubs",
     "affects": [
       "FATES_FROOTC",
       "FATES_LEAFC",
       "FATES_L2FR"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -762,13 +848,17 @@
     "verified": false,
     "date_added": "2026-01-18T08:26:26.185537",
     "description": "Multiple parameter combinations achieve similar biomass performance despite vastly different underlying parameter values",
-    "mechanism": "Top 50 sets show 2-8\u00d7 variation in parameter values while maintaining similar composite NRMSE scores",
+    "mechanism": "Top 50 sets show 2-8× variation in parameter values while maintaining similar composite NRMSE scores",
     "affects": [
       "FATES_LEAFC",
       "FATES_FROOTC",
       "FATES_VEGC_ABOVEGROUND"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -785,7 +875,11 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -803,7 +897,11 @@
       "FATES_FROOTC",
       "FATES_VEGC_ABOVEGROUND"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -820,7 +918,10 @@
       "FATES_LAI",
       "FATES_LEAFC"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -873,7 +974,10 @@
       "FATES_LAI",
       "FATES_LEAFC"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -884,7 +988,7 @@
     "confidence": 0.9,
     "verified": false,
     "date_added": "2026-01-18T08:27:14.404927",
-    "description": "Cases optimized for biomass (leaf + fineroot carbon) systematically overestimate MODIS LAI and GPP by 2-3\u00d7 despite achieving low biomass NRMSE",
+    "description": "Cases optimized for biomass (leaf + fineroot carbon) systematically overestimate MODIS LAI and GPP by 2-3× despite achieving low biomass NRMSE",
     "mechanism": "Single-objective optimization on biomass creates trade-offs with ecosystem fluxes. Possible mechanisms include lower specific leaf area, higher photosynthetic efficiency, or canopy structure differences",
     "affects": [
       "FATES_LAI",
@@ -892,7 +996,11 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -910,7 +1018,11 @@
       "FATES_FROOTC",
       "FATES_VEGC_ABOVEGROUND"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -921,13 +1033,17 @@
     "confidence": 0.9,
     "verified": false,
     "date_added": "2026-01-18T08:27:14.408469",
-    "description": "NO case achieves all 6 biomass outputs (3 PFTs \u00d7 2 pools) within \u00b120% of observations, with maximum of 3/6 outputs satisfied",
+    "description": "NO case achieves all 6 biomass outputs (3 PFTs × 2 pools) within ±20% of observations, with maximum of 3/6 outputs satisfied",
     "mechanism": "Fundamental parameter trade-offs exist between PFTs in the model structure that prevent simultaneous optimization across all plant functional types",
     "affects": [
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -981,7 +1097,9 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1000,7 +1118,11 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1018,7 +1140,9 @@
       "FATES_LAI",
       "FATES_GPP"
     ],
-    "affects_pfts": [9],
+    "affects_pfts": [
+      9
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1036,7 +1160,11 @@
       "FATES_FROOTC",
       "FATES_VEGC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1048,12 +1176,15 @@
     "verified": false,
     "date_added": "2026-01-18T08:28:01.692828",
     "description": "Shorter growing season through warmer cold temperature threshold reduces peak LAI duration and matches MODIS seasonal patterns",
-    "mechanism": "Case #845 uses phen_coldtemp = +2.9\u00b0C vs #2675 = -7.5\u00b0C, creating later leaf-on and shorter growing season that reduces LAI peaks",
+    "mechanism": "Case #845 uses phen_coldtemp = +2.9°C vs #2675 = -7.5°C, creating later leaf-on and shorter growing season that reduces LAI peaks",
     "affects": [
       "FATES_LAI",
       "FATES_GPP"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1065,12 +1196,14 @@
     "verified": false,
     "date_added": "2026-01-18T08:30:54.588495",
     "description": "Higher P uptake capacity (vmax_p) can cause catastrophic biomass collapse through allocation feedback",
-    "mechanism": "vmax_p increase \u2192 higher P uptake per root \u2192 higher storage P \u2192 C:P ratio decreases \u2192 PID controller reduces root allocation \u2192 lower total capacitance \u2192 less total P uptake \u2192 biomass collapse",
+    "mechanism": "vmax_p increase → higher P uptake per root → higher storage P → C:P ratio decreases → PID controller reduces root allocation → lower total capacitance → less total P uptake → biomass collapse",
     "affects": [
       "FATES_LEAFC_SZPF",
       "FATES_FROOTC_SZPF"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1098,7 +1231,7 @@
     "confidence": 0.9,
     "verified": false,
     "date_added": "2026-01-18T08:28:46.715561",
-    "description": "PFT#9 fails in Case #845 due to simultaneous high C starvation mortality (2.5\u00d7 higher), lower drought tolerance (2.5\u00d7 lower threshold), and fast seed decay (2.3\u00d7 faster), creating a death spiral with no recovery.",
+    "description": "PFT#9 fails in Case #845 due to simultaneous high C starvation mortality (2.5× higher), lower drought tolerance (2.5× lower threshold), and fast seed decay (2.3× faster), creating a death spiral with no recovery.",
     "mechanism": "High adult mortality plus low recruitment equals local extinction. Multiple mortality sources compound rather than being independent.",
     "affects": [
       "FATES_MORTALITY_CSTARV_SZPF",
@@ -1106,7 +1239,9 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [9],
+    "affects_pfts": [
+      9
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1123,7 +1258,9 @@
       "FATES_VEGC",
       "FATES_MORTALITY_CSTARV_SZPF"
     ],
-    "affects_pfts": [9],
+    "affects_pfts": [
+      9
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1134,15 +1271,19 @@
     "confidence": 0.95,
     "verified": false,
     "date_added": "2026-01-18T08:28:46.719528",
-    "description": "Cannot simultaneously optimize biomass match and ecosystem LAI/GPP. Long growing season matches biomass but creates 2-3\u00d7 MODIS overestimate. Short growing season matches MODIS but loses one PFT.",
-    "mechanism": "Phenology formulation couples growing season length to all PFTs via single phen_coldtemp parameter. Temperature threshold of -7.46\u00b0C vs +2.92\u00b0C creates fundamentally different ecosystem behavior.",
+    "description": "Cannot simultaneously optimize biomass match and ecosystem LAI/GPP. Long growing season matches biomass but creates 2-3× MODIS overestimate. Short growing season matches MODIS but loses one PFT.",
+    "mechanism": "Phenology formulation couples growing season length to all PFTs via single phen_coldtemp parameter. Temperature threshold of -7.46°C vs +2.92°C creates fundamentally different ecosystem behavior.",
     "affects": [
       "FATES_LAI",
       "FATES_GPP",
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1161,7 +1302,11 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1172,14 +1317,16 @@
     "confidence": 0.95,
     "verified": false,
     "date_added": "2026-01-18T08:28:46.724343",
-    "description": "alloc_storage_cushion_10 is the #1 Morris parameter for PFT#10 fineroot biomass. Even extreme modifications (0.686 \u2192 3.0, 4.4\u00d7 increase beyond Morris bounds) still don't fully solve PFT#10 underestimation.",
+    "description": "alloc_storage_cushion_10 is the #1 Morris parameter for PFT#10 fineroot biomass. Even extreme modifications (0.686 → 3.0, 4.4× increase beyond Morris bounds) still don't fully solve PFT#10 underestimation.",
     "mechanism": "Arctic plants need large storage for 9-month winter maintenance respiration, early spring growth before photosynthesis, and buffering nutrient limitations. Storage becomes structural tissue over multiple years.",
     "affects": [
       "FATES_FROOTC",
       "FATES_STOREC",
       "FATES_MORTALITY_CSTARV_SZPF"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1198,7 +1345,11 @@
       "FATES_LAI",
       "FATES_GPP"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1217,7 +1368,9 @@
       "FATES_MORTALITY_CSTARV_SZPF",
       "FATES_MORTALITY_HYDRAULIC_SZPF"
     ],
-    "affects_pfts": [9],
+    "affects_pfts": [
+      9
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1229,12 +1382,14 @@
     "verified": false,
     "date_added": "2026-01-18T08:29:18.943814",
     "description": "Each parameter modification contributes progressively to PFT#9 improvement: Exp1 (4-8x), Exp2 (+50-100%), Exp3 (+20-40%), Exp4 (+10-30%), Exp5 (+10-20%)",
-    "mechanism": "Sequential survival improvements (mortality reduction \u2192 drought tolerance \u2192 storage buffering \u2192 recruitment \u2192 seed input) create cumulative biomass recovery",
+    "mechanism": "Sequential survival improvements (mortality reduction → drought tolerance → storage buffering → recruitment → seed input) create cumulative biomass recovery",
     "affects": [
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [9],
+    "affects_pfts": [
+      9
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1252,7 +1407,9 @@
       "FATES_GPP",
       "FATES_LEAFC"
     ],
-    "affects_pfts": [9],
+    "affects_pfts": [
+      9
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1269,7 +1426,9 @@
       "FATES_LAI",
       "FATES_GPP"
     ],
-    "affects_pfts": [9],
+    "affects_pfts": [
+      9
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1288,7 +1447,9 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [9],
+    "affects_pfts": [
+      9
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1300,7 +1461,7 @@
     "verified": false,
     "date_added": "2026-01-18T08:29:38.994884",
     "description": "NRMSE composite metric was incorrectly calculated as arithmetic mean instead of root mean square",
-    "mechanism": "Proper formula is sqrt(mean(NRMSE\u00b2)) not mean(NRMSE) - RMS preserves quadratic penalty for large errors",
+    "mechanism": "Proper formula is sqrt(mean(NRMSE²)) not mean(NRMSE) - RMS preserves quadratic penalty for large errors",
     "affects": [
       "FATES_LEAFC",
       "FATES_FROOTC"
@@ -1316,7 +1477,7 @@
     "confidence": 1.0,
     "verified": false,
     "date_added": "2026-01-18T08:29:38.997549",
-    "description": "FATES uses 2D arrays for stoichiometry parameters with organ\u00d7PFT dimensions, not separate 1D parameters",
+    "description": "FATES uses 2D arrays for stoichiometry parameters with organ×PFT dimensions, not separate 1D parameters",
     "mechanism": "Parameters like fates_stoich_nitr have dimensions (fates_plant_organs=4, fates_pft=12) where organs are 1=leaf, 2=fineroot, 3=sapwood, 4=storage",
     "affects": [
       "FATES_LEAFC",
@@ -1333,7 +1494,7 @@
     "confidence": 1.0,
     "verified": false,
     "date_added": "2026-01-18T08:29:38.999645",
-    "description": "Model validation uses \u00b120% of observed mean rather than standard deviation based ranges",
+    "description": "Model validation uses ±20% of observed mean rather than standard deviation based ranges",
     "mechanism": "VALID_LOW/VALID_HIGH boundaries set as 0.8 and 1.2 times observed mean values",
     "affects": [
       "FATES_LEAFC",
@@ -1352,11 +1513,13 @@
     "verified": false,
     "date_added": "2026-01-18T08:30:13.086757",
     "description": "Critical parameter fates_turnover_fnrt was NOT included in Morris 138-parameter ensemble, causing systematic bias across all 4329 simulations",
-    "mechanism": "All simulations used same turnover rate (1.0 year for PFT#10) which is 5\u00d7 too fast compared to literature (>5 years for Arctic fine roots). Morris optimization could not discover this bottleneck",
+    "mechanism": "All simulations used same turnover rate (1.0 year for PFT#10) which is 5× too fast compared to literature (>5 years for Arctic fine roots). Morris optimization could not discover this bottleneck",
     "affects": [
       "FATES_FROOTC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1374,7 +1537,11 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1391,7 +1558,9 @@
       "FATES_PUPTAKE_SZPF",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1409,7 +1578,9 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1427,7 +1598,9 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1438,12 +1611,15 @@
     "confidence": 0.9,
     "verified": false,
     "date_added": "2026-01-18T08:30:54.591563",
-    "description": "PFT#9 obtains 2\u00d7 more P than PFT#10 due to higher capacitance under ECA competition",
-    "mechanism": "Under Equilibrium Chemistry Approximation, nutrient uptake emerges from simultaneous competition based on plant capacitance (fine-root biomass \u00d7 vmax_p \u00d7 root distribution). PFT#9 has higher capacitance due to more fineroot biomass",
+    "description": "PFT#9 obtains 2× more P than PFT#10 due to higher capacitance under ECA competition",
+    "mechanism": "Under Equilibrium Chemistry Approximation, nutrient uptake emerges from simultaneous competition based on plant capacitance (fine-root biomass × vmax_p × root distribution). PFT#9 has higher capacitance due to more fineroot biomass",
     "affects": [
       "FATES_PUPTAKE_SZPF"
     ],
-    "affects_pfts": [9, 10],
+    "affects_pfts": [
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1460,7 +1636,9 @@
       "FATES_LEAFC_SZPF",
       "FATES_FROOTC_SZPF"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1472,13 +1650,17 @@
     "verified": false,
     "date_added": "2026-01-18T08:31:15.898117",
     "description": "Morris sampling is missing critical parameters that directly control ECA capacitance, the fundamental mechanism determining competitive nutrient uptake",
-    "mechanism": "Capacitance = fine-root biomass \u00d7 vmax_p \u00d7 root distribution. Missing parameters (turnover, PID gains, root distribution) directly affect capacitance but were never optimized",
+    "mechanism": "Capacitance = fine-root biomass × vmax_p × root distribution. Missing parameters (turnover, PID gains, root distribution) directly affect capacitance but were never optimized",
     "affects": [
       "FATES_PUPTAKE_SZPF",
       "FATES_FROOTC",
       "FATES_LEAFC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1513,7 +1695,9 @@
       "FATES_PUPTAKE_SZPF",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1530,7 +1714,9 @@
       "FATES_FROOTC",
       "FATES_PUPTAKE_SZPF"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1547,7 +1733,11 @@
       "FATES_PUPTAKE_SZPF",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1565,7 +1755,9 @@
       "FATES_FROOTC",
       "FATES_LEAFC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1600,7 +1792,9 @@
       "FATES_FROOTC",
       "FATES_PUPTAKE_SZPF"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1612,11 +1806,13 @@
     "verified": false,
     "date_added": "2026-01-18T08:32:10.033830",
     "description": "FATES 2-parameter exponential formula is mathematically incapable of representing subsurface biomass peaks due to monotonic decrease constraint",
-    "mechanism": "Both exponential terms have negative derivatives (df/dz = -a\u00b7exp(-a\u00b7z) - b\u00b7exp(-b\u00b7z) < 0), meaning maximum is always at surface (z=0) by mathematical definition",
+    "mechanism": "Both exponential terms have negative derivatives (df/dz = -a·exp(-a·z) - b·exp(-b·z) < 0), meaning maximum is always at surface (z=0) by mathematical definition",
     "affects": [
       "FATES_FROOTC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1633,7 +1829,9 @@
       "FATES_FROOTC",
       "FATES_PUPTAKE_SZPF"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1667,7 +1865,9 @@
       "FATES_PUPTAKE_SZPF",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1678,8 +1878,8 @@
     "confidence": 0.95,
     "verified": false,
     "date_added": "2026-01-18T08:32:32.570722",
-    "description": "ELM soil order parameters create P trap where 98.9% of soil P (202 g P m\u207b\u00b3) is locked in mineral-adsorbed pool while only 0.00002% is plant-available (4\u00d710\u207b\u2075 g P m\u207b\u00b3)",
-    "mechanism": "Desorption rate is 23\u00d7 slower than adsorption rate for Gelisols (r_desorp=0.00022 vs r_adsorp=0.005), creating equilibrium heavily favoring adsorbed state despite abundant total P",
+    "description": "ELM soil order parameters create P trap where 98.9% of soil P (202 g P m⁻³) is locked in mineral-adsorbed pool while only 0.00002% is plant-available (4×10⁻⁵ g P m⁻³)",
+    "mechanism": "Desorption rate is 23× slower than adsorption rate for Gelisols (r_desorp=0.00022 vs r_adsorp=0.005), creating equilibrium heavily favoring adsorbed state despite abundant total P",
     "affects": [
       "LABILEP_vr",
       "SECONDP_vr",
@@ -1687,7 +1887,11 @@
       "FATES_FROOTC_PF",
       "FATES_LEAFC_PF"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1705,7 +1909,11 @@
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1716,14 +1924,18 @@
     "confidence": 0.9,
     "verified": false,
     "date_added": "2026-01-18T08:32:32.575723",
-    "description": "Plant P demand (6\u00d710\u207b\u00b3 g P m\u207b\u00b3 day\u207b\u00b9) exceeds desorption supply (1.5\u00d710\u207b\u00b3 g P m\u207b\u00b3 day\u207b\u00b9) by 4\u00d7, causing LABILEP depletion",
+    "description": "Plant P demand (6×10⁻³ g P m⁻³ day⁻¹) exceeds desorption supply (1.5×10⁻³ g P m⁻³ day⁻¹) by 4×, causing LABILEP depletion",
     "mechanism": "Desorption can't keep up with plant uptake despite large SECONDP pool, resulting in mass-action limitation where uptake becomes proportional to near-zero LABILEP concentration",
     "affects": [
       "LABILEP_vr",
       "FATES_PUPTAKE_SZPF",
       "FATES_L2FR"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1741,7 +1953,11 @@
       "FATES_FROOTC",
       "FATES_VEGC_ABOVEGROUND"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1758,7 +1974,11 @@
       "FATES_FROOTC",
       "FATES_PUPTAKE_SZPF"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1770,7 +1990,7 @@
     "verified": false,
     "date_added": "2026-01-18T08:33:00.651569",
     "description": "Parameters at Morris bounds show low sensitivity because they can't vary in one direction, making them appear unimportant when they may actually be constrained",
-    "mechanism": "41/138 parameters (29.7%) were at Morris bounds for Case #2678. Parameters at bounds show low |\u03bc| because they can't vary in one direction",
+    "mechanism": "41/138 parameters (29.7%) were at Morris bounds for Case #2678. Parameters at bounds show low |μ| because they can't vary in one direction",
     "affects": [
       "FATES_LEAFC",
       "FATES_FROOTC"
@@ -1786,7 +2006,7 @@
     "confidence": 0.95,
     "verified": false,
     "date_added": "2026-01-18T08:33:00.653830",
-    "description": "ECA capacitance is determined by the formula: Capacitance = vmax_p \u00d7 root_biomass \u00d7 distribution",
+    "description": "ECA capacitance is determined by the formula: Capacitance = vmax_p × root_biomass × distribution",
     "mechanism": "Nutrient uptake capacity depends on uptake rate per root (vmax_p), total root biomass, and spatial distribution overlap with nutrient pools",
     "affects": [
       "FATES_PUPTAKE_SZPF",
@@ -1827,7 +2047,11 @@
       "FATES_FROOTC_PF",
       "FATES_LEAFC_PF"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1839,7 +2063,7 @@
     "verified": false,
     "date_added": "2026-01-18T08:33:12.069619",
     "description": "PFT indices in NetCDF files are 0-based, requiring mapping from PFT numbers to array indices",
-    "mechanism": "NetCDF arrays use 0-based indexing while PFT numbers are 1-based, requiring translation (PFT#7\u2192index 6, PFT#9\u2192index 8, PFT#10\u2192index 9)",
+    "mechanism": "NetCDF arrays use 0-based indexing while PFT numbers are 1-based, requiring translation (PFT#7→index 6, PFT#9→index 8, PFT#10→index 9)",
     "affects": [
       "FATES_LEAFC",
       "FATES_FROOTC"
@@ -1855,14 +2079,16 @@
     "confidence": 0.9,
     "verified": false,
     "date_added": "2026-01-18T08:33:42.803985",
-    "description": "P uptake parameters (vmax_p and vmax_ptase) were maxed out at Morris bounds in best-performing case, with P uptake/demand ratio \u2248 0.000005",
+    "description": "P uptake parameters (vmax_p and vmax_ptase) were maxed out at Morris bounds in best-performing case, with P uptake/demand ratio ≈ 0.000005",
     "mechanism": "P starvation prevents root growth even with high allocation, creating fundamental growth bottleneck",
     "affects": [
       "FATES_PUPTAKE_SZPF",
       "FATES_FROOTC",
       "FATES_LEAFC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1879,7 +2105,11 @@
       "FATES_FROOTC",
       "FATES_PUPTAKE_SZPF"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1896,7 +2126,10 @@
       "FATES_FROOTC",
       "FATES_PUPTAKE_SZPF"
     ],
-    "affects_pfts": [7, 9],
+    "affects_pfts": [
+      7,
+      9
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1914,7 +2147,11 @@
       "FATES_FROOTC",
       "FATES_VEGC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1931,7 +2168,9 @@
       "FATES_VEGC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [10],
+    "affects_pfts": [
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1942,13 +2181,15 @@
     "confidence": 0.95,
     "verified": false,
     "date_added": "2026-01-18T08:33:57.426392",
-    "description": "Case 2678 with 2\u00d7 r_desorp revealed massive vegetation collapse during 1963-1968 Alaska drought. PFT#7 (evergreen shrub) experienced 98% mortality due to HYDRAULIC FAILURE, not carbon starvation.",
-    "mechanism": "During drought, btran dropped to essentially zero, triggering massive hydraulic mortality. Hydraulic mortality was 426 g C/m\u00b2/yr while C starvation was only 0.03 g C/m\u00b2/yr.",
+    "description": "Case 2678 with 2× r_desorp revealed massive vegetation collapse during 1963-1968 Alaska drought. PFT#7 (evergreen shrub) experienced 98% mortality due to HYDRAULIC FAILURE, not carbon starvation.",
+    "mechanism": "During drought, btran dropped to essentially zero, triggering massive hydraulic mortality. Hydraulic mortality was 426 g C/m²/yr while C starvation was only 0.03 g C/m²/yr.",
     "affects": [
       "FATES_MORTALITY_HYDRAULIC_SZPF",
       "FATES_VEGC"
     ],
-    "affects_pfts": [7],
+    "affects_pfts": [
+      7
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1960,12 +2201,16 @@
     "verified": false,
     "date_added": "2026-01-18T08:33:57.429342",
     "description": "Successfully generated and verified Morris ensemble with 162 parameters (138 original + 24 new) including 4890 parameter sets with correct dimensions and parameter ordering.",
-    "mechanism": "Morris method with 30 trajectories \u00d7 163 samples per trajectory, using 8 grid levels and seed 123. All parameter files verified with 100% match rate across 16,200 parameter checks.",
+    "mechanism": "Morris method with 30 trajectories × 163 samples per trajectory, using 8 grid levels and seed 123. All parameter files verified with 100% match rate across 16,200 parameter checks.",
     "affects": [
       "FATES_LEAFC",
       "FATES_FROOTC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1982,7 +2227,11 @@
       "TOTLITP",
       "LABILEP_vr"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -1999,7 +2248,9 @@
       "FATES_MORTALITY_HYDRAULIC_SZPF",
       "FATES_VEGC"
     ],
-    "affects_pfts": [7],
+    "affects_pfts": [
+      7
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -2017,7 +2268,11 @@
       "FATES_GPP",
       "FATES_VEGC"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
@@ -2052,10 +2307,374 @@
       "FATES_PUPTAKE_SZPF",
       "FATES_MORTALITY_CSTARV_SZPF"
     ],
-    "affects_pfts": [7, 9, 10],
+    "affects_pfts": [
+      7,
+      9,
+      10
+    ],
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
+    "references": []
+  },
+  "vmax_p_extreme_range_crash": {
+    "source": "auto_discovered",
+    "confidence": 0.82,
+    "verified": false,
+    "date_added": "2026-03-11T02:10:13.379943",
+    "description": "fates_cnp_vmax_p increases beyond ~3 orders of magnitude from baseline cause catastrophic model crash with no output, not graceful degradation.",
+    "mechanism": "The ECA competition solver for phosphorus uptake in FATES is numerically sensitive to fates_cnp_vmax_p values. When vmax_p is increased by 4-5 orders of magnitude (e.g., from 5e-11 to 1e-06), the computed P uptake flux per timestep can exceed available soil P pools, causing negative concentrations, solver divergence, or floating-point exceptions. The crash occurs before any output is written, making diagnosis difficult. The ECA framework involves iterative equilibrium solutions that assume P fluxes are proportional to but bounded by substrate availability — extreme vmax_p violates the quasi-steady-state assumption embedded in ECA and destabilizes the numerical scheme. Fine root carbon (FATES_FROOTC) and leaf carbon (FATES_LEAFC) outputs are also affected downstream as P limitation feedbacks cannot be computed.",
+    "affects": [
+      "FATES_PUPTAKE_SZPF",
+      "FATES_FROOTC",
+      "FATES_LEAFC",
+      "ECA_Competition",
+      "RD_Competition"
+    ],
+    "implications": [
+      "fates_cnp_vmax_p must be modified incrementally — test no more than 1-2 orders of magnitude change per experiment before expanding further.",
+      "Sensitivity analysis range expansions for ECA-coupled parameters should use logarithmic stepping with intermediate stability checks, not direct jump to extreme bounds.",
+      "A simulation producing no NC file almost certainly crashed the model runtime, not the post-processing — check model logs for NaN/Inf or negative pool errors in ECA modules.",
+      "PFT 10 (likely arctic shrub or tundra forb) may have especially tight P pool constraints that make it more vulnerable to vmax_p instability than PFTs in higher-P ecosystems.",
+      "Future range expansions for vmax_p should first establish the stability boundary through binary search between baseline (5e-11) and the failed center (1e-06) before exploring the full proposed range [5e-09, 5e-03]."
+    ],
+    "parameters_involved": [
+      "fates_cnp_vmax_p"
+    ],
+    "do_not_repeat": [
+      "Do NOT jump fates_cnp_vmax_p more than 2 orders of magnitude from baseline in a single experiment step — this causes model crash with no recoverable output.",
+      "Do NOT use 'center 1e-06' as a starting point for vmax_p range expansion from a 5e-11 baseline without first validating stability at intermediate values (e.g., 5e-10, 5e-09, 5e-08).",
+      "Do NOT attempt sensitivity analysis range [5e-09, 5e-03] for fates_cnp_vmax_p without first establishing the numerical stability boundary."
+    ],
+    "references": []
+  },
+  "vmax_p_l2fr_coupling_instability": {
+    "source": "auto_discovered",
+    "confidence": 0.72,
+    "verified": false,
+    "date_added": "2026-03-11T01:37:25.311866",
+    "description": "Simultaneous large-magnitude expansion of fates_cnp_vmax_p and contraction of fates_allom_l2fr across multiple PFTs causes catastrophic model crash via ECA solver instability.",
+    "mechanism": "fates_cnp_vmax_p sets the maximum P uptake rate per fine root biomass; fates_allom_l2fr determines the allocation ratio that sets fine root biomass pool size. These parameters are coupled through the ECA competition module and the PID allocation controller. When vmax_p is expanded by multiple orders of magnitude while l2fr is simultaneously contracted, the ECA solver receives contradictory boundary conditions: an extreme demand signal (high vmax_p) paired with a structurally reduced supply organ (low fine root biomass from low l2fr). This contradiction, applied across 3 PFTs simultaneously, overwhelms the numerical integration and causes a run-time abort before any output is written. The crash is 'catastrophic' (zero output) rather than 'degraded' (poor metrics), distinguishing it from parameter mis-tuning scenarios.",
+    "affects": [
+      "FATES_FROOTC",
+      "FATES_PUPTAKE_SZPF",
+      "FATES_L2FR",
+      "FATES_LEAFC"
+    ],
+    "implications": [
+      "fates_cnp_vmax_p and fates_allom_l2fr must NOT be adjusted in opposite directions simultaneously, especially across multiple PFTs — the ECA solver cannot reconcile contradictory uptake-capacity and supply-organ signals.",
+      "When expanding vmax_p range by >2 orders of magnitude, l2fr must be held constant or adjusted in the SAME direction (i.e., if vmax_p increases, l2fr can remain the same or increase, but should not decrease).",
+      "Multi-PFT simultaneous range expansions (3+ PFTs) of nutrient uptake parameters are numerically dangerous and should be staged: modify one PFT at a time and verify stability before expanding to others.",
+      "A catastrophic failure (no NC output) from this combination should be interpreted as an ECA solver crash, not a parameter sensitivity issue — diagnostics should focus on solver convergence, not output metrics.",
+      "fates_cnp_pid_kp may need to be reduced as a stabilizing buffer before attempting large vmax_p expansions."
+    ],
+    "parameters_involved": [
+      "fates_cnp_vmax_p",
+      "fates_allom_l2fr",
+      "fates_cnp_pid_kp"
+    ],
+    "do_not_repeat": [
+      "Do NOT simultaneously expand fates_cnp_vmax_p by >2 orders of magnitude AND contract fates_allom_l2fr for the same or overlapping PFTs in a single experiment.",
+      "Do NOT modify fates_cnp_vmax_p for 3 or more PFTs simultaneously when also modifying allocation parameters (l2fr, pid_kp) — stage across experiments.",
+      "Do NOT attempt vmax_p range expansion to 5e-03 without first validating stability at intermediate values (e.g., 1e-08, 1e-07, 1e-06 in sequential experiments)."
+    ],
+    "references": []
+  },
+  "ECA_solver_crash_from_vmax_km_divergence": {
+    "source": "auto_discovered",
+    "confidence": 0.72,
+    "verified": false,
+    "date_added": "2026-03-11T01:38:03.189583",
+    "description": "Simultaneously increasing fates_cnp_vmax_p by >3 orders of magnitude while decreasing fates_cnp_eca_km_p crashes the ECA phosphorus uptake solver before any output is produced.",
+    "mechanism": "The ECA (Equilibrium Chemistry Approximation) competition scheme for phosphorus uptake uses vmax_p and eca_km_p together in a Michaelis-Menten framework. When vmax_p is increased by multiple orders of magnitude (e.g., 5e-11 to 1e-06) while eca_km_p is simultaneously decreased (0.064 to <0.01), the ratio vmax_p/km_p becomes extremely large, creating a near-step-function uptake response. This causes: (1) numerical singularity or overflow in the ECA competition matrix inversion, (2) zero-crossing instability in root uptake flux calculations, and (3) potentially negative soil P concentrations in early timesteps. The simultaneous l2fr contraction for PFT9 (18.31 to ~4.0) further destabilizes the system by abruptly changing fine root carbon pools, which feeds back into the ECA competition through FATES_FROOTC-dependent uptake capacity. The model crashes silently with no NC output, making diagnosis difficult.",
+    "affects": [
+      "FATES_PUPTAKE_SZPF",
+      "FATES_FROOTC",
+      "FATES_LEAFC",
+      "FATES_L2FR"
+    ],
+    "implications": [
+      "fates_cnp_vmax_p and fates_cnp_eca_km_p must be modified together maintaining a bounded vmax/km ratio; avoid >2 orders of magnitude change in vmax_p without proportional km_p adjustment",
+      "fates_allom_l2fr changes >50% from baseline should be staged incrementally to avoid abrupt pool discontinuities",
+      "Extreme vmax_p values (>1e-06 mol/m2/s) for any PFT should be validated against ECA solver stability before batch experiments",
+      "When NC file is completely absent (vs. present but with bad metrics), the failure is pre-output and indicates initialization or first-timestep crash, not a calibration failure",
+      "Multi-PFT vmax_p modifications should be done sequentially (one PFT at a time) to isolate which PFT causes the crash",
+      "Arctic mycorrhizal km_p adaptation (lower km_p) is mechanistically valid but must be paired with conservative vmax_p values, not simultaneous large increases"
+    ],
+    "parameters_involved": [
+      "fates_cnp_vmax_p",
+      "fates_cnp_eca_km_p",
+      "fates_allom_l2fr"
+    ],
+    "do_not_repeat": [
+      "Do NOT simultaneously increase fates_cnp_vmax_p by >3 orders of magnitude AND decrease fates_cnp_eca_km_p for the same or competing PFTs in a single experiment",
+      "Do NOT combine multi-PFT vmax_p range expansions with large l2fr contractions (>50%) in the same experiment",
+      "Do NOT apply range expansion modifications to 3+ nutrient-coupled parameters simultaneously without intermediate validation runs",
+      "Do NOT attempt fates_cnp_vmax_p for PFT10 at 1e-06 without first confirming ECA solver stability at 1e-09 and 1e-08"
+    ],
+    "references": []
+  },
+  "vmax_p_l2fr_contradiction_crash": {
+    "source": "auto_discovered",
+    "confidence": 0.82,
+    "verified": false,
+    "date_added": "2026-03-11T01:38:38.908827",
+    "description": "Simultaneously reducing fates_allom_l2fr (contracting fineroot biomass) while massively expanding fates_cnp_vmax_p causes model crash due to contradictory P uptake capacity vs. structural root demand",
+    "mechanism": "fates_allom_l2fr determines the target leaf-to-fineroot ratio, directly setting fineroot biomass pool size. fates_cnp_vmax_p scales maximum P uptake rate per unit root biomass. When l2fr is drastically reduced (e.g., 18.31 -> ~1.0), fineroot biomass collapses, but if vmax_p is simultaneously increased by 2-4 orders of magnitude, the ECA competition solver receives inconsistent boundary conditions: very low root biomass competing at extremely high uptake affinity. This likely triggers solver divergence in the ECA P uptake module (FATES_PUPTAKE_SZPF). The concurrent elevation of phos_store_ratio to [2,8] compounds this by allowing luxury P accumulation into a now-inflated storage pool that the reduced root system cannot physically support, leading to mass balance violations and simulation crash before NC output is written.",
+    "affects": [
+      "FATES_FROOTC",
+      "FATES_PUPTAKE_SZPF",
+      "FATES_STOREP",
+      "FATES_L2FR",
+      "ECA_Competition"
+    ],
+    "implications": [
+      "fates_allom_l2fr and fates_cnp_vmax_p must be modified in coordinated, incremental steps — never simultaneously with large magnitude changes in opposite functional directions",
+      "vmax_p range expansion beyond 10x the baseline value requires prior validation that fineroot biomass (FATES_FROOTC) remains above a minimum viable threshold",
+      "phos_store_ratio should only be expanded after vmax_p and l2fr are individually stable, not as part of a simultaneous restructuring",
+      "Multi-parameter range expansions of >2 orders of magnitude should be staged: validate each parameter individually before combining",
+      "Simulation crashes (missing NC files) in CNP experiments most commonly indicate ECA solver divergence or negative biomass pool violations rather than I/O errors"
+    ],
+    "parameters_involved": [
+      "fates_cnp_vmax_p",
+      "fates_allom_l2fr",
+      "fates_cnp_phos_store_ratio",
+      "fates_cnp_eca_km_p"
+    ],
+    "do_not_repeat": [
+      "Do not simultaneously reduce fates_allom_l2fr by >50% AND increase fates_cnp_vmax_p by >10x in the same experiment for any PFT",
+      "Do not attempt 6-parameter simultaneous range restructuring without incremental single-parameter validation checkpoints",
+      "Do not set fates_cnp_vmax_p > 1e-04 for any arctic PFT without first confirming FATES_FROOTC remains positive and stable"
+    ],
+    "references": []
+  },
+  "vmax_p_range_expansion_catastrophic_failure": {
+    "source": "auto_discovered",
+    "confidence": 0.82,
+    "verified": false,
+    "date_added": "2026-03-11T02:10:43.982970",
+    "description": "Expanding fates_cnp_vmax_p by more than ~2 orders of magnitude from calibrated values causes catastrophic model crash with no output generated.",
+    "mechanism": "The ECA (Equilibrium Chemistry Approximation) and RD (Relative Demand) competition frameworks for phosphorus uptake are numerically sensitive to fates_cnp_vmax_p magnitude. When vmax_p is expanded from ~5e-11 to ~1e-06 (5 orders of magnitude) for arctic PFT 10, or from ~5e-05 to the new range for PFT 9, the phosphorus uptake flux likely exceeds soil pool availability within a single timestep, triggering either a negative pool error or a solver divergence in the CNP cycling routines. The downstream effect on FATES_PUPTAKE_SZPF, FATES_FROOTC, and FATES_LEAFC is never reached because the crash occurs at the nutrient cycling solve step. Coordinated l2fr adjustments cannot compensate because the failure is upstream of allocation.",
+    "affects": [
+      "FATES_PUPTAKE_SZPF",
+      "FATES_FROOTC",
+      "FATES_LEAFC",
+      "ECA_Competition",
+      "RD_Competition"
+    ],
+    "implications": [
+      "fates_cnp_vmax_p adjustments must be incremental — no more than 1 order of magnitude per calibration step for arctic PFTs",
+      "PFT 10 vmax_p lower bound near 5e-11 is likely near a numerical stability floor; expansions must go upward cautiously (e.g., to 5e-10, then 5e-09)",
+      "PFT 9 vmax_p at 5e-05 may already be near an upper physiological ceiling; upward expansion risks overflow",
+      "Coordinated multi-parameter changes (vmax_p + l2fr) cannot be validated if the primary parameter causes a crash — always test vmax_p stability in isolation first",
+      "The missing NC file (vs. degraded metrics) is a diagnostic signature of pre-timestep-output numerical failure, distinguishable from physiological mismatch"
+    ],
+    "parameters_involved": [
+      "fates_cnp_vmax_p",
+      "fates_l2fr_init"
+    ],
+    "do_not_repeat": [
+      "Do NOT expand fates_cnp_vmax_p for PFT 10 from 5e-11 to any value above 5e-09 in a single step",
+      "Do NOT expand fates_cnp_vmax_p for PFT 9 above 5e-03 without first confirming model stability at 5e-04",
+      "Do NOT combine multi-order-of-magnitude vmax_p range expansion with coordinated l2fr changes in the same experiment — isolate vmax_p first"
+    ],
+    "references": []
+  },
+  "vmax_p_extreme_range_expansion_crash": {
+    "source": "auto_discovered",
+    "confidence": 0.72,
+    "verified": false,
+    "date_added": "2026-03-11T02:11:12.369919",
+    "description": "Simultaneous extreme range expansion of fates_cnp_vmax_p across multiple PFTs causes model crash before output generation, not gradual degradation",
+    "mechanism": "When fates_cnp_vmax_p is expanded by more than ~3 orders of magnitude for any single PFT, or when multiple PFTs receive coordinated range expansions simultaneously, the ECA competition solver encounters numerical instability. The ECA competition framework solves a system of equations for substrate-enzyme-consumer complexes; extreme vmax_p values make this system stiff or ill-conditioned, causing the numerical solver to fail. Additionally, stoichiometric imbalance from excessive P uptake relative to C and N availability may trigger cascading mortality that collapses the cohort population before output is written. PFT 10's required 5-order-of-magnitude expansion (5e-11 to ~1e-06) is particularly dangerous as it falls outside any empirically validated range.",
+    "affects": [
+      "FATES_PUPTAKE_SZPF",
+      "FATES_FROOTC",
+      "FATES_LEAFC",
+      "ECA_Competition"
+    ],
+    "implications": [
+      "fates_cnp_vmax_p range expansion must be done incrementally (maximum ~1 order of magnitude per experiment) rather than jumping to target range",
+      "Multi-PFT simultaneous vmax_p expansion is higher risk than single-PFT modification; isolate PFTs in separate experiments first",
+      "PFT 10 with baseline vmax_p of 5e-11 may have a fundamentally different physiological representation than PFTs 7 and 9; the extreme low value may be intentional (e.g., non-mycorrhizal or lichen PFT with minimal active P uptake)",
+      "When base case value is 5e-11 and target is 1e-06, consider whether the parameter interpretation is correct for that PFT before range expansion",
+      "Coordinate vmax_p changes with ECA competition parameters (fates_cnp_eca_km_p, fates_cnp_eca_vmax_uptake) to maintain realistic competitive dynamics"
+    ],
+    "parameters_involved": [
+      "fates_cnp_vmax_p"
+    ],
+    "do_not_repeat": [
+      "Do not expand fates_cnp_vmax_p by more than 1-2 orders of magnitude in a single experiment step",
+      "Do not modify fates_cnp_vmax_p for three or more PFTs simultaneously without first validating single-PFT stability",
+      "Do not set fates_cnp_vmax_p for PFT 10 above 5e-09 without intermediate validation steps given its anomalously low baseline of 5e-11"
+    ],
+    "references": []
+  },
+  "cnp_vmax_l2fr_coupling_catastrophe": {
+    "source": "auto_discovered",
+    "confidence": 0.78,
+    "verified": false,
+    "date_added": "2026-03-11T02:11:43.899291",
+    "description": "Simultaneously expanding fates_cnp_vmax_p by orders of magnitude while contracting fates_allom_l2fr causes model crash via internally inconsistent CNP-allocation state.",
+    "mechanism": "fates_cnp_vmax_p and fates_allom_l2fr are mechanistically coupled: l2fr sets the fine root biomass pool (FATES_FROOTC) which is the physical substrate for P uptake, while vmax_p sets the kinetic capacity per unit root. Expanding vmax_p by >2 orders of magnitude while simultaneously contracting l2fr creates a state where kinetic capacity vastly exceeds structural capacity, causing contradictions in the ECA competition equilibrium that lead to numerical solver failure. Additionally, expanding vmax_p across 3 PFTs simultaneously destabilizes inter-PFT ECA competition partitioning. The model cannot recover from these combined inconsistencies within a single timestep and crashes without producing output.",
+    "affects": [
+      "FATES_FROOTC",
+      "FATES_PUPTAKE_SZPF",
+      "FATES_LEAFC",
+      "FATES_L2FR"
+    ],
+    "implications": [
+      "fates_cnp_vmax_p must never be changed by more than ~1-2 orders of magnitude per experiment relative to baseline",
+      "fates_allom_l2fr and fates_cnp_vmax_p must be modified in coordinated, directionally consistent steps—not in opposition",
+      "ECA competition is fragile when >2 PFTs have simultaneous large vmax_p changes; modify one PFT at a time",
+      "Any experiment touching both allocation geometry (l2fr) and nutrient kinetics (vmax_p) must verify structural-kinetic consistency before submission",
+      "Model crash with missing NC file (not degraded metrics) signals pre-simulation or early-spinup numerical failure, not a calibration mismatch"
+    ],
+    "parameters_involved": [
+      "fates_cnp_vmax_p",
+      "fates_allom_l2fr",
+      "fates_cnp_pid_kp"
+    ],
+    "do_not_repeat": [
+      "Do NOT simultaneously expand fates_cnp_vmax_p by >2 orders of magnitude AND contract fates_allom_l2fr for the same or interacting PFTs",
+      "Do NOT modify fates_cnp_vmax_p for more than 2 PFTs in a single experiment when changes exceed 10x",
+      "Do NOT attempt 5-order-of-magnitude range expansion for fates_cnp_vmax_p in a single experimental step"
+    ],
+    "references": []
+  },
+  "multi_pft_vmax_l2fr_crash_instability": {
+    "source": "auto_discovered",
+    "confidence": 0.78,
+    "verified": false,
+    "date_added": "2026-03-11T02:12:20.106579",
+    "description": "Simultaneous multi-order-of-magnitude expansion of fates_cnp_vmax_p across 3 PFTs combined with large fates_allom_l2fr reduction causes catastrophic numerical crash before any output is produced.",
+    "mechanism": "The ECA competition solver in FATES is sensitive to the ratio of vmax_p to km_p and to the consistency between root biomass (set by l2fr) and uptake capacity (set by vmax_p). When vmax_p is expanded by 4-5 orders of magnitude for PFT 10 while km_p is simultaneously shifted lower for the same PFT, the ECA uptake equations enter a regime of near-saturated, extremely high flux that can produce negative soil P pool values within a single timestep, triggering a Fortran runtime error or NaN propagation. Simultaneously reducing l2fr for PFT 9 from 18 to ~4 while also raising vmax_p for PFT 9 creates a stoichiometric inconsistency: the plant has fewer roots but each root is far more active, which the allocation solver may interpret as a demand signal that cannot be satisfied, causing divergence. The combination of these effects across three PFTs means there is no 'safe' PFT to anchor the simulation numerically.",
+    "affects": [
+      "FATES_FROOTC",
+      "FATES_PUPTAKE_SZPF",
+      "FATES_LEAFC",
+      "FATES_L2FR"
+    ],
+    "implications": [
+      "fates_cnp_vmax_p should never be expanded by more than 2 orders of magnitude in a single experiment, especially when km_p is simultaneously modified for the same PFT",
+      "fates_allom_l2fr reductions >50% of current value must be decoupled from vmax_p increases to avoid stoichiometric inconsistency in the allocation solver",
+      "Changes to ECA parameters (vmax_p, km_p) for PFT 10 must be tested individually before combining with allocation changes (l2fr) for other PFTs",
+      "Multi-PFT parameter changes in the CNP subsystem should be staged: first validate each PFT in isolation, then combine",
+      "When NC file is absent (not just empty), the cause is almost certainly a Fortran runtime crash, not a missing output variable — check model logs for NaN or negative pool errors"
+    ],
+    "parameters_involved": [
+      "fates_cnp_vmax_p",
+      "fates_allom_l2fr",
+      "fates_cnp_eca_km_p"
+    ],
+    "do_not_repeat": [
+      "Do NOT expand fates_cnp_vmax_p by more than 2 orders of magnitude for any single PFT in a single experiment",
+      "Do NOT simultaneously modify vmax_p AND km_p for the same PFT in the same experiment — test one at a time",
+      "Do NOT combine fates_allom_l2fr reduction >50% with fates_cnp_vmax_p increase for the same or interacting PFTs in a single run",
+      "Do NOT apply CNP kinetic range expansions across 3+ PFTs simultaneously — use factorial or sequential single-PFT experiments instead"
+    ],
+    "references": []
+  },
+  "compound_range_expansion_crash": {
+    "source": "auto_discovered",
+    "confidence": 0.82,
+    "verified": false,
+    "date_added": "2026-03-11T02:13:00.556733",
+    "description": "Simultaneous multi-order-of-magnitude parameter range expansions across 6 interdependent CNP parameters cause model crash with no NC output",
+    "mechanism": "ELM-FATES cannot tolerate simultaneous extreme modifications to interdependent phosphorus uptake (vmax_p), root allocation (l2fr), ECA competition (eca_km_p), and storage (phos_store_ratio) parameters. The ECA competition solver appears particularly vulnerable: when vmax_p is increased by 4-5 orders of magnitude while eca_km_p is simultaneously reduced, the effective uptake affinity becomes pathologically high, likely causing the ECA system to produce negative or infinite concentrations that crash the integration. Independently, reducing l2fr from 18.31 to ~4.5 represents a 75% reduction in root demand that, when combined with high vmax_p, creates a contradictory state where the model cannot reconcile high uptake capacity with low root biomass targets.",
+    "affects": [
+      "FATES_FROOTC",
+      "FATES_LEAFC",
+      "FATES_STOREP",
+      "FATES_L2FR",
+      "FATES_PUPTAKE_SZPF"
+    ],
+    "implications": [
+      "Parameter range expansions must be validated one at a time or in small coordinated pairs before combining",
+      "fates_cnp_vmax_p for PFT 10 requires staged expansion: first validate at 1e-9, then 1e-8, then 1e-7, not jumping directly to 1e-6",
+      "fates_allom_l2fr and fates_cnp_vmax_p are mechanistically coupled and must be modified in coordination with mass balance checks between root demand and uptake capacity",
+      "The ECA solver has numerical stability limits when vmax_p/eca_km_p ratio changes by more than ~2 orders of magnitude simultaneously",
+      "Any experiment flagged 'RANGE EXPANSION REQUIRED' should be decomposed into sequential single-parameter validation runs before combination"
+    ],
+    "parameters_involved": [
+      "fates_cnp_vmax_p",
+      "fates_allom_l2fr",
+      "fates_cnp_eca_km_p",
+      "fates_cnp_phos_store_ratio"
+    ],
+    "do_not_repeat": [
+      "Do NOT simultaneously expand fates_cnp_vmax_p by >2 orders of magnitude AND reduce fates_allom_l2fr by >50% in the same experiment",
+      "Do NOT combine fates_cnp_vmax_p range expansion with fates_cnp_eca_km_p range reduction in the same run without intermediate validation",
+      "Do NOT run experiments with 6 simultaneous parameter modifications when any single modification involves >1 order of magnitude change",
+      "Do NOT proceed with a combined experiment when individual parameter modifications are annotated as requiring range validation first"
+    ],
+    "references": []
+  },
+  "diagnostic_placeholder_causes_nc_missing": {
+    "source": "auto_discovered",
+    "confidence": 0.97,
+    "verified": false,
+    "date_added": "2026-03-11T02:14:38.481374",
+    "description": "Submitting experiments with non-numeric placeholder strings as parameter values always produces a missing NC file error and zero targets met.",
+    "mechanism": "ELM-FATES parameter ingestion routines require valid floating-point scalars for all modified parameters. When a parameter entry contains a string or null value, the model configuration step fails silently or aborts prior to time-stepping, so no history files are written. The calibration framework then reports 'NC file not found' and records 0/N targets met. This failure mode is indistinguishable at the results level from a genuine model crash, but its root cause is purely a pre-simulation workflow error: the two-step process of (1) extracting best-fit values from a reference run and (2) submitting a new simulation with those values was collapsed into a single, unexecutable experiment definition.",
+    "affects": [
+      "FATES_FROOTC",
+      "FATES_LEAFC",
+      "FATES_L2FR",
+      "FATES_PUPTAKE_SZPF"
+    ],
+    "implications": [
+      "All diagnostic extraction steps must be completed and resolved to numeric values BEFORE an experiment is submitted to the simulation queue.",
+      "Experiment definitions that reference external cases by ID (e.g., 'Case #1386') require an explicit pre-processing step to populate numeric values prior to job submission.",
+      "A validation gate should be added to the experiment submission pipeline to reject any parameter entry that is non-numeric or contains string tokens like 'DIAGNOSTIC ONLY'.",
+      "Re-centering an ensemble around a high-performing member (Case #1386) is a valid calibration strategy for the {fates_cnp_vmax_p, fates_allom_l2fr, fates_cnp_eca_vmax_ptase} parameter group, but must be executed as a two-stage workflow.",
+      "The failure produces a misleading signal (0/6 targets) that could be misinterpreted as a physics failure rather than a workflow failure if not carefully annotated."
+    ],
+    "parameters_involved": [
+      "fates_cnp_vmax_p",
+      "fates_allom_l2fr",
+      "fates_cnp_eca_vmax_ptase"
+    ],
+    "do_not_repeat": [
+      "Do NOT submit experiments where any parameter new_value field contains a non-numeric string or placeholder text — resolve all values to floats before submission.",
+      "Do NOT combine the diagnostic extraction step and the forward simulation step into a single experiment record.",
+      "Do NOT interpret 0/N targets met from a missing NC file as evidence of model physics failure without first verifying that all parameter values were valid numerics."
+    ],
+    "references": []
+  },
+  "diagnostic_placeholder_submission_failure": {
+    "source": "auto_discovered",
+    "confidence": 0.95,
+    "verified": false,
+    "date_added": "2026-03-11T02:15:10.899271",
+    "description": "Submitting experiments with unresolved placeholder parameter values ('DIAGNOSTIC ONLY') causes complete simulation failure with no output NC file generated.",
+    "mechanism": "The calibration pipeline does not validate that all parameter values are concrete floats before job submission. When a parameter modification entry contains a string descriptor instead of a numeric value, the parameter file generation either silently reverts to the base-case value or produces a malformed parameter file, in either case yielding no valid output. The error 'Extracted NC file not found' is the downstream symptom of this upstream workflow gap. This is distinct from a model crash caused by physically unreasonable parameter values — the simulation never meaningfully ran.",
+    "affects": [
+      "FATES_FROOTC",
+      "FATES_LEAFC",
+      "FATES_L2FR",
+      "FATES_PUPTAKE_SZPF",
+      "ECA_Competition",
+      "RD_Competition"
+    ],
+    "implications": [
+      "All parameter values MUST be resolved to concrete floating-point numbers before experiment submission; string placeholders are not acceptable in any parameter slot.",
+      "A pre-submission validation step should check that every 'new_value' field is numeric (not a string) before the job is queued.",
+      "The intended scientific goal (re-centering the ensemble around Case #1386 optimal values for PFTs 7, 9, and 10) remains valid and should be re-attempted once Case #1386 parameter values are explicitly extracted and recorded.",
+      "The combination of fates_cnp_vmax_p, fates_allom_l2fr, fates_cnp_eca_vmax_ptase, and fates_cnp_eca_decompmicc across PFTs 7, 9, and 10 represents a scientifically coherent multi-process hypothesis linking P-uptake kinetics, phosphatase activity, microbial competition, and root allocation — this hypothesis should be tested once concrete values are available.",
+      "Case #1386 should be explicitly documented in the knowledge base with its parameter values extracted and stored before any dependent experiments are designed."
+    ],
+    "parameters_involved": [
+      "fates_cnp_vmax_p",
+      "fates_allom_l2fr",
+      "fates_cnp_eca_vmax_ptase",
+      "fates_cnp_eca_decompmicc"
+    ],
+    "do_not_repeat": [
+      "Do NOT submit any experiment where 'new_value' contains a string descriptor, placeholder text, or any non-numeric entry.",
+      "Do NOT design experiments that depend on values from another case ('extract Case #X value') without first confirming those values are available, recorded, and inserted into the experiment specification.",
+      "Do NOT use 'DIAGNOSTIC ONLY' as a modifier label in an active experiment submission — diagnostic intent should be resolved to an actual parameter sweep or observation run before submission."
+    ],
     "references": []
   }
 }

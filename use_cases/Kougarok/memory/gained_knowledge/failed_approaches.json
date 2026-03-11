@@ -671,6 +671,349 @@
         "Modify PID controller response during drought"
       ],
       "date_added": "2026-01-18T08:34:17.929975"
+    },
+    {
+      "approach": "Increasing fates_cnp_vmax_p by extreme amounts (>100x) for single PFT",
+      "experiment_id": "Exp1_P-uptake Restoration Hypothesis",
+      "why_failed": "Creates severe imbalance between uptake capacity and storage/utilization, likely causing numerical instabilities or stress responses",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Moderate vmax_p increases (2-10x) combined with proportional storage increases",
+        "Adjust ECA competition parameters (km_ptase, vmax_ptase) alongside vmax_p",
+        "Implement gradual changes across multiple parameters affecting P cycling"
+      ],
+      "date_added": "2026-02-11T02:12:28.401814"
+    },
+    {
+      "approach": "Increase P-uptake parameters (vmax_p, eca_vmax_ptase) by 1000x to overcome P limitation",
+      "experiment_id": "Exp2_P-uptake Restoration Hypothesis",
+      "why_failed": "P-uptake is not the limiting step; downstream allocation, storage, or utilization constraints prevent increased uptake from improving plant performance",
+      "severity": "no_effect",
+      "alternatives": [
+        "Identify and modify P storage parameters if they exist",
+        "Adjust P allocation fractions to different plant pools",
+        "Moderate increases (2-5x) in uptake combined with allocation changes",
+        "Investigate P recycling and turnover parameters"
+      ],
+      "date_added": "2026-02-11T02:12:50.065925"
+    },
+    {
+      "approach": "Extreme unilateral increase of P-uptake parameters (1000x) for PFTs 9 and 10",
+      "experiment_id": "Exp3_P-uptake Restoration Hypothesis",
+      "why_failed": "Created physiological impossibility where P influx exceeded utilization/storage capacity, causing model failure",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Gradual increases (10x, then 50x, then 100x) with monitoring",
+        "Coupled adjustments: increase vmax_p with store_ratio and growth parameters",
+        "Focus on P-uptake efficiency (eca_alpha_ptase) rather than raw rates"
+      ],
+      "date_added": "2026-02-11T02:13:12.893969"
+    },
+    {
+      "approach": "Isolated extreme increase (>100x) in phosphorus uptake capacity for nutrient-limited PFTs",
+      "experiment_id": "c0_exp1",
+      "why_failed": "Creates severe stoichiometric imbalances and potential toxicity effects that reduce rather than enhance biomass",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Modest coordinated increases in both N and P uptake (2-5x)",
+        "Adjust ECA kinetic parameters to moderate uptake efficiency",
+        "Increase storage capacity before uptake rates"
+      ],
+      "date_added": "2026-03-05T12:06:15.966083"
+    },
+    {
+      "approach": "Massive increase in phosphorus uptake kinetics (1000x) for Arctic graminoid to address biomass deficit",
+      "experiment_id": "c0_exp2",
+      "why_failed": "PFT10 is not phosphorus-limited but rather carbon or nitrogen limited. The 90% biomass error persisted despite extreme P uptake enhancement.",
+      "severity": "no_effect",
+      "alternatives": [
+        "Increase Vcmax25 and Jmax25 for PFT10 to enhance carbon assimilation",
+        "Adjust fates_allom_d2bl1 and fates_allom_d2bl2 to increase biomass per unit DBH",
+        "Increase nitrogen uptake parameters (vmax_nh4, vmax_no3) for PFT10",
+        "Reduce growth respiration fraction for PFT10"
+      ],
+      "date_added": "2026-03-05T12:06:45.060075"
+    },
+    {
+      "approach": "Extreme ECA parameter increases (1000x) combined with root allocation reduction for PFT10",
+      "experiment_id": "c0_exp3",
+      "why_failed": "Created severe competitive disadvantage in ECA competition despite high per-unit uptake rates due to insufficient root biomass",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Moderate vmax increases (2-10x) with maintained or increased root allocation",
+        "Sequential calibration: first optimize allocation, then fine-tune uptake kinetics",
+        "Focus on PID controller parameters to improve nutrient use efficiency rather than raw uptake rates"
+      ],
+      "date_added": "2026-03-05T12:07:12.485167"
+    },
+    {
+      "approach": "Simultaneous extreme increase in P uptake capacity (1000x) with severe reduction in root allocation (L2FR 9.879->2.0) for PFT10",
+      "experiment_id": "c0_exp4",
+      "why_failed": "Created catastrophic growth collapse where plants could neither grow leaves (5% of observed) nor roots (0.8% of observed) due to mismatched uptake capacity and allocation",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Moderate vmax_p increases (2-10x) with maintained or increased L2FR",
+        "If reducing L2FR, must reduce uptake parameters proportionally",
+        "Focus on PFT7 modifications which showed more reasonable responses"
+      ],
+      "date_added": "2026-03-05T12:07:40.490117"
+    },
+    {
+      "approach": "Extreme P uptake enhancement (1000x) combined with reduced root allocation in graminoids",
+      "experiment_id": "c0_exp5",
+      "why_failed": "Created severe carbon-nutrient imbalance leading to biomass collapse due to excessive metabolic costs and insufficient root support",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Moderate P uptake increases (2-10x) while maintaining or increasing L2FR",
+        "Co-optimize uptake parameters with storage buffers to handle transient imbalances",
+        "Focus on shrub PFTs which show more resilience to parameter modifications"
+      ],
+      "date_added": "2026-03-05T12:08:10.046996"
+    },
+    {
+      "approach": "Extreme range expansion of fates_cnp_vmax_p by 5 orders of magnitude (5e-11 to range [5e-09, 5e-03], center 1e-06) for PFT 10 in experiment s0311h01_c0_exp1",
+      "experiment_id": "s0311h01_c0_exp1",
+      "why_failed": "Hard model crash with no output file generated. The 5-order-of-magnitude expansion of the phosphorus uptake Vmax parameter drove numerical instability in the ECA competition solver, causing mass balance violations in CNP cycling and a complete simulation failure before any output could be written.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Restrict fates_cnp_vmax_p exploration to [5e-12, 5e-10] (1 order of magnitude on each side of default)",
+        "Use log-scale perturbations of fates_cnp_vmax_p with maximum step size of 0.5 log-units per experiment iteration",
+        "If P uptake needs to increase substantially, consider adjusting fates_cnp_eca_km_ps (half-saturation constant) instead, which has lower sensitivity to numerical instability",
+        "Run a stability sweep with single-parameter perturbations of fates_cnp_vmax_p at 2x, 5x, 10x, 50x, 100x default to identify the crash threshold before attempting range expansion"
+      ],
+      "date_added": "2026-03-11T01:35:50.197367"
+    },
+    {
+      "approach": "Extreme multi-order-of-magnitude range expansion of fates_cnp_vmax_p (5e-09 to 5e-03 for PFT 10, 5e-07 to 5e-03 for PFT 9) combined with coordinated l2fr_ini reduction in a single experiment",
+      "experiment_id": "s0311h01_c0_exp2",
+      "why_failed": "The proposed parameter ranges are too far from physically plausible defaults for Arctic tundra PFTs, causing ECA solver divergence or soil P pool exhaustion that aborts the simulation before any output can be written. The combination of extreme vmax_p with l2fr_ini reduction creates contradictory nutrient uptake signals that compound numerical instability. No output file was generated, confirming catastrophic failure rather than degraded performance.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Perform incremental vmax_p increases of 1 order of magnitude per experiment step, verifying model stability at each step before proceeding",
+        "Use sensitivity analysis (Morris screening) with narrow perturbation ranges (±50% of default) to identify the stable operating envelope before range expansion",
+        "Modify vmax_p for only one PFT at a time to isolate ECA competition effects",
+        "If l2fr_ini must be co-varied with vmax_p, compute net uptake capacity change first and ensure it remains within 1 order of magnitude of default net uptake",
+        "Start from a known-stable intermediate parameter set rather than attempting to jump directly to extreme bounds"
+      ],
+      "date_added": "2026-03-11T01:36:19.151846"
+    },
+    {
+      "approach": "Simultaneous multi-PFT fates_cnp_vmax_p range expansion (>3 orders of magnitude) coordinated with fates_l2fr reduction, using placeholder 'RANGE EXPANSION REQUIRED' values instead of concrete numbers.",
+      "experiment_id": "s0311h01_c0_exp3",
+      "why_failed": "The experiment was malformed at submission (placeholder values rather than concrete numbers) and the intended parameter changes were too extreme for the ECA solver to handle. No NC output was produced, confirming a model crash rather than a poor-fit result. This represents a complete experimental design failure: the experiment was neither executable nor interpretable.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Test fates_cnp_vmax_p for each PFT individually, starting with a 10x increase from baseline and validating model execution before expanding further.",
+        "Use a binary search between the original value and the target maximum to find the stability boundary for each PFT.",
+        "First establish stable l2fr values in isolation, then introduce vmax_p changes in a subsequent experiment.",
+        "For PFT 10 (pathologically low at 5e-11), start with 5e-10 as a conservative first step and verify ECA competition outputs are physically reasonable before proceeding to 1e-09 or higher.",
+        "Run a single-PFT sensitivity scan (e.g., 5 values spanning 3 orders of magnitude for one PFT at a time) to map the stability envelope before multi-PFT combinations."
+      ],
+      "date_added": "2026-03-11T01:36:49.167857"
+    },
+    {
+      "approach": "Coordinated multi-PFT vmax_p range expansion (4-6 orders of magnitude) combined with l2fr contraction for shared PFTs in a single experiment, with the intent of simultaneously relieving P limitation and correcting root allocation bias.",
+      "experiment_id": "s0311h01_c0_exp4",
+      "why_failed": "The experiment produced no NC output file, indicating a catastrophic model crash rather than a degraded run. The mechanistic cause is likely ECA solver numerical instability arising from the contradictory signals of extreme P uptake capacity (high vmax_p) paired with structurally reduced fine root biomass (low l2fr). Applying this across 3 PFTs simultaneously compounded the instability. The approach conflates two independent calibration objectives (P uptake capacity and root allocation balance) that need to be addressed sequentially, not simultaneously.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Stage vmax_p expansion incrementally: first expand by 1-2 orders of magnitude for one PFT (e.g., PFT 10 as most deficient), verify model stability and output, then proceed to next PFT.",
+        "Decouple the l2fr and vmax_p adjustments into separate experiments: first fix l2fr for PFT 9 alone (holding vmax_p constant), evaluate root allocation metrics, then address vmax_p separately.",
+        "If both parameters must move, ensure they move in a mechanistically consistent direction: if l2fr decreases (fewer roots per leaf), reduce vmax_p proportionally to maintain consistent total P uptake flux, rather than increasing it.",
+        "Consider reducing fates_cnp_pid_kp as a stabilizing first step before any vmax_p range expansion, to give the allocation PID controller more headroom to respond to the new uptake signal.",
+        "Use a factorial design with small perturbations (±50% rather than orders of magnitude) to first establish the sensitivity surface before attempting large range expansions."
+      ],
+      "date_added": "2026-03-11T01:37:25.321943"
+    },
+    {
+      "approach": "Simultaneous multi-order-of-magnitude expansion of fates_cnp_vmax_p across multiple PFTs (7, 9, 10) combined with fates_allom_l2fr contraction for PFT9 and fates_cnp_eca_km_p downward shift for PFT10 in a single experiment",
+      "experiment_id": "s0311h01_c0_exp5",
+      "why_failed": "The compound parameter modifications violated ECA solver numerical stability constraints. The model produced no NC output (catastrophic crash), indicating the failure occurred before any simulation timestep completed. The root cause is the divergence between vmax_p (increased by 3-5 orders of magnitude) and km_p (decreased), creating a near-singular uptake response in the ECA competition framework. This is compounded by the l2fr contraction creating discontinuous fine root pool states. The experiment was overspecified—too many large changes simultaneously make it impossible to diagnose which parameter caused the crash.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Stage the experiment: first test fates_cnp_vmax_p for a single PFT (e.g., PFT10 only) at moderate increase (1e-09 to 1e-08) to confirm model stability",
+        "If increasing vmax_p, keep eca_km_p at baseline or increase proportionally to maintain a stable vmax/km ratio",
+        "Apply fates_allom_l2fr contraction for PFT9 in a separate experiment from vmax_p modifications to isolate effects",
+        "Use a factorial design with single-parameter perturbations first to identify safe operating ranges before combining parameters",
+        "Validate vmax_p range by starting at current value and increasing by 10x increments with model-stability checks at each step",
+        "For arctic mycorrhizal adaptation hypothesis (lower km_p), test it independently with PFT10 only and current vmax_p values before combining with vmax_p expansion"
+      ],
+      "date_added": "2026-03-11T01:38:03.196717"
+    },
+    {
+      "approach": "Simultaneous large-magnitude range restructuring of 6 coupled CNP and allocation parameters (vmax_p x3 PFTs, l2fr, eca_km_p, phos_store_ratio) in a single experiment with no incremental validation",
+      "experiment_id": "s0311h01_c0_exp6",
+      "why_failed": "The experiment produced a catastrophic crash (no NC output file) before any metrics could be evaluated. The most probable mechanism is ECA solver divergence caused by the contradictory combination of drastically reduced fineroot biomass (l2fr contraction for PFT 9) and massively expanded P uptake capacity (vmax_p expansion), compounded by runaway luxury P storage (phos_store_ratio elevation). There is zero diagnostic information to guide parameter adjustment because the simulation did not complete.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Stage 1: Validate fates_allom_l2fr contraction for PFT 9 alone (18.31 -> 8.0) and confirm FATES_FROOTC and FATES_L2FR outputs are physically reasonable before touching vmax_p",
+        "Stage 2: After l2fr is stable, test vmax_p expansion for a single PFT (e.g., PFT 10 only) with a conservative 1 order of magnitude increase, not 4",
+        "Stage 3: Only after both l2fr and vmax_p are individually validated, test their interaction for PFT 9 with modest coordinated adjustments",
+        "Use single-PFT sensitivity experiments (Morris one-at-a-time) to establish safe operating ranges for each parameter before multi-PFT optimization",
+        "Set vmax_p upper bounds to no more than 10x baseline in initial range expansion experiments, expanding further only after confirming numerical stability"
+      ],
+      "date_added": "2026-03-11T01:38:38.915988"
+    },
+    {
+      "approach": "Direct range expansion of fates_cnp_vmax_p from 5e-11 baseline to center value 1e-06 (5 orders of magnitude increase) for PFT 10 in a single experiment step.",
+      "experiment_id": "s0311h01_c0_exp1",
+      "why_failed": "Model crashed catastrophically with no NC output file produced. The ECA phosphorus competition solver cannot handle vmax_p values that produce P uptake fluxes exceeding available soil pool sizes within a timestep. The 5-order-of-magnitude jump bypassed any numerical stability regime and caused a runtime error before any model output was generated.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Incremental stepping: Test vmax_p at 5e-10, 5e-09, 5e-08, 5e-07 sequentially, checking NC output and ECA solver convergence diagnostics at each step before proceeding.",
+        "Binary search stability: Use bisection between 5e-11 (stable) and 1e-06 (crashed) to find the maximum stable vmax_p value — start at geometric midpoint ~2e-09.",
+        "Log-space sensitivity: Conduct Morris or Sobol sensitivity analysis using log-transformed vmax_p with narrow initial bounds (1 order of magnitude) before expanding to the full proposed range.",
+        "Check ECA solver timestep: Investigate whether reducing the ECA solver tolerance or adding a flux limiter in the FATES code would allow stable simulation at higher vmax_p values.",
+        "Examine soil P pool size: If target is to remove P limitation, consider modifying soil P availability parameters (e.g., initial P pools) rather than vmax_p alone, which may achieve the biological goal without triggering numerical instability."
+      ],
+      "date_added": "2026-03-11T02:10:13.387107"
+    },
+    {
+      "approach": "Multi-order-of-magnitude range expansion of fates_cnp_vmax_p (>2 orders) for arctic PFTs 9 and 10 combined with coordinated l2fr_ini adjustment in a single experiment",
+      "experiment_id": "s0311h01_c0_exp2",
+      "why_failed": "Catastrophic numerical failure — no NC output file generated. The ECA/RD phosphorus uptake solver cannot handle vmax_p values spanning 5 orders of magnitude from the calibrated base. The model crashes before producing any diagnostics, making this approach uninformative for calibration and impossible to score against targets.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Incremental single-order-of-magnitude vmax_p expansion: test PFT 10 at 5e-10 first, confirm model runs, then 5e-09",
+        "Isolate vmax_p sensitivity for each PFT separately before combining PFT 9 and PFT 10 changes",
+        "Run Morris sensitivity analysis on vmax_p within a conservative ±50% range around current values before expanding bounds",
+        "If large vmax_p is mechanistically required, first identify and adjust ECA competition parameters (e.g., Km half-saturation) to maintain numerical stability at high vmax_p",
+        "Use a bisection search: test midpoint between known-good and proposed-bad values to find the stability boundary"
+      ],
+      "date_added": "2026-03-11T02:10:43.990281"
+    },
+    {
+      "approach": "Simultaneous extreme range expansion of fates_cnp_vmax_p for PFTs 7, 9, and 10 with magnitude changes of 3-5 orders of magnitude in a single experiment",
+      "experiment_id": "s0311h01_c0_exp3",
+      "why_failed": "Complete model crash (no NetCDF output generated) due to numerical instability in ECA competition solver or stoichiometric cascade failure triggered by unrealistic phosphorus uptake rates. The simultaneous modification of three PFTs with extreme value changes made it impossible to isolate the failing component and prevented any useful diagnostic information from being captured.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Incremental single-PFT vmax_p expansion: modify one PFT at a time with maximum 1 order of magnitude change per step, validating numerical stability before proceeding",
+        "For PFT 10 specifically, first verify whether 5e-11 is intentional (non-vascular plant, lichen) vs. erroneous default before any expansion",
+        "Use fates_dev_arbitrary or diagnostic runs to probe ECA solver stability at intermediate vmax_p values before committing to full range expansion",
+        "Coordinate vmax_p expansion with ECA Km parameters to maintain biologically realistic uptake kinetics (Michaelis-Menten constraint: vmax/Km ratio should remain within 10x of baseline)"
+      ],
+      "date_added": "2026-03-11T02:11:12.377041"
+    },
+    {
+      "approach": "Coordinated simultaneous multi-PFT fates_cnp_vmax_p range expansion (orders of magnitude) combined with fates_allom_l2fr contraction for interdependent PFTs in a single experiment",
+      "experiment_id": "s0311h01_c0_exp4",
+      "why_failed": "The combination of kinetic capacity expansion (vmax_p, up to 5 orders of magnitude) and structural root allocation contraction (l2fr from 18.31 to ~4.5) created an internally inconsistent CNP-allocation state. ECA competition among multiple PFTs with simultaneously altered vmax_p values caused numerical solver instability, resulting in complete model crash with no NC output produced. This is a structural incompatibility, not a parameter value issue that can be tuned.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Modify fates_cnp_vmax_p for one PFT at a time, with incremental steps of no more than 1 order of magnitude per experiment",
+        "If l2fr must be reduced, first reduce it alone and confirm stable output, then adjust vmax_p in a subsequent experiment",
+        "If vmax_p must be expanded by >2 orders of magnitude for PFT 10, isolate that change in its own experiment before combining with other PFT modifications",
+        "Use Latin Hypercube or Sobol sensitivity sampling within conservative bounds (±50% of baseline) before attempting range expansions",
+        "Verify structural-kinetic consistency: ensure vmax_p * FATES_FROOTC remains within physically plausible P uptake flux range before submitting"
+      ],
+      "date_added": "2026-03-11T02:11:43.906413"
+    },
+    {
+      "approach": "Simultaneous large-magnitude expansion of fates_cnp_vmax_p (4-5 orders of magnitude) across multiple PFTs (7, 9, 10) combined with fates_allom_l2fr range contraction for PFT 9 and fates_cnp_eca_km_p range shift for PFT 10 in a single experiment",
+      "experiment_id": "s0311h01_c0_exp5",
+      "why_failed": "Catastrophic numerical crash — no NC output file produced. The combined effect of extreme vmax_p values, reduced km_p, and inconsistent l2fr/vmax_p ratios drove the ECA solver and/or allocation solver into numerical instability (likely NaN or negative pool values) within the first few timesteps. This is a structural model stability failure, not a biological calibration failure.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Stage experiments: first test vmax_p range expansion for each PFT individually (one PFT per run) to identify safe upper bounds before combining",
+        "Use a maximum vmax_p expansion of 1-2 orders of magnitude per experiment, not 4-5",
+        "Decouple l2fr changes from vmax_p changes: run l2fr adjustment first, verify stability, then introduce vmax_p change",
+        "When exploring large vmax_p ranges, use a logarithmic sweep with checkpointing to identify the crash threshold before committing to full range",
+        "Modify fates_cnp_eca_km_p and fates_cnp_vmax_p for the same PFT in separate experiments to isolate their individual effects on ECA solver stability"
+      ],
+      "date_added": "2026-03-11T02:12:20.113799"
+    },
+    {
+      "approach": "Simultaneous 6-parameter CNP modification with multi-order-of-magnitude vmax_p expansion (PFT 10: 5e-11 to ~1e-6), large l2fr contraction (18.31 to ~4.5), eca_km_p downshift, and phos_store_ratio upshift in a single experiment",
+      "experiment_id": "s0311h01_c0_exp6",
+      "why_failed": "Model crashed with no NC output file produced. The compound modifications created numerical instability, most likely in the ECA phosphorus competition solver where the simultaneous increase in vmax_p and decrease in eca_km_p produced pathological uptake rates. The experiment was annotated internally as requiring range validation before execution, indicating it was not ready for combined testing. This represents a catastrophic failure mode where not even degraded output was produced.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Sequential single-parameter validation: first validate fates_cnp_vmax_p for PFT 10 alone with staged increases (1e-10, 1e-9, 1e-8, 1e-7) to find the numerical stability boundary",
+        "Paired mechanistically-linked modification: test fates_cnp_vmax_p + fates_cnp_eca_km_p together for PFT 10 only, with modest changes (e.g., vmax_p x5, eca_km_p x0.5) to assess ECA solver stability",
+        "Separate allocation experiment: test fates_allom_l2fr reduction for PFT 9 alone (e.g., 18.31 to 12.0 first, then 8.0) before coupling with vmax_p changes",
+        "Fractional factorial design: run 3 separate experiments each covering 2 parameters, then combine only those combinations that individually produce valid outputs",
+        "Use fates_dev_arbitrary as a diagnostic probe to isolate which parameter combination triggers the crash before committing to full experiments"
+      ],
+      "date_added": "2026-03-11T02:13:00.564231"
+    },
+    {
+      "approach": "Submit a calibration experiment with a placeholder or non-numeric parameter value (e.g., 'DIAGNOSTIC ONLY') as a stand-in for fates_cnp_vmax_p while intending to determine the actual value post-hoc from another case.",
+      "experiment_id": "s0311h01_c1_exp1",
+      "why_failed": "The parameter file cannot accept a non-numeric string as a valid value for fates_cnp_vmax_p. The simulation did not produce an NC output file (targets_met: 0 of 6, metrics: {}), indicating either a pre-run configuration error or a silent job failure. Diagnostic intent must be resolved before experiment submission, not after.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Complete the diagnostic step (extract fates_cnp_vmax_p value from Case #1386) BEFORE submitting any experiment that depends on that value.",
+        "Submit a true diagnostic run first (with old_value unchanged and logging enabled) to extract reference values, then submit the calibration experiment as a separate step.",
+        "Implement a pre-submission validation check that rejects experiments with non-numeric parameter values.",
+        "Use a parameter sensitivity sweep around the old_value (5e-11) as a temporary ensemble center while the Case #1386 extraction is pending, and retroactively refine once the reference value is confirmed."
+      ],
+      "date_added": "2026-03-11T02:13:16.233462"
+    },
+    {
+      "approach": "Submitting diagnostic placeholder strings (e.g., 'DIAGNOSTIC ONLY — extract Case #1386 value') as parameter values for fates_cnp_vmax_p and fates_allom_l2fr in a live simulation run",
+      "experiment_id": "s0311h01_c1_exp2",
+      "why_failed": "Non-numeric placeholder strings cannot be parsed by ELM-FATES parameter ingestion routines. The model fails before generating any output NC file, resulting in zero metrics evaluated and a completely uninformative experiment. This approach conflates the diagnostic intent (identifying a reference value) with an actual calibration run.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Before submitting any experiment, extract the actual numeric value from Case #1386 NC/parameter files and hard-code it into the parameter modification block.",
+        "Create a dedicated pre-flight validation step that checks all parameter values are numeric (not placeholder strings) before job submission.",
+        "If the intent is purely diagnostic (reading a value from a reference case), perform the extraction as an offline analysis step — do not submit it as a simulation experiment.",
+        "Maintain a lookup table of verified parameter values from reference cases (e.g., Case #1386) so that extraction is done once and reused reliably in subsequent experiments."
+      ],
+      "date_added": "2026-03-11T02:13:32.393877"
+    },
+    {
+      "approach": "Specifying parameter modification values as string placeholders (e.g., 'DIAGNOSTIC ONLY — extract Case #1386 value') instead of concrete numerical values when submitting experiments for execution",
+      "experiment_id": "s0311h01_c1_exp3",
+      "why_failed": "The simulation framework requires all parameter modifications to be valid numerical values that can be written into the FATES parameter NetCDF file. String placeholders cause the parameter file construction step to fail silently or crash, resulting in no output NC file being generated. The error 'Extracted NC file not found' is the downstream symptom of this upstream workflow misconfiguration. Zero of 6 targets were evaluated because the simulation never ran.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Before submitting an experiment, extract the concrete numerical parameter values from Case #1386 output or parameter files and substitute them as explicit floats in the modification specification (e.g., fates_cnp_vmax_p PFT10 = 7.3e-11, fates_allom_l2fr PFT10 = 11.2, fates_allom_l2fr PFT9 = 15.6)",
+        "Implement a pre-submission validation step that checks all parameter modification values are numeric (not strings) before the experiment is dispatched to the model runner",
+        "If the intent is truly diagnostic and values are unknown, first run a separate data-extraction query against the Case #1386 ensemble database to retrieve the parameter values, record them explicitly, then formulate the experiment with those concrete values",
+        "Use a two-phase workflow: Phase 1 extracts and logs Case #1386 parameter values into the calibration memory system; Phase 2 submits the experiment with those logged values as the new ensemble center"
+      ],
+      "date_added": "2026-03-11T02:13:50.242525"
+    },
+    {
+      "approach": "Submitting experiments with placeholder/string values (e.g., 'DIAGNOSTIC ONLY — extract Case #1386 value') instead of concrete numerical parameter values for fates_cnp_vmax_p and fates_allom_l2fr, intending to resolve them post-submission.",
+      "experiment_id": "s0311h01_c1_exp4",
+      "why_failed": "The parameter file builder requires numerical values; string placeholders prevent valid NetCDF parameter file generation. The simulation either crashes silently or produces no output NC file, causing the extraction pipeline to report a file-not-found error. Zero targets are met because no simulation data exists. This is a pre-submission workflow error: diagnostic extraction of reference case values (e.g., Case #1386) must be completed BEFORE the experiment JSON is finalized and submitted.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Complete the diagnostic extraction of Case #1386 parameter values (fates_cnp_vmax_p for PFT 9 and 10, fates_allom_l2fr for PFT 9 and 10) FIRST, then populate new_value fields with explicit floats before submitting.",
+        "If the intent is to inspect Case #1386 values without running a new simulation, query the existing Case #1386 NC output directly rather than creating a new experiment entry.",
+        "Implement a pre-submission validation step that rejects any experiment modification where new_value is not a finite number, catching this class of error before job submission.",
+        "Use the base case (322) run as the diagnostic reference and extract parameter values programmatically from its parameter NetCDF file rather than relying on manual lookup."
+      ],
+      "date_added": "2026-03-11T02:14:06.565657"
+    },
+    {
+      "approach": "Submitting a multi-parameter modification experiment (fates_cnp_vmax_p PFT9/10, fates_allom_l2fr PFT9/10, fates_cnp_eca_vmax_ptase PFT10) with placeholder string values instead of resolved numeric parameter values, intending to extract target values from Case #1386 at runtime.",
+      "experiment_id": "s0311h01_c1_exp5",
+      "why_failed": "ELM-FATES requires all parameter values to be valid floating-point numbers at simulation launch. String placeholders cause pre-simulation failure with no NC output. The experiment confused a diagnostic intent (find best values) with an executable simulation (use those values). Zero targets were met because no simulation was ever completed.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Step 1: Extract numeric parameter values for fates_cnp_vmax_p (PFT9, PFT10), fates_allom_l2fr (PFT9, PFT10), and fates_cnp_eca_vmax_ptase (PFT10) directly from the Case #1386 parameter file before constructing the experiment record.",
+        "Step 2: Submit a new experiment with all five parameters set to the numerically resolved Case #1386 values as the new ensemble center.",
+        "Add a pre-submission validation script that checks all new_value fields for numeric type and rejects experiments containing non-numeric entries.",
+        "If the intent is ensemble re-centering, use a dedicated re-centering workflow that programmatically reads the best-performing ensemble member's parameter file and populates a new experiment template automatically."
+      ],
+      "date_added": "2026-03-11T02:14:38.489613"
+    },
+    {
+      "approach": "Submitting multi-parameter experiments with 'DIAGNOSTIC ONLY — extract Case #X value' placeholder strings as new_value entries, expecting the pipeline to resolve them automatically or use them as valid parameter inputs.",
+      "experiment_id": "s0311h01_c1_exp6",
+      "why_failed": "The calibration pipeline has no mechanism to resolve string placeholders into numeric parameter values at runtime. The parameter file was either malformed or unchanged from the base case, and no valid NC output file was generated. Zero targets were met because the simulation produced no output to evaluate. This is a pure workflow/data-management failure, not a scientific or physical modeling failure.",
+      "severity": "catastrophic",
+      "alternatives": [
+        "Explicitly extract and record all parameter values from Case #1386 into the knowledge base before designing any dependent experiments.",
+        "Re-run experiment s0311h01_c1_exp6 with all six parameter slots filled with concrete float values sourced from Case #1386.",
+        "Implement a pre-submission validator that rejects any experiment specification containing non-numeric new_value fields.",
+        "If Case #1386 values cannot be recovered, design a targeted sensitivity run around the base-case values for these six parameters (fates_cnp_vmax_p PFTs 9/10, fates_allom_l2fr PFTs 9/10, fates_cnp_eca_vmax_ptase PFT 10, fates_cnp_eca_decompmicc PFT 7) using a ±30% Latin hypercube to identify a new ensemble center independently."
+      ],
+      "date_added": "2026-03-11T02:15:10.907154"
     }
   ]
 }

@@ -30,11 +30,7 @@ memory/logs/
 
 # Site-specific data (except Kougarok reference example)
 use_cases/*/memory/
-!use_cases/Kougarok/memory/
-use_cases/Kougarok/memory/*
 !use_cases/Kougarok/memory/gained_knowledge/
-!use_cases/Kougarok/memory/logs/
-!use_cases/Kougarok/memory/phase_results/
 use_cases/*/config/*_config.sh
 !use_cases/Kougarok/config/
 !use_cases/TEMPLATE/
@@ -44,3 +40,8 @@ use_cases/*/config/*_config.sh
 *.nc
 *.h5
 *.tar.gz
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Run logs (site-specific)

@@ -326,6 +326,8 @@ class Config:
 
     # Session identifier (YYYYMMDD_HHMMSS timestamp, set in main())
     session_id: str = ""
+    # Short session tag for file/case naming (sMMDDhHH, derived from session_id)
+    session_tag: str = ""
 
     # Validation targets (loaded from site config)
     targets: ValidationTargets = field(default_factory=ValidationTargets)
@@ -429,7 +431,10 @@ class CalibrationOrchestrator:
                 # output_dir is already the memory directory (e.g., use_cases/Kougarok/memory)
                 # Don't append another /memory
                 status_dir = str(self.output_dir) if self.output_dir else "memory"
-                self._workflow_status = WorkflowStatus(log_dir=status_dir)
+                self._workflow_status = WorkflowStatus(
+                    log_dir=status_dir,
+                    session_tag=self.config.session_tag
+                )
                 logger.info(f"Workflow status tracker initialized: {self._workflow_status.log_file}")
             except Exception as e:
                 logger.warning(f"Could not initialize workflow status: {e}")
@@ -2249,13 +2254,15 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
 
             logger.info(f"Designed experiments from {len(synthesized)} hypotheses")
 
-            # Tag each experiment with iteration and prefix names with cycle number
-            # to avoid collisions across experiment cycles (c0_exp1, c1_exp1, etc.)
+            # Tag each experiment with iteration and prefix names with session tag
+            # and cycle number to avoid collisions across sessions and experiment
+            # cycles (s0309h23_c0_exp1, s0311h10_c0_exp1, etc.)
             cycle = self.state.experiment_count
+            stag = self.config.session_tag
             for exp in experiments:
                 exp["iteration"] = current_iter
                 old_name = exp.get("name", "unnamed")
-                exp["name"] = f"c{cycle}_{old_name}"
+                exp["name"] = f"{stag}_c{cycle}_{old_name}" if stag else f"c{cycle}_{old_name}"
 
             logger.info(f"Designed {len(experiments)} experiments for iteration {current_iter} "
                          f"(cycle {cycle})")
@@ -2869,8 +2876,8 @@ Examples:
   # Run workflow (source configs first, output-dir auto-detected)
   python orchestrator.py --run
 
-  # Resume from checkpoint (state file is in site memory folder)
-  python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state.json
+  # Resume from checkpoint (state file is session-tagged)
+  python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state_s0309h23.json
 
   # Start from specific phase in calibration round 2 (e.g., 162 params)
   python orchestrator.py --run --start-phase 2 --start-iteration 2
@@ -2980,6 +2987,24 @@ Phase numbers:
 
     # Generate session ID (used for both run log filename and phase log filenames)
     session_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+    # Short session tag for file/case naming: sMMDDhHH (e.g., s0309h23)
+    session_tag = f"s{session_id[4:8]}h{session_id[9:11]}"
+
+    # Append session tag to state file and workflow log paths
+    # so concurrent sessions don't collide (workflow_state_s0309h23.json)
+    if state_file and not args.resume:
+        # Only add session tag for new runs, not resumes
+        state_dir = os.path.dirname(state_file)
+        state_file = os.path.join(state_dir, f"workflow_state_{session_tag}.json")
+        logger.info(f"Session-tagged state file: {state_file}")
+    elif args.resume and state_file:
+        # Extract session_tag from existing state file name if present
+        # e.g., workflow_state_s0309h23.json → s0309h23
+        import re
+        m = re.search(r'workflow_state_(s\d{4}h\d{2})\.json', state_file)
+        if m:
+            session_tag = m.group(1)
+            logger.info(f"Resumed session tag: {session_tag}")
 
     # Create config (values from args override environment/config defaults)
     config = Config(
@@ -2999,7 +3024,8 @@ Phase numbers:
         n_levels=args.n_levels,
         n_parameters=args.n_parameters or 0,
         skip_testing_stagnation_window=args.stagnation_window,
-        session_id=session_id
+        session_id=session_id,
+        session_tag=session_tag
     )
 
     # Create output directory

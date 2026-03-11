@@ -2,5 +2,1027 @@
   "version": "1.0",
   "site": "Kougarok",
   "description": "Site-specific experiment records",
-  "experiments": []
+  "experiments": [
+    {
+      "id": "exp1",
+      "source": "auto_discovered",
+      "date": "2026-02-17T15:41:42.958179",
+      "base_case": 322,
+      "hypothesis": "Root Distribution Correction",
+      "modifications": [
+        {
+          "parameter": "fates_allom_fnrt_prof_a_10",
+          "old_value": 11.0,
+          "new_value": 7.0
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "exp2",
+      "source": "auto_discovered",
+      "date": "2026-02-17T15:41:42.962348",
+      "base_case": 322,
+      "hypothesis": "Root Distribution Correction",
+      "modifications": [
+        {
+          "parameter": "fates_allom_fnrt_prof_a_10",
+          "old_value": 11.0,
+          "new_value": 7.0
+        },
+        {
+          "parameter": "fates_allom_fnrt_prof_b_10",
+          "old_value": 2.0,
+          "new_value": 1.5
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "exp3",
+      "source": "auto_discovered",
+      "date": "2026-02-17T15:41:42.963620",
+      "base_case": 322,
+      "hypothesis": "Root Distribution Correction",
+      "modifications": [
+        {
+          "parameter": "fates_allom_fnrt_prof_a_10",
+          "old_value": 11.0,
+          "new_value": 7.0
+        },
+        {
+          "parameter": "fates_allom_fnrt_prof_b_10",
+          "old_value": 2.0,
+          "new_value": 1.5
+        },
+        {
+          "parameter": "fates_turnover_fnrt_10",
+          "old_value": 1.0,
+          "new_value": 5.0
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp1",
+      "source": "auto_discovered",
+      "date": "2026-03-08T03:55:59.111316",
+      "base_case": 322,
+      "hypothesis": "PFT10 Triple Bottleneck: P Uptake Capacity + Root Turnover + Root Distribution",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": 2.5e-08,
+          "pft": 10
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp2",
+      "source": "auto_discovered",
+      "date": "2026-03-08T03:55:59.122307",
+      "base_case": 322,
+      "hypothesis": "PFT10 Triple Bottleneck: P Uptake Capacity + Root Turnover + Root Distribution",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": 2.5e-08,
+          "pft": 10
+        },
+        {
+          "parameter": "fates_cnp_eca_vmax_ptase",
+          "old_value": 5e-10,
+          "new_value": 2.5e-07,
+          "pft": 10
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp3",
+      "source": "auto_discovered",
+      "date": "2026-03-08T03:55:59.124670",
+      "base_case": 322,
+      "hypothesis": "PFT10 Triple Bottleneck: P Uptake Capacity + Root Turnover + Root Distribution",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": 2.5e-08,
+          "pft": 10
+        },
+        {
+          "parameter": "fates_cnp_eca_vmax_ptase",
+          "old_value": 5e-10,
+          "new_value": 2.5e-07,
+          "pft": 10
+        },
+        {
+          "parameter": "fates_turnover_fnrt",
+          "old_value": 2.428571428571429,
+          "new_value": 4.5,
+          "pft": 10
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp4",
+      "source": "auto_discovered",
+      "date": "2026-03-08T03:55:59.127580",
+      "base_case": 322,
+      "hypothesis": "PFT10 Triple Bottleneck: P Uptake Capacity + Root Turnover + Root Distribution",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": 2.5e-08,
+          "pft": 10
+        },
+        {
+          "parameter": "fates_cnp_eca_vmax_ptase",
+          "old_value": 5e-10,
+          "new_value": 2.5e-07,
+          "pft": 10
+        },
+        {
+          "parameter": "fates_turnover_fnrt",
+          "old_value": 2.428571428571429,
+          "new_value": 4.5,
+          "pft": 10
+        },
+        {
+          "parameter": "fates_allom_fnrt_prof_a",
+          "old_value": 15.624285714285715,
+          "new_value": 8.0,
+          "pft": 10
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp5",
+      "source": "auto_discovered",
+      "date": "2026-03-08T03:55:59.129551",
+      "base_case": 322,
+      "hypothesis": "PFT10 Triple Bottleneck: P Uptake Capacity + Root Turnover + Root Distribution",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": 2.5e-08,
+          "pft": 10
+        },
+        {
+          "parameter": "fates_cnp_eca_vmax_ptase",
+          "old_value": 5e-10,
+          "new_value": 2.5e-07,
+          "pft": 10
+        },
+        {
+          "parameter": "fates_turnover_fnrt",
+          "old_value": 2.428571428571429,
+          "new_value": 4.5,
+          "pft": 10
+        },
+        {
+          "parameter": "fates_allom_fnrt_prof_a",
+          "old_value": 15.624285714285715,
+          "new_value": 8.0,
+          "pft": 10
+        },
+        {
+          "parameter": "fates_allom_fnrt_prof_b",
+          "old_value": 6.054285714285714,
+          "new_value": 4.0,
+          "pft": 10
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp1",
+      "source": "auto_discovered",
+      "date": "2026-03-10T00:45:06.672127",
+      "base_case": 322,
+      "hypothesis": "Systemic P Demand Reset via Dual vmax Reduction + L2FR Rebalancing",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 7,
+          "organ": null
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp2",
+      "source": "auto_discovered",
+      "date": "2026-03-10T00:45:06.689419",
+      "base_case": 322,
+      "hypothesis": "Systemic P Demand Reset via Dual vmax Reduction + L2FR Rebalancing",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 7,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_no3",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 9,
+          "organ": null
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp3",
+      "source": "auto_discovered",
+      "date": "2026-03-10T00:45:06.691566",
+      "base_case": 322,
+      "hypothesis": "Systemic P Demand Reset via Dual vmax Reduction + L2FR Rebalancing",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 7,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_no3",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00021428575,
+          "new_value": 2.14e-06,
+          "pft": 9,
+          "organ": null
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp4",
+      "source": "auto_discovered",
+      "date": "2026-03-10T00:45:06.693794",
+      "base_case": 322,
+      "hypothesis": "Systemic P Demand Reset via Dual vmax Reduction + L2FR Rebalancing",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 7,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_no3",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00021428575,
+          "new_value": 2.14e-06,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 18.31149756,
+          "new_value": 5.2,
+          "pft": 9,
+          "organ": null
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp5",
+      "source": "auto_discovered",
+      "date": "2026-03-10T00:45:06.695780",
+      "base_case": 322,
+      "hypothesis": "Systemic P Demand Reset via Dual vmax Reduction + L2FR Rebalancing",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 7,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_no3",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00021428575,
+          "new_value": 2.14e-06,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 18.31149756,
+          "new_value": 5.2,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 0.8518917117142859,
+          "new_value": 1.8,
+          "pft": 7,
+          "organ": null
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp6",
+      "source": "auto_discovered",
+      "date": "2026-03-10T00:45:06.697920",
+      "base_case": 322,
+      "hypothesis": "Systemic P Demand Reset via Dual vmax Reduction + L2FR Rebalancing",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 7,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_no3",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00021428575,
+          "new_value": 2.14e-06,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 18.31149756,
+          "new_value": 5.2,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 0.8518917117142859,
+          "new_value": 1.8,
+          "pft": 7,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_pid_kd",
+          "old_value": 0.01,
+          "new_value": 0.35,
+          "pft": 10,
+          "organ": null
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "c0_exp7",
+      "source": "auto_discovered",
+      "date": "2026-03-10T00:45:06.700153",
+      "base_case": 322,
+      "hypothesis": "Systemic P Demand Reset via Dual vmax Reduction + L2FR Rebalancing",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 7,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_no3",
+          "old_value": 0.00025,
+          "new_value": 2.5e-06,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_nh4",
+          "old_value": 0.00021428575,
+          "new_value": 2.14e-06,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 18.31149756,
+          "new_value": 5.2,
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 0.8518917117142859,
+          "new_value": 1.8,
+          "pft": 7,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_pid_kd",
+          "old_value": 0.01,
+          "new_value": 0.35,
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_pid_kd",
+          "old_value": 0.01,
+          "new_value": 0.2,
+          "pft": 9,
+          "organ": null
+        }
+      ],
+      "results": {},
+      "outcome": "unknown",
+      "lesson": null,
+      "do_not_repeat": false
+    },
+    {
+      "id": "s0311h01_c0_exp1",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:10:13.390898",
+      "base_case": 322,
+      "hypothesis": "P-Uptake Kinetics Expansion: vmax_p Range Ceiling Hypothesis",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "RANGE EXPANSION REQUIRED: new bounds [5e-09, 5e-03], center 1e-06",
+          "pft": 10,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c0_exp1",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    },
+    {
+      "id": "s0311h01_c0_exp2",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:10:43.994223",
+      "base_case": 322,
+      "hypothesis": "P-Uptake Kinetics Expansion: vmax_p Range Ceiling Hypothesis",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "RANGE EXPANSION REQUIRED: new bounds [5e-09, 5e-03], center 1e-06",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-05,
+          "new_value": "RANGE EXPANSION REQUIRED: new bounds [5e-07, 5e-03], coordinated with l2fr_ini_9 reduction",
+          "pft": 9,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c0_exp2",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    },
+    {
+      "id": "s0311h01_c0_exp3",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:11:12.381288",
+      "base_case": 322,
+      "hypothesis": "P-Uptake Kinetics Expansion: vmax_p Range Ceiling Hypothesis",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "RANGE EXPANSION REQUIRED: new bounds [5e-09, 5e-03], center 1e-06",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-05,
+          "new_value": "RANGE EXPANSION REQUIRED: new bounds [5e-07, 5e-03], coordinated with l2fr_ini_9 reduction",
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 2.86e-05,
+          "new_value": "RANGE EXPANSION REQUIRED: new upper bound 5e-03, with caution on ECA competition",
+          "pft": 7,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c0_exp3",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    },
+    {
+      "id": "s0311h01_c0_exp4",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:11:43.910286",
+      "base_case": 322,
+      "hypothesis": "P-Uptake Kinetics Expansion: vmax_p Range Ceiling Hypothesis",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "RANGE EXPANSION REQUIRED: new bounds [5e-09, 5e-03], center 1e-06",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-05,
+          "new_value": "RANGE EXPANSION REQUIRED: new bounds [5e-07, 5e-03], coordinated with l2fr_ini_9 reduction",
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 2.86e-05,
+          "new_value": "RANGE EXPANSION REQUIRED: new upper bound 5e-03, with caution on ECA competition",
+          "pft": 7,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 18.31,
+          "new_value": "RANGE CONTRACTION: new bounds [1.0, 8.0], this is the root-demand inflation driver",
+          "pft": 9,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c0_exp4",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    },
+    {
+      "id": "s0311h01_c0_exp5",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:12:20.117595",
+      "base_case": 322,
+      "hypothesis": "P-Uptake Kinetics Expansion: vmax_p Range Ceiling Hypothesis",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "RANGE EXPANSION REQUIRED: new bounds [5e-09, 5e-03], center 1e-06",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-05,
+          "new_value": "RANGE EXPANSION REQUIRED: new bounds [5e-07, 5e-03], coordinated with l2fr_ini_9 reduction",
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 2.86e-05,
+          "new_value": "RANGE EXPANSION REQUIRED: new upper bound 5e-03, with caution on ECA competition",
+          "pft": 7,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 18.31,
+          "new_value": "RANGE CONTRACTION: new bounds [1.0, 8.0], this is the root-demand inflation driver",
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_eca_km_p",
+          "old_value": 0.064,
+          "new_value": "RANGE SHIFT LOWER: new bounds [0.005, 0.08] — arctic mycorrhizal adaptation",
+          "pft": 10,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c0_exp5",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    },
+    {
+      "id": "s0311h01_c0_exp6",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:13:00.569137",
+      "base_case": 322,
+      "hypothesis": "P-Uptake Kinetics Expansion: vmax_p Range Ceiling Hypothesis",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "RANGE EXPANSION REQUIRED: new bounds [5e-09, 5e-03], center 1e-06",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-05,
+          "new_value": "RANGE EXPANSION REQUIRED: new bounds [5e-07, 5e-03], coordinated with l2fr_ini_9 reduction",
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 2.86e-05,
+          "new_value": "RANGE EXPANSION REQUIRED: new upper bound 5e-03, with caution on ECA competition",
+          "pft": 7,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 18.31,
+          "new_value": "RANGE CONTRACTION: new bounds [1.0, 8.0], this is the root-demand inflation driver",
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_eca_km_p",
+          "old_value": 0.064,
+          "new_value": "RANGE SHIFT LOWER: new bounds [0.005, 0.08] — arctic mycorrhizal adaptation",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_phos_store_ratio",
+          "old_value": 1.0,
+          "new_value": "RANGE SHIFT: new bounds [2.0, 8.0] — arctic shrub P storage capacity",
+          "pft": 9,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c0_exp6",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    },
+    {
+      "id": "s0311h01_c1_exp1",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:13:16.238649",
+      "base_case": 322,
+      "hypothesis": "Case #1386 Parameter Archaeology: Identifying the PFT10-Enabling Parameter Regime",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value to determine new ensemble center",
+          "pft": 10,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c1_exp1",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    },
+    {
+      "id": "s0311h01_c1_exp2",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:13:32.403496",
+      "base_case": 322,
+      "hypothesis": "Case #1386 Parameter Archaeology: Identifying the PFT10-Enabling Parameter Regime",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value to determine new ensemble center",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 9.88,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 10,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c1_exp2",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    },
+    {
+      "id": "s0311h01_c1_exp3",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:13:50.248741",
+      "base_case": 322,
+      "hypothesis": "Case #1386 Parameter Archaeology: Identifying the PFT10-Enabling Parameter Regime",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value to determine new ensemble center",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 9.88,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 18.31,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 9,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c1_exp3",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    },
+    {
+      "id": "s0311h01_c1_exp4",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:14:06.572823",
+      "base_case": 322,
+      "hypothesis": "Case #1386 Parameter Archaeology: Identifying the PFT10-Enabling Parameter Regime",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value to determine new ensemble center",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 9.88,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 18.31,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-05,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 9,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c1_exp4",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    },
+    {
+      "id": "s0311h01_c1_exp5",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:14:38.493860",
+      "base_case": 322,
+      "hypothesis": "Case #1386 Parameter Archaeology: Identifying the PFT10-Enabling Parameter Regime",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value to determine new ensemble center",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 9.88,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 18.31,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-05,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_eca_vmax_ptase",
+          "old_value": 5e-10,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 10,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c1_exp5",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    },
+    {
+      "id": "s0311h01_c1_exp6",
+      "source": "auto_discovered",
+      "date": "2026-03-11T02:15:10.912549",
+      "base_case": 322,
+      "hypothesis": "Case #1386 Parameter Archaeology: Identifying the PFT10-Enabling Parameter Regime",
+      "modifications": [
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-11,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value to determine new ensemble center",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 9.88,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_allom_l2fr",
+          "old_value": 18.31,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_vmax_p",
+          "old_value": 5e-05,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 9,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_eca_vmax_ptase",
+          "old_value": 5e-10,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 10,
+          "organ": null
+        },
+        {
+          "parameter": "fates_cnp_eca_decompmicc",
+          "old_value": 600,
+          "new_value": "DIAGNOSTIC ONLY — extract Case #1386 value",
+          "pft": 7,
+          "organ": null
+        }
+      ],
+      "results": {
+        "error": "Extracted NC file not found for 322_s0311h01_c1_exp6",
+        "targets_met": 0,
+        "total_targets": 6,
+        "metrics": {}
+      },
+      "outcome": "FAILED",
+      "lesson": null,
+      "do_not_repeat": true
+    }
+  ]
 }
