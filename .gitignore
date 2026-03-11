@@ -30,7 +30,10 @@ memory/logs/
 
 # Site-specific data (except Kougarok reference example)
 use_cases/*/memory/
+!use_cases/Kougarok/memory/
+use_cases/Kougarok/memory/extracted/
 !use_cases/Kougarok/memory/gained_knowledge/
+!use_cases/Kougarok/memory/logs/
 use_cases/*/config/*_config.sh
 !use_cases/Kougarok/config/
 !use_cases/TEMPLATE/
