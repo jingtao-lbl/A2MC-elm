@@ -255,7 +255,7 @@ def load_morris_ensemble_data(config: Any, screening_data: Dict = None) -> Tuple
             f"No Morris Y output files found. "
             f"Expected files matching Morris*biomass*.txt in {use_case_dir}. "
             f"Check that Phase 1 extraction outputs exist in "
-            f"use_cases/{{site}}/memory/phase_results/phase1_exploration/"
+            f"use_cases/{{site}}/memory/phase_results/[{{session_id}}/]phase1_exploration/"
         )
     logger.info(f"  Y outputs loaded: {biomass_keys}")
 

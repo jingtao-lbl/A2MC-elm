@@ -3,7 +3,7 @@
 Phase 3 Diagnosis: Diagnostic Plotting Module
 
 Creates publication-quality diagnostic figures for PFT diagnosis results.
-Figures are saved to use_cases/{site}/memory/phase_results/phase3_diagnosis/.
+Figures are saved to use_cases/{site}/memory/phase_results/{session_id}/phase3_diagnosis/.
 
 Functions:
     plot_pft_diagnosis()         - 6-panel composite figure (main entry point)
@@ -24,7 +24,7 @@ Usage:
         pft_id=10,
         targets={'leaf': 82.7, 'froot': 382.1},
         comparison_pfts=[7, 9],
-        output_dir="use_cases/Kougarok/memory/phase_results/phase3_diagnosis/"
+        output_dir="use_cases/Kougarok/memory/phase_results/{session_id}/phase3_diagnosis/"
     )
 
 Author: Jing Tao with Claude

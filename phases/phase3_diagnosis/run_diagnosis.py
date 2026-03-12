@@ -125,7 +125,7 @@ class DiagnosisConfig:
     nutrient: str = 'P'
 
     # Diagnostic plot output directory (if set, generates figures)
-    # Typically: use_cases/{site}/memory/phase_results/phase3_diagnosis/
+    # Typically: use_cases/{site}/memory/phase_results/{session_id}/phase3_diagnosis/
     plot_output_dir: Optional[str] = None
 
     # Prefix for plot filenames (e.g., "r02_exp01_iter01_")
@@ -551,7 +551,7 @@ def run_diagnosis_for_orchestrator(
     top_cases_for_comparison : int
         Number of top cases to compare (default: 5)
     plot_output_dir : str, optional
-        Directory for diagnostic plots (e.g., phase_results/phase3_diagnosis/)
+        Directory for diagnostic plots (e.g., phase_results/{session_id}/phase3_diagnosis/)
     plot_filename_prefix : str
         Prefix for plot filenames (e.g., "r02_exp01_iter01_")
     verbose : bool

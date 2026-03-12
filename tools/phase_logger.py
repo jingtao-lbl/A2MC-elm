@@ -953,9 +953,14 @@ class PhaseLogger:
                     elif isinstance(entry, str):
                         unmatched_analyses.append(entry)
 
+            _session_id = os.environ.get('A2MC_SESSION_ID', '')
+            if _session_id:
+                _fig_rel_dir = f"../../phase_results/{_session_id}/phase3_diagnosis"
+            else:
+                _fig_rel_dir = "../../phase_results/phase3_diagnosis"
             for fig_path in figure_paths:
                 fig_name = Path(fig_path).name
-                content += f"![{fig_name}](../../phase_results/phase3_diagnosis/{fig_name})\n\n"
+                content += f"![{fig_name}]({_fig_rel_dir}/{fig_name})\n\n"
 
                 # Find matching analysis by checking if any keyword is in the filename
                 fig_lower = fig_name.lower()
@@ -1108,9 +1113,14 @@ class PhaseLogger:
 ## Diagnostic Figures
 
 """
+            _session_id = os.environ.get('A2MC_SESSION_ID', '')
+            if _session_id:
+                _fig_rel_dir = f"../../phase_results/{_session_id}/phase3_diagnosis"
+            else:
+                _fig_rel_dir = "../../phase_results/phase3_diagnosis"
             for fig_path in figure_paths:
                 fig_name = Path(fig_path).name
-                content += f"![{fig_name}](../../phase_results/phase3_diagnosis/{fig_name})\n\n"
+                content += f"![{fig_name}]({_fig_rel_dir}/{fig_name})\n\n"
 
         if metadata:
             content += f"""

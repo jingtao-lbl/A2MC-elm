@@ -180,7 +180,7 @@ The orchestrator pre-loads data and passes it to your function. You do NOT open 
 | Data | Source Files | Location |
 |------|-------------|----------|
 | `param_matrix` | Morris X matrix (`*Morris*.txt`) | `use_cases/{site}/parameters/` |
-| `y_outputs["leaf_biomass"]` | `MorrisLeafbiomass_*cases*.txt` | `use_cases/{site}/memory/phase_results/phase1_exploration/` |
+| `y_outputs["leaf_biomass"]` | `MorrisLeafbiomass_*cases*.txt` | `use_cases/{site}/memory/phase_results/{session_id}/phase1_exploration/` |
 | `y_outputs["froot_biomass"]` | `MorrisFinerootbiomass_*cases*.txt` | same directory |
 | `y_outputs["agb_biomass"]` | `MorrisAbgbiomass_*cases*.txt` | same directory |
 | `screening_data` | Phase 2 screening results (dict) | passed from orchestrator state |
@@ -390,4 +390,11 @@ The function MUST be named `test_hypothesis` (not `run_test`, `analyze`, etc.).
 9. **Use correct y_outputs keys** - "leaf_biomass", "froot_biomass", "agb_biomass" (2D arrays)
 10. **All evidence values must be JSON-serializable** - Use float(), int() to convert numpy scalars
 11. **Name starts with test_** - e.g., `test_p_uptake_scaling` (enables auto-discovery when promoted)
+12. **BANNED numpy methods** - These do NOT exist because they were removed in NumPy 2.0. NEVER use them but use the following alternatives:
+    - `.ptp()` → use `arr.max() - arr.min()`
+    - `.product()` → use `np.prod(arr)`
+    - `.cumproduct()` → use `np.cumprod(arr)`
+    - `.sometrue()` → use `np.any(arr)`
+    - `.alltrue()` → use `np.all(arr)`
+    - `np.float`, `np.int`, `np.bool`, `np.object` → use Python builtins: `float`, `int`, `bool`, `object`
 '''
