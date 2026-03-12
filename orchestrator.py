@@ -2516,7 +2516,9 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
         # --- 7. Set final status and record to state ---
         for exp in experiments:
             # Determine overall status
-            if exp.get("extraction_status") in ("extracted", "simulated_no_output"):
+            if exp.get("submission_status") == "skipped_no_param_file":
+                exp["status"] = "skipped_no_param_file"
+            elif exp.get("extraction_status") in ("extracted", "simulated_no_output"):
                 exp["status"] = "completed"
             elif exp.get("submission_status") == "simulated":
                 exp["status"] = "simulated"

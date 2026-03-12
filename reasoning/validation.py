@@ -349,8 +349,23 @@ def _validate_single_parameter(
             # Fill in missing bounds
             param['bounds'] = [lower, upper]
 
-    # --- Check 3: Proposed value out of bounds ---
+    # --- Check 2b: Proposed value must be numeric ---
     proposed = param.get('proposed')
+    if proposed is not None:
+        try:
+            float(proposed)
+        except (ValueError, TypeError):
+            result.issues.append(ValidationIssue(
+                parameter=name,
+                check="non_numeric_proposed",
+                severity="error",
+                detail=f"proposed value is not numeric: {str(proposed)[:80]}",
+            ))
+
+    # --- Check 3: Proposed value out of bounds ---
+    # Out-of-bounds proposals are allowed — experiments can test any value.
+    # Bounds are sampling ranges for Morris/Sobol, not hard physical limits.
+    # Phase 6→Phase 0 can expand bounds based on experiment results.
     if proposed is not None and bounds_info:
         try:
             proposed_val = float(proposed)
@@ -360,7 +375,7 @@ def _validate_single_parameter(
                 result.issues.append(ValidationIssue(
                     parameter=name,
                     check="out of bounds",
-                    severity="error",
+                    severity="warning",
                     detail=f"proposed={proposed_val} outside [{lower}, {upper}]",
                 ))
         except (ValueError, TypeError):
@@ -381,6 +396,9 @@ def _validate_single_parameter(
             pass
 
     # --- Check 5: Magnitude of change ---
+    # Large changes are allowed — experiments are free to test any value.
+    # Parameter bounds are best guesses; Phase 6→Phase 0 can expand them.
+    # We only log informational warnings, never block or strip.
     current_val = param.get('current')
     if proposed is not None and current_val is not None:
         try:
@@ -392,14 +410,14 @@ def _validate_single_parameter(
                     result.issues.append(ValidationIssue(
                         parameter=name,
                         check="magnitude",
-                        severity="error",
+                        severity="info",
                         detail=f"{cur} → {prop} ({ratio:.1f}x change, >1000x)",
                     ))
                 elif ratio > 100 or (ratio > 0 and ratio < 0.01):
                     result.issues.append(ValidationIssue(
                         parameter=name,
                         check="magnitude",
-                        severity="warning",
+                        severity="info",
                         detail=f"{cur} → {prop} ({ratio:.1f}x change, 100-1000x)",
                     ))
         except (ValueError, TypeError):
