@@ -1875,15 +1875,19 @@ Diagnosis Summary:{skip_header}
                         skip_testing_count=self.state.skip_testing_count
                     )
                 raw_params = hypothesis.get('parameters', hypothesis.get('parameters_to_test', []))
-                params_to_modify = [
-                    {
+                params_to_modify = []
+                for p in raw_params:
+                    entry = {
                         'name': p.get('name', ''),
                         'current': p.get('current', ''),
                         'proposed': p.get('proposed', ''),
-                        'rationale': p.get('rationale', '')
+                        'rationale': p.get('rationale', ''),
                     }
-                    for p in raw_params
-                ]
+                    if 'pft' in p:
+                        entry['pft'] = p['pft']
+                    if 'organ' in p:
+                        entry['organ'] = p['organ']
+                    params_to_modify.append(entry)
                 ai_reasoning = hypothesis.get('mechanism', '') or hypothesis.get('reasoning', '')
                 log_path = self._phase_logger.log_hypothesis(
                     title=hypothesis.get('name', "Hypothesis"),
@@ -2083,10 +2087,12 @@ Diagnosis Summary:{skip_header}
         # Human review checkpoint - key handoff before HPC testing
         if self.config.human_review:
             raw_params = hypothesis.get('parameters', hypothesis.get('parameters_to_test', []))
-            param_summary = "\n".join([
-                f"    {p.get('name', '?')}: {p.get('current', '?')} → {p.get('proposed', '?')}"
-                for p in raw_params
-            ]) or "    (none specified)"
+            param_lines = []
+            for p in raw_params:
+                pft_str = f" (PFT#{p['pft']})" if 'pft' in p else ""
+                param_lines.append(
+                    f"    {p.get('name', '?')}{pft_str}: {p.get('current', '?')} → {p.get('proposed', '?')}")
+            param_summary = "\n".join(param_lines) or "    (none specified)"
             self._human_review_checkpoint(
                 phase="HYPOTHESIS",
                 summary=f"""

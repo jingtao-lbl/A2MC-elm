@@ -250,6 +250,23 @@ def validate_hypothesis_parameters(
     for param in params:
         _validate_single_parameter(param, base_case_params, param_bounds, result)
 
+    # --- Check: Duplicate parameter names without PFT disambiguation ---
+    # When the same FATES name appears multiple times, each entry MUST have a
+    # 'pft' field so downstream tools (param file creation, logging) can
+    # distinguish them.
+    from collections import Counter
+    name_counts = Counter(p.get('name', '') for p in params)
+    for param in params:
+        pname = param.get('name', '')
+        if name_counts[pname] > 1 and param.get('pft') is None:
+            result.issues.append(ValidationIssue(
+                parameter=pname,
+                check="missing_pft",
+                severity="warning",
+                detail=(f"'{pname}' appears {name_counts[pname]} times but this entry "
+                        f"has no 'pft' field — cannot disambiguate which PFT to modify"),
+            ))
+
     # Auto-expand retrans parameters tagged by Check 6 (leaf + fineroot)
     n_expanded = expand_retrans_parameters(hypothesis)
     if n_expanded:

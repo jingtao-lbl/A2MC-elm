@@ -1048,7 +1048,16 @@ class PhaseLogger:
             current = param.get('current', 'N/A')
             proposed = param.get('proposed', 'N/A')
             rationale = param.get('rationale', '')
-            content += f"### {name}\n"
+            pft = param.get('pft')
+            organ = param.get('organ')
+            # Include PFT and organ in heading to disambiguate duplicate param names
+            heading = name
+            if pft is not None:
+                heading += f" (PFT#{pft})"
+            if organ is not None:
+                organ_names = {1: 'leaf', 2: 'fineroot', 3: 'sapwood', 4: 'storage'}
+                heading += f" [{organ_names.get(organ, f'organ={organ}')}]"
+            content += f"### {heading}\n"
             content += f"- **Current:** {current}\n"
             content += f"- **Proposed:** {proposed}\n"
             content += f"- **Rationale:** {rationale}\n\n"

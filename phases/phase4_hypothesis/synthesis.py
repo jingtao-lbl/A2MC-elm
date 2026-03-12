@@ -287,18 +287,20 @@ def write_synthesis_summary_log(
         source = synth.get('source_hypothesis', '')
         if source:
             synth_section += f"- **Source hypothesis:** {source}\n"
-        synth_section += f"\n| Parameter | Current | Proposed | Rationale |\n"
-        synth_section += f"|-----------|---------|----------|-----------|\n"
+        synth_section += f"\n| Parameter | PFT | Current | Proposed | Rationale |\n"
+        synth_section += f"|-----------|-----|---------|----------|-----------|\n"
         params = synth.get('parameters', [])
         for p in params:
             pname = p.get('name', '?')
+            pft = p.get('pft', '')
+            pft_str = f"#{pft}" if pft not in (None, '') else 'all'
             cur = p.get('current', '?')
             prop = p.get('proposed', '?')
             rat = p.get('rationale', '')
             # Truncate long rationales for table readability
             if isinstance(rat, str) and len(rat) > 60:
                 rat = rat[:57] + '...'
-            synth_section += f"| {pname} | {cur} | {prop} | {rat} |\n"
+            synth_section += f"| {pname} | {pft_str} | {cur} | {prop} | {rat} |\n"
         synth_section += "\n"
 
         # Add cumulative experiment breakdown for cumulative designs
@@ -311,14 +313,17 @@ def write_synthesis_summary_log(
             cumulative_names = []
             for j, p in enumerate(params):
                 pname = p.get('name', '?')
+                pft = p.get('pft')
+                pft_tag = f"(PFT#{pft})" if pft is not None else ""
+                label = f"{pname}{pft_tag}" if pft_tag else pname
                 cur = p.get('current', '?')
                 prop = p.get('proposed', '?')
-                cumulative_names.append(pname)
+                cumulative_names.append(label)
                 if j == 0:
-                    params_str = pname
+                    params_str = label
                 else:
-                    params_str = ", ".join(cumulative_names[:-1]) + f", **+{pname}**"
-                synth_section += f"| exp{j+1} | {j+1} | {params_str} | {pname}: {cur} → {prop} |\n"
+                    params_str = ", ".join(cumulative_names[:-1]) + f", **+{label}**"
+                synth_section += f"| exp{j+1} | {j+1} | {params_str} | {label}: {cur} → {prop} |\n"
             synth_section += "\n"
 
         if synth.get('synthesis_summary'):
