@@ -29,6 +29,7 @@ Created: January 2026
 """
 
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, List
@@ -203,7 +204,11 @@ class WorkflowStatus:
     def _update_check_logs_at(self):
         """Update the check_logs_at path based on current phase."""
         phase_name = PHASES.get(self.log.current_phase, "unknown")
-        self.log.check_logs_at = f"memory/phase_results/phase{self.log.current_phase}_{phase_name}/"
+        session_id = os.environ.get('A2MC_SESSION_ID', '')
+        if session_id:
+            self.log.check_logs_at = f"memory/phase_results/{session_id}/phase{self.log.current_phase}_{phase_name}/"
+        else:
+            self.log.check_logs_at = f"memory/phase_results/phase{self.log.current_phase}_{phase_name}/"
 
     # =========================================================================
     # Workflow-level operations

@@ -133,9 +133,7 @@ def run_diagnostic_scripts(
         if skip_figures:
             logger.info("Skipping figure generation (case already analyzed in previous cycle)")
         elif a2mc_config.USE_CASE_DIR:
-            plot_output_dir = str(
-                Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase3_diagnosis"
-            )
+            plot_output_dir = str(a2mc_config.phase_results_dir("phase3_diagnosis"))
             # Build filename prefix from iteration context
             rr = calibration_round
             ee = experiment_count

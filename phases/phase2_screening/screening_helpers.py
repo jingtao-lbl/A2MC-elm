@@ -188,7 +188,7 @@ def perform_screening(targets, total_ensemble: int) -> Dict:
             # (consistent with Phase 1 and Phase 3 which use phase_results/)
             fig_dir = None
             if a2mc_config.USE_CASE_DIR:
-                fig_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase2_screening"
+                fig_dir = a2mc_config.phase_results_dir("phase2_screening")
                 fig_dir.mkdir(parents=True, exist_ok=True)
             if not fig_dir:
                 fig_dir = data_dir

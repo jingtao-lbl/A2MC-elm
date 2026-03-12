@@ -352,6 +352,20 @@ class A2MCConfig:
         """Get config value as Path object"""
         return Path(self.get(key, default))
 
+    def phase_results_dir(self, phase_name: str) -> Path:
+        """Get session-aware phase_results directory.
+
+        Returns: {USE_CASE_DIR}/memory/phase_results/{session_id}/{phase_name}/
+
+        If A2MC_SESSION_ID is not set (e.g., standalone script), falls back
+        to the flat layout: {USE_CASE_DIR}/memory/phase_results/{phase_name}/
+        """
+        base = Path(self.USE_CASE_DIR) / "memory" / "phase_results"
+        session_id = os.environ.get('A2MC_SESSION_ID', '')
+        if session_id:
+            return base / session_id / phase_name
+        return base / phase_name
+
     def is_configured(self) -> bool:
         """Check if site configuration has been loaded"""
         return bool(self.SITE_NAME)

@@ -857,8 +857,9 @@ class CalibrationOrchestrator:
             phase = Phase(self.state.current_phase)
             phase_num = list(Phase).index(phase)
 
-            # Update environment variable for PhaseLogger to pick up
+            # Update environment variables for PhaseLogger and config to pick up
             os.environ['A2MC_ITERATION'] = str(self.state.iteration)
+            os.environ['A2MC_SESSION_ID'] = self.config.session_id
 
             logger.info(f"\n{'='*60}")
             logger.info(f"PHASE: {phase.value.upper()}")
@@ -2294,8 +2295,12 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
 
             logger.info(f"Case parameter files: {param_dir}/{param_pattern}")
 
-            output_dir = os.path.join(self.config.output_dir, "phase_results",
-                                      "phase5_testing")
+            try:
+                from tools.config import config as a2mc_config
+                output_dir = str(a2mc_config.phase_results_dir("phase5_testing"))
+            except (ImportError, AttributeError):
+                output_dir = os.path.join(self.config.output_dir, "phase_results",
+                                          "phase5_testing")
             try:
                 experiments = create_experiment_param_files(
                     experiments=experiments,

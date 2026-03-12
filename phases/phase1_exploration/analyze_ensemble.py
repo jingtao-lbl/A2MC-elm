@@ -97,8 +97,12 @@ def analyze_existing_ensemble(
         # Look in multiple locations
         # Pattern: Morris{Varname}_{N}cases_{start}_{end}.txt
         # e.g., MorrisLeafbiomass_4889cases_2010_2019.txt
-        phase1_output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
+        phase1_output_dir = a2mc_config.phase_results_dir("phase1_exploration")
         morris_files = list(phase1_output_dir.glob("Morris*biomass*.txt")) if phase1_output_dir.exists() else []
+        # Also check flat layout (backward compatibility, pre-session_id)
+        if not morris_files:
+            flat_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
+            morris_files = list(flat_dir.glob("Morris*biomass*.txt")) if flat_dir.exists() else []
 
         # Also check current directory and ensemble output
         if not morris_files:
@@ -228,7 +232,7 @@ def run_y_matrix_extraction(results: Dict) -> Dict:
         from tools.config import config as a2mc_config
 
         # Output directory for Y matrices
-        output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
+        output_dir = a2mc_config.phase_results_dir("phase1_exploration")
 
         logger.info("Extracting Y matrices from simulation outputs...")
 
@@ -269,7 +273,7 @@ def run_morris_sensitivity_analysis(results: Dict, morris_files: List[Path]) -> 
         from tools.config import config as a2mc_config
 
         # Determine output directory for sensitivity results
-        output_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
+        output_dir = a2mc_config.phase_results_dir("phase1_exploration")
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # Map Y matrix files to output variables

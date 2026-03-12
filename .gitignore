@@ -34,6 +34,8 @@ use_cases/*/memory/
 use_cases/Kougarok/memory/extracted/
 !use_cases/Kougarok/memory/gained_knowledge/
 !use_cases/Kougarok/memory/logs/
+!use_cases/Kougarok/memory/phase_results/
+!use_cases/Kougarok/memory/workflow_*.json
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
