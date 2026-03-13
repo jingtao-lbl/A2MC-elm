@@ -5,15 +5,18 @@ Phase Logger for A2MC Workflow
 Writes detailed Markdown logs for each phase of the A2MC calibration workflow.
 Logs capture full AI reasoning, analyses, and results for knowledge extraction.
 
-Log Structure (site-specific):
+Log Structure (site-specific, session-scoped when session_id set):
     use_cases/{site}/memory/logs/
-    ├── phase0_design/
-    │   └── r02_20260116_143052_Morris_Design.md
-    ├── phase2_screening/
-    │   └── r02_20260116_143052_Ensemble_Screening.md
-    ├── phase3_diagnosis/
-    │   └── r02_c01_iter03_20260116_143052_Root_Cause_Analysis.md
-    └── ...
+    └── {session_id}/
+        ├── phase0_design/
+        │   └── r02_20260116_143052_Morris_Design.md
+        ├── phase2_screening/
+        │   └── r02_20260116_143052_Ensemble_Screening.md
+        ├── phase3_diagnosis/
+        │   └── r02_c01_iter03_20260116_143052_Root_Cause_Analysis.md
+        └── ...
+
+Fallback (no session_id): logs go directly under phase dirs without session subdirectory.
 
 Filename formats (with session_id from orchestrator):
     Phase 0-2:       r{RR}_{session_id}_Title.md
@@ -157,7 +160,15 @@ class PhaseLogger:
         # Resolve site name
         self.site_name = site_name or os.environ.get('A2MC_SITE_NAME', 'Unknown')
 
-        # Set up log directory
+        # Session ID from orchestrator (YYYYMMDD_HHMMSS)
+        # When set, replaces date+letter in filenames AND adds session_id subdirectory
+        self.session_id = session_id if session_id else None
+
+        # Fallback: date+letter tracking (used when session_id is not set)
+        self._session_letter = 'a'  # For same-day logs: a, b, c, ...
+        self._last_date = None
+
+        # Set up log directory and create phase subdirectories
         self.log_dir = self.site_dir / "memory" / "logs"
         self._ensure_directories()
 
@@ -182,18 +193,13 @@ class PhaseLogger:
         else:
             self.skip_testing_count = int(os.environ.get('A2MC_SKIP_TESTING_COUNT', '0'))
 
-        # Session ID from orchestrator (YYYYMMDD_HHMMSS)
-        # When set, replaces date+letter in filenames for direct run log traceability
-        self.session_id = session_id if session_id else None
-
-        # Fallback: date+letter tracking (used when session_id is not set)
-        self._session_letter = 'a'  # For same-day logs: a, b, c, ...
-        self._last_date = None
-
     def _ensure_directories(self):
-        """Create log directories for each phase"""
+        """Create log directories for each phase (session-scoped when session_id set)"""
+        base = self.log_dir
+        if self.session_id:
+            base = base / self.session_id
         for phase_num, phase_name in PHASES.items():
-            phase_dir = self.log_dir / f"phase{phase_num}_{phase_name}"
+            phase_dir = base / f"phase{phase_num}_{phase_name}"
             phase_dir.mkdir(parents=True, exist_ok=True)
 
     def _get_log_filename(self, phase: int, title: str) -> str:
@@ -250,9 +256,12 @@ class PhaseLogger:
         return filename
 
     def _get_phase_dir(self, phase: int) -> Path:
-        """Get directory for a specific phase"""
+        """Get directory for a specific phase (session-scoped when session_id set)"""
         phase_name = PHASES.get(phase, "unknown")
-        return self.log_dir / f"phase{phase}_{phase_name}"
+        base = self.log_dir
+        if self.session_id:
+            base = base / self.session_id
+        return base / f"phase{phase}_{phase_name}"
 
     def set_iteration(self, iteration: int):
         """Set the current workflow iteration (backward compatible)."""

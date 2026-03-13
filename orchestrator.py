@@ -1338,7 +1338,7 @@ Screening Summary:
 {'ALL TARGETS MET - Ready for convergence!' if targets_met >= n_targets else 'Not all targets met - proceeding to diagnosis.'}
 
 Review the screening log at:
-  use_cases/{{site}}/memory/logs/phase2_screening/
+  use_cases/{{site}}/memory/logs/{{session_id}}/phase2_screening/
 """,
                 next_phase="DIAGNOSIS",
                 options={

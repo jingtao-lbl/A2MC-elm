@@ -329,7 +329,7 @@ def evaluate_experiments_in_state(
 
 def find_latest_experiment_log(use_cases_dir: str = "use_cases") -> Optional[str]:
     """Auto-detect the most recent Phase 5 experiment design log."""
-    pattern = "**/memory/logs/phase5_testing/*_Experiment_Design.md"
+    pattern = "**/memory/logs/**/phase5_testing/*_Experiment_Design.md"
     logs = sorted(Path(use_cases_dir).glob(pattern), key=lambda p: p.stat().st_mtime)
     return str(logs[-1]) if logs else None
 
