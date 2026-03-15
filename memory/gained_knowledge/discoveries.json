@@ -137,6 +137,19 @@
       "source": "Knox 2026 CNP Guidebook",
       "actionable": true,
       "action": "Track TOTLITC/TOTLITN and TOTSOMC/TOTSOMN - if increasing, need more heterotrophic respiration"
+    },
+    {
+      "id": "suplphos_rgsp_for_p_limitation",
+      "name": "Extend P Supplementation Through Regular Spinup for P-Limited Sites",
+      "description": "For strongly P-limited sites, prescribing phosphorus only during AD spinup (suplphos='ALL') may not build sufficient soil P pools. Extending suplphos='ALL' through RGSP allows the regular decomposition cycle to equilibrate with adequate P, preventing chronic P starvation during transient runs.",
+      "mechanism": "AD spinup with suplphos='ALL' builds SOM pools but the 30yr carbon-only period and accelerated decomposition may not fully equilibrate soil P. When RGSP starts with suplphos='NONE', plants must compete for mineralized P immediately. If soil P pools are insufficient, plants enter chronic P limitation from the start. Extending suplphos='ALL' through RGSP lets the regular decomposition cycle run with adequate P, building realistic labile P pools before the transient run.",
+      "affects": ["LABILEP_vr", "SOLUTIONP_vr", "FATES_PUPTAKE", "FATES_STOREP_TF"],
+      "discovered_by": "A2MC calibration",
+      "confidence": 0.80,
+      "source": "A2MC Kougarok calibration experience",
+      "actionable": true,
+      "action": "If diagnosis shows chronic P limitation (low LABILEP, high FATES_PDEMAND/FATES_PUPTAKE ratio, low STOREP_TF across all PFTs), recommend changing A2MC_RGSP_SUPLPHOS from 'NONE' to 'ALL' in the site config. This is a simulation protocol change, not a parameter change — it requires a full re-spinup (Phase 0 redesign). Note: this changes the soil P equilibrium state, so parameter sensitivities may shift.",
+      "tags": ["simulation_protocol", "p_limitation", "spinup_strategy"]
     }
   ]
 }

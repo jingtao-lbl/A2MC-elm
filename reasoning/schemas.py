@@ -31,6 +31,8 @@ class Diagnosis:
     comparative_analysis: Optional[Dict] = None
     # Visual observations from diagnostic figures (multimodal analysis)
     visual_observations: Optional[List[Dict]] = None
+    # Protocol recommendations: simulation protocol changes (e.g., suplphos, spinup strategy)
+    protocol_recommendations: Optional[List[Dict]] = None  # [{setting, current_value, proposed_value, rationale, requires_respin}]
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)

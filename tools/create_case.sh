@@ -291,6 +291,24 @@ SPINUP_END_YEAR="${A2MC_SPINUP_END_YEAR}"
 TRANS_START_YEAR="${A2MC_TRANS_START_YEAR}"
 TRANS_END_YEAR="${A2MC_TRANS_END_YEAR}"
 
+# Phase-specific ELM settings
+ADSP_BGC_SPINUP="${A2MC_ADSP_BGC_SPINUP}"
+ADSP_START_DATE="${A2MC_ADSP_START_DATE}"
+ADSP_SUPLPHOS="${A2MC_ADSP_SUPLPHOS}"
+ADSP_SUPLNITRO="${A2MC_ADSP_SUPLNITRO}"
+ADSP_NYEARS_AD_CARBON_ONLY="${A2MC_ADSP_NYEARS_AD_CARBON_ONLY}"
+ADSP_FINIDAT="${A2MC_ADSP_FINIDAT}"
+RGSP_START_DATE="${A2MC_RGSP_START_DATE}"
+RGSP_SUPLPHOS="${A2MC_RGSP_SUPLPHOS}"
+RGSP_SUPLNITRO="${A2MC_RGSP_SUPLNITRO}"
+RGSP_RESTART_DATE="${A2MC_RGSP_RESTART_DATE}"
+TRANS_START_DATE="${A2MC_TRANS_START_DATE}"
+TRANS_SUPLPHOS="${A2MC_TRANS_SUPLPHOS}"
+TRANS_SUPLNITRO="${A2MC_TRANS_SUPLNITRO}"
+TRANS_RESTART_DATE="${A2MC_TRANS_RESTART_DATE}"
+HIST_MFILT="${A2MC_HIST_MFILT}"
+HIST_NHTFRQ="${A2MC_HIST_NHTFRQ}"
+
 # Ensemble settings
 ENSEMBLE_PREFIX="${A2MC_ENSEMBLE_PREFIX}"
 CASE_NAME_PATTERN="${A2MC_CASE_NAME_PATTERN}"
@@ -365,35 +383,35 @@ create_phase_case() {
     ./xmlchange JOB_WALLCLOCK_TIME="${WALLTIME}"
     ./xmlchange GMAKE=make
 
-    # Phase-specific settings
+    # Phase-specific settings (all from resolved config variables)
     if [ "$PHASE" = "ADSP" ]; then
-        ./xmlchange --append ELM_BLDNML_OPTS="-bgc_spinup on"
+        ./xmlchange --append ELM_BLDNML_OPTS="-bgc_spinup ${ADSP_BGC_SPINUP}"
         ./xmlchange STOP_N="${ADSP_YEARS}"
         ./xmlchange REST_N="${ADSP_REST}"
-        ./xmlchange RUN_STARTDATE='0001-01-01'
+        ./xmlchange RUN_STARTDATE="${ADSP_START_DATE}"
         ./xmlchange DATM_CLMNCEP_YR_START="${SPINUP_START_YEAR}"
         ./xmlchange DATM_CLMNCEP_YR_END="${SPINUP_END_YEAR}"
         RESTART_FILE=""
     elif [ "$PHASE" = "RGSP" ]; then
         ./xmlchange STOP_N="${RGSP_YEARS}"
         ./xmlchange REST_N="${RGSP_REST}"
-        ./xmlchange RUN_STARTDATE='0201-01-01'
+        ./xmlchange RUN_STARTDATE="${RGSP_START_DATE}"
         ./xmlchange DATM_CLMNCEP_YR_START="${SPINUP_START_YEAR}"
         ./xmlchange DATM_CLMNCEP_YR_END="${SPINUP_END_YEAR}"
-        RESTART_FILE="${CIME_OUTPUT_ROOT}${BASE_CASE_NAME}_ADSP/run/${BASE_CASE_NAME}_ADSP.elm.r.0201-01-01-00000.nc"
+        RESTART_FILE="${CIME_OUTPUT_ROOT}${BASE_CASE_NAME}_ADSP/run/${BASE_CASE_NAME}_ADSP.elm.r.${RGSP_RESTART_DATE}.nc"
     elif [ "$PHASE" = "TRANS" ]; then
         ./xmlchange STOP_N="${TRANS_YEARS}"
         ./xmlchange REST_N="${TRANS_REST}"
-        ./xmlchange RUN_STARTDATE='1901-01-01'
+        ./xmlchange RUN_STARTDATE="${TRANS_START_DATE}"
         ./xmlchange DATM_CLMNCEP_YR_START="${TRANS_START_YEAR}"
         ./xmlchange DATM_CLMNCEP_YR_END="${TRANS_END_YEAR}"
-        RESTART_FILE="${CIME_OUTPUT_ROOT}${BASE_CASE_NAME}_RGSP/run/${BASE_CASE_NAME}_RGSP.elm.r.0401-01-01-00000.nc"
+        RESTART_FILE="${CIME_OUTPUT_ROOT}${BASE_CASE_NAME}_RGSP/run/${BASE_CASE_NAME}_RGSP.elm.r.${TRANS_RESTART_DATE}.nc"
     fi
 
     # Create ELM namelist
     cat >> user_nl_elm <<NLEOF
-hist_mfilt = 12
-hist_nhtfrq = 0
+hist_mfilt = ${HIST_MFILT}
+hist_nhtfrq = ${HIST_NHTFRQ}
 fsurdat = '${DOMAIN_DIR}/${SURFACE_FILE}'
 
 use_fates=${USE_FATES}
@@ -406,13 +424,17 @@ NLEOF
 
     # Phase-specific namelist additions
     if [ "$PHASE" = "ADSP" ]; then
-        echo "suplphos = 'ALL'" >> user_nl_elm
-        echo "suplnitro = 'NONE'" >> user_nl_elm
-        echo "finidat = ''" >> user_nl_elm
-        echo "nyears_ad_carbon_only = 30" >> user_nl_elm
-    else
-        echo "suplphos = 'NONE'" >> user_nl_elm
-        echo "suplnitro = 'NONE'" >> user_nl_elm
+        echo "suplphos = '${ADSP_SUPLPHOS}'" >> user_nl_elm
+        echo "suplnitro = '${ADSP_SUPLNITRO}'" >> user_nl_elm
+        echo "finidat = '${ADSP_FINIDAT}'" >> user_nl_elm
+        echo "nyears_ad_carbon_only = ${ADSP_NYEARS_AD_CARBON_ONLY}" >> user_nl_elm
+    elif [ "$PHASE" = "RGSP" ]; then
+        echo "suplphos = '${RGSP_SUPLPHOS}'" >> user_nl_elm
+        echo "suplnitro = '${RGSP_SUPLNITRO}'" >> user_nl_elm
+        echo "finidat = '${RESTART_FILE}'" >> user_nl_elm
+    elif [ "$PHASE" = "TRANS" ]; then
+        echo "suplphos = '${TRANS_SUPLPHOS}'" >> user_nl_elm
+        echo "suplnitro = '${TRANS_SUPLNITRO}'" >> user_nl_elm
         echo "finidat = '${RESTART_FILE}'" >> user_nl_elm
     fi
 
@@ -622,35 +644,35 @@ create_phase_case() {
     ./xmlchange JOB_WALLCLOCK_TIME="${A2MC_WALLTIME}"
     ./xmlchange GMAKE=make
 
-    # Phase-specific settings
+    # Phase-specific settings (all from a2mc_config.sh / site config)
     if [ "$PHASE" = "ADSP" ]; then
-        ./xmlchange --append ELM_BLDNML_OPTS="-bgc_spinup on"
+        ./xmlchange --append ELM_BLDNML_OPTS="-bgc_spinup ${A2MC_ADSP_BGC_SPINUP}"
         ./xmlchange STOP_N="${A2MC_ADSP_YEARS}"
         ./xmlchange REST_N="${A2MC_ADSP_REST}"
-        ./xmlchange RUN_STARTDATE='0001-01-01'
+        ./xmlchange RUN_STARTDATE="${A2MC_ADSP_START_DATE}"
         ./xmlchange DATM_CLMNCEP_YR_START="${A2MC_SPINUP_START_YEAR}"
         ./xmlchange DATM_CLMNCEP_YR_END="${A2MC_SPINUP_END_YEAR}"
         RESTART_FILE=""
     elif [ "$PHASE" = "RGSP" ]; then
         ./xmlchange STOP_N="${A2MC_RGSP_YEARS}"
         ./xmlchange REST_N="${A2MC_RGSP_REST}"
-        ./xmlchange RUN_STARTDATE='0201-01-01'
+        ./xmlchange RUN_STARTDATE="${A2MC_RGSP_START_DATE}"
         ./xmlchange DATM_CLMNCEP_YR_START="${A2MC_SPINUP_START_YEAR}"
         ./xmlchange DATM_CLMNCEP_YR_END="${A2MC_SPINUP_END_YEAR}"
-        RESTART_FILE="${CIME_OUTPUT_ROOT}${BASE_CASE_NAME}_ADSP/run/${BASE_CASE_NAME}_ADSP.elm.r.0201-01-01-00000.nc"
+        RESTART_FILE="${CIME_OUTPUT_ROOT}${BASE_CASE_NAME}_ADSP/run/${BASE_CASE_NAME}_ADSP.elm.r.${A2MC_RGSP_RESTART_DATE}.nc"
     elif [ "$PHASE" = "TRANS" ]; then
         ./xmlchange STOP_N="${A2MC_TRANS_YEARS}"
         ./xmlchange REST_N="${A2MC_TRANS_REST}"
-        ./xmlchange RUN_STARTDATE='1901-01-01'
+        ./xmlchange RUN_STARTDATE="${A2MC_TRANS_START_DATE}"
         ./xmlchange DATM_CLMNCEP_YR_START="${A2MC_TRANS_START_YEAR}"
         ./xmlchange DATM_CLMNCEP_YR_END="${A2MC_TRANS_END_YEAR}"
-        RESTART_FILE="${CIME_OUTPUT_ROOT}${BASE_CASE_NAME}_RGSP/run/${BASE_CASE_NAME}_RGSP.elm.r.0401-01-01-00000.nc"
+        RESTART_FILE="${CIME_OUTPUT_ROOT}${BASE_CASE_NAME}_RGSP/run/${BASE_CASE_NAME}_RGSP.elm.r.${A2MC_TRANS_RESTART_DATE}.nc"
     fi
 
     # Create ELM namelist
     cat >> user_nl_elm <<EOF
-hist_mfilt = 12
-hist_nhtfrq = 0
+hist_mfilt = ${A2MC_HIST_MFILT}
+hist_nhtfrq = ${A2MC_HIST_NHTFRQ}
 fsurdat = '${A2MC_DOMAIN_DIR}/${A2MC_SURFACE_FILE}'
 
 use_fates=${A2MC_USE_FATES}
@@ -663,13 +685,17 @@ EOF
 
     # Phase-specific namelist additions
     if [ "$PHASE" = "ADSP" ]; then
-        echo "suplphos = 'ALL'" >> user_nl_elm
-        echo "suplnitro = 'NONE'" >> user_nl_elm
-        echo "finidat = ''" >> user_nl_elm
-        echo "nyears_ad_carbon_only = 30" >> user_nl_elm
-    else
-        echo "suplphos = 'NONE'" >> user_nl_elm
-        echo "suplnitro = 'NONE'" >> user_nl_elm
+        echo "suplphos = '${A2MC_ADSP_SUPLPHOS}'" >> user_nl_elm
+        echo "suplnitro = '${A2MC_ADSP_SUPLNITRO}'" >> user_nl_elm
+        echo "finidat = '${A2MC_ADSP_FINIDAT}'" >> user_nl_elm
+        echo "nyears_ad_carbon_only = ${A2MC_ADSP_NYEARS_AD_CARBON_ONLY}" >> user_nl_elm
+    elif [ "$PHASE" = "RGSP" ]; then
+        echo "suplphos = '${A2MC_RGSP_SUPLPHOS}'" >> user_nl_elm
+        echo "suplnitro = '${A2MC_RGSP_SUPLNITRO}'" >> user_nl_elm
+        echo "finidat = '${RESTART_FILE}'" >> user_nl_elm
+    elif [ "$PHASE" = "TRANS" ]; then
+        echo "suplphos = '${A2MC_TRANS_SUPLPHOS}'" >> user_nl_elm
+        echo "suplnitro = '${A2MC_TRANS_SUPLNITRO}'" >> user_nl_elm
         echo "finidat = '${RESTART_FILE}'" >> user_nl_elm
     fi
 

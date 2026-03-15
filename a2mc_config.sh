@@ -86,7 +86,7 @@ export A2MC_ADSP_YEARS=200
 export A2MC_ADSP_REST=10
 export A2MC_RGSP_YEARS=200
 export A2MC_RGSP_REST=10
-export A2MC_TRANS_YEARS=119
+export A2MC_TRANS_YEARS=119 # consistent with the forcing data A2MC_DATM_MODE 
 export A2MC_TRANS_REST=1
 
 # Forcing data years
@@ -95,6 +95,38 @@ export A2MC_SPINUP_END_YEAR=1920
 export A2MC_TRANS_START_YEAR=1901
 export A2MC_TRANS_END_YEAR=2019
 export A2MC_DATM_MODE="CLMGSWP3v1"
+
+# ========================
+# PHASE-SPECIFIC ELM/NAMELIST SETTINGS
+# ========================
+# These control the ELM configuration for each simulation phase.
+# Override in site config if needed (e.g., different nutrient supplement strategy).
+
+# --- ADSP (Accelerated Decomposition Spinup) ---
+export A2MC_ADSP_BGC_SPINUP="on"           # "-bgc_spinup on" for accelerated decomp
+export A2MC_ADSP_START_DATE="0001-01-01"
+export A2MC_ADSP_SUPLPHOS="ALL"             # Prescribe all P during AD spinup
+export A2MC_ADSP_SUPLNITRO="NONE"           # No prescribed N
+export A2MC_ADSP_NYEARS_AD_CARBON_ONLY=30   # Carbon-only years before nutrient cycling
+export A2MC_ADSP_FINIDAT=""                 # Empty = cold start
+
+# --- RGSP (Regular Spinup) ---
+export A2MC_RGSP_START_DATE="0201-01-01"
+export A2MC_RGSP_SUPLPHOS="NONE"
+export A2MC_RGSP_SUPLNITRO="NONE"
+# Restart file date: when ADSP ends (ADSP_START + ADSP_YEARS)
+export A2MC_RGSP_RESTART_DATE="0201-01-01-00000"
+
+# --- TRANS (Transient Run) ---
+export A2MC_TRANS_START_DATE="1901-01-01"
+export A2MC_TRANS_SUPLPHOS="NONE"
+export A2MC_TRANS_SUPLNITRO="NONE"
+# Restart file date: when RGSP ends (RGSP_START + RGSP_YEARS)
+export A2MC_TRANS_RESTART_DATE="0401-01-01-00000"
+
+# --- History output settings ---
+export A2MC_HIST_MFILT=12                   # Number of time samples per history file
+export A2MC_HIST_NHTFRQ=0                   # 0 = monthly averages
 
 # ========================
 # ITERATION CONTROL
@@ -230,6 +262,11 @@ print_config() {
     echo "COMPSET Configuration:"
     echo "  Spinup (ADSP/RGSP): ${A2MC_COMPSET_SPINUP}"
     echo "  Transient (TRANS):  ${A2MC_COMPSET_TRANS}"
+    echo ""
+    echo "Simulation Protocol:"
+    echo "  ADSP: ${A2MC_ADSP_YEARS}yr, start=${A2MC_ADSP_START_DATE}, suplphos=${A2MC_ADSP_SUPLPHOS}, suplnitro=${A2MC_ADSP_SUPLNITRO}, ad_C_only=${A2MC_ADSP_NYEARS_AD_CARBON_ONLY}yr"
+    echo "  RGSP: ${A2MC_RGSP_YEARS}yr, start=${A2MC_RGSP_START_DATE}, suplphos=${A2MC_RGSP_SUPLPHOS}, suplnitro=${A2MC_RGSP_SUPLNITRO}"
+    echo "  TRANS: ${A2MC_TRANS_YEARS}yr, start=${A2MC_TRANS_START_DATE}, suplphos=${A2MC_TRANS_SUPLPHOS}, suplnitro=${A2MC_TRANS_SUPLNITRO}"
     echo ""
     if [ -n "${A2MC_SITE_NAME:-}" ]; then
         echo "Site: ${A2MC_SITE_NAME}"

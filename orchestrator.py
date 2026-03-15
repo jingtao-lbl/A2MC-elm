@@ -1629,6 +1629,7 @@ Review the screening log at:
                         root_causes=diagnosis.get('root_causes'),
                         key_insights=diagnosis.get('key_insights'),
                         comparative_analysis=diagnosis.get('comparative_analysis'),
+                        protocol_recommendations=diagnosis.get('protocol_recommendations'),
                         metadata={
                             'iteration': self.state.iteration,
                             'screening_data_summary': {
@@ -1671,6 +1672,7 @@ Diagnosis Summary:{skip_header}
   - Likely causes: {len(diagnosis.get('likely_causes', []))}
   - Confidence: {diagnosis.get('confidence', 0):.2f}
   - Parameter recommendations: {len(diagnosis.get('parameter_recommendations', []))}
+  - Protocol recommendations: {len(diagnosis.get('protocol_recommendations', []))}
 """,
                 next_phase="HYPOTHESIS",
                 options={

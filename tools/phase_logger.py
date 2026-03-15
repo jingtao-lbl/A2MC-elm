@@ -695,6 +695,7 @@ class PhaseLogger:
                       root_causes: List[Dict] = None,
                       key_insights: List[str] = None,
                       comparative_analysis: Dict = None,
+                      protocol_recommendations: List[Dict] = None,
                       metadata: Dict = None) -> Path:
         """
         Log Phase 3: Diagnosis with full AI reasoning.
@@ -830,6 +831,25 @@ class PhaseLogger:
                 content += f"- **Issue:** {issue}\n\n"
         else:
             content += "*No recommendations recorded*\n"
+
+        if protocol_recommendations:
+            content += """
+---
+
+## Protocol Recommendations
+
+"""
+            for rec in protocol_recommendations:
+                setting = rec.get('setting', 'Unknown')
+                current = rec.get('current_value', '?')
+                proposed = rec.get('proposed_value', '?')
+                rationale = rec.get('rationale', '')
+                respin = rec.get('requires_respin', True)
+                priority = rec.get('priority', 0)
+                content += f"### {setting} (Priority: {priority})\n"
+                content += f"- **Current:** `{current}` → **Proposed:** `{proposed}`\n"
+                content += f"- **Rationale:** {rationale}\n"
+                content += f"- **Requires re-spinup:** {'Yes' if respin else 'No'}\n\n"
 
         if cross_pft_conflicts:
             content += """

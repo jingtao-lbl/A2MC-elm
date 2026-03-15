@@ -181,7 +181,7 @@ if [[ "$RUN_PHASES" == "TRANS" ]] && [ -z "$RESTART_FILE" ]; then
             exit 1
         fi
         BASE_RGSP_CASE=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed "s/{N}/${BASE_CASE}/" | sed "s/{PHASE}/RGSP/")
-        POSSIBLE_RESTART="${A2MC_ENSEMBLE_OUTPUT}/${BASE_RGSP_CASE}/run/${BASE_RGSP_CASE}.elm.r.0401-01-01-00000.nc"
+        POSSIBLE_RESTART="${A2MC_ENSEMBLE_OUTPUT}/${BASE_RGSP_CASE}/run/${BASE_RGSP_CASE}.elm.r.${A2MC_TRANS_RESTART_DATE}.nc"
 
         if [ -f "$POSSIBLE_RESTART" ]; then
             RESTART_FILE="$POSSIBLE_RESTART"
@@ -189,8 +189,8 @@ if [[ "$RUN_PHASES" == "TRANS" ]] && [ -z "$RESTART_FILE" ]; then
         else
             # Try alternate path patterns
             for pattern in \
-                "${OUTPUT_ROOT}/*${BASE_CASE}*_RGSP/run/*.elm.r.0401-01-01-00000.nc" \
-                "${OUTPUT_ROOT}/*${BASE_CASE}*/run/*RGSP*.elm.r.0401-01-01-00000.nc"
+                "${OUTPUT_ROOT}/*${BASE_CASE}*_RGSP/run/*.elm.r.${A2MC_TRANS_RESTART_DATE}.nc" \
+                "${OUTPUT_ROOT}/*${BASE_CASE}*/run/*RGSP*.elm.r.${A2MC_TRANS_RESTART_DATE}.nc"
             do
                 files=($pattern)
                 if [ -f "${files[0]}" ]; then

@@ -282,6 +282,15 @@ hypotheses were tested using existing ensemble data (Skip Testing path). Use the
    - Competition (light, nutrient, PFT interactions)
    - Mortality (C starvation, hydraulic, background)
    - Phenology (timing, growing season length)
+   - Simulation protocol (spinup strategy, nutrient supplementation during spinup)
+
+   **Beyond parameter changes:** If the root cause is systemic (e.g., chronic P limitation
+   across ALL PFTs), consider whether a simulation protocol change might be needed.
+   Available protocol settings (in a2mc_config.sh):
+   - A2MC_ADSP_SUPLPHOS / A2MC_RGSP_SUPLPHOS / A2MC_TRANS_SUPLPHOS: nutrient supplementation per phase ('ALL' or 'NONE')
+   - A2MC_ADSP_SUPLNITRO / A2MC_RGSP_SUPLNITRO / A2MC_TRANS_SUPLNITRO: same for nitrogen
+   - A2MC_ADSP_NYEARS_AD_CARBON_ONLY: carbon-only years before nutrient cycling in AD spinup
+   Protocol changes require a full re-spinup (Phase 0 redesign). Use "protocol_recommendations" in the response.
 
 3. **For each mechanism in the inventory, present evidence FOR and AGAINST** using
    quantitative data from the results and sensitivity rankings.
@@ -318,6 +327,16 @@ Write them before the verbose optional sections to avoid truncation.
             "suggested_direction": "increase/decrease",
             "priority": 1,
             "caution": "potential side effects"
+        }}
+    ],
+    "protocol_recommendations": [
+        {{
+            "setting": "A2MC config variable name (e.g., A2MC_RGSP_SUPLPHOS)",
+            "current_value": "current value",
+            "proposed_value": "proposed value",
+            "rationale": "why this protocol change is needed",
+            "requires_respin": true,
+            "priority": 1
         }}
     ],
     "cross_pft_conflicts": [
