@@ -97,12 +97,17 @@ def diagnose(self, results: Dict, targets: Dict,
             if value < target_mean * 0.8 or value > target_mean * 1.2:
                 failing_targets.append(target)
 
-    # Get memory context if available
+    # Get memory context if available (site-specific + generic)
     memory_context = ""
     if self.memory and failing_targets:
         memory_context = self.memory.get_relevant_context(failing_targets)
-        if memory_context:
-            memory_context = f"""## Adaptive Memory Context (from previous calibration work)
+    # Also query generic (framework-level) knowledge for broader discoveries
+    if self.generic_memory and failing_targets:
+        generic_context = self.generic_memory.get_relevant_context(failing_targets)
+        if generic_context:
+            memory_context = (memory_context or "") + "\n" + generic_context
+    if memory_context:
+        memory_context = f"""## Adaptive Memory Context (from previous calibration work)
 {memory_context}
 
 """
@@ -286,10 +291,10 @@ hypotheses were tested using existing ensemble data (Skip Testing path). Use the
 
    **Beyond parameter changes:** If the root cause is systemic (e.g., chronic P limitation
    across ALL PFTs), consider whether a simulation protocol change might be needed.
-   Available protocol settings (in a2mc_config.sh):
-   - A2MC_ADSP_SUPLPHOS / A2MC_RGSP_SUPLPHOS / A2MC_TRANS_SUPLPHOS: nutrient supplementation per phase ('ALL' or 'NONE')
-   - A2MC_ADSP_SUPLNITRO / A2MC_RGSP_SUPLNITRO / A2MC_TRANS_SUPLNITRO: same for nitrogen
-   - A2MC_ADSP_NYEARS_AD_CARBON_ONLY: carbon-only years before nutrient cycling in AD spinup
+   Available protocol settings (in a2mc_config.sh) and their CURRENT values:
+   - A2MC_ADSP_SUPLPHOS={os.environ.get('A2MC_ADSP_SUPLPHOS', '?')} / A2MC_RGSP_SUPLPHOS={os.environ.get('A2MC_RGSP_SUPLPHOS', '?')} / A2MC_TRANS_SUPLPHOS={os.environ.get('A2MC_TRANS_SUPLPHOS', '?')}: nutrient supplementation per phase ('ALL' or 'NONE')
+   - A2MC_ADSP_SUPLNITRO={os.environ.get('A2MC_ADSP_SUPLNITRO', '?')} / A2MC_RGSP_SUPLNITRO={os.environ.get('A2MC_RGSP_SUPLNITRO', '?')} / A2MC_TRANS_SUPLNITRO={os.environ.get('A2MC_TRANS_SUPLNITRO', '?')}: same for nitrogen
+   - A2MC_ADSP_NYEARS_AD_CARBON_ONLY={os.environ.get('A2MC_ADSP_NYEARS_AD_CARBON_ONLY', '?')}: carbon-only years before nutrient cycling in AD spinup
    Protocol changes require a full re-spinup (Phase 0 redesign). Use "protocol_recommendations" in the response.
 
 3. **For each mechanism in the inventory, present evidence FOR and AGAINST** using

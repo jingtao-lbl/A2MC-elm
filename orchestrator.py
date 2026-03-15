@@ -407,8 +407,9 @@ class CalibrationOrchestrator:
             logger.info("Initializing new workflow state")
             self.state = WorkflowState()
 
-        # Initialize memory system
+        # Initialize memory system (site-specific + generic)
         self._memory = None
+        self._generic_memory = None
         if config.use_memory:
             # output_dir is already the memory directory (e.g., use_cases/Kougarok/memory)
             # gained_knowledge/ contains JSON files for discoveries, experiments, etc.
@@ -419,6 +420,12 @@ class CalibrationOrchestrator:
                 stats = self._memory.stats()
                 logger.info(f"Memory system initialized: {stats['discoveries']['total']} discoveries, "
                            f"{stats['experiments']['total']} experiments")
+                # Also load generic (framework-level) knowledge
+                generic_dir = Path(__file__).parent / "memory" / "gained_knowledge"
+                if generic_dir.exists() and str(generic_dir.resolve()) != str(Path(memory_dir).resolve()):
+                    self._generic_memory = MemoryManager(str(generic_dir))
+                    g_stats = self._generic_memory.stats()
+                    logger.info(f"Generic memory loaded: {g_stats['discoveries']['total']} discoveries")
             except ImportError as e:
                 logger.warning(f"Memory module not available: {e}")
             except Exception as e:
@@ -479,7 +486,8 @@ class CalibrationOrchestrator:
             from reasoning import ReasoningModule
             self._reasoning = ReasoningModule(
                 model=self.config.claude_model,
-                memory=self._memory
+                memory=self._memory,
+                generic_memory=self._generic_memory
             )
         return self._reasoning
 

@@ -649,9 +649,33 @@ class MemoryManager:
         return re.sub(r'_(?:7|9|10)$', '', name)
 
     def _discovery_entries(self) -> Dict[str, Dict]:
-        """Return only discovery entries (dicts), filtering out metadata fields
-        like 'version', 'site', 'description' that are stored as strings."""
-        return {k: v for k, v in self.discoveries.items() if isinstance(v, dict)}
+        """Return discovery entries as {name: dict}, handling both storage formats.
+
+        discoveries.json supports two formats:
+        1. Array format: {"discoveries": [{id, name, ...}, ...]}
+           - Used by generic knowledge (memory/gained_knowledge/discoveries.json)
+           - Keyed by 'id' field (e.g., 'suplphos_rgsp_for_p_limitation')
+        2. Flat format: {"discovery_name": {source, confidence, ...}, ...}
+           - Used by site-specific knowledge (use_cases/{site}/.../discoveries.json)
+           - Key is the discovery name itself
+
+        Both formats may coexist in the same file. Metadata fields (strings, lists)
+        at the top level are filtered out.
+        """
+        entries = {}
+        # Handle array format: "discoveries" key containing a list of dicts
+        disc_array = self.discoveries.get("discoveries", [])
+        if isinstance(disc_array, list):
+            for item in disc_array:
+                if isinstance(item, dict) and item.get("id"):
+                    entries[item["id"]] = item
+        # Handle flat format: top-level keys that are dicts (skip metadata strings)
+        for k, v in self.discoveries.items():
+            if k.startswith("_") or k == "discoveries":
+                continue
+            if isinstance(v, dict):
+                entries[k] = v
+        return entries
 
     def _find_relevant_discoveries(self, targets: List[str]) -> List[tuple]:
         """Find discoveries relevant to given targets.

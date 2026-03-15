@@ -90,6 +90,7 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None,
                  memory: Optional['MemoryManager'] = None,
+                 generic_memory: Optional['MemoryManager'] = None,
                  use_rag: bool = True):
         """
         Initialize the reasoning module.
@@ -144,6 +145,7 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
                 self.model = _model_defaults.get(self.provider, 'claude-opus-4-20250514')
 
         self.memory = memory
+        self.generic_memory = generic_memory
         self.use_rag = use_rag
 
         if not self.api_key:
