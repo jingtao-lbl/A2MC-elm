@@ -1,7 +1,7 @@
 # A2MC: Agentic Adaptive Multi-target Calibration
 
 **Status:** Implementation Complete
-**Version:** 2.32
+**Version:** 2.73
 **Purpose:** Fully autonomous multi-target calibration of ELM-FATES using Claude API + HPC + Adaptive Memory
 
 ---
@@ -130,8 +130,8 @@ python orchestrator.py --run
 ```
 
 **Configuration hierarchy:**
-- `a2mc_config.sh` - Machine-level defaults (HPC paths, COMPSET, Python env)
-- `use_cases/{site}/config/{site}_config.sh` - ALL site-specific settings
+- `a2mc_config.sh` - Machine-level defaults (HPC paths, COMPSET, Python env, simulation protocol, AI provider)
+- `use_cases/{site}/config/{site}_config.sh` - Site-specific overrides (PFTs, parameters, validation targets, protocol overrides)
 
 See "Running the Workflow" section below for more options.
 
@@ -193,8 +193,8 @@ The framework runs entirely on NERSC HPC (no SSH tunneling) and uses the Anthrop
 │  │ • design_exp()   │    │ • DataPipeline    │◄──►│ extract_monthly_ │      │
 │  │ • interpret()    │    │ • ExperimentRunner│    │   variables.py   │      │
 │  │                  │    │                   │    │                  │      │
-│  │  Claude Sonnet   │    │  Direct sbatch/   │    │ NetCDF handling  │      │
-│  │     4.5 API      │    │  squeue calls     │    │                  │      │
+│  │  Claude API      │    │  Direct sbatch/   │    │ NetCDF handling  │      │
+│  │  (configurable)  │    │  squeue calls     │    │                  │      │
 │  └──────────────────┘    └───────────────────┘    └──────────────────┘      │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -273,12 +273,17 @@ When experiment results disprove the hypothesis, return to diagnosis to revise u
 **Phase 6 → Phase 0 (Redesign):**
 When all parameter candidates are at bounds and calibration fails, expand parameter ranges and run a new ensemble.
 
-### Two-Level Iteration Structure
+### Three-Level Iteration Structure
 
-A2MC uses separate counters for lightweight hypothesis testing vs expensive HPC experiments:
+A2MC uses three nested loops:
+
+**Calibration Round (Outermost):** Full Phase 0 → 7 cycle
+- Round 1: e.g., 138 parameters, 4170 simulations
+- Round 2: e.g., 162 parameters, 4890 simulations (expanded parameter space)
+- Incremented when Phase 6 → Phase 0 redesign is needed
 
 **Inner Loop (Skip Testing):** Phase 3 ↔ 4, max 10 cycles
-- Test hypotheses with existing ensemble data
+- Test hypotheses with existing ensemble data (no HPC cost)
 - Exit when confidence threshold met OR max cycles reached
 - Counter resets when entering Phase 5 (HPC)
 
@@ -289,9 +294,10 @@ A2MC uses separate counters for lightweight hypothesis testing vs expensive HPC 
 ```bash
 # Control iteration limits
 python orchestrator.py --run \
-    --max-skip-testing 10 \      # Max Phase 3↔4 cycles (default: 10)
-    --max-experiments 10 \        # Max full experiment cycles (default: 10)
-    --confidence-threshold 0.95   # Exit skip testing threshold (default: 0.95)
+    --start-iteration 2 \          # Calibration round (outermost loop)
+    --max-skip-testing 10 \        # Max Phase 3↔4 cycles (default: 10)
+    --max-experiments 10 \         # Max full experiment cycles (default: 10)
+    --confidence-threshold 0.95    # Exit skip testing threshold (default: 0.95)
 ```
 
 ### Phase Details
@@ -489,7 +495,7 @@ interpretation = reasoning.interpret_results(
 ```
 
 **Output Structures:**
-- `Diagnosis` - Failing targets, causes, recommendations, requested diagnostics
+- `Diagnosis` - Failing targets, causes, parameter/protocol recommendations, requested diagnostics
 - `Hypothesis` - Name, mechanism, parameter modifications, test plan
 - `Experiment` - Base case, modifications, expected results
 
@@ -716,17 +722,19 @@ python scripts/seed_memory_from_yaml.py --input scripts/curated_knowledge.yaml
 
 ### Configuration
 
-Enable memory in the orchestrator:
+Enable memory in the orchestrator (paths auto-detected from environment):
 
 ```python
-orchestrator = CalibrationOrchestrator(
-    work_dir="/path/to/work",
-    param_file="/path/to/fates_params.nc",
-    output_root="/path/to/simulations",
-    use_memory=True,           # Enable Adaptive Memory
-    auto_learn=True,           # Automatically extract lessons
-    memory_dir="memory/data"   # Memory storage location
+from orchestrator import CalibrationOrchestrator, Config
+
+config = Config(
+    use_memory=True,           # Enable Adaptive Memory (site + generic)
+    use_reasoning=True,        # Enable Claude API reasoning
+    max_skip_testing=10,       # Max Phase 3↔4 skip testing cycles
+    max_experiments=10,        # Max full experiment cycles
 )
+orch = CalibrationOrchestrator(config)
+orch.run()
 ```
 
 ---
@@ -778,8 +786,8 @@ python orchestrator.py --run
 # Start from a specific phase and calibration round
 python orchestrator.py --run --start-phase 2 --start-iteration 2
 
-# Resume from a saved checkpoint
-python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state.json
+# Resume from a saved checkpoint (state-file auto-detected from config)
+python orchestrator.py --resume
 ```
 
 **Tip:** Use `screen` or `tmux` for long-running sessions on HPC.
@@ -944,7 +952,8 @@ A2MC/
 │   ├── schemas.py         # Diagnosis, Hypothesis, Experiment dataclasses
 │   ├── prompts.py         # DIAGNOSTIC_TOOLS_INVENTORY, CUSTOM_SCRIPT_TEMPLATE
 │   ├── base.py            # ReasoningModule class core (init, query, RAG)
-│   └── methods.py         # Phase methods (diagnose, hypothesis, etc.)
+│   ├── methods.py         # Phase methods (diagnose, hypothesis, etc.)
+│   └── validation.py      # Hypothesis validation and AI self-review
 ├── integration.py         # HPC integration layer
 │
 ├── use_cases/             # Site-specific case studies
@@ -960,11 +969,20 @@ A2MC/
 │       ├── validation/
 │       │   └── validation_targets_leafroot.txt
 │       └── memory/        # SITE-SPECIFIC KNOWLEDGE
-│           ├── logs/      # Phase execution logs (Markdown with AI reasoning)
-│           │   ├── phase2_screening/
-│           │   ├── phase3_diagnosis/
-│           │   ├── phase4_hypothesis/
-│           │   └── phase6_refinement/
+│           ├── logs/      # Phase execution logs (session-scoped)
+│           │   └── {session_id}/          # e.g., 20260310_143052/
+│           │       ├── phase2_screening/
+│           │       ├── phase3_diagnosis/
+│           │       ├── phase4_hypothesis/
+│           │       ├── phase5_testing/
+│           │       └── phase6_refinement/
+│           ├── phase_results/  # Phase outputs (session-scoped)
+│           │   └── {session_id}/
+│           │       ├── phase1_exploration/  # Sensitivity analysis results
+│           │       ├── phase2_screening/    # Ranking plots, CSVs
+│           │       ├── phase3_diagnosis/    # Diagnostic figures
+│           │       ├── phase5_testing/      # Experiment scripts, params
+│           │       └── phase6_refinement/   # Comparison plots
 │           ├── extracted/ # Extracted lessons (YAML)
 │           └── gained_knowledge/  # Site-specific knowledge (JSON)
 │               ├── discoveries.json
@@ -983,16 +1001,20 @@ A2MC/
 │
 ├── tools/                 # Shared utilities
 │   ├── config.py          # Python config loader (reads a2mc_config.sh)
-│   ├── phase_logger.py    # Site-specific Markdown logging
+│   ├── phase_logger.py    # Site-specific Markdown logging (session-scoped)
 │   ├── workflow_status.py # Master workflow status
 │   ├── cost_functions.py  # Error metrics (RE, RMSE, NSE, KGE)
+│   ├── evaluate_case.py   # Case evaluation against validation targets
 │   ├── optimize_function.py  # Ensemble ranking
 │   ├── fates_utils.py     # FATES data utilities
 │   ├── fates_output_variables.py  # FATES output variable registry
 │   ├── hpc_utils.py       # HPCConfig, HPCExecutor, ParameterManager
 │   ├── modify_fates_parameters.py
 │   ├── diagnose_ensemble_status.py
-│   └── extract_knowledge.py  # Knowledge extraction from logs
+│   ├── populate_experiments.py  # Phase 6 resume tool
+│   ├── submit_experiment.sh    # Submit single experiment to HPC
+│   ├── create_case.sh          # Create CIME case (sources config vars)
+│   └── extract_knowledge.py    # Knowledge extraction from logs
 │
 ├── memory/                # GENERIC KNOWLEDGE (framework-level)
 │   ├── __init__.py        # Package exports
