@@ -125,8 +125,11 @@ source a2mc_config.sh
 source use_cases/YourSite/config/yoursite_config.sh
 print_config  # Verify settings
 
-# Run calibration
+# Run calibration (with human review checkpoints between phases)
 python orchestrator.py --run
+
+# Run fully autonomous (no human review checkpoints)
+python orchestrator.py --run --no-review
 ```
 
 **Configuration hierarchy:**
@@ -780,8 +783,11 @@ Before running, modify the two configuration files for your setup:
 source a2mc_config.sh
 source use_cases/Kougarok/config/kougarok_config.sh
 
-# Start a new calibration run
+# Start a new calibration run (with human review checkpoints)
 python orchestrator.py --run
+
+# Run fully autonomous (no interactive prompts)
+python orchestrator.py --run --no-review
 
 # Start from a specific phase and calibration round
 python orchestrator.py --run --start-phase 2 --start-iteration 2
