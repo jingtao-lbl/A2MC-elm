@@ -2471,3 +2471,166 @@ def format_evidence_ledger_for_prompt(
     lines.append("5. For each parameter you EXCLUDE from the active set: provide a specific reason")
 
     return "\n".join(lines)
+
+
+# =========================================================================
+# CALIBRATION ROUND SUMMARY
+# =========================================================================
+
+def summarize_calibration_round(self, round_number: int,
+                                 previous_rounds: List[Dict],
+                                 phase_history: List[Dict],
+                                 experiments: List[Dict],
+                                 diagnoses: List[Dict],
+                                 best_experiment: Optional[Dict],
+                                 config_snapshot: Dict,
+                                 exit_reason: str) -> Dict:
+    """
+    Generate a structured summary of a completed calibration round.
+
+    Called at the end of Phase 6 (redesign) or Phase 7 (convergence) to
+    document what happened during this round and why it ended.
+
+    Args:
+        round_number: Current calibration round number
+        previous_rounds: List of previous round summaries from calibration_rounds.yaml
+        phase_history: Phase transition log from workflow state
+        experiments: All experiments run during this round
+        diagnoses: All diagnoses generated during this round
+        best_experiment: Best experiment result (if any)
+        config_snapshot: Current config values (params, ensembles, protocol, etc.)
+        exit_reason: Why the round ended ("converged", "max_experiments", "redesign")
+
+    Returns:
+        Dict with YAML-ready round summary fields:
+        - parameters, ensembles, trajectories, protocol
+        - changes_from_previous, rationale, outcome, status
+    """
+    # Build context from previous rounds
+    prev_summary = ""
+    if previous_rounds:
+        for r in previous_rounds:
+            r_num = r.get("round_number", "?")
+            prev_summary += f"\n### Round {r_num}\n"
+            prev_summary += f"- Parameters: {r.get('parameters', '?')}, Ensembles: {r.get('ensembles', '?')}\n"
+            prev_summary += f"- Protocol suplphos: {json.dumps(r.get('protocol', {}).get('suplphos', {}))}\n"
+            if r.get("changes_from_previous"):
+                prev_summary += f"- Changes: {r['changes_from_previous']}\n"
+            prev_summary += f"- Rationale: {r.get('rationale', 'N/A')}\n"
+            prev_summary += f"- Outcome: {r.get('outcome', 'N/A')}\n"
+
+    # Build experiment summary
+    exp_summary = ""
+    if experiments:
+        exp_summary = f"Total experiments: {len(experiments)}\n"
+        for exp in experiments[-5:]:  # Last 5 experiments
+            name = exp.get("name", "?")
+            targets_met = exp.get("results", {}).get("targets_met", "?")
+            exp_summary += f"  - {name}: {targets_met} targets met\n"
+
+    # Build diagnosis summary
+    diag_summary = ""
+    if diagnoses:
+        diag_summary = f"Total diagnoses: {len(diagnoses)}\n"
+        for diag in diagnoses[-3:]:  # Last 3 diagnoses
+            if isinstance(diag, dict):
+                root_causes = diag.get("root_causes", [])
+                if root_causes:
+                    diag_summary += f"  - Root causes: {', '.join(str(rc) for rc in root_causes[:3])}\n"
+
+    # Best result
+    best_summary = "No experiments completed."
+    if best_experiment:
+        best_summary = (
+            f"Best: {best_experiment.get('name', '?')} — "
+            f"{best_experiment.get('results', {}).get('targets_met', '?')} targets met"
+        )
+
+    prompt = f"""Summarize this completed calibration round for the calibration_rounds.yaml history file.
+
+## Current Round: {round_number}
+Exit reason: {exit_reason}
+
+## Configuration
+- Parameters: {config_snapshot.get('n_params', '?')}
+- Ensembles: {config_snapshot.get('n_ensembles', '?')}
+- Trajectories: {config_snapshot.get('n_trajectories', '?')}
+- Protocol suplphos: ADSP={config_snapshot.get('suplphos_adsp', '?')}, RGSP={config_snapshot.get('suplphos_rgsp', '?')}, TRANS={config_snapshot.get('suplphos_trans', '?')}
+
+## Previous Rounds
+{prev_summary if prev_summary else "This is the first round."}
+
+## Phase History (this round)
+{json.dumps(phase_history[-20:], indent=2) if phase_history else "N/A"}
+
+## Experiments (this round)
+{exp_summary if exp_summary else "No experiments."}
+
+## Diagnoses (this round)
+{diag_summary if diag_summary else "No diagnoses."}
+
+## Best Result
+{best_summary}
+
+## Instructions
+Write a concise summary of this calibration round. Return a JSON object with:
+
+```json
+{{{{
+    "changes_from_previous": ["List of changes from the previous round, or null if first round"],
+    "rationale": "Why this round was run (1-3 sentences)",
+    "outcome": "What was achieved or learned (2-4 sentences)",
+    "status": "completed"
+}}}}
+```
+
+Guidelines:
+- Be specific about mechanistic findings, not just statistics
+- Reference specific discoveries, parameter names, or PFTs when relevant
+- For "outcome", focus on the KEY insight or result, not a laundry list
+- Keep each field concise but informative for future AI reasoning
+
+Respond ONLY with the JSON object."""
+
+    response = self.query(prompt)
+
+    try:
+        result = self._extract_json(response)
+        # Merge with config data to create the full round entry
+        round_entry = {
+            "parameters": config_snapshot.get("n_params"),
+            "ensembles": config_snapshot.get("n_ensembles"),
+            "trajectories": config_snapshot.get("n_trajectories"),
+            "targets": config_snapshot.get("targets"),
+            "protocol": {
+                "suplphos": {
+                    "ADSP": config_snapshot.get("suplphos_adsp", "?"),
+                    "RGSP": config_snapshot.get("suplphos_rgsp", "?"),
+                    "TRANS": config_snapshot.get("suplphos_trans", "?"),
+                }
+            },
+            "changes_from_previous": result.get("changes_from_previous"),
+            "rationale": result.get("rationale", ""),
+            "outcome": result.get("outcome", ""),
+            "status": result.get("status", "completed"),
+        }
+        return round_entry
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse round summary response: {e}")
+        return {
+            "parameters": config_snapshot.get("n_params"),
+            "ensembles": config_snapshot.get("n_ensembles"),
+            "trajectories": config_snapshot.get("n_trajectories"),
+            "protocol": {
+                "suplphos": {
+                    "ADSP": config_snapshot.get("suplphos_adsp", "?"),
+                    "RGSP": config_snapshot.get("suplphos_rgsp", "?"),
+                    "TRANS": config_snapshot.get("suplphos_trans", "?"),
+                }
+            },
+            "changes_from_previous": None,
+            "rationale": f"Round {round_number} (auto-summary failed)",
+            "outcome": f"Exit reason: {exit_reason}. Best: {best_summary}",
+            "status": "completed",
+        }

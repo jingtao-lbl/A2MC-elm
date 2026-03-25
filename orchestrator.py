@@ -2752,6 +2752,8 @@ Refinement Summary:
             )
 
         # Decision logic (Outer Loop of Two-Level Iteration Structure)
+        # NOTE: When Phase 6 → Phase 0 redesign is implemented, call
+        # self._update_calibration_round_history("redesign") before transitioning.
         if best_targets_met >= total_targets:
             # ALL targets met - CONVERGE!
             self.state.converged = True
@@ -2807,6 +2809,99 @@ Refinement Summary:
                 )
 
     # =========================================================================
+    # CALIBRATION ROUND SUMMARY
+    # =========================================================================
+    def _update_calibration_round_history(self, exit_reason: str):
+        """Update calibration_rounds.yaml with AI-generated round summary.
+
+        Called at the end of Phase 6 (redesign) or Phase 7 (convergence).
+        Loads existing history, calls AI to summarize the current round,
+        and writes the updated YAML file.
+
+        Args:
+            exit_reason: Why the round ended ("converged", "max_experiments", "redesign")
+        """
+        import yaml  # Lazy import
+
+        if not self.reasoning_module:
+            logger.info("No reasoning module — skipping calibration round summary")
+            return
+
+        # Locate calibration_rounds.yaml in use case config dir
+        use_case_dir = os.environ.get("A2MC_USE_CASE_DIR", "")
+        if not use_case_dir:
+            logger.warning("A2MC_USE_CASE_DIR not set — cannot update calibration round history")
+            return
+
+        yaml_path = Path(use_case_dir) / "config" / "calibration_rounds.yaml"
+
+        # Load existing rounds
+        previous_rounds = []
+        if yaml_path.exists():
+            with open(yaml_path) as f:
+                data = yaml.safe_load(f) or {}
+            rounds_dict = data.get("rounds", {})
+            for r_num in sorted(rounds_dict.keys()):
+                entry = rounds_dict[r_num]
+                if isinstance(entry, dict):
+                    entry["round_number"] = r_num
+                    previous_rounds.append(entry)
+
+        # Build config snapshot from environment
+        # Derive target names from screening data if available
+        targets = None
+        if hasattr(self.state, 'screening_data') and self.state.screening_data:
+            target_names = self.state.screening_data.get('target_names', [])
+            if target_names:
+                targets = target_names
+
+        config_snapshot = {
+            "n_params": os.environ.get("A2MC_N_PARAMS", "?"),
+            "n_ensembles": os.environ.get("A2MC_TOTAL_ENSEMBLE", "?"),
+            "n_trajectories": os.environ.get("A2MC_N_TRAJECTORIES", "?"),
+            "suplphos_adsp": os.environ.get("A2MC_ADSP_SUPLPHOS", "?"),
+            "suplphos_rgsp": os.environ.get("A2MC_RGSP_SUPLPHOS", "?"),
+            "suplphos_trans": os.environ.get("A2MC_TRANS_SUPLPHOS", "?"),
+            "targets": targets,
+        }
+
+        round_number = self.state.calibration_round
+
+        logger.info(f"Generating AI summary for calibration round {round_number}...")
+
+        try:
+            round_entry = self.reasoning_module.summarize_calibration_round(
+                round_number=round_number,
+                previous_rounds=previous_rounds,
+                phase_history=self.state.phase_history,
+                experiments=self.state.experiments,
+                diagnoses=self.state.diagnoses,
+                best_experiment=self.state.best_experiment,
+                config_snapshot=config_snapshot,
+                exit_reason=exit_reason,
+            )
+
+            # Write back to YAML
+            if yaml_path.exists():
+                with open(yaml_path) as f:
+                    data = yaml.safe_load(f) or {}
+            else:
+                data = {"rounds": {}}
+
+            if "rounds" not in data:
+                data["rounds"] = {}
+
+            data["rounds"][round_number] = round_entry
+
+            with open(yaml_path, "w") as f:
+                yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+            logger.info(f"Calibration round {round_number} summary saved to: {yaml_path}")
+
+        except Exception as e:
+            logger.error(f"Failed to generate calibration round summary: {e}")
+
+    # =========================================================================
     # CONVERGENCE - Final Report
     # =========================================================================
     def _handle_convergence(self):
@@ -2842,6 +2937,10 @@ Refinement Summary:
             json.dump(final_report, f, indent=2)
 
         logger.info(f"\nFinal report saved to: {report_path}")
+
+        # Update calibration round history with AI summary
+        exit_reason = "converged" if self.state.converged else "max_experiments"
+        self._update_calibration_round_history(exit_reason)
 
 
 def parse_phase(value: str) -> str:
