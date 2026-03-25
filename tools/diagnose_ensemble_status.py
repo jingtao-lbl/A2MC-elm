@@ -464,10 +464,12 @@ def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_ye
     cmd_lines = [f"cd {case_path}"]
 
     # Build batch args with optional dependency
+    queue = os.environ.get('A2MC_QUEUE', 'shared')
+    memory = os.environ.get('A2MC_MEMORY', '16G')
     if prev_jobid_var:
-        batch_args = f'-q shared --mem=8G --dependency=afterok:${prev_jobid_var}'
+        batch_args = f'-q {queue} --mem={memory} --dependency=afterok:${prev_jobid_var}'
     else:
-        batch_args = '-q shared --mem=8G'
+        batch_args = f'-q {queue} --mem={memory}'
 
     if restart_type == 'fresh' and phase == 'ADSP':
         # ADSP fresh start - just resubmit

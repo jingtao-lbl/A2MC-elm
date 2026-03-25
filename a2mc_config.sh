@@ -49,7 +49,7 @@ export A2MC_E3SM_ROOT="/global/cfs/cdirs/m2467/jingtao/E3SM_FATES"
 export A2MC_OUTPUT_ROOT="/global/cfs/cdirs/m2467/jingtao"
 
 # Scripts directory (where case scripts are generated)
-export A2MC_SCRIPTS_DIR="/pscratch/sd/j/jingtao/CaseScripts"
+export A2MC_SCRIPTS_DIR="pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES"
 
 # Input data paths
 export A2MC_DIN_LOC_ROOT="/dvs_ro/cfs/cdirs/e3sm/inputdata"
@@ -60,7 +60,7 @@ export A2MC_DIN_LOC_ROOT_CLMFORC="${A2MC_DIN_LOC_ROOT}/atm/datm7"
 # ========================
 export A2MC_QUEUE="shared"
 export A2MC_WALLTIME="47:59:00"
-export A2MC_MEMORY="8G"
+export A2MC_MEMORY="16G"
 export A2MC_NTASKS=1
 
 # Email notifications (optional)

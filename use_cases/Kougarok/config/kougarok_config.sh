@@ -85,15 +85,17 @@ export A2MC_ELM_OPTIONS="-nutrient cnp -nutrient_comp_pathway eca -soil_decomp c
 # -----------------------------------------------------------------------------
 # Ensemble Paths
 # -----------------------------------------------------------------------------
-export A2MC_ENSEMBLE_NAME="Kougarok_PlantTraitsCNPEnsemble162_Morris"
+#export A2MC_ENSEMBLE_NAME="Kougarok_PlantTraitsCNPEnsemble162_Morris"
+export A2MC_ENSEMBLE_NAME="Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP" #3rd round of calibration
 export A2MC_ENSEMBLE_PREFIX="Kougarok_ELM-FATES"
 export A2MC_CASE_NAME_PATTERN="${A2MC_ENSEMBLE_PREFIX}_PtCNPEn{N}_{PHASE}"
 export A2MC_ENSEMBLE_OUTPUT="${A2MC_OUTPUT_ROOT}/${A2MC_ENSEMBLE_NAME}"
 # Extracted monthly data (NetCDF files from extract_monthly_variables_FATES.py)
-export A2MC_EXTRACTED_DATA="${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_Morris_Extract"
+export A2MC_EXTRACTED_DATA="${A2MC_OUTPUT_ROOT}/${A2MC_ENSEMBLE_NAME}_Extract"
 
 # Case scripts directory
-export A2MC_CASE_SCRIPTS="${A2MC_SCRIPTS_DIR}/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase"
+#export A2MC_CASE_SCRIPTS="${A2MC_SCRIPTS_DIR}/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase"
+export A2MC_CASE_SCRIPTS="${A2MC_SCRIPTS_DIR}/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase_RGSPsuplP" #3rd round of calibration
 export A2MC_LOG_DIR="${A2MC_CASE_SCRIPTS}"
 
 # -----------------------------------------------------------------------------
