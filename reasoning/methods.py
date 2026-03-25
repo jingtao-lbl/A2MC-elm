@@ -11,6 +11,7 @@ All phase-specific reasoning methods for ReasoningModule:
 - analyze_screening_results(): Phase 2 - Screening analysis
 - analyze_sensitivity_results(): Phase 1 - Sensitivity analysis
 - check_proposed_modifications(): Safety check against memory
+- generate_session_report(): End-of-session comprehensive report generation
 
 These methods are attached to ReasoningModule in reasoning/__init__.py.
 
@@ -2634,3 +2635,68 @@ Respond ONLY with the JSON object."""
             "outcome": f"Exit reason: {exit_reason}. Best: {best_summary}",
             "status": "completed",
         }
+
+
+def generate_session_report(self, artifacts: Dict, state_summary: Dict) -> str:
+    """Generate a comprehensive session report via AI.
+
+    Collects all phase logs, figure references, and state data, then
+    calls the AI to produce a cohesive Markdown narrative report.
+
+    Called at the end of Phase 6 (before convergence/loop decision).
+
+    Args:
+        artifacts: Output from tools.session_report.collect_session_artifacts()
+        state_summary: Dict with calibration state info (site, round, targets, etc.)
+
+    Returns:
+        Markdown report string
+    """
+    from tools.session_report import build_report_prompt
+
+    prompt = build_report_prompt(artifacts, state_summary)
+
+    # Use diag max tokens since the report is long
+    max_tokens = int(os.environ.get('A2MC_AI_DIAG_MAX_TOKENS', '16384'))
+
+    logger.info("Generating session report via AI...")
+    report = self.query(prompt, max_tokens=max_tokens)
+
+    if not report or len(report.strip()) < 100:
+        logger.warning("AI returned empty or very short session report")
+        return _fallback_session_report(artifacts, state_summary)
+
+    return report
+
+
+def _fallback_session_report(artifacts: Dict, state_summary: Dict) -> str:
+    """Generate a minimal report without AI when the API call fails."""
+    lines = [
+        f"# Session Report: {state_summary.get('session_id', 'Unknown')}",
+        "",
+        f"**Site:** {state_summary.get('site_name', '?')}",
+        f"**Round:** {state_summary.get('calibration_round', '?')}",
+        f"**Outcome:** {'CONVERGED' if state_summary.get('converged') else state_summary.get('exit_reason', '?')}",
+        "",
+        "---",
+        "",
+        "*AI report generation failed. Raw logs are available in the session directory.*",
+        "",
+    ]
+
+    # List available logs
+    for phase_name, log_list in artifacts.get("logs", {}).items():
+        lines.append(f"## {phase_name}")
+        for log_entry in log_list:
+            lines.append(f"- {log_entry['filename']}")
+        lines.append("")
+
+    # List available figures
+    for phase_name, paths in artifacts.get("figure_rel_paths", {}).items():
+        lines.append(f"## Figures: {phase_name}")
+        for p in paths:
+            fig_name = os.path.splitext(os.path.basename(p))[0]
+            lines.append(f"![{fig_name}]({p})")
+        lines.append("")
+
+    return "\n".join(lines)

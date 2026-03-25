@@ -192,16 +192,21 @@ def write_synthesis_summary_log(
         failing = diag.get('failing_targets', [])
         n_failing = len(failing)
         causes = diag.get('likely_causes', [])
-        # Build a concise summary of the diagnosis
+        # Build a concise summary showing ALL causes by short name
         cause_names = []
-        for c in causes[:3]:
+        for c in causes:
             if isinstance(c, dict):
-                cause_names.append(c.get('parameter', c.get('cause', '?')))
+                name = c.get('parameter', c.get('cause', '?'))
             elif isinstance(c, str):
-                cause_names.append(c)
-        cause_summary = ', '.join(cause_names)
-        if len(causes) > 3:
-            cause_summary += f' (+{len(causes)-3} more)'
+                # Extract label before colon (e.g., "P STARVATION (PRIMARY): ...")
+                name = c.split(':')[0].strip() if ':' in c else c
+            else:
+                continue
+            # Truncate individual cause names that are still too long
+            if len(name) > 80:
+                name = name[:77] + '...'
+            cause_names.append(name)
+        cause_summary = '; '.join(cause_names)
         diag_rows.append((i, f"{confidence:.2f}", str(n_failing), cause_summary))
 
     diag_table = "| Iter | Confidence | # Failing | Key Causes |\n"

@@ -41,6 +41,8 @@ Usage:
     python diagnose_ensemble_status.py                    # Diagnose only
     python diagnose_ensemble_status.py --restart          # Generate restart script
     python diagnose_ensemble_status.py --cases 2-100      # Check specific range
+    python diagnose_ensemble_status.py --cases 1,5,10     # Check individual cases
+    python diagnose_ensemble_status.py --cases 1-50,100,200-300  # Mixed ranges and individuals
     python diagnose_ensemble_status.py --parallel 8       # Use 8 parallel workers
 """
 
@@ -95,6 +97,12 @@ if not OUTPUT_ROOT:
 
 # Case script pattern (used to recreate failed cases) - loaded from config
 CASE_SCRIPT_PATTERN = os.environ.get('A2MC_CASE_SCRIPT_PATTERN', '{CASE_PREFIX}_En{N}.sh')
+
+# Forcing data cycle length (ADSP/RGSP recycle forcing over this many years)
+# Default: 1920 - 1901 + 1 = 20 years
+_spinup_start = int(os.environ.get('A2MC_SPINUP_START_YEAR', '1901'))
+_spinup_end = int(os.environ.get('A2MC_SPINUP_END_YEAR', '1920'))
+FORCING_CYCLE_LENGTH = _spinup_end - _spinup_start + 1
 
 # Phase definitions
 # - duration: how many years to simulate
@@ -453,6 +461,17 @@ def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_ye
         restart_year = phase_info['start_year']
     else:
         restart_year = last_year
+        # For ADSP/RGSP: align restart year to forcing data cycle boundary.
+        # Forcing recycles every FORCING_CYCLE_LENGTH years (e.g., 20).
+        # If a crash leaves a restart at year 171 (not cycle-aligned),
+        # snap back to 161 (= start + floor((171-1)/20)*20).
+        if phase in ('ADSP', 'RGSP'):
+            start = phase_info['start_year']
+            elapsed = restart_year - start
+            aligned_elapsed = (elapsed // FORCING_CYCLE_LENGTH) * FORCING_CYCLE_LENGTH
+            aligned_year = start + aligned_elapsed
+            if aligned_year != restart_year:
+                restart_year = aligned_year
 
     stop_n = phase_info['end_year'] - restart_year + 1
 
@@ -534,6 +553,8 @@ def generate_restart_command(case_result):
     Based on MATLAB template logic:
     - For fresh starts: just resubmit (ADSP) or set finidat to prev phase's restart
     - For continues: set RUN_STARTDATE, update finidat, calculate STOP_N
+    - ADSP/RGSP continues: align restart year to forcing cycle boundary
+      (e.g., last_year=171 snaps back to 161 for 20-year forcing cycle)
     - ADSP: remove 2 lines from user_nl_elm (finidat='' and nyears_ad_carbon_only)
     - RGSP/TRANS: remove 1 line from user_nl_elm (old finidat)
     """
@@ -641,7 +662,7 @@ def main():
     # Default case range uses TOTAL_ENSEMBLE from config (or fallback)
     default_range = f"1-{TOTAL_ENSEMBLE}" if TOTAL_ENSEMBLE > 0 else "1-100"
     parser.add_argument('--cases', type=str, default=default_range,
-                        help=f'Case range, e.g., "{default_range}" or "100-200"')
+                        help=f'Case range or list, e.g., "1-100", "1,5,10", "1-50,100,200-300"')
     parser.add_argument('--restart', action='store_true',
                         help='Generate restart script')
     parser.add_argument('--parallel', type=int, default=16,
@@ -650,22 +671,31 @@ def main():
                         help='Output directory for reports')
     args = parser.parse_args()
 
-    # Parse case range
-    case_range = args.cases.split('-')
-    start_case = int(case_range[0])
-    end_case = int(case_range[1]) if len(case_range) > 1 else start_case
+    # Parse case specification: supports ranges, lists, and combinations
+    # Examples: "1-100", "1,5,10", "1-50,100,200-300"
+    case_nums = []
+    for part in args.cases.split(','):
+        part = part.strip()
+        if '-' in part:
+            bounds = part.split('-')
+            case_nums.extend(range(int(bounds[0]), int(bounds[1]) + 1))
+        else:
+            case_nums.append(int(part))
+    case_nums = sorted(set(case_nums))  # deduplicate and sort
 
     print("=" * 60)
     print("ELM-FATES Ensemble Diagnostic Tool (FIXED VERSION)")
     print("=" * 60)
     print(f"Output root: {OUTPUT_ROOT}")
-    print(f"Cases: {start_case} to {end_case}")
+    if len(case_nums) <= 20:
+        print(f"Cases: {args.cases} ({len(case_nums)} cases)")
+    else:
+        print(f"Cases: {case_nums[0]} to {case_nums[-1]} ({len(case_nums)} cases)")
     print(f"Parallel workers: {args.parallel}")
     print()
 
     # Scan all cases in parallel
     all_results = []
-    case_nums = list(range(start_case, end_case + 1))
 
     print(f"Scanning {len(case_nums)} cases...")
 

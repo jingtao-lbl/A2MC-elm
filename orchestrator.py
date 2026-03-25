@@ -2734,6 +2734,13 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             except Exception as e:
                 logger.warning(f"Could not write refinement log: {e}")
 
+        # Generate session report (AI-powered comprehensive summary)
+        self._generate_session_report(
+            best_targets_met=best_targets_met,
+            total_targets=total_targets,
+            best_exp=best_exp,
+        )
+
         # Human review checkpoint before iteration decision
         if self.config.human_review:
             self._human_review_checkpoint(
@@ -2807,6 +2814,84 @@ Refinement Summary:
                     f"No improvement, trying new hypothesis, "
                     f"experiment cycle {self.state.experiment_count}"
                 )
+
+    # =========================================================================
+    # SESSION REPORT
+    # =========================================================================
+    def _generate_session_report(self, best_targets_met: int,
+                                 total_targets: int,
+                                 best_exp: Optional[Dict] = None):
+        """Generate a comprehensive session report via AI.
+
+        Collects all phase logs, figures, and state data for the current session,
+        then calls AI to produce a cohesive Markdown narrative report saved to
+        the session logs directory.
+
+        Called at the end of Phase 6 before the convergence/loop decision.
+        """
+        if not self.reasoning_module:
+            return
+
+        session_id = os.environ.get('A2MC_SESSION_ID', '')
+        if not session_id:
+            logger.info("No session ID set; skipping session report generation")
+            return
+
+        site_dir = os.environ.get('A2MC_USE_CASE_DIR', '')
+        if not site_dir:
+            logger.warning("A2MC_USE_CASE_DIR not set; cannot generate session report")
+            return
+
+        try:
+            from tools.session_report import (
+                collect_session_artifacts, write_session_report
+            )
+
+            # Collect artifacts
+            artifacts = collect_session_artifacts(site_dir, session_id)
+
+            n_logs = sum(len(v) for v in artifacts.get("logs", {}).values())
+            n_figs = sum(len(v) for v in artifacts.get("figures", {}).values())
+            logger.info(f"Session report: collected {n_logs} logs, {n_figs} figures")
+
+            if n_logs == 0:
+                logger.info("No session logs found; skipping report generation")
+                return
+
+            # Build state summary
+            screening = self.state.screening_data or {}
+            state_summary = {
+                "session_id": session_id,
+                "site_name": os.environ.get('A2MC_SITE_NAME', '?'),
+                "calibration_round": self.state.calibration_round,
+                "n_params": os.environ.get('A2MC_N_PARAMS', '?'),
+                "n_ensembles": os.environ.get('A2MC_TOTAL_ENSEMBLE', '?'),
+                "sampling_scheme": os.environ.get('A2MC_SAMPLING_SCHEME', '?'),
+                "targets": screening.get('target_names', []),
+                "n_targets": total_targets,
+                "best_experiment": best_exp,
+                "converged": best_targets_met >= total_targets,
+                "exit_reason": (
+                    "converged" if best_targets_met >= total_targets
+                    else "max_experiments" if self.state.experiment_count >= self.config.max_experiments
+                    else "in_progress"
+                ),
+                "iteration": self.state.iteration,
+                "experiment_count": self.state.experiment_count,
+            }
+
+            # Generate report via AI
+            report_content = self.reasoning_module.generate_session_report(
+                artifacts=artifacts,
+                state_summary=state_summary,
+            )
+
+            # Write to session directory
+            report_path = write_session_report(site_dir, session_id, report_content)
+            logger.info(f"Session report written: {report_path}")
+
+        except Exception as e:
+            logger.warning(f"Could not generate session report: {e}")
 
     # =========================================================================
     # CALIBRATION ROUND SUMMARY

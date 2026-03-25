@@ -44,6 +44,7 @@ ReasoningModule.analyze_screening_results = _methods.analyze_screening_results
 ReasoningModule.analyze_sensitivity_results = _methods.analyze_sensitivity_results
 ReasoningModule.check_proposed_modifications = _methods.check_proposed_modifications
 ReasoningModule.summarize_calibration_round = _methods.summarize_calibration_round
+ReasoningModule.generate_session_report = _methods.generate_session_report
 
 __all__ = [
     'ReasoningModule',
