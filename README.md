@@ -1,8 +1,10 @@
 # A2MC: Agentic Adaptive Multi-target Calibration
 
+[![CAF Agent of the Week](https://img.shields.io/badge/CAF-Agent%20of%20the%20Week-blue)](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
+
 **Status:** Implementation Complete
 **Version:** 2.73
-**Purpose:** Fully autonomous multi-target calibration of ELM-FATES using Claude API + HPC + Adaptive Memory
+**Purpose:** Fully autonomous multi-target calibration of ELM using AI API + HPC + RAG/GraphRAG + Adaptive Memory
 
 ---
 
@@ -1076,3 +1078,4 @@ A2MC/
 **Email:** jingtao@lbl.gov
 **Project:** NGEE-Arctic ELM-FATES calibration
 **GitHub:** https://github.com/jingtao-lbl/A2MC-elm
+**CAF Agent of the Week:** [AotW #7 — A2MC](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
