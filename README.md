@@ -2,8 +2,8 @@
 
 [![CAF Agent of the Week](https://img.shields.io/badge/CAF-Agent%20of%20the%20Week-blue)](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
 
-**Status:** Implementation Complete
-**Version:** 2.73
+**Status:** Implementation Complete <br>
+**Version:** 2.73 <br>
 **Purpose:** Fully autonomous multi-target calibration of ELM using AI API + HPC + RAG/GraphRAG + Adaptive Memory
 
 ---
@@ -1067,6 +1067,7 @@ A2MC/
 - [NERSC SLURM Documentation](https://docs.nersc.gov/jobs/)
 - [ELM-FATES Technical Reference](https://fates-users-guide.readthedocs.io/)
 - [SALib Morris Sensitivity](https://salib.readthedocs.io/)
+- [CAF Agent of the Week #7 — A2MC](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
 
 
 
@@ -1074,8 +1075,7 @@ A2MC/
 
 ## Contact
 
-**Author:** Jing Tao
-**Email:** jingtao@lbl.gov
-**Project:** NGEE-Arctic ELM-FATES calibration
+**Author:** Jing Tao <br>
+**Email:** jingtao@lbl.gov <br>
+**Project:** NGEE-Arctic ELM-FATES calibration <br>
 **GitHub:** https://github.com/jingtao-lbl/A2MC-elm
-**CAF Agent of the Week:** [AotW #7 — A2MC](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
