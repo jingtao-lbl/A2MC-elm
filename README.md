@@ -796,6 +796,10 @@ python orchestrator.py --run --start-phase 2 --start-iteration 2
 
 # Resume from a saved checkpoint (state-file auto-detected from config)
 python orchestrator.py --resume
+
+# Resume Phase 5 after HPC experiments complete, continuing the same session
+# (checks job status, extracts results, evaluates, then proceeds to Phase 6)
+python orchestrator.py --resume --start-phase 5 --session-id 20260331_030000
 ```
 
 **Tip:** Use `screen` or `tmux` for long-running sessions on HPC.
@@ -945,6 +949,67 @@ Direct SLURM commands:
 - **Morris ensemble (4890 sims):** ~50K node-hours
 - **Single experiment:** ~10 node-hours
 - **Data extraction:** ~0.1 node-hours per case
+
+---
+
+## Session Reports and Presentations
+
+A2MC includes offline tools for generating session reports, presentation slides, and narrated videos from calibration session logs. These are not part of the automated workflow and can be run at any time (even while Phase 5 simulations are still running).
+
+### Session Report
+
+The orchestrator automatically generates a Markdown session report at the end of Phase 6 via `tools/session_report.py`. The report is saved to `use_cases/{site}/memory/logs/{session_id}/session_report_{session_id}.md`.
+
+### Presentation Pipeline
+
+`tools/reports/generate_presentation.py` provides a complete pipeline from session logs to narrated video:
+
+```
+Session logs + report + figures
+  → AI-generated manuscript-style technical report (.md)
+  → AI-generated Marp slides (.md)
+  → AI-generated narration script (.json)
+  → PDF + PPTX (marp-cli)
+  → Narrated MP4 video (TTS + ffmpeg)
+```
+
+**Important:** Stages 1-4 (collect, report, slides, narration) can run on Perlmutter since they only need the AI API. Stages 5-6 (PDF, video) require marp-cli, ffmpeg, and poppler which are only available locally. Use `--stop-after narration` on Perlmutter, then `--start-from pdf` on your local machine.
+
+```bash
+# === On Perlmutter: generate report + slides + narration ===
+source a2mc_config.sh
+source use_cases/Kougarok/config/kougarok_config.sh
+
+python tools/reports/generate_presentation.py --session-id 20260330_135435 \
+    --author "Dr. Jing Tao (Lawrence Berkeley National Laboratory)" \
+    --stop-after narration
+
+# Manuscript report only (no slides/video)
+python tools/reports/generate_presentation.py --session-id 20260330_135435 \
+    --stop-after report
+
+# Review and edit the generated report, slides, and narration
+
+# === On local machine: build PDF + video ===
+source ~/a2mc_env/bin/activate  # for openai TTS
+python tools/reports/generate_presentation.py --session-id 20260330_135435 \
+    --start-from pdf
+```
+
+| Stage | What | AI API? | Where |
+|-------|------|---------|-------|
+| collect | Gather session report, raw logs, figures | No | Perlmutter or local |
+| report | Manuscript-style technical report | Yes | Perlmutter or local |
+| slides | Generate Marp slide deck | Yes | Perlmutter or local |
+| narration | Generate TTS narration per slide | Yes | Perlmutter or local |
+| pdf | Build PDF and PPTX with marp-cli | No | **Local only** |
+| video | Build narrated MP4 with TTS audio | No (TTS API) | **Local only** |
+
+The AI uses both the session report and raw phase logs as source material. The manuscript report follows journal-quality scientific writing standards (precision, transparency, quantified uncertainty, no filler). Narration follows a reporting-agent style ("Hello. I'm an A2MC reporting agent, curated by...").
+
+**Local prerequisites:** marp-cli (`npm install -g @marp-team/marp-cli`), poppler (`brew install poppler`), ffmpeg (`brew install ffmpeg`), openai Python package (in `~/a2mc_env`).
+
+**Detailed workflow:** See `tools/reports/WORKFLOW.md`.
 
 ---
 

@@ -80,6 +80,10 @@ export A2MC_TOP_N=50
 # -----------------------------------------------------------------------------
 # ELM Build/Namelist Options
 # -----------------------------------------------------------------------------
+# Override RGSP suplphos for Round 3: extend supplementary P through regular spinup
+# to prevent chronic P-limitation (see calibration_rounds.yaml Round 3 rationale)
+export A2MC_RGSP_SUPLPHOS="ALL"
+
 export A2MC_ELM_OPTIONS="-nutrient cnp -nutrient_comp_pathway eca -soil_decomp century"
 
 # -----------------------------------------------------------------------------

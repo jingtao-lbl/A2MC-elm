@@ -570,6 +570,7 @@ def ai_review_experiment(
         'summary' (str). Returns a safe default if the API call fails.
     """
     params_table = []
+    organ_names = {1: 'leaf', 2: 'fineroot', 3: 'sapwood', 4: 'storage'}
     for p in experiment.get('parameters', []):
         name = p.get('name', '?')
         current = p.get('current', '?')
@@ -577,7 +578,15 @@ def ai_review_experiment(
         bounds = param_bounds.get(name, {})
         lower = bounds.get('lower_bound', '?')
         upper = bounds.get('upper_bound', '?')
-        params_table.append(f"  - {name}: {current} → {proposed} (bounds: [{lower}, {upper}])")
+        # Include PFT and organ to disambiguate duplicate param names
+        qualifier = ""
+        pft = p.get('pft')
+        organ = p.get('organ')
+        if pft is not None:
+            qualifier += f" PFT#{pft}"
+        if organ is not None:
+            qualifier += f" [{organ_names.get(organ, f'organ={organ}')}]"
+        params_table.append(f"  - {name}{qualifier}: {current} → {proposed} (bounds: [{lower}, {upper}])")
 
     prompt = f"""Quick plausibility review of this ELM-FATES experiment before HPC submission.
 

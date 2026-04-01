@@ -1237,6 +1237,42 @@ class CalibrationOrchestrator:
         screening_data = self.state.screening_data
         if screening_data and screening_data.get("n_cases_evaluated", 0) > 0:
             logger.info("Screening already completed (resuming from checkpoint)")
+            # Still write a screening log for this session so the session's
+            # logs/ directory has a complete record of all phases that ran.
+            if self._phase_logger:
+                try:
+                    best_case = screening_data.get("best_case", {})
+                    n_cases = screening_data.get("n_cases_evaluated", 0)
+                    targets_met = best_case.get("targets_met", 0)
+                    n_targets = screening_data.get("n_targets", targets_met)
+                    self._phase_logger.set_iteration_context(
+                        calibration_round=self.state.calibration_round,
+                        iteration=self.state.iteration,
+                        experiment_count=self.state.experiment_count,
+                        skip_testing_count=self.state.skip_testing_count
+                    )
+                    log_path = self._phase_logger.log_screening(
+                        title="Screening (from checkpoint)",
+                        n_sets_evaluated=n_cases,
+                        best_cost=best_case.get('composite_rmsre', float('inf')),
+                        top_sets=[c.get('case_num', 0) for c in screening_data.get('best_cases', [])[:10]],
+                        ai_reasoning=screening_data.get('ai_analysis', ''),
+                        target_performance=screening_data.get('target_performance', {}),
+                        key_findings=[
+                            f"Best case: #{best_case.get('case_id', 'N/A')}",
+                            f"Targets met: {targets_met}/{n_targets}",
+                            f"Cases evaluated: {n_cases}",
+                            "Resumed from checkpoint (screening ran in earlier session)"
+                        ],
+                        metadata={
+                            'iteration': self.state.iteration,
+                            'n_simulations': self.config.total_ensemble,
+                            'resumed_from_checkpoint': True,
+                        }
+                    )
+                    logger.info(f"  Phase log written: {log_path}")
+                except Exception as e:
+                    logger.warning(f"Could not write screening log: {e}")
         else:
             n_sims = self.config.total_ensemble
             logger.info(f"Screening {n_sims} cases against validation targets...")
@@ -2273,7 +2309,7 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
 
             # Tag each experiment with iteration and prefix names with session tag
             # and cycle number to avoid collisions across sessions and experiment
-            # cycles (s0309h23_c0_exp1, s0311h10_c0_exp1, etc.)
+            # cycles (s0309h23m45_c0_exp1, s0311h10m30_c0_exp1, etc.)
             cycle = self.state.experiment_count
             stag = self.config.session_tag
             for exp in experiments:
@@ -3084,7 +3120,7 @@ Examples:
   python orchestrator.py --run
 
   # Resume from checkpoint (state file is session-tagged)
-  python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state_s0309h23.json
+  python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state_s0309h23m45.json
 
   # Start from specific phase in calibration round 2 (e.g., 162 params)
   python orchestrator.py --run --start-phase 2 --start-iteration 2
@@ -3142,6 +3178,9 @@ Phase numbers:
                        help="Start from phase (0-7, phase0-phase7, or name like 'exploration')")
     parser.add_argument("--start-iteration", type=int, default=None,
                        help="Calibration round (outermost loop: 1=first ensemble, 2=redesigned, ...)")
+    parser.add_argument("--session-id", type=str, default=None,
+                       help="Reuse an existing session ID (YYYYMMDD_HHMMSS) to continue "
+                            "logging into the same logs/{session_id}/ directory")
 
     # Sampling design options (override config defaults)
     parser.add_argument("--sampling-scheme", type=str,
@@ -3193,22 +3232,51 @@ Phase numbers:
                 sys.exit(1)
 
     # Generate session ID (used for both run log filename and phase log filenames)
-    session_id = datetime.now().strftime('%Y%m%d_%H%M%S')
-    # Short session tag for file/case naming: sMMDDhHH (e.g., s0309h23)
-    session_tag = f"s{session_id[4:8]}h{session_id[9:11]}"
+    if args.session_id:
+        session_id = args.session_id
+        logger.info(f"Reusing session ID: {session_id}")
+    else:
+        session_id = datetime.now().strftime('%Y%m%d_%H%M%S')
+    # Short session tag for file/case naming: sMMDDhHHmMM (e.g., s0309h23m45)
+    # Backward compatible: also matches old sMMDDhHH format when parsing
+    session_tag = f"s{session_id[4:8]}h{session_id[9:11]}m{session_id[11:13]}"
 
     # Append session tag to state file and workflow log paths
-    # so concurrent sessions don't collide (workflow_state_s0309h23.json)
-    if state_file and not args.resume:
-        # Only add session tag for new runs, not resumes
+    # so concurrent sessions don't collide (workflow_state_s0309h23m45.json)
+    import re as _re
+    import glob as _glob
+
+    if state_file and args.session_id:
+        # --session-id provided (works with both --run and --resume):
+        # find matching state file from the original run
+        state_dir = os.path.dirname(state_file)
+        candidates = sorted(_glob.glob(os.path.join(state_dir, "workflow_state_s*.json")))
+        tag_new = f"s{session_id[4:8]}h{session_id[9:11]}m{session_id[11:13]}"
+        tag_old = f"s{session_id[4:8]}h{session_id[9:11]}"
+        matched = None
+        for c in candidates:
+            basename = os.path.basename(c)
+            if tag_new in basename or (tag_old in basename and 'm' not in basename.split(tag_old)[1][:1]):
+                matched = c
+                break
+        if matched:
+            state_file = matched
+            m = _re.search(r'workflow_state_(s\d{4}h\d{2}(?:m\d{2})?)\.json', state_file)
+            if m:
+                session_tag = m.group(1)
+            logger.info(f"Reusing state file from original session: {state_file}")
+        else:
+            state_file = os.path.join(state_dir, f"workflow_state_{session_tag}.json")
+            logger.warning(f"No matching state file found for session {session_id}, creating: {state_file}")
+    elif state_file and not args.resume:
+        # New run: create session-tagged state file
         state_dir = os.path.dirname(state_file)
         state_file = os.path.join(state_dir, f"workflow_state_{session_tag}.json")
         logger.info(f"Session-tagged state file: {state_file}")
     elif args.resume and state_file:
-        # Extract session_tag from existing state file name if present
-        # e.g., workflow_state_s0309h23.json → s0309h23
-        import re
-        m = re.search(r'workflow_state_(s\d{4}h\d{2})\.json', state_file)
+        # Resume without --session-id: extract session_tag from state file name
+        # Supports both new sMMDDhHHmMM and old sMMDDhHH formats
+        m = _re.search(r'workflow_state_(s\d{4}h\d{2}(?:m\d{2})?)\.json', state_file)
         if m:
             session_tag = m.group(1)
             logger.info(f"Resumed session tag: {session_tag}")

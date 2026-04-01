@@ -471,14 +471,15 @@ def execute_requested_diagnostics(
                                     obs_uncert[name] = t.obs_std
                         except Exception:
                             simple_targets = tool_args.get('targets', {})
-                        # Determine output path
+                        # Determine output path (phase_results, not logs)
                         fig_dir = None
-                        if phase_logger:
-                            fig_dir = phase_logger._get_phase_dir(3)
+                        if a2mc_config.USE_CASE_DIR:
+                            fig_dir = a2mc_config.phase_results_dir("phase3_diagnosis")
+                            fig_dir.mkdir(parents=True, exist_ok=True)
                         if not fig_dir:
                             fig_dir = Path(extracted_dir)
                         output_path = str(Path(fig_dir) / 'ensemble_biomass_top_cases.png')
-                        top_n = tool_args.get('top_n', 100)
+                        top_n = max(tool_args.get('top_n', 100), 100)
 
                         # Reuse Phase 2 ranked_cases if available (avoids
                         # re-ranking all 4890 cases from scratch)

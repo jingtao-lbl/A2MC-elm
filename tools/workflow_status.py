@@ -154,7 +154,7 @@ class WorkflowStatus:
         Args:
             log_dir: Directory containing workflow_log.json
             auto_load: If True, load existing log if present
-            session_tag: Session tag (e.g., "s0309h23") for session-specific log files
+            session_tag: Session tag (e.g., "s0309h23m45") for session-specific log files
         """
         self.log_dir = Path(log_dir)
         if session_tag:
