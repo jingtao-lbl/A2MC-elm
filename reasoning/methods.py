@@ -679,7 +679,12 @@ Proposing changes to low-sensitivity parameters wastes HPC compute.**
 - Use CUMULATIVE design when mechanisms are sequential (A → B → C)
 - Use FACTORIAL design when parameters may interact (P × N synergy)
 - Only modify PFT-specific parameters to avoid cross-PFT conflicts
-- Propose values within physically realistic bounds
+- Morris sampling bounds are NOT physical limits. You MAY propose values outside
+  the current Morris range if scientifically justified (e.g., literature values,
+  mechanistic reasoning). Flag these as "out of Morris bounds — recommend bound
+  expansion in Phase 0 redesign." Do NOT submit no-op parameters (proposed == current)
+  just because the current value is at a bound — either propose a value beyond
+  the bound or omit the parameter entirely.
 - Include parameter bounds (min/max) and sensitivity rank where known
 
 ## CRITICAL: Organ-Dependent Parameters
