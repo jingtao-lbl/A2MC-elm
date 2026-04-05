@@ -2255,8 +2255,12 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             and e.get("status") not in (None, "placeholder")
         ]
         if existing_exps:
-            # Check if ALL experiments are fully processed (have extraction_status)
-            all_extracted = all(e.get("extraction_status") for e in existing_exps)
+            # Check if ALL experiments are successfully extracted
+            # Only "extracted" counts — failed/timeout/skipped statuses must re-run
+            DONE_STATUSES = {"extracted", "simulated_no_output"}
+            all_extracted = all(
+                e.get("extraction_status") in DONE_STATUSES for e in existing_exps
+            )
             if all_extracted:
                 logger.info(f"Found {len(existing_exps)} fully-processed experiments from "
                             f"iteration {current_iter}. Skipping to refinement.")
@@ -2270,6 +2274,14 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
                 # Experiments exist but aren't fully processed — resume from wait
                 resumed = True
                 experiments = existing_exps  # References into self.state.experiments
+                # Clear failed extraction statuses so they get re-extracted
+                for exp in experiments:
+                    ext = exp.get("extraction_status", "")
+                    if ext and ext not in DONE_STATUSES:
+                        logger.info(f"  Clearing failed extraction_status='{ext}' "
+                                    f"for '{exp.get('name', '?')}' (will re-extract)")
+                        exp.pop("extraction_status", None)
+                        exp.pop("results", None)
                 logger.info(f"Resuming {len(experiments)} experiments from iteration "
                             f"{current_iter} (not yet fully processed)")
 
@@ -2731,6 +2743,9 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
         total_targets = eval_result['total_targets']
         prev_best_targets = (self.state.best_experiment or {}).get("results", {}).get("targets_met", 0)
 
+        # Generate baseline vs experiment comparison plot
+        self._plot_experiment_comparison()
+
         # Determine action
         action_result = determine_refinement_action(best_targets_met, total_targets, prev_best_targets)
 
@@ -2853,6 +2868,19 @@ Refinement Summary:
 
     # =========================================================================
     # SESSION REPORT
+    def _plot_experiment_comparison(self):
+        """Generate baseline vs experiment comparison plot.
+
+        Thin wrapper — delegates to phases/phase6_refinement/evaluate_results.py.
+        """
+        from phases.phase6_refinement.evaluate_results import generate_comparison_plot
+        generate_comparison_plot(
+            experiments=self.state.experiments,
+            screening_data=self.state.screening_data or {},
+            iteration=self.state.iteration,
+            pft_ids=self.config.pfts or [7, 9, 10],
+        )
+
     # =========================================================================
     def _generate_session_report(self, best_targets_met: int,
                                  total_targets: int,

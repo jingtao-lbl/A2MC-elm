@@ -180,7 +180,9 @@ if [[ "$RUN_PHASES" == "TRANS" ]] && [ -z "$RESTART_FILE" ]; then
             echo "ERROR: A2MC_CASE_NAME_PATTERN is not set. Source your site config first."
             exit 1
         fi
-        BASE_RGSP_CASE=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed "s/{N}/${BASE_CASE}/" | sed "s/{PHASE}/RGSP/")
+        # Strip "En" prefix if present (e.g., "En86" → "86") for pattern substitution
+        BASE_CASE_NUM=$(echo "$BASE_CASE" | sed 's/^En//')
+        BASE_RGSP_CASE=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed "s/{N}/${BASE_CASE_NUM}/" | sed "s/{PHASE}/RGSP/")
         POSSIBLE_RESTART="${A2MC_ENSEMBLE_OUTPUT}/${BASE_RGSP_CASE}/run/${BASE_RGSP_CASE}.elm.r.${A2MC_TRANS_RESTART_DATE}.nc"
 
         if [ -f "$POSSIBLE_RESTART" ]; then
@@ -212,12 +214,32 @@ fi
 # CASE SETUP
 # ========================
 
-CASE_NAME="${A2MC_ENSEMBLE_PREFIX}_${EXP_NAME}"
+# Derive CASE_NAME using A2MC_CASE_NAME_PATTERN (consistent with create_case.sh
+# and generate_experiment_scripts). When a base case is provided, the case name
+# is: {pattern with N=base_case}_{exp_name}. Without a base case, N=exp_name.
 if [ -z "${A2MC_ENSEMBLE_OUTPUT:-}" ]; then
     echo "ERROR: A2MC_ENSEMBLE_OUTPUT is not set. Source your site config first."
     exit 1
 fi
 CIME_OUTPUT_ROOT="${A2MC_ENSEMBLE_OUTPUT}/"
+
+if [ -n "${A2MC_CASE_NAME_PATTERN:-}" ]; then
+    if [ -n "$BASE_CASE" ]; then
+        # Strip PFT suffix from base case if present (e.g., "En86" → "86")
+        BASE_NUM=$(echo "$BASE_CASE" | sed 's/^En//')
+        CASE_NAME=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed 's/_{PHASE}//' | sed "s/{N}/${BASE_NUM}/")
+        CASE_NAME="${CASE_NAME}_${EXP_NAME}"
+    else
+        CASE_NAME=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed 's/_{PHASE}//' | sed "s/{N}/${EXP_NAME}/")
+    fi
+else
+    if [ -n "$BASE_CASE" ]; then
+        BASE_NUM=$(echo "$BASE_CASE" | sed 's/^En//')
+        CASE_NAME="${A2MC_ENSEMBLE_PREFIX}_En${BASE_NUM}_${EXP_NAME}"
+    else
+        CASE_NAME="${A2MC_ENSEMBLE_PREFIX}_${EXP_NAME}"
+    fi
+fi
 
 echo "========================================"
 echo "A2MC Experiment Submission"
@@ -246,9 +268,17 @@ fi
 # CREATE CASE
 # ========================
 
-# Use create_case.sh for actual case creation
+# Use create_case.sh for actual case creation.
+# Pass --case-num with base case number and --case-suffix with experiment name,
+# consistent with how generate_experiment_scripts() generates the scripts.
 CREATE_CASE_CMD="${SCRIPT_DIR}/create_case.sh"
-CREATE_CASE_CMD="$CREATE_CASE_CMD --case-num ${EXP_NAME}"
+if [ -n "$BASE_CASE" ]; then
+    BASE_NUM=$(echo "$BASE_CASE" | sed 's/^En//')
+    CREATE_CASE_CMD="$CREATE_CASE_CMD --case-num ${BASE_NUM}"
+    CREATE_CASE_CMD="$CREATE_CASE_CMD --case-suffix ${EXP_NAME}"
+else
+    CREATE_CASE_CMD="$CREATE_CASE_CMD --case-num ${EXP_NAME}"
+fi
 CREATE_CASE_CMD="$CREATE_CASE_CMD --param-file ${PARAM_FILE}"
 CREATE_CASE_CMD="$CREATE_CASE_CMD --output-root ${OUTPUT_ROOT}"
 CREATE_CASE_CMD="$CREATE_CASE_CMD --phases \"${RUN_PHASES}\""

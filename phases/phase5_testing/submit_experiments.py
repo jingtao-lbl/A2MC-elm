@@ -295,12 +295,9 @@ def submit_experiments(
         cmd = [str(SUBMIT_SCRIPT), "--name", name, "--param-file", param_file]
 
         if base_case:
-            # Format base case: ensure it has the expected prefix
-            # submit_experiment.sh expects just the case identifier (e.g., "En2678")
-            base_case_str = str(base_case)
-            if base_case_str.isdigit():
-                base_case_str = f"En{base_case_str}"
-            cmd.extend(["--base-case", base_case_str])
+            # Pass base case number as-is (e.g., "86").
+            # submit_experiment.sh handles pattern substitution via {N}.
+            cmd.extend(["--base-case", str(base_case)])
 
         if output_root:
             cmd.extend(["--output-root", output_root])

@@ -1261,11 +1261,14 @@ class PhaseLogger:
             content += f"### {name}\n\n"
             if param_file:
                 content += f"**Parameter file:** `{Path(param_file).name}`\n\n"
-            content += "| Parameter | PFT | Old Value | New Value | Change |\n"
-            content += "|-----------|-----|-----------|-----------|--------|\n"
+            organ_names = {1: 'leaf', 2: 'fineroot', 3: 'sapwood', 4: 'storage'}
+            content += "| Parameter | PFT | Organ | Old Value | New Value | Change |\n"
+            content += "|-----------|-----|-------|-----------|-----------|--------|\n"
             for m in mods:
                 pname = m.get('parameter', '?')
                 pft = m.get('pft', '')
+                organ = m.get('organ')
+                organ_str = organ_names.get(organ, '') if organ else ''
                 old = m.get('old_value', '?')
                 new = m.get('new_value', '?')
                 try:
@@ -1278,7 +1281,7 @@ class PhaseLogger:
                         change = "N/A"
                 except (ValueError, TypeError):
                     change = ""
-                content += f"| `{pname}` | {pft} | {old} | {new} | {change} |\n"
+                content += f"| `{pname}` | {pft} | {organ_str} | {old} | {new} | {change} |\n"
             content += "\n"
 
         if metadata:

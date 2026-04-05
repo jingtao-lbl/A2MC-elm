@@ -142,12 +142,15 @@ def load_parameter_bounds(param_file: str = None) -> Dict[str, Dict]:
 
                 # Extract PFT from shorthand suffix (e.g., "vmax_p_9" → 9)
                 pft = _extract_pft_from_shorthand(shorthand)
+                # Extract organ from shorthand (e.g., "stoich_phos_leaf_9" → 1)
+                organ = _extract_organ_from_shorthand(shorthand, pft)
 
                 bounds[shorthand] = {
                     'lower_bound': lower,
                     'upper_bound': upper,
                     'default': default,
                     'pft': pft,
+                    'organ': organ,
                     'fates_name': fates_name,
                 }
 
@@ -167,6 +170,67 @@ def _extract_pft_from_shorthand(shorthand: str) -> Optional[int]:
     match = re.search(r'_(\d+)$', shorthand)
     if match:
         return int(match.group(1))
+    return None
+
+
+# Organ names used in shorthand naming convention (e.g., stoich_phos_leaf_9)
+_ORGAN_NAMES = {'leaf': 1, 'fineroot': 2, 'sapwood': 3, 'storage': 4}
+
+
+def _extract_organ_from_shorthand(shorthand: str, pft: Optional[int]) -> Optional[int]:
+    """Extract organ index from shorthand name.
+
+    Organ name must immediately precede the PFT suffix.
+
+    Examples:
+        'stoich_phos_leaf_9' → 1 (leaf)
+        'stoich_phos_fineroot_7' → 2 (fineroot)
+        'alloc_storage_cushion_10' → None (storage is part of param name, not organ)
+        'phos_retrans_7' → None (retrans has no organ in shorthand)
+    """
+    if pft is None:
+        return None
+    pft_suffix = f'_{pft}'
+    for organ_name, organ_idx in _ORGAN_NAMES.items():
+        if shorthand.endswith(f'_{organ_name}{pft_suffix}'):
+            return organ_idx
+    return None
+
+
+def find_bounds_entry(
+    fates_name: str,
+    pft: Optional[int],
+    organ: Optional[int],
+    param_bounds: Dict[str, Dict],
+) -> Optional[Dict]:
+    """Find bounds entry for a FATES parameter by (fates_name, pft, organ).
+
+    This resolves the naming mismatch between AI-generated parameters
+    (which use FATES names like 'fates_stoich_phos' + pft + organ)
+    and the bounds dict (keyed by shorthands like 'stoich_phos_leaf_9').
+
+    Args:
+        fates_name: Official FATES parameter name (e.g., 'fates_stoich_phos')
+        pft: PFT number (1-indexed) or None for global params
+        organ: Organ index (1=leaf, 2=fineroot, ...) or None
+        param_bounds: Output of load_parameter_bounds()
+
+    Returns:
+        Bounds entry dict, or None if not found.
+    """
+    for shorthand, entry in param_bounds.items():
+        if entry.get('fates_name') != fates_name:
+            continue
+        if pft is not None and entry.get('pft') != pft:
+            continue
+        if organ is not None and entry.get('organ') is not None:
+            if entry['organ'] != organ:
+                continue
+        elif organ is not None and entry.get('organ') is None:
+            # Organ requested but entry has no organ info — could still match
+            # for retrans params where shorthand has no organ (e.g., phos_retrans_7)
+            pass
+        return entry
     return None
 
 
@@ -311,7 +375,15 @@ def _validate_single_parameter(
     if not name:
         return
 
+    # Primary lookup by shorthand key
     bounds_info = param_bounds.get(name, {})
+    # Fallback: if name is a FATES name (not found as shorthand), do reverse lookup
+    # by (fates_name, pft, organ) to find the matching bounds entry
+    if not bounds_info and name.startswith('fates_'):
+        bounds_info = find_bounds_entry(
+            name, param.get('pft'), param.get('organ'), param_bounds
+        ) or {}
+
     actual_current = base_case_params.get(name)
 
     # --- Check 1: "current" value vs actual base case ---
@@ -412,11 +484,30 @@ def _validate_single_parameter(
         except (ValueError, TypeError):
             pass
 
+    # --- Check 4b: No-op detection (proposed == current) ---
+    current_val = param.get('current')
+    if proposed is not None and current_val is not None:
+        try:
+            cur = float(current_val)
+            prop = float(proposed)
+            if cur != 0:
+                rel_diff = abs(prop - cur) / abs(cur)
+            else:
+                rel_diff = abs(prop - cur)
+            if rel_diff < 0.001:  # <0.1% difference = no-op
+                result.issues.append(ValidationIssue(
+                    parameter=name,
+                    check="no-op",
+                    severity="warning",
+                    detail=f"proposed={prop} is unchanged from current={cur} (delta <0.1%)",
+                ))
+        except (ValueError, TypeError):
+            pass
+
     # --- Check 5: Magnitude of change ---
     # Large changes are allowed — experiments are free to test any value.
     # Parameter bounds are best guesses; Phase 6→Phase 0 can expand them.
     # We only log informational warnings, never block or strip.
-    current_val = param.get('current')
     if proposed is not None and current_val is not None:
         try:
             cur = float(current_val)
@@ -576,6 +667,10 @@ def ai_review_experiment(
         current = p.get('current', '?')
         proposed = p.get('proposed', '?')
         bounds = param_bounds.get(name, {})
+        if not bounds and name.startswith('fates_'):
+            bounds = find_bounds_entry(
+                name, p.get('pft'), p.get('organ'), param_bounds
+            ) or {}
         lower = bounds.get('lower_bound', '?')
         upper = bounds.get('upper_bound', '?')
         # Include PFT and organ to disambiguate duplicate param names

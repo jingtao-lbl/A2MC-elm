@@ -10,6 +10,7 @@ from phases.phase6_refinement.evaluate_results import (
     evaluate_experiments,
     classify_outcome,
     determine_refinement_action,
+    generate_comparison_plot,
 )
 
 # Plotting requires matplotlib/numpy — lazy import to avoid breaking
@@ -25,5 +26,6 @@ __all__ = [
     'evaluate_experiments',
     'classify_outcome',
     'determine_refinement_action',
+    'generate_comparison_plot',
     'plot_experiment_comparison',
 ]

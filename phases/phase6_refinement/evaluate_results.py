@@ -157,3 +157,85 @@ def determine_refinement_action(
             'hypothesis_status': 'FAILED',
             'description': f'REVISE HYPOTHESIS (no improvement: {best_targets_met}/{total_targets})'
         }
+
+
+def generate_comparison_plot(
+    experiments: List[Dict],
+    screening_data: Dict,
+    iteration: int,
+    pft_ids: List[int] = None,
+) -> Optional[str]:
+    """Generate baseline vs experiment comparison plot.
+
+    Args:
+        experiments: List of experiment dicts (must have case_name, iteration).
+        screening_data: Screening data with best_case info.
+        iteration: Current iteration number.
+        pft_ids: PFT IDs (default: [7, 9, 10]).
+
+    Returns:
+        Path to saved figure, or None if generation failed.
+    """
+    import os
+    from pathlib import Path
+
+    try:
+        from phases.phase6_refinement.plot_experiment_comparison import (
+            plot_experiment_comparison
+        )
+        from tools.config import config as a2mc_config
+    except ImportError as e:
+        logger.warning(f"Cannot generate comparison plot (missing dependency): {e}")
+        return None
+
+    # Get baseline case ID
+    baseline_id = str(screening_data.get('best_case', {}).get('case_id', ''))
+    if not baseline_id:
+        logger.info("No baseline case ID in screening data; skipping comparison plot")
+        return None
+
+    # Get experiment case names for current iteration
+    exp_case_names = [
+        exp["case_name"]
+        for exp in experiments
+        if exp.get("iteration") == iteration and exp.get("case_name")
+    ]
+    if not exp_case_names:
+        logger.info("No experiment case names found; skipping comparison plot")
+        return None
+
+    # Load targets
+    try:
+        from phases.phase2_screening.screen_ensemble import load_kougarok_targets
+        raw_targets = load_kougarok_targets()
+        targets = {
+            name: {'observed': t.observed, 'uncertainty': t.uncertainty}
+            for name, t in raw_targets.items()
+        }
+    except Exception:
+        logger.warning("Could not load targets for comparison plot")
+        return None
+
+    # Output path
+    fig_dir = a2mc_config.phase_results_dir("phase6_refinement")
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    output_path = str(fig_dir / f"experiment_comparison_{baseline_id}.png")
+
+    logger.info(f"Generating baseline vs experiment comparison plot...")
+    logger.info(f"  Baseline: #{baseline_id}, Experiments: {len(exp_case_names)}")
+
+    try:
+        fig_path = plot_experiment_comparison(
+            data_dir=str(a2mc_config.EXTRACTED_DATA),
+            baseline_case=baseline_id,
+            experiment_cases=exp_case_names,
+            targets=targets,
+            pft_ids=pft_ids or [7, 9, 10],
+            output_path=output_path,
+        )
+        if fig_path:
+            logger.info(f"  Comparison plot: {fig_path}")
+        return fig_path
+    except Exception as e:
+        logger.warning(f"Comparison plot generation failed: {e}")
+        return None
