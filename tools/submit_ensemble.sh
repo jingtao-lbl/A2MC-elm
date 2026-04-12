@@ -7,10 +7,17 @@
 #
 # Usage:
 #   ./submit_ensemble.sh --start 1 --end 100 [options]
+#   ./submit_ensemble.sh --cases-file r4_case_list.txt [options]
 #
-# Required:
-#   --start NUM           Starting case number
-#   --end NUM             Ending case number
+# Required (provide ONE of these two modes):
+#   Range mode:    --start NUM --end NUM
+#   Cases-file mode: --cases-file FILE   (one case number per line, # for comments)
+#
+#   --start NUM           Starting case number (range mode)
+#   --end NUM             Ending case number (range mode)
+#   --cases-file FILE     Text file with non-sequential case numbers (one per line).
+#                         Used for subset_replay rounds where R4 case numbers
+#                         match R3 source case numbers (e.g., 86, 2939, 1385, ...)
 #
 # Optional (defaults from a2mc_config.sh):
 #   --param-dir DIR       Directory containing parameter files
@@ -65,8 +72,13 @@ source "${SCRIPT_DIR}/../a2mc_config.sh"
 
 START_NUM=""
 END_NUM=""
+CASES_FILE=""                              # Alternative to --start/--end: list of case numbers
 PARAM_DIR="${A2MC_PARAM_DIR:-}"           # Default from config
-PARAM_PATTERN="${A2MC_PARAM_PATTERN:-fates_params_*_En{N}.nc}"  # Default from config
+# Note: bash parameter expansion ${VAR:-default} misparses `}` inside the default
+# when the default contains `{N}` (the inner `}` closes the expansion early).
+# Use a separate variable to avoid the bug.
+_DEFAULT_PARAM_PATTERN='fates_params_*_En{N}.nc'
+PARAM_PATTERN="${A2MC_PARAM_PATTERN:-$_DEFAULT_PARAM_PATTERN}"  # Default from config
 OUTPUT_ROOT="${A2MC_OUTPUT_ROOT}"
 CASE_PREFIX="${A2MC_ENSEMBLE_PREFIX}"
 CASE_SUFFIX=""
@@ -90,6 +102,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --end)
             END_NUM="$2"
+            shift 2
+            ;;
+        --cases-file)
+            CASES_FILE="$2"
             shift 2
             ;;
         --param-dir)
@@ -152,11 +168,45 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate required arguments
-if [ -z "$START_NUM" ] || [ -z "$END_NUM" ]; then
-    echo "ERROR: --start and --end are required"
+# Validate required arguments — accept either (--start and --end) OR --cases-file
+if [ -n "$CASES_FILE" ]; then
+    # Cases-file mode: read non-sequential case numbers from a file
+    if [ ! -f "$CASES_FILE" ]; then
+        echo "ERROR: Cases file not found: $CASES_FILE"
+        exit 1
+    fi
+    # Build CASE_LIST array (skip blank lines and # comments)
+    # Use while-read loop for bash 3.x compatibility (mapfile is bash 4+)
+    CASE_LIST=()
+    while IFS= read -r _line || [ -n "$_line" ]; do
+        # Strip whitespace
+        _line="${_line#"${_line%%[![:space:]]*}"}"
+        _line="${_line%"${_line##*[![:space:]]}"}"
+        # Skip blank lines and comments
+        [ -z "$_line" ] && continue
+        case "$_line" in '#'*) continue ;; esac
+        CASE_LIST+=("$_line")
+    done < "$CASES_FILE"
+    if [ ${#CASE_LIST[@]} -eq 0 ]; then
+        echo "ERROR: Cases file is empty (or only comments): $CASES_FILE"
+        exit 1
+    fi
+    if [ -n "$START_NUM" ] || [ -n "$END_NUM" ]; then
+        echo "ERROR: --cases-file cannot be combined with --start/--end"
+        exit 1
+    fi
+    USE_CASES_FILE=true
+elif [ -z "$START_NUM" ] || [ -z "$END_NUM" ]; then
+    echo "ERROR: must provide either (--start and --end) OR --cases-file"
     print_usage
     exit 1
+else
+    # Range mode: build CASE_LIST from sequential range
+    USE_CASES_FILE=false
+    CASE_LIST=()
+    for ((n=START_NUM; n<=END_NUM; n++)); do
+        CASE_LIST+=("$n")
+    done
 fi
 
 if [ -z "$PARAM_DIR" ]; then
@@ -178,13 +228,19 @@ mkdir -p "$LOG_DIR"
 # SUMMARY
 # ========================
 
-TOTAL_CASES=$((END_NUM - START_NUM + 1))
+TOTAL_CASES=${#CASE_LIST[@]}
 NUM_BATCHES=$(( (TOTAL_CASES + BATCH_SIZE - 1) / BATCH_SIZE ))
 
 echo "========================================"
 echo "A2MC Ensemble Submission"
 echo "========================================"
-echo "Cases: ${START_NUM} to ${END_NUM} (${TOTAL_CASES} total)"
+if [ "$USE_CASES_FILE" = true ]; then
+    echo "Cases file: ${CASES_FILE} (${TOTAL_CASES} cases, non-sequential)"
+    echo "First 5 cases: ${CASE_LIST[@]:0:5}"
+    echo "Last 5 cases:  ${CASE_LIST[@]: -5}"
+else
+    echo "Cases: ${START_NUM} to ${END_NUM} (${TOTAL_CASES} total)"
+fi
 echo "Parameter directory: ${PARAM_DIR}"
 echo "Parameter pattern: ${PARAM_PATTERN}"
 echo "Batch size: ${BATCH_SIZE}"
@@ -273,20 +329,26 @@ TOTAL_FAILED=0
 declare -a PIDS
 
 for ((batch=0; batch<NUM_BATCHES; batch++)); do
-    BATCH_START=$((START_NUM + batch * BATCH_SIZE))
-    BATCH_END=$((BATCH_START + BATCH_SIZE - 1))
-    if [ $BATCH_END -gt $END_NUM ]; then
-        BATCH_END=$END_NUM
+    # Index range into CASE_LIST array
+    BATCH_IDX_START=$((batch * BATCH_SIZE))
+    BATCH_IDX_END=$((BATCH_IDX_START + BATCH_SIZE - 1))
+    if [ $BATCH_IDX_END -ge $TOTAL_CASES ]; then
+        BATCH_IDX_END=$((TOTAL_CASES - 1))
     fi
 
+    BATCH_FIRST_CASE=${CASE_LIST[$BATCH_IDX_START]}
+    BATCH_LAST_CASE=${CASE_LIST[$BATCH_IDX_END]}
+
     echo "========================================"
-    echo "Batch $((batch + 1))/${NUM_BATCHES}: Cases ${BATCH_START} to ${BATCH_END}"
+    echo "Batch $((batch + 1))/${NUM_BATCHES}: Cases ${BATCH_FIRST_CASE} ... ${BATCH_LAST_CASE} ($((BATCH_IDX_END - BATCH_IDX_START + 1)) cases)"
     echo "========================================"
 
     PIDS=()
 
     # Submit cases in this batch
-    for ((n=BATCH_START; n<=BATCH_END; n++)); do
+    for ((idx=BATCH_IDX_START; idx<=BATCH_IDX_END; idx++)); do
+        n=${CASE_LIST[$idx]}
+
         # Find parameter file
         PARAM_FILE=$(find_param_file $n)
 

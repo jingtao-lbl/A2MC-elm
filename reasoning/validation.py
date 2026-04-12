@@ -691,6 +691,12 @@ Mechanism: {experiment.get('mechanism', 'Unknown')}
 Parameter changes:
 {chr(10).join(params_table)}
 
+IMPORTANT: The bounds shown above are Morris sensitivity sampling ranges, NOT hard model
+limits. Values outside these bounds are allowed and expected when the AI has scientific
+justification. FATES does not clamp parameters to these ranges. Do NOT flag out-of-bounds
+values as "violations" or reasons to reject. Instead, assess whether the proposed values
+are physically realistic regardless of Morris bounds.
+
 Check for:
 1. Do any parameter changes conflict with each other?
 2. Are any changes overly aggressive (could destabilize the model)?

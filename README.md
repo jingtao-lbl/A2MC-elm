@@ -8,6 +8,24 @@
 
 ---
 
+## Motivation
+
+Earth system models like ELM-FATES contain hundreds of parameters that must be calibrated against observations at each study site. Traditional calibration is a months-long manual process of running ensembles on HPC, inspecting sensitivity analyses, and making expert decisions about which parameters to adjust. Black-box optimizers (genetic algorithms, gradient descent) work well when the parameter space already contains viable solutions, but for novel model configurations where no prior successful calibration exists (e.g., ELM-FATES CNP at Arctic sites), the initial ensemble may entirely miss observational ranges. In these cases, numerical optimization alone cannot identify the mechanistic barriers preventing calibration. A2MC addresses this by combining optimization with interpretable, hypothesis-driven reasoning that diagnoses *why* the model fails and proposes targeted fixes.
+
+A2MC replaces this with an autonomous, interpretable workflow that:
+
+- **Leverages a model-specific knowledge base** through hybrid RAG/GraphRAG retrieval over documentation, codebase wikis, and curated parameter-mechanism-output relationships
+- **Diagnoses root causes** of calibration failures using LLM reasoning augmented with retrieved knowledge
+- **Generates and tests hypotheses** with specific parameter modifications and predicted outcomes
+- **Satisfies multiple targets simultaneously** (biomass, fluxes, phenology across PFTs), reducing equifinality through mechanistically defensible solutions
+- **Learns across sessions** via persistent adaptive memory, avoiding repeated failures across sites and campaigns
+- **Minimizes HPC cost** by selecting among flexible iteration paths (re-diagnose, skip testing, redesign, converge)
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jingtao-lbl/A2MC-elm/main/plot/A2MC_Workflow_Horizontal_Finalized_A2MC-ELM.png" width="100%" alt="A2MC 7-phase calibration workflow">
+</p>
+---
+
 ## Quick Start for New Users
 
 ### Step 1: Create Your Use Case
@@ -190,16 +208,17 @@ The framework runs entirely on NERSC HPC (no SSH tunneling) and uses the Anthrop
 │            ┌─────────────────────────┼─────────────────────────┐            │
 │            ▼                         ▼                         ▼            │
 │  ┌──────────────────┐    ┌───────────────────┐    ┌──────────────────┐      │
-│  │    REASONING     │    │    INTEGRATION    │    │  EXISTING TOOLS  │      │
-│  │  (reasoning/)    │    │  (integration.py) │    │                  │      │
-│  │                  │    │                   │    │ modify_fates_    │      │
-│  │ • diagnose()     │    │ • ParameterManager│◄──►│   parameters.py  │      │
-│  │ • hypothesize()  │    │ • HPCExecutor     │    │                  │      │
-│  │ • design_exp()   │    │ • DataPipeline    │◄──►│ extract_monthly_ │      │
-│  │ • interpret()    │    │ • ExperimentRunner│    │   variables.py   │      │
+│  │    REASONING     │    │   PHASE SCRIPTS   │    │   SHARED TOOLS   │      │
+│  │  (reasoning/)    │    │   (phases/)       │    │   (tools/)       │      │
 │  │                  │    │                   │    │                  │      │
-│  │  Claude API      │    │  Direct sbatch/   │    │ NetCDF handling  │      │
-│  │  (configurable)  │    │  squeue calls     │    │                  │      │
+│  │ • diagnose()     │    │ • phase0_design/  │    │ modify_fates_    │      │
+│  │ • hypothesize()  │    │ • phase1_explor/  │    │   parameters.py  │      │
+│  │ • design_exp()   │    │ • phase2_screen/  │◄──►│                  │      │
+│  │ • interpret()    │    │ • phase3_diag/    │    │ extract_monthly_ │      │
+│  │ • synthesize()   │    │ • phase4_hypo/    │    │   variables.py   │      │
+│  │                  │    │ • phase5_test/    │    │                  │      │
+│  │  Claude API      │    │ • phase6_refine/  │    │ hpc_utils.py     │      │
+│  │  (configurable)  │    │                   │    │ cost_functions.py │      │
 │  └──────────────────┘    └───────────────────┘    └──────────────────┘      │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
@@ -504,9 +523,9 @@ interpretation = reasoning.interpret_results(
 - `Hypothesis` - Name, mechanism, parameter modifications, test plan
 - `Experiment` - Base case, modifications, expected results
 
-### integration.py / tools/hpc_utils.py
+### tools/hpc_utils.py
 
-HPC-native interfaces for simulation management. Core classes (`HPCConfig`, `HPCExecutor`, `ParameterManager`) are in `tools/hpc_utils.py`; `integration.py` provides backward-compatible imports and the `DataPipeline`/`ExperimentRunner` classes.
+HPC-native interfaces for simulation management.
 
 ```python
 from tools.hpc_utils import HPCConfig, HPCExecutor, ParameterManager
@@ -536,8 +555,6 @@ results = executor.wait_for_jobs([job_id], poll_interval=300)
 - `HPCConfig` - HPC paths, project, QOS (from env vars)
 - `HPCExecutor` - Direct sbatch/squeue execution
 - `ParameterManager` - Wraps modify_fates_parameters.py
-- `DataPipeline` - Wraps extract_monthly_variables_FATES.py
-- `ExperimentRunner` - High-level experiment coordinator
 
 ---
 
@@ -800,6 +817,10 @@ python orchestrator.py --resume
 # Resume Phase 5 after HPC experiments complete, continuing the same session
 # (checks job status, extracts results, evaluates, then proceeds to Phase 6)
 python orchestrator.py --resume --start-phase 5 --session-id 20260331_030000
+
+# Re-run from Phase 2 using the same session's Phase 1 results
+# (backs up state file and downstream phase_results, then re-runs Phase 2+)
+python orchestrator.py --resume --start-phase 2 --session-id 20260405_145259
 ```
 
 **Tip:** Use `screen` or `tmux` for long-running sessions on HPC.
@@ -1027,7 +1048,6 @@ A2MC/
 │   ├── base.py            # ReasoningModule class core (init, query, RAG)
 │   ├── methods.py         # Phase methods (diagnose, hypothesis, etc.)
 │   └── validation.py      # Hypothesis validation and AI self-review
-├── integration.py         # HPC integration layer
 │
 ├── use_cases/             # Site-specific case studies
 │   ├── README.md          # Overview and instructions

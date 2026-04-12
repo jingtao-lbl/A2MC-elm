@@ -191,6 +191,7 @@ def plot_experiment_comparison(
     plot_year_start: int = 2010,
     plot_year_end: int = 2019,
     title: str = "",
+    obs_uncertainty: Optional[Dict[str, float]] = None,
 ) -> Optional[str]:
     """
     Plot experiment comparison: baseline vs experiments with validation targets.
@@ -225,6 +226,10 @@ def plot_experiment_comparison(
         Year range to display.
     title : str
         Custom title (auto-generated if empty).
+    obs_uncertainty : dict, optional
+        Per-target observation uncertainty (e.g., obs_std) for error bars,
+        separate from the validation tolerance range. Keys match target keys.
+        If not provided, error bars fall back to ±tolerance range.
 
     Returns
     -------
@@ -331,10 +336,11 @@ def plot_experiment_comparison(
                     ax.plot(plot_ts, color=color, linewidth=2, alpha=0.85,
                             zorder=95 + exp_idx, label=exp_label)
 
-                # Observation marker and tolerance box
+                # Observation marker, tolerance box, and uncertainty error bar
                 if obs_mean is not None:
                     obs_plot_idx = obs_idx - plot_start_idx
 
+                    # ±tolerance validation range box (yellow)
                     valid_low = obs_mean * (1 - tolerance)
                     valid_high = obs_mean * (1 + tolerance)
                     box_width = n_months_plot * 0.03
@@ -347,7 +353,11 @@ def plot_experiment_comparison(
                     )
                     ax.add_patch(rect)
 
-                    uncert = obs_mean * tolerance
+                    # Error bar: prefer obs_std (real obs uncertainty) over tolerance
+                    if obs_uncertainty and target_key in obs_uncertainty:
+                        uncert = obs_uncertainty[target_key]
+                    else:
+                        uncert = obs_mean * tolerance
                     ax.plot([obs_plot_idx, obs_plot_idx],
                             [obs_mean - uncert, obs_mean + uncert],
                             'k-', linewidth=3, zorder=201)

@@ -106,10 +106,10 @@ export A2MC_LOG_DIR="${A2MC_CASE_SCRIPTS}"
 # HPC Paths (NERSC Perlmutter)
 # -----------------------------------------------------------------------------
 # Base FATES parameter file (template)
-export A2MC_BASE_PARAM_FILE="/dvs_ro/u1/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_api25.5.0_12pft_c230710.nc"
+export A2MC_BASE_PARAM_FILE="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_api25.5.0_12pft_c230710.nc"
 
 # Directory containing FATES parameter files for ensemble
-export A2MC_PARAM_DIR="/dvs_ro/u1/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
+export A2MC_PARAM_DIR="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
 
 # Parameter file naming pattern ({N} = case number 1-4890)
 export A2MC_PARAM_PATTERN="fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"

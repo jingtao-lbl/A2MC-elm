@@ -35,6 +35,7 @@ from reasoning.base import ReasoningModule
 from reasoning import methods as _methods
 
 ReasoningModule.diagnose = _methods.diagnose
+ReasoningModule._build_alt_case_params_context = _methods._build_alt_case_params_context
 ReasoningModule.generate_hypothesis = _methods.generate_hypothesis
 ReasoningModule.synthesize_experiment_design = _methods.synthesize_experiment_design
 ReasoningModule.design_experiments = _methods.design_experiments

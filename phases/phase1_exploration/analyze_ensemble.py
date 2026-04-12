@@ -9,6 +9,7 @@ Author: Jing Tao with Claude
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -17,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 def analyze_existing_ensemble(
     total_ensemble: int,
-    data_pipeline=None,
 ) -> Dict:
     """
     Analyze existing sensitivity ensemble results.
@@ -27,7 +27,6 @@ def analyze_existing_ensemble(
 
     Args:
         total_ensemble: Total number of ensemble members expected.
-        data_pipeline: Optional DataPipeline instance for fallback extraction.
 
     Returns:
         Dict with extraction status and sensitivity rankings.
@@ -70,7 +69,7 @@ def analyze_existing_ensemble(
             else:
                 logger.info(f"No extracted files found in: {extracted_dir}")
                 logger.info("Running monthly variable extraction from simulation output...")
-                extraction_result = run_monthly_extraction(data_pipeline=data_pipeline, total_ensemble=n_sims)
+                extraction_result = run_monthly_extraction(total_ensemble=n_sims)
                 if extraction_result.get('status') in ['completed', 'partial']:
                     nc_files = list(extracted_dir.glob("*_all_variables_monthly_*.nc"))
                     results["extracted_cases"] = len(nc_files)
@@ -82,7 +81,7 @@ def analyze_existing_ensemble(
         else:
             logger.warning(f"Extracted data directory does not exist: {extracted_dir}")
             logger.info("Running monthly variable extraction from simulation output...")
-            extraction_result = run_monthly_extraction(data_pipeline=data_pipeline, total_ensemble=n_sims)
+            extraction_result = run_monthly_extraction(total_ensemble=n_sims)
             if extraction_result.get('status') in ['completed', 'partial']:
                 extracted_dir.mkdir(parents=True, exist_ok=True)
                 nc_files = list(extracted_dir.glob("*_all_variables_monthly_*.nc"))
@@ -94,49 +93,35 @@ def analyze_existing_ensemble(
                 logger.warning(f"Monthly extraction failed: {extraction_result.get('error', 'unknown')}")
 
         # Check for Morris sensitivity results (Y matrices)
-        # Look in multiple locations
-        # Pattern: Morris{Varname}_{N}cases_{start}_{end}.txt
-        # e.g., MorrisLeafbiomass_4889cases_2010_2019.txt
+        # Only look in the current session's dir. If not there, extract fresh.
         phase1_output_dir = a2mc_config.phase_results_dir("phase1_exploration")
-        morris_files = list(phase1_output_dir.glob("Morris*biomass*.txt")) if phase1_output_dir.exists() else []
-        # Also check flat layout (backward compatibility, pre-session_id)
-        if not morris_files:
-            flat_dir = Path(a2mc_config.USE_CASE_DIR) / "memory" / "phase_results" / "phase1_exploration"
-            morris_files = list(flat_dir.glob("Morris*biomass*.txt")) if flat_dir.exists() else []
+        phase1_output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Also check current directory and ensemble output
-        if not morris_files:
-            morris_files = list(Path('.').glob("Morris*biomass*.txt"))
-        if not morris_files and ensemble_dir.exists():
-            morris_files = list(ensemble_dir.glob("Morris*biomass*.txt"))
+        # subset_replay rounds have no Morris design — there is no sensitivity
+        # structure to analyze. Skip the Morris analysis entirely; Phase 2 will
+        # rank the replayed cases against targets directly.
+        sampling_scheme = os.environ.get('A2MC_SAMPLING_SCHEME', 'morris').lower()
+        if sampling_scheme == 'subset_replay':
+            logger.info("Sampling scheme is 'subset_replay' — skipping Morris "
+                        "sensitivity analysis (no sensitivity structure)")
+            results["sampling_scheme"] = "subset_replay"
+            results["morris_skipped"] = True
+            results["analysis_complete"] = True
+            return results
+
+        morris_files = list(phase1_output_dir.glob("Morris*biomass*.txt"))
 
         if morris_files:
-            logger.info(f"Found {len(morris_files)} Morris Y matrix files")
+            logger.info(f"Found {len(morris_files)} Morris Y matrix files in {phase1_output_dir}")
             results["morris_y_matrices"] = [str(f) for f in morris_files]
-
-            # Run Morris sensitivity analysis
             results = run_morris_sensitivity_analysis(results, morris_files)
 
-        elif results.get("extraction_complete", False):
-            # Extraction complete but no Y matrices - need to extract from NetCDF
-            logger.info("Extraction complete but no Y matrices found. Running Y matrix extraction...")
-            results = run_y_matrix_extraction(results)
-
-            # Check again for Y matrices after extraction
-            morris_files = list(phase1_output_dir.glob("Morris*biomass*.txt")) if phase1_output_dir.exists() else []
-            if morris_files:
-                logger.info(f"Found {len(morris_files)} Morris Y matrix files after extraction")
-                results["morris_y_matrices"] = [str(f) for f in morris_files]
-                results = run_morris_sensitivity_analysis(results, morris_files)
         else:
-            # No Y matrices and extraction not marked complete — try extraction anyway
-            logger.info("No Morris Y matrices found. Attempting Y matrix extraction...")
+            # No Y matrices in session dir — extract fresh from simulation output
+            logger.info("No Morris Y matrices in session dir. Running fresh extraction...")
             results = run_y_matrix_extraction(results)
 
-            # Check again for Y matrices after extraction
-            morris_files = list(phase1_output_dir.glob("Morris*biomass*.txt")) if phase1_output_dir.exists() else []
-            if not morris_files:
-                morris_files = list(Path('.').glob("Morris*biomass*.txt"))
+            morris_files = list(phase1_output_dir.glob("Morris*biomass*.txt"))
             if morris_files:
                 logger.info(f"Found {len(morris_files)} Morris Y matrix files after extraction")
                 results["morris_y_matrices"] = [str(f) for f in morris_files]
@@ -156,7 +141,6 @@ def analyze_existing_ensemble(
 
 
 def run_monthly_extraction(
-    data_pipeline=None,
     total_ensemble: int = 0,
 ) -> Dict:
     """
@@ -166,16 +150,12 @@ def run_monthly_extraction(
     produce per-case NetCDF files with all variables (biomass, nutrients,
     fluxes, etc.) that Phase 3 diagnostic scripts need.
 
-    Falls back to DataPipeline if direct import fails.
-
     Args:
-        data_pipeline: Optional DataPipeline instance for fallback extraction.
-        total_ensemble: Total ensemble size (needed for fallback path).
+        total_ensemble: Total ensemble size (for logging).
 
     Returns:
         Dict with 'status', 'successful_cases', 'failed_cases', 'output_dir'
     """
-    # Primary: direct in-process call (efficient, skips already-extracted)
     try:
         from tools.extract_monthly_variables_FATES import run_monthly_extraction as _run_extraction
         logger.info("Starting monthly variable extraction from simulation output...")
@@ -187,33 +167,7 @@ def run_monthly_extraction(
             logger.warning(f"Monthly extraction failed: {result.get('error', 'unknown')}")
         return result
     except ImportError as e:
-        logger.warning(f"Could not import monthly extraction directly: {e}")
-
-    # Fallback: use DataPipeline (subprocess-based, slower but always available)
-    if data_pipeline is None:
-        return {'status': 'failed', 'error': 'No DataPipeline and direct import unavailable'}
-
-    try:
-        logger.info("Falling back to DataPipeline for extraction...")
-        # Test first case before attempting all ~4890 cases
-        test_result = data_pipeline.extract_case_data("1")
-        if not test_result.get('success'):
-            error_msg = test_result.get('error', 'extraction failed')
-            logger.error(f"Test extraction of case 1 failed: {error_msg}")
-            if 'xarray' in str(error_msg) or 'ModuleNotFoundError' in str(error_msg):
-                logger.error("Missing Python packages. On Perlmutter, run:")
-                logger.error("  module load python")
-                logger.error("  # OR: conda activate <your_env>")
-            return {'status': 'failed', 'error': error_msg}
-
-        n_sims = total_ensemble
-        case_ids = [str(i) for i in range(1, n_sims + 1)]
-        results = data_pipeline.extract_batch(case_ids)
-        n_success = sum(1 for r in results if r.get('success'))
-        status = 'completed' if n_success >= len(case_ids) * 0.9 else 'partial'
-        return {'status': status, 'total_extracted': n_success}
-    except Exception as e:
-        logger.error(f"Error during monthly extraction: {e}")
+        logger.warning(f"Could not import monthly extraction: {e}")
         return {'status': 'failed', 'error': str(e)}
 
 

@@ -29,7 +29,7 @@
     {
       "approach": "Single-variable optimization (Method 1) focusing only on PFT#10 fineroot biomass",
       "experiment_id": "20251209c_Morris_Optimization_Methods_Results.md",
-      "why_failed": "Achieved high PFT#10 fineroot (80% of target) by suppressing PFT#9 (93% underestimate) and causing massive AGB overshoot (13.7×)",
+      "why_failed": "Achieved high PFT#10 fineroot (80% of target) by suppressing PFT#9 (93% underestimate) and causing massive AGB overshoot (13.7\u00d7)",
       "severity": "HIGH",
       "alternatives": [
         "Multi-PFT balanced optimization (Method 2)",
@@ -121,7 +121,7 @@
     {
       "approach": "Storage cushion hypothesis as primary bottleneck",
       "experiment_id": "20251208d_LAI_Hypothesis_Testing_Results.md",
-      "why_failed": "Storage cushion creates targets but is irrelevant when NPP is negative - storage is being depleted, not filled. Absolute storage deficit is small (~0.3 g C/m²)",
+      "why_failed": "Storage cushion creates targets but is irrelevant when NPP is negative - storage is being depleted, not filled. Absolute storage deficit is small (~0.3 g C/m\u00b2)",
       "severity": "MEDIUM",
       "alternatives": [
         "Focus on making NPP positive first",
@@ -143,7 +143,7 @@
     {
       "approach": "Nitrogen limitation hypothesis",
       "experiment_id": "20251208d_LAI_Hypothesis_Testing_Results.md",
-      "why_failed": "N supply (0.67 g N/m²) far exceeds demand (0.002 g N/m²) due to low stoich_nitr_leaf_10 (0.00122). N ratio >1000x sufficient",
+      "why_failed": "N supply (0.67 g N/m\u00b2) far exceeds demand (0.002 g N/m\u00b2) due to low stoich_nitr_leaf_10 (0.00122). N ratio >1000x sufficient",
       "severity": "LOW",
       "alternatives": [
         "Focus on carbon availability",
@@ -165,7 +165,7 @@
     {
       "approach": "Increasing photosynthetic capacity via leaf_slatop_10 parameter",
       "experiment_id": "20251208e_Parameters_At_Bounds_Analysis.md",
-      "why_failed": "Parameter at lower bound (0.00853 m²/gC), representing thickest possible leaves with minimum photosynthetic area per unit carbon, cannot increase GPP capacity further",
+      "why_failed": "Parameter at lower bound (0.00853 m\u00b2/gC), representing thickest possible leaves with minimum photosynthetic area per unit carbon, cannot increase GPP capacity further",
       "severity": "HIGH",
       "alternatives": [
         "Arctic-specific photosynthesis parameterization in code",
@@ -185,12 +185,12 @@
       "date_added": "2026-01-18T08:24:56.632404"
     },
     {
-      "approach": "Changing Arctic reference temperature from 20°C to 10°C",
+      "approach": "Changing Arctic reference temperature from 20\u00b0C to 10\u00b0C",
       "experiment_id": "20251208f_Code_Modification_Recommendations.md",
-      "why_failed": "At spring temperature T=5°C, changing reference to 10°C increases MR scaling from 0.35 to 0.71, doubling MR and worsening carbon balance",
+      "why_failed": "At spring temperature T=5\u00b0C, changing reference to 10\u00b0C increases MR scaling from 0.35 to 0.71, doubling MR and worsening carbon balance",
       "severity": "HIGH",
       "alternatives": [
-        "Use lower reference temperature (5°C)",
+        "Use lower reference temperature (5\u00b0C)",
         "Implement dormancy mechanism",
         "Combined dormancy + lower reference approach"
       ],
@@ -257,7 +257,7 @@
     {
       "approach": "Assuming Morris parameter file has header row",
       "experiment_id": "20251211a_LeafRootOptimization_Workflow.md",
-      "why_failed": "Morris parameter file is pure data array (4170 rows × 138 columns) with NO HEADER, causing off-by-one indexing errors",
+      "why_failed": "Morris parameter file is pure data array (4170 rows \u00d7 138 columns) with NO HEADER, causing off-by-one indexing errors",
       "severity": "CRITICAL",
       "alternatives": [
         "Always verify file structure before indexing",
@@ -316,7 +316,7 @@
     {
       "approach": "Single-objective optimization targeting only biomass",
       "experiment_id": "20251213a_PhenologyCase2675ModificationsEvaluationResults.md",
-      "why_failed": "Creates systematic overestimation of MODIS LAI and GPP by 2-3× while achieving biomass targets",
+      "why_failed": "Creates systematic overestimation of MODIS LAI and GPP by 2-3\u00d7 while achieving biomass targets",
       "severity": "HIGH",
       "alternatives": [
         "Multi-objective optimization including LAI/GPP",
@@ -362,7 +362,7 @@
     {
       "approach": "Single parameter optimization focusing only on biomass NRMSE",
       "experiment_id": "20251214a_Case2678vs845_ParameterTradeoff.md",
-      "why_failed": "Creates unrealistic ecosystem function. Case #2678 matches biomass but overestimates MODIS LAI/GPP by 2-3×. Ignores ecosystem-level constraints.",
+      "why_failed": "Creates unrealistic ecosystem function. Case #2678 matches biomass but overestimates MODIS LAI/GPP by 2-3\u00d7. Ignores ecosystem-level constraints.",
       "severity": "CRITICAL",
       "alternatives": [
         "Multi-objective optimization including MODIS LAI/GPP",
@@ -371,7 +371,7 @@
       "date_added": "2026-01-18T08:28:46.728295"
     },
     {
-      "approach": "Extreme storage cushion modification (4.4× increase to 3.0)",
+      "approach": "Extreme storage cushion modification (4.4\u00d7 increase to 3.0)",
       "experiment_id": "20251214a_Case2678vs845_ParameterTradeoff.md",
       "why_failed": "Even increasing alloc_storage_cushion_10 from 0.686 to 3.0 (well beyond Morris upper bound of 1.77) still underestimates PFT#10 biomass. Storage alone is insufficient.",
       "severity": "HIGH",
@@ -396,7 +396,7 @@
     {
       "approach": "Attempting to fix Case #2678 with extreme parameter modifications",
       "experiment_id": "20251214b_Case845_FixPFT9_Strategy.md",
-      "why_failed": "Even with extreme modifications (storage 4.4×, PID 430×), still fails PFT#10 biomass and causes 2-3× MODIS LAI/GPP overestimate due to structural growing season length issues",
+      "why_failed": "Even with extreme modifications (storage 4.4\u00d7, PID 430\u00d7), still fails PFT#10 biomass and causes 2-3\u00d7 MODIS LAI/GPP overestimate due to structural growing season length issues",
       "severity": "CRITICAL",
       "alternatives": [
         "Fix Case #845 instead",
@@ -445,7 +445,7 @@
       "why_failed": "Doesn't match the root mean square formula used in other scripts, causing inconsistent rankings",
       "severity": "CRITICAL",
       "alternatives": [
-        "Use sqrt(mean(NRMSE²)) formula",
+        "Use sqrt(mean(NRMSE\u00b2)) formula",
         "Implement proper RMS calculation"
       ],
       "date_added": "2026-01-18T08:29:39.002648"
@@ -491,7 +491,7 @@
       "severity": "CRITICAL",
       "alternatives": [
         "Sequential targeted refinement",
-        "Fix P uptake parameters 10-100×",
+        "Fix P uptake parameters 10-100\u00d7",
         "Correct turnover rate to literature values"
       ],
       "date_added": "2026-01-18T08:30:13.090043"
@@ -499,7 +499,7 @@
     {
       "approach": "Relying on Morris ensemble to identify all critical parameters",
       "experiment_id": "20251222a_PFT10_Diagnostic_Findings_Triple_Bottleneck.md",
-      "why_failed": "Morris ensemble missed fates_turnover_fnrt which caused 5× error in turnover rate and systematic 77% underestimation. P uptake parameters were included but all cases still showed zero P uptake",
+      "why_failed": "Morris ensemble missed fates_turnover_fnrt which caused 5\u00d7 error in turnover rate and systematic 77% underestimation. P uptake parameters were included but all cases still showed zero P uptake",
       "severity": "HIGH",
       "alternatives": [
         "Literature-based parameter priors for Arctic traits",
@@ -521,7 +521,7 @@
       "date_added": "2026-01-18T08:30:35.955170"
     },
     {
-      "approach": "Boost PFT#10 P uptake parameters (vmax_p) by 10× to overcome P limitation",
+      "approach": "Boost PFT#10 P uptake parameters (vmax_p) by 10\u00d7 to overcome P limitation",
       "experiment_id": "20251223a_PUptake_Tests_Allocation_Paradox.md",
       "why_failed": "Triggered allocation paradox - higher vmax_p caused PID controller to reduce root allocation, decreasing total capacitance and worsening ECA competition performance",
       "severity": "CRITICAL",
@@ -562,7 +562,7 @@
       "severity": "HIGH",
       "alternatives": [
         "Bounded optimization with L-BFGS-B",
-        "Parameter bounds a,b ∈ [0.1, 20]"
+        "Parameter bounds a,b \u2208 [0.1, 20]"
       ],
       "date_added": "2026-01-18T08:32:10.041328"
     },
@@ -604,7 +604,7 @@
       "date_added": "2026-01-18T08:32:32.577896"
     },
     {
-      "approach": "Increasing plant P uptake capacity (vmax_p) by 10× to overcome P limitation",
+      "approach": "Increasing plant P uptake capacity (vmax_p) by 10\u00d7 to overcome P limitation",
       "experiment_id": "20251229a_Soil_P_Chemistry_Bottleneck_Discovery.md",
       "why_failed": "Soil can't supply P fast enough due to slow desorption rate - like trying to cure thirst by making someone more thirsty when water supply is the problem",
       "severity": "HIGH",
@@ -644,7 +644,7 @@
       "why_failed": "User questioned why not use small changes around calibrated parameters instead of arbitrary wide ranges",
       "severity": "MEDIUM",
       "alternatives": [
-        "±50% around field-calibrated values",
+        "\u00b150% around field-calibrated values",
         "Data-constrained bounds"
       ],
       "date_added": "2026-01-18T08:33:42.814594"
@@ -671,6 +671,19 @@
         "Modify PID controller response during drought"
       ],
       "date_added": "2026-01-18T08:34:17.929975"
+    },
+    {
+      "approach": "Enable SUPLPHOS=ALL or SUPLNITRO=ALL during TRANSIENT phase",
+      "experiment_id": null,
+      "why_failed": "Transient runs represent real ecosystem conditions. Enabling nutrient supplementation during TRANS is equivalent to a fertilization experiment, not calibration. P/N supply problems must be fixed via spinup protocol (ADSP/RGSP supplementation), parameter tuning (uptake kinetics, stoichiometry, retranslocation), or soil initial conditions.",
+      "severity": "CRITICAL",
+      "alternatives": [
+        "Enable SUPLPHOS during ADSP/RGSP spinup phases only",
+        "Tune P uptake kinetics (vmax_p, km_p, vmax_ptase)",
+        "Adjust P stoichiometry and retranslocation",
+        "Extend spinup duration for better P cycling equilibrium"
+      ],
+      "date_added": "2026-04-07T00:00:00"
     }
   ]
 }

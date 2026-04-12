@@ -244,15 +244,26 @@ Parameters with low μ* are unlikely to be primary drivers of model-data mismatc
 
 ## Comparative Case Analysis
 
-Two reference cases are provided in the results:
-- **best_case**: Case with most targets within ±20% tolerance (among top 10 by cost)
+Reference cases are provided in the results:
+- **best_case**: Case with most targets satisfied within top 10 by cost (tiebreak: lowest cost)
 - **lowest_cost_case**: Case with minimum composite RMSRE
+- **high_satisfaction_cases** (if present): Other top-10 cases that satisfy the SAME number of
+  targets as best_case. These are alternative starting points — they may satisfy DIFFERENT
+  targets, offering complementary strengths.
 
-If these are DIFFERENT cases, analyze both:
+Analyze ALL reference cases (not just best_case):
 1. Which targets does each case satisfy under ±20% tolerance?
 2. Which targets does each case satisfy under std-range tolerance (obs ± obs_std)?
-3. What parameter differences might explain their complementary strengths?
-4. Which case is a better starting point for refinement and why?
+3. Do the high-satisfaction alternatives satisfy different targets than best_case?
+   If so, identify which case provides the best foundation for the failing targets.
+4. What parameter differences might explain their complementary strengths?
+5. **Select 1-2 base cases** for experiment design. Output them in `comparative_analysis.selected_base_cases`.
+   For each, specify the case_id, rationale, targets it already satisfies, and targets to fix.
+   If only best_case is needed, include just that one. If an alternative has complementary
+   strengths (satisfies different targets), include it as a second base case.
+
+IMPORTANT: Always state the base case number (e.g., "Case #86") when discussing results.
+Your diagnosis and parameter recommendations should be grounded in a specific base case.
 
 If results include `std_range_evaluation`, use it to assess whether the "lowest cost" case
 might actually be closer to a globally acceptable solution despite failing some ±20% checks.
@@ -296,6 +307,14 @@ hypotheses were tested using existing ensemble data (Skip Testing path). Use the
    - A2MC_ADSP_SUPLPHOS={os.environ.get('A2MC_ADSP_SUPLPHOS', '?')} / A2MC_RGSP_SUPLPHOS={os.environ.get('A2MC_RGSP_SUPLPHOS', '?')} / A2MC_TRANS_SUPLPHOS={os.environ.get('A2MC_TRANS_SUPLPHOS', '?')}: nutrient supplementation per phase ('ALL' or 'NONE')
    - A2MC_ADSP_SUPLNITRO={os.environ.get('A2MC_ADSP_SUPLNITRO', '?')} / A2MC_RGSP_SUPLNITRO={os.environ.get('A2MC_RGSP_SUPLNITRO', '?')} / A2MC_TRANS_SUPLNITRO={os.environ.get('A2MC_TRANS_SUPLNITRO', '?')}: same for nitrogen
    - A2MC_ADSP_NYEARS_AD_CARBON_ONLY={os.environ.get('A2MC_ADSP_NYEARS_AD_CARBON_ONLY', '?')}: carbon-only years before nutrient cycling in AD spinup
+   **IMPORTANT constraints on protocol changes:**
+   - Nutrient supplementation (SUPLPHOS/SUPLNITRO) is ONLY valid during SPINUP phases (ADSP, RGSP)
+     to help vegetation establish. It must be OFF during TRANSIENT (TRANS) because transient runs
+     represent real ecosystem conditions. Enabling supplementation during TRANS is equivalent to
+     a fertilization experiment, which is not what we are calibrating for.
+   - If the AI diagnoses a nutrient supply structural failure, the fix should be in SPINUP protocol
+     (ADSP/RGSP supplementation or longer spinup), parameter tuning (uptake kinetics, stoichiometry),
+     or soil initial conditions — NOT transient-phase supplementation.
    Protocol changes require a full re-spinup (Phase 0 redesign). Use "protocol_recommendations" in the response.
 
 3. **For each mechanism in the inventory, present evidence FOR and AGAINST** using
@@ -370,7 +389,15 @@ Write them before the verbose optional sections to avoid truncation.
         "best_case_id": null,
         "lowest_cost_case_id": null,
         "recommended_starting_case": null,
-        "rationale": "Why this case is the better starting point"
+        "rationale": "Why this case is the better starting point",
+        "selected_base_cases": [
+            {{
+                "case_id": 86,
+                "rationale": "Why this case was selected as a base for experiments",
+                "targets_satisfied": ["targets this case already meets"],
+                "targets_to_fix": ["targets to improve from this starting point"]
+            }}
+        ]
     }},
     "hypotheses": [
         {{
@@ -428,6 +455,22 @@ Respond ONLY with the JSON object, no additional text."""
         data = self._extract_json(response)
         known = {f.name for f in fields(Diagnosis)}
         filtered = {k: v for k, v in data.items() if k in known}
+
+        # Sanitize None values in list/dict fields. Truncated JSON repair
+        # can leave fields as explicit None (e.g., "failing_targets": null),
+        # which passes the "key in filtered" check but breaks downstream code
+        # that expects iterable types.
+        _list_fields = ('failing_targets', 'likely_causes', 'parameter_recommendations',
+                        'cross_pft_conflicts', 'requested_diagnostics',
+                        'visual_observations', 'protocol_recommendations')
+        _dict_fields = ('comparative_analysis',)
+        for fname in _list_fields:
+            if fname in filtered and filtered[fname] is None:
+                filtered[fname] = []
+        for fname in _dict_fields:
+            if fname in filtered and filtered[fname] is None:
+                filtered[fname] = {}
+
         # Fill in required fields if missing (truncation recovery)
         _required_defaults = {
             'iteration': iteration,
@@ -448,6 +491,182 @@ Respond ONLY with the JSON object, no additional text."""
         logger.error(f"Failed to parse diagnosis response: {e}")
         logger.error(f"Response was: {response}")
         raise
+
+
+def _build_alt_case_params_context(self, screening_data: Dict,
+                                   best_case_params: Dict[str, float],
+                                   include_set: set,
+                                   best_case_id) -> str:
+    """Build parameter context for high-satisfaction alternative cases.
+
+    For each alternative, shows only parameters that DIFFER from best_case
+    and which targets each case satisfies vs fails. This keeps the prompt
+    concise while giving the AI the data to design per-base-case experiments.
+
+    Args:
+        screening_data: Full screening data (has comparative_analysis from orchestrator)
+        best_case_params: Parameter values for best_case (shorthand → value)
+        include_set: Set of shorthand param names to include
+        best_case_id: Best case ID for labeling
+
+    Returns:
+        Prompt context string (may be empty if no alternatives exist)
+    """
+    # Get comparative analysis with high_satisfaction_cases and param diffs
+    # This is passed through diagnosis_input → screening_results in the orchestrator
+    comp = screening_data.get('_comparative_analysis', {})
+    if not comp:
+        # Also check if it was stored at top level (different code paths)
+        comp = {}
+
+    # Build candidate list (union of three sources, in priority order):
+    #   1. high_satisfaction_cases — top-10 cases tying best_case on n_satisfied
+    #   2. lowest_cost_case — case with minimum composite RMSRE in ensemble
+    #   3. _selected_base_cases — cases the diagnosis AI explicitly selected
+    #      (may be outside both above sets if they have unique strengths,
+    #       e.g., highest PFT10 leaf despite lower overall n_satisfied)
+    high_sat = comp.get('high_satisfaction_cases', [])
+    lowest_cost = comp.get('lowest_cost_case', {})
+    selected_diag = screening_data.get('_selected_base_cases', [])
+
+    seen_ids = {best_case_id}
+    candidates = []  # list of (case_id, comparative_eval_or_none)
+
+    # 1. high_satisfaction_cases (have full per_target evaluation)
+    for alt in high_sat:
+        alt_id = alt.get('case_id')
+        if alt_id and alt_id not in seen_ids:
+            candidates.append((alt_id, alt))
+            seen_ids.add(alt_id)
+
+    # 2. lowest_cost_case (also has full per_target evaluation)
+    lc_id = lowest_cost.get('case_id')
+    if lc_id and lc_id not in seen_ids:
+        # Tag it so the prompt can label it appropriately
+        lc_with_tag = dict(lowest_cost)
+        lc_with_tag['_is_lowest_cost'] = True
+        candidates.append((lc_id, lc_with_tag))
+        seen_ids.add(lc_id)
+
+    # 3. Diagnosis-selected cases not already in above sets
+    for sel in selected_diag:
+        sel_id = sel.get('case_id')
+        if sel_id and sel_id not in seen_ids:
+            # No comparative eval for this case (it's outside top-by-n_satisfied
+            # and not the lowest cost), but the AI selected it for a reason.
+            candidates.append((sel_id, {'_diagnosis_rationale': sel.get('rationale', ''),
+                                        '_targets_to_fix': sel.get('targets_to_fix', []),
+                                        '_targets_satisfied': sel.get('targets_satisfied', [])}))
+            seen_ids.add(sel_id)
+
+    if not candidates:
+        return ""
+
+    sections = []
+    for alt_id, alt in candidates:
+        # Load this case's full parameter values
+        alt_params = self._load_base_case_parameters(int(alt_id))
+        if not alt_params:
+            continue
+
+        # Which targets each case satisfies
+        alt_targets_met = []
+        alt_targets_failed = []
+        best_targets_met = []
+        best_targets_failed = []
+
+        best_eval = comp.get('best_case', {}).get('per_target', {})
+        alt_eval = alt.get('per_target', {})
+
+        if alt_eval:
+            # high_satisfaction_cases path: full per_target evaluation
+            for tname in alt_eval:
+                if alt_eval[tname].get('within_20pct'):
+                    alt_targets_met.append(tname)
+                else:
+                    alt_targets_failed.append(tname)
+        else:
+            # diagnosis-selected path: use AI's targets_satisfied/targets_to_fix
+            alt_targets_met = alt.get('_targets_satisfied', [])
+            alt_targets_failed = alt.get('_targets_to_fix', [])
+
+        for tname in best_eval:
+            if best_eval[tname].get('within_20pct'):
+                best_targets_met.append(tname)
+            else:
+                best_targets_failed.append(tname)
+
+        # Build diff lines — only include params in include_set that differ
+        diff_lines = []
+        for pname in sorted(include_set):
+            if pname in alt_params and pname in best_case_params:
+                bval = best_case_params[pname]
+                aval = alt_params[pname]
+                if bval != aval:
+                    diff_lines.append(f"  {pname}: {aval}  (vs {bval} in #{best_case_id})")
+
+        if not diff_lines:
+            continue
+
+        target_summary = ""
+        if alt_targets_met or best_targets_met:
+            target_summary = (
+                f"\nCase #{alt_id} satisfies: {', '.join(alt_targets_met) or 'none'}"
+                f"\nCase #{alt_id} fails: {', '.join(alt_targets_failed) or 'none'}"
+                f"\nCase #{best_case_id} satisfies: {', '.join(best_targets_met) or 'none'}"
+                f"\nCase #{best_case_id} fails: {', '.join(best_targets_failed) or 'none'}"
+            )
+
+        alt_rmsre = alt.get('rmsre', '?')
+        alt_met = alt.get('targets_met_20pct', '?')
+        diag_rationale = alt.get('_diagnosis_rationale', '')
+        is_lowest_cost = alt.get('_is_lowest_cost', False)
+
+        if is_lowest_cost:
+            header_meta = f"LOWEST COST in ensemble — RMSRE: {alt_rmsre}, targets_met: {alt_met}"
+        elif alt_eval:
+            header_meta = f"high-satisfaction tie — RMSRE: {alt_rmsre}, targets_met: {alt_met}"
+        else:
+            header_meta = f"diagnosis-selected (outside top n_satisfied)"
+
+        rationale_block = ""
+        if diag_rationale:
+            rationale_block = f"\n**Diagnosis rationale:** {diag_rationale}\n"
+
+        sections.append(
+            f"## Alternative Case #{alt_id} — Parameter Differences vs #{best_case_id}"
+            f" ({header_meta})"
+            f"{rationale_block}"
+            f"{target_summary}\n\n"
+            f"Parameters that differ (diagnosis-relevant + top sensitive):\n"
+            f"{chr(10).join(diff_lines)}\n\n"
+            f"You may design a SEPARATE experiment group from Case #{alt_id} if it provides\n"
+            f"a better starting point for certain targets. Specify `\"base_case\": {alt_id}` in the\n"
+            f"hypothesis JSON to use this case instead of #{best_case_id}."
+        )
+        logger.info(f"Added {len(diff_lines)} parameter diffs for alternative case #{alt_id}")
+
+    # If diagnosis already selected base cases, highlight them
+    selected = screening_data.get('_selected_base_cases', [])
+    if selected:
+        sel_lines = ["## Diagnosis-Selected Base Cases (from Phase 3)"]
+        sel_lines.append("")
+        sel_lines.append("The diagnosis phase has already recommended these base cases for experiments.")
+        sel_lines.append("Use these unless you have strong reason to deviate.")
+        sel_lines.append("")
+        for s in selected:
+            sid = s.get('case_id', '?')
+            rat = s.get('rationale', '')
+            t_sat = ', '.join(s.get('targets_satisfied', []))
+            t_fix = ', '.join(s.get('targets_to_fix', []))
+            sel_lines.append(f"- **Case #{sid}**: {rat}")
+            if t_sat:
+                sel_lines.append(f"  - Already satisfies: {t_sat}")
+            if t_fix:
+                sel_lines.append(f"  - Targets to fix: {t_fix}")
+        sections.append("\n".join(sel_lines))
+
+    return "\n\n".join(sections)
 
 
 def generate_hypothesis(self, diagnosis: Diagnosis,
@@ -603,23 +822,37 @@ Do NOT make generic statements without case attribution.
                         else:
                             expanded.add(p)
                     include_set = expanded
-                except Exception:
-                    pass  # Fall back to direct matching
+                except Exception as e:
+                    logger.debug(f"FATES→shorthand expansion failed: {e}")
 
                 included_lines = []
                 for pname, pval in sorted(base_case_params.items()):
                     if pname in include_set:
                         included_lines.append(f"  {pname}: {pval}")
 
-                _base_case_params_context = f"""## Base Case #{bc_id} — Actual Parameter Values ({len(included_lines)} params: diagnosis-relevant + top sensitive)
+                # Fallback: if filtering produced 0 matches (e.g., no sensitivity
+                # data and FATES→shorthand expansion failed), include ALL params
+                # so the AI at least has current values to work with.
+                if not included_lines:
+                    logger.warning(f"No params matched include_set ({len(include_set)} entries). "
+                                   f"Including all {len(base_case_params)} base case params as fallback.")
+                    for pname, pval in sorted(base_case_params.items()):
+                        included_lines.append(f"  {pname}: {pval}")
+
+                _base_case_params_context = f"""## Base Case #{bc_id} — Actual Parameter Values ({len(included_lines)} params)
 
 **CRITICAL: Use these ACTUAL values as the "current" field when recommending parameter changes.**
 **Do NOT guess or infer current values from bounds or defaults — use the values below.**
 
-{chr(10).join(included_lines) if included_lines else '  (no matching parameters found)'}
+{chr(10).join(included_lines)}
 """
                 logger.info(f"Added {len(included_lines)}/{len(base_case_params)} base case parameter values "
                             f"to hypothesis prompt (diagnosis-relevant + top sensitive)")
+
+                # Load alternative high-satisfaction case parameters (show diffs only)
+                _base_case_params_context += self._build_alt_case_params_context(
+                    screening_data, base_case_params, include_set, bc_id
+                )
 
     prompt = f"""Based on this diagnosis, generate a testable hypothesis for ELM-FATES calibration.
 {rag_context}{discovery_context}{failed_approaches_context}{targeted_param_context}
@@ -751,10 +984,13 @@ If `test_with_existing: true`, provide `existing_data_test` with:
 This saves HPC compute time by using data we already have!
 
 ## Response Format
-Return a JSON object with this structure:
+Return a JSON object with this structure. If using an alternative base case (from the
+Alternative Case sections above), specify its case ID in the `base_case` field.
+Otherwise omit `base_case` to use the best case.
 ```json
 {{
     "name": "Hypothesis Name (memorable, mechanistic)",
+    "base_case": null,
     "mechanism": "Detailed mechanistic explanation",
     "parameters": [
         {{
@@ -1101,6 +1337,11 @@ def synthesize_experiment_design(
                 logger.info(f"Added {len(param_lines)}/{len(base_case_params)} base case parameter values "
                             f"to synthesis prompt (hypothesis-relevant only)")
 
+                # Add alternative case parameter diffs for synthesis
+                _synth_base_params += self._build_alt_case_params_context(
+                    screening_data, base_case_params, synth_include, bc_id
+                )
+
     prompt = f"""You are synthesizing {len(cumulative_insights)} skip-testing cycles into MULTIPLE experiment designs for HPC testing.
 
 Each supported hypothesis should become its OWN experiment — do NOT merge them into one.
@@ -1153,12 +1394,29 @@ Use the evidence ledger to decide which parameters to include.
     - `fates_stoich_phos`, `fates_stoich_nitr`, `fates_alloc_organ_priority`: specify organ per entry (1=leaf, 2=fineroot, 3=sapwood, 4=storage)
     - `fates_cnp_turnover_nitr_retrans`, `fates_cnp_turnover_phos_retrans`: retranslocation only applies to senescing tissues — provide TWO entries with the SAME value, one for organ=1 (leaf) and one for organ=2 (fineroot)
 
+## Multi-Base-Case Experiment Groups
+
+If alternative high-satisfaction cases are provided above, you may design SEPARATE experiment
+groups from different base cases. Each group is an independent cumulative sequence targeting
+that base case's weaknesses:
+
+- Each group must specify `"base_case"` with the case ID number
+- Each group uses cumulative design (each experiment adds one parameter change)
+- Focus each group on that base case's WEAKEST targets (the targets it fails)
+- Use the "current" values from the CORRECT base case for each group
+- If multiple alternatives exist, select the 1-2 most promising based on complementary target
+  coverage (which targets each satisfies that the other does not). Do NOT use all alternatives.
+- Explain in `synthesis_summary` WHY each base case was selected
+
+If no alternatives are provided, use the best case as the sole base case (omit `"base_case"`).
+
 ## Response Format
-Return a JSON array of experiment designs (one per supported hypothesis):
+Return a JSON array of experiment designs (one per supported hypothesis, optionally from different base cases):
 ```json
 [
     {{
         "name": "Descriptive experiment name",
+        "base_case": 86,
         "mechanism": "Mechanistic explanation for this specific hypothesis",
         "parameters": [
             {{
@@ -1181,7 +1439,7 @@ Return a JSON array of experiment designs (one per supported hypothesis):
         }},
         "confidence": 0.85,
         "source_hypothesis": "Original hypothesis name this refines",
-        "synthesis_summary": "What evidence supports this experiment",
+        "synthesis_summary": "What evidence supports this experiment and why this base case",
         "excluded_parameters_justification": {{
             "param_name": "Reason for exclusion despite evidence"
         }}

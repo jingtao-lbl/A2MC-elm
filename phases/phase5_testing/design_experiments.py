@@ -282,7 +282,9 @@ def design_experiment_sequence(hypothesis: Dict, screening_data: Dict) -> List[D
 
     design_type = hypothesis.get("design_type", hypothesis.get("experimental_design", "cumulative"))
     params = hypothesis.get("parameters", hypothesis.get("parameters_to_test", []))
-    base_case = screening_data.get("best_case", {}).get("case_id", "2678")
+    # Per-hypothesis base_case: AI may specify a different base case for each
+    # experiment group (e.g., best_case for PFT7 experiments, alternative for PFT10).
+    base_case = hypothesis.get("base_case") or screening_data.get("best_case", {}).get("case_id", "2678")
 
     experiments = []
 

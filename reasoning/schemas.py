@@ -33,6 +33,8 @@ class Diagnosis:
     visual_observations: Optional[List[Dict]] = None
     # Protocol recommendations: simulation protocol changes (e.g., suplphos, spinup strategy)
     protocol_recommendations: Optional[List[Dict]] = None  # [{setting, current_value, proposed_value, rationale, requires_respin}]
+    # Base case ID from screening (stamped by orchestrator for downstream tracking)
+    base_case_id: Optional[int] = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
@@ -56,6 +58,8 @@ class Hypothesis:
     # Skip Testing path: test hypothesis with existing ensemble data
     test_with_existing: bool = False  # If True, can be tested without new HPC runs
     existing_data_test: Optional[Dict] = None  # Test spec: {method, description, cases_to_compare, success_criterion}
+    # Base case ID from screening (stamped by orchestrator for downstream tracking)
+    base_case_id: Optional[int] = None
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)

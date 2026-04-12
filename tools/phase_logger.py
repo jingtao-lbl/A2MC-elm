@@ -696,7 +696,8 @@ class PhaseLogger:
                       key_insights: List[str] = None,
                       comparative_analysis: Dict = None,
                       protocol_recommendations: List[Dict] = None,
-                      metadata: Dict = None) -> Path:
+                      metadata: Dict = None,
+                      base_case_id: int = None) -> Path:
         """
         Log Phase 3: Diagnosis with full AI reasoning.
 
@@ -724,11 +725,13 @@ class PhaseLogger:
         """
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        _base_case_line = f"\n**Base Case:** #{base_case_id}" if base_case_id else ""
+
         content = f"""# {title}
 
 **Site:** {self.site_name}
 **Phase:** 3 - Diagnosis
-{self._format_iteration_line(phase=3)}
+{self._format_iteration_line(phase=3)}{_base_case_line}
 **Date:** {timestamp}
 **Confidence:** {confidence:.2f}
 
@@ -1042,15 +1045,18 @@ class PhaseLogger:
                        experiments_planned: List[Dict] = None,
                        confidence: float = 0.0,
                        figure_paths: List[str] = None,
-                       metadata: Dict = None) -> Path:
+                       metadata: Dict = None,
+                       base_case_id: int = None) -> Path:
         """Log Phase 4: Hypothesis with experimental design."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        _base_case_line = f"\n**Base Case:** #{base_case_id}" if base_case_id else ""
 
         content = f"""# {title}
 
 **Site:** {self.site_name}
 **Phase:** 4 - Hypothesis
-{self._format_iteration_line(phase=4)}
+{self._format_iteration_line(phase=4)}{_base_case_line}
 **Date:** {timestamp}
 **Confidence:** {confidence:.2f}
 

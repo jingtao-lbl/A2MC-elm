@@ -272,13 +272,15 @@ def extract_experiment_results(
         name = exp.get("name", "unnamed")
         job_status = exp.get("job_status", "UNKNOWN")
 
-        # Skip experiments that were never submitted (no parameter file created)
+        # Skip experiments that were never submitted or failed to submit
+        sub_status = exp.get("submission_status", "")
         if (job_status == "NO_JOB" or
-                exp.get("submission_status") == "skipped_no_param_file"):
-            logger.warning(f"Skipping '{name}': never submitted "
-                          f"(submission_status={exp.get('submission_status')})")
+                sub_status in ("skipped_no_param_file", "submission_failed",
+                               "submission_timeout")):
+            logger.warning(f"Skipping '{name}': never ran on HPC "
+                          f"(submission_status={sub_status})")
             exp["extraction_status"] = "skipped_not_submitted"
-            exp["results"] = {"error": "Experiment was never submitted to HPC"}
+            exp["results"] = {"error": f"Experiment never ran: {sub_status}"}
             continue
 
         # Skip definitively failed experiments

@@ -13,6 +13,7 @@ rounds:
     parameters: 138
     ensembles: 4170
     trajectories: 30
+    sampling_scheme: "morris"
     targets:
       - "PFT7_leaf, PFT7_fineroot, PFT7_abg"
       - "PFT9_leaf, PFT9_fineroot, PFT9_abg"
@@ -41,6 +42,16 @@ rounds:
     parameters: 162
     ensembles: 4890
     trajectories: 30
+    sampling_scheme: "morris"
+    config_file: "use_cases/Kougarok/config/kougarok_config.sh"
+    paths:
+      ensemble_name: "Kougarok_PlantTraitsCNPEnsemble162_Morris"
+      ensemble_output: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_Morris"
+      extracted_data: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_Morris_Extract"
+      param_dir: "/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
+      param_pattern: "fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"
+      case_name_pattern: "Kougarok_ELM-FATES_PtCNPEn{N}_{PHASE}"
+      case_scripts: "${A2MC_SCRIPTS_DIR}/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase"
     targets:
       - "PFT7_leaf, PFT7_fineroot"
       - "PFT9_leaf, PFT9_fineroot"
@@ -72,6 +83,16 @@ rounds:
     parameters: 162
     ensembles: 4890
     trajectories: 30
+    sampling_scheme: "morris"
+    config_file: "use_cases/Kougarok/config/kougarok_config.sh"
+    paths:
+      ensemble_name: "Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP"
+      ensemble_output: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP"
+      extracted_data: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP_Extract"
+      param_dir: "/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
+      param_pattern: "fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"
+      case_name_pattern: "Kougarok_ELM-FATES_PtCNPEn{N}_{PHASE}"
+      case_scripts: "${A2MC_SCRIPTS_DIR}/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase_RGSPsuplP"
     targets:
       - "PFT7_leaf, PFT7_fineroot"
       - "PFT9_leaf, PFT9_fineroot"
@@ -89,5 +110,54 @@ rounds:
       RGSP allows soil P pools to equilibrate before the transient run,
       preventing chronic P starvation. Same parameter space and targets
       as Round 2 to isolate the effect of the protocol change.
+    outcome: null
+    status: in_progress
+
+  4:
+    parameters: 162
+    ensembles: 200
+    sampling_scheme: "subset_replay"
+    config_file: "use_cases/Kougarok/config/kougarok_config_r4.sh"
+    paths:
+      ensemble_name: "Kougarok_PlantTraitsCNPEnsemble162_PrescribedP"
+      ensemble_output: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP"
+      extracted_data: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP_Extract"
+      param_dir: "/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_PrescribedP_EnPlantTraitsCNPparam162_R4"
+      param_pattern: "fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"
+      case_name_pattern: "Kougarok_ELM-FATES_PtCNPEn{N}PrescP_{PHASE}"
+      case_scripts: "${A2MC_SCRIPTS_DIR}/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase_PrescribedP"
+    source_round: 3
+    source_top_n: 200
+    source_ranking_metric: "composite_rmsre"
+    targets:
+      - "PFT7_leaf, PFT7_fineroot"
+      - "PFT9_leaf, PFT9_fineroot"
+      - "PFT10_leaf, PFT10_fineroot"
+    protocol:
+      suplphos:
+        ADSP: "ALL"
+        RGSP: "ALL"
+        TRANS: "NONE"
+    overrides:
+      fates_cnp_prescribed_puptake: 1.0
+    changes_from_previous:
+      - "Sampling: morris → subset_replay (top 200 R3 cases by composite_rmsre)"
+      - "Override: fates_cnp_prescribed_puptake = 0 → 1.0 (P uptake prescribed at demand rate, removes P limitation)"
+      - "Protocol kept identical to R3 (ADSP=ALL, RGSP=ALL, TRANS=NONE) to isolate the effect of the override — RGSP supplementation is technically redundant when prescribed_puptake=1.0 but kept for clean controlled-experiment attribution: any R4 vs R3 biomass difference can be solely attributed to the prescribed P uptake change"
+      - "Source: R3 diagnosis (session 20260409_205811) recommended N-P limitation regime test (priority 3, confidence 0.80) — explicitly suggested running top R3 cases with prescribed P uptake to disentangle dominant nutrient limitation type"
+    rationale: >
+      Controlled experiment to disentangle N vs P limitation. The R3 diagnosis
+      recommended an "N-P limitation regime diagnosis" — running top R3 cases
+      with prescribed P uptake forces P availability to demand rate, effectively
+      removing P as a constraint. If PFT10 biomass recovers substantially, P
+      limitation is confirmed as the dominant bottleneck and future calibration
+      should focus on soil P pool dynamics. If biomass barely changes, N or
+      carbon is the binding constraint and parameter focus should shift to N
+      uptake / allocation / turnover. Top 200 chosen to give
+      enough statistical power to see the response distribution across the
+      promising parameter landscape. Protocol kept identical to R3 because the
+      top 200 cases were RANKED in the R3 protocol environment — changing the
+      protocol would test those parameters under a different baseline than the
+      one that selected them as promising.
     outcome: null
     status: in_progress

@@ -188,23 +188,25 @@ def generate_comparison_plot(
         logger.warning(f"Cannot generate comparison plot (missing dependency): {e}")
         return None
 
-    # Get baseline case ID
-    baseline_id = str(screening_data.get('best_case', {}).get('case_id', ''))
-    if not baseline_id:
-        logger.info("No baseline case ID in screening data; skipping comparison plot")
-        return None
-
-    # Get experiment case names for current iteration
-    exp_case_names = [
-        exp["case_name"]
-        for exp in experiments
+    # Group experiments by base_case for per-baseline comparison.
+    # Each experiment uses its own base_case (may differ with multi-base-case design).
+    default_baseline = str(screening_data.get('best_case', {}).get('case_id', ''))
+    iter_exps = [
+        exp for exp in experiments
         if exp.get("iteration") == iteration and exp.get("case_name")
     ]
-    if not exp_case_names:
+    if not iter_exps:
         logger.info("No experiment case names found; skipping comparison plot")
         return None
 
-    # Load targets
+    # Group by base_case
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for exp in iter_exps:
+        bl = str(exp.get('base_case', default_baseline))
+        groups[bl].append(exp["case_name"])
+
+    # Load targets and per-target obs_std for error bars
     try:
         from phases.phase2_screening.screen_ensemble import load_kougarok_targets
         raw_targets = load_kougarok_targets()
@@ -212,30 +214,40 @@ def generate_comparison_plot(
             name: {'observed': t.observed, 'uncertainty': t.uncertainty}
             for name, t in raw_targets.items()
         }
+        obs_uncertainty = {}
+        for name, t in raw_targets.items():
+            if hasattr(t, 'obs_std') and t.obs_std is not None:
+                obs_uncertainty[name] = t.obs_std
     except Exception:
         logger.warning("Could not load targets for comparison plot")
         return None
 
-    # Output path
     fig_dir = a2mc_config.phase_results_dir("phase6_refinement")
     fig_dir.mkdir(parents=True, exist_ok=True)
-    output_path = str(fig_dir / f"experiment_comparison_{baseline_id}.png")
 
-    logger.info(f"Generating baseline vs experiment comparison plot...")
-    logger.info(f"  Baseline: #{baseline_id}, Experiments: {len(exp_case_names)}")
+    # Generate one comparison plot per baseline group
+    fig_paths = []
+    for baseline_id, exp_case_names in groups.items():
+        if not baseline_id:
+            continue
+        output_path = str(fig_dir / f"experiment_comparison_{baseline_id}.png")
+        logger.info(f"Generating comparison plot: baseline #{baseline_id}, "
+                    f"{len(exp_case_names)} experiments")
 
-    try:
-        fig_path = plot_experiment_comparison(
-            data_dir=str(a2mc_config.EXTRACTED_DATA),
-            baseline_case=baseline_id,
-            experiment_cases=exp_case_names,
-            targets=targets,
-            pft_ids=pft_ids or [7, 9, 10],
-            output_path=output_path,
-        )
-        if fig_path:
-            logger.info(f"  Comparison plot: {fig_path}")
-        return fig_path
-    except Exception as e:
-        logger.warning(f"Comparison plot generation failed: {e}")
-        return None
+        try:
+            fig_path = plot_experiment_comparison(
+                data_dir=str(a2mc_config.EXTRACTED_DATA),
+                baseline_case=baseline_id,
+                experiment_cases=exp_case_names,
+                targets=targets,
+                pft_ids=pft_ids or [7, 9, 10],
+                output_path=output_path,
+                obs_uncertainty=obs_uncertainty if obs_uncertainty else None,
+            )
+            if fig_path:
+                logger.info(f"  Comparison plot: {fig_path}")
+                fig_paths.append(fig_path)
+        except Exception as e:
+            logger.warning(f"Comparison plot generation failed for baseline #{baseline_id}: {e}")
+
+    return fig_paths[0] if fig_paths else None

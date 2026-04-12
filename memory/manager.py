@@ -488,9 +488,22 @@ class MemoryManager:
             "date_added": datetime.now().isoformat()
         }
 
-        self.failed_approaches["failed_approaches"].append(record)
+        # Dedupe: update existing entry with same (approach, experiment_id) pair
+        # to prevent duplicates when Phase 6 re-runs after a crash
+        existing_idx = None
+        for i, existing in enumerate(self.failed_approaches["failed_approaches"]):
+            if (existing.get("approach") == approach and
+                existing.get("experiment_id") == experiment_id):
+                existing_idx = i
+                break
+
+        if existing_idx is not None:
+            self.failed_approaches["failed_approaches"][existing_idx] = record
+            logger.debug(f"Updated existing failed approach: {approach[:60]}")
+        else:
+            self.failed_approaches["failed_approaches"].append(record)
+            logger.info(f"Added failed approach: {approach}")
         self._save("failed_approaches.json", self.failed_approaches)
-        logger.info(f"Added failed approach: {approach}")
 
     def update_discovery_verification(self, name: str, verified: bool,
                                       new_confidence: Optional[float] = None) -> bool:

@@ -476,7 +476,6 @@ class CalibrationOrchestrator:
         # Initialize modules (lazy loading)
         self._reasoning = None
         self._hpc = None
-        self._data = None
         self._params = None
 
     @property
@@ -498,14 +497,6 @@ class CalibrationOrchestrator:
             from tools.hpc_utils import HPCExecutor
             self._hpc = HPCExecutor()  # HPCConfig auto-loads from env
         return self._hpc
-
-    @property
-    def data(self):
-        """Lazy-load data pipeline."""
-        if self._data is None:
-            from integration import DataPipeline
-            self._data = DataPipeline()  # Legacy: will be replaced by tools/extract_monthly_variables_FATES.py
-        return self._data
 
     @property
     def params(self):
@@ -859,8 +850,36 @@ class CalibrationOrchestrator:
             )
             self._workflow_status.set_iteration(self.state.iteration)
 
+        # Set session ID env var early so phase_results_dir() returns
+        # session-scoped paths for any pre-loop loading (e.g., sensitivity data).
+        os.environ['A2MC_SESSION_ID'] = self.config.session_id
+
+        # Ensure exploration data (sensitivity rankings) is loaded even when
+        # starting from Phase 2+.  Without this, hypothesis generation has no
+        # sensitivity context and base-case parameter selection falls back to 0.
+        if (not self.state.exploration_data
+                or not self.state.exploration_data.get('sensitivity_rankings')):
+            try:
+                cached = self._analyze_existing_ensemble()
+                if cached and cached.get('sensitivity_rankings'):
+                    self.state.exploration_data = cached
+                    logger.info(f"Loaded cached sensitivity rankings "
+                                f"({len(cached.get('sensitivity_rankings', {}))} variables)")
+            except Exception as e:
+                logger.debug(f"Could not load cached sensitivity data: {e}")
+
+        # Loop limits (the meaningful bounds in the three-level structure):
+        # - max_skip_testing: Phase 3↔4 inner loop cycles per experiment cycle
+        #                     (checked in _run_hypothesis)
+        # - max_experiments: total Phase 3→4→5→6 outer cycles per round
+        #                    (checked in _run_refinement)
+        #
+        # The legacy `iteration <= max_iterations` check has been removed because
+        # iteration now resets to 1 per cycle and increments per skip-testing iter.
+        # With max_iterations=10 and max_skip_testing=10 defaults, the iteration
+        # check would fire prematurely (iteration=11 after iter10's increment) and
+        # block the transition to Phase 5. The two limits above are sufficient.
         while (not self.state.converged and
-               self.state.iteration <= self.config.max_iterations and
                self.state.experiment_count < self.config.max_experiments):
             phase = Phase(self.state.current_phase)
             phase_num = list(Phase).index(phase)
@@ -947,12 +966,11 @@ class CalibrationOrchestrator:
             if self._workflow_status:
                 self._workflow_status.complete_workflow()
         else:
-            # Determine which limit was hit
             if self.state.experiment_count >= self.config.max_experiments:
                 logger.warning(f"Max experiments ({self.config.max_experiments}) reached without convergence")
             else:
-                logger.warning(f"Max iterations ({self.config.max_iterations}) reached without convergence")
-            logger.info(f"Final iteration: {self.state.iteration}")
+                logger.warning("Workflow exited without convergence")
+            logger.info(f"Final iteration: {self.state.iteration} (cycle {self.state.experiment_count})")
             logger.info(f"Skip testing cycles: {self.state.skip_testing_count}")
             logger.info(f"Experiment cycles: {self.state.experiment_count}")
             # Mark workflow as paused (not failed, just stopped)
@@ -1177,7 +1195,6 @@ class CalibrationOrchestrator:
         from phases.phase1_exploration.analyze_ensemble import analyze_existing_ensemble
         return analyze_existing_ensemble(
             total_ensemble=self.config.total_ensemble,
-            data_pipeline=getattr(self, 'data', None),
         )
 
     def _run_monthly_extraction(self) -> Dict:
@@ -1187,7 +1204,6 @@ class CalibrationOrchestrator:
         """
         from phases.phase1_exploration.analyze_ensemble import run_monthly_extraction
         return run_monthly_extraction(
-            data_pipeline=getattr(self, 'data', None),
             total_ensemble=self.config.total_ensemble,
         )
 
@@ -1502,6 +1518,8 @@ Review the screening log at:
             if (best_case.get('case_id') and lowest_cost.get('case_id')
                     and best_case['case_id'] != lowest_cost['case_id']):
                 comparative_analysis = self._build_comparative_analysis(screening_data)
+                # Store in screening_data so hypothesis phase can access it
+                self.state.screening_data['_comparative_analysis'] = comparative_analysis
                 logger.info(f"Built comparative analysis: best_case={best_case['case_id']} vs "
                            f"lowest_cost={lowest_cost['case_id']}")
 
@@ -1622,6 +1640,26 @@ Review the screening log at:
                         diagnosis['visual_observations'] = first_visual_obs
                         logger.info("Restored visual_observations from first diagnosis call")
 
+            # Stamp base case ID so downstream phases can reference it directly
+            diagnosis['base_case_id'] = best_case_id
+
+            # Extract AI's selected base cases and store for Phase 4
+            # Use `or {}` to handle case where comparative_analysis exists but is None
+            # (can happen on truncated JSON responses from AI)
+            diag_comp = diagnosis.get('comparative_analysis') or {}
+            selected = diag_comp.get('selected_base_cases') or []
+            if selected:
+                self.state.screening_data['_selected_base_cases'] = selected
+                sel_ids = [str(s.get('case_id', '?')) for s in selected]
+                logger.info(f"Diagnosis selected base cases: #{', #'.join(sel_ids)}")
+            elif diag_comp.get('recommended_starting_case'):
+                # Backward compat: single recommendation → wrap as list
+                rec_id = diag_comp['recommended_starting_case']
+                self.state.screening_data['_selected_base_cases'] = [
+                    {'case_id': rec_id, 'rationale': diag_comp.get('rationale', '')}
+                ]
+                logger.info(f"Diagnosis recommended starting case: #{rec_id}")
+
             self.state.diagnoses.append(diagnosis)
 
             # Track that this case's figures have been analyzed (for skip-testing dedup)
@@ -1674,6 +1712,7 @@ Review the screening log at:
                         key_insights=diagnosis.get('key_insights'),
                         comparative_analysis=diagnosis.get('comparative_analysis'),
                         protocol_recommendations=diagnosis.get('protocol_recommendations'),
+                        base_case_id=best_case_id,
                         metadata={
                             'iteration': self.state.iteration,
                             'screening_data_summary': {
@@ -1882,6 +1921,13 @@ Diagnosis Summary:{skip_header}
             screening_data=self.state.screening_data
         )
 
+        # Stamp base case ID: prefer hypothesis's own choice (AI may specify
+        # base_case for alt starting point), then fall back to screening best_case.
+        if not hypothesis.get('base_case_id') and not hypothesis.get('base_case'):
+            hypothesis['base_case_id'] = self.state.screening_data.get('best_case', {}).get('case_id')
+        elif hypothesis.get('base_case') and not hypothesis.get('base_case_id'):
+            hypothesis['base_case_id'] = hypothesis['base_case']
+
         # Only append if this is a new hypothesis (not resumed)
         if not self.state.hypotheses or self.state.hypotheses[-1] is not hypothesis:
             self.state.hypotheses.append(hypothesis)
@@ -1935,6 +1981,7 @@ Diagnosis Summary:{skip_header}
                         entry['organ'] = p['organ']
                     params_to_modify.append(entry)
                 ai_reasoning = hypothesis.get('mechanism', '') or hypothesis.get('reasoning', '')
+                _hyp_base_case_id = hypothesis.get('base_case_id')
                 log_path = self._phase_logger.log_hypothesis(
                     title=hypothesis.get('name', "Hypothesis"),
                     hypothesis_name=hypothesis.get('name', 'Unknown'),
@@ -1944,6 +1991,7 @@ Diagnosis Summary:{skip_header}
                     design_type=hypothesis.get('design_type', hypothesis.get('experimental_design', 'cumulative')),
                     expected_outcomes=hypothesis.get('expected_outcomes', {'expectation': hypothesis.get('expected_outcome', '')}),
                     confidence=hypothesis.get('confidence', 0),
+                    base_case_id=_hyp_base_case_id,
                     metadata={
                         'iteration': self.state.iteration,
                         'diagnosis_count': len(self.state.diagnoses),
@@ -2245,13 +2293,19 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             self.state.skip_testing_count = 0
 
         # --- 1. Resume-skip check ---
+        # Filter by experiment_count (the cycle ID, unique per cycle) instead of
+        # iteration (which now resets to 1 per cycle and could collide). Falls back
+        # to iteration for backward compat with state files written before this fix.
         current_iter = self.state.iteration
+        current_cycle = self.state.experiment_count
         resumed = False
         experiments = []
         synthesized = []
         existing_exps = [
             e for e in self.state.experiments
-            if e.get("iteration") == current_iter
+            if (e.get("experiment_count") == current_cycle
+                if "experiment_count" in e
+                else e.get("iteration") == current_iter)
             and e.get("status") not in (None, "placeholder")
         ]
         if existing_exps:
@@ -2326,6 +2380,7 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             stag = self.config.session_tag
             for exp in experiments:
                 exp["iteration"] = current_iter
+                exp["experiment_count"] = cycle  # uniquely identifies the cycle for resume filtering
                 old_name = exp.get("name", "unnamed")
                 exp["name"] = f"{stag}_c{cycle}_{old_name}" if stag else f"c{cycle}_{old_name}"
 
@@ -2734,6 +2789,8 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
         )
 
         if eval_result.get('no_experiments'):
+            # Edge case: no experiments to evaluate. Stay in current cycle,
+            # bump iteration so the loop limit (if any) eventually triggers.
             self.state.iteration += 1
             self.state.current_phase = Phase.DIAGNOSIS.value
             return
@@ -2823,7 +2880,6 @@ Refinement Summary:
             # Progress made - update best and continue
             self.state.best_experiment = best_exp
             self.state.experiment_count += 1
-            self.state.iteration += 1
 
             if self.state.experiment_count >= self.config.max_experiments:
                 logger.warning(f"Max experiments ({self.config.max_experiments}) reached")
@@ -2834,6 +2890,9 @@ Refinement Summary:
                     f"Max experiments reached with {best_targets_met}/{total_targets} targets"
                 )
             else:
+                # New experiment cycle: reset inner counters so iter01 starts fresh
+                self.state.iteration = 1
+                self.state.skip_testing_count = 0
                 self.state.current_phase = Phase.DIAGNOSIS.value
                 logger.info(f"\nProgress made ({best_targets_met}/{total_targets}). Iterating...")
                 logger.info(f"Experiment cycle {self.state.experiment_count}/{self.config.max_experiments}")
@@ -2846,7 +2905,6 @@ Refinement Summary:
         else:
             # No progress - try different hypothesis
             self.state.experiment_count += 1
-            self.state.iteration += 1
 
             if self.state.experiment_count >= self.config.max_experiments:
                 logger.warning(f"Max experiments ({self.config.max_experiments}) reached without improvement")
@@ -2857,6 +2915,9 @@ Refinement Summary:
                     f"Max experiments reached without improvement, {best_targets_met}/{total_targets} targets"
                 )
             else:
+                # New experiment cycle: reset inner counters so iter01 starts fresh
+                self.state.iteration = 1
+                self.state.skip_testing_count = 0
                 self.state.current_phase = Phase.DIAGNOSIS.value
                 logger.info(f"\nNo improvement. Trying different approach...")
                 logger.info(f"Experiment cycle {self.state.experiment_count}/{self.config.max_experiments}")
@@ -2874,11 +2935,17 @@ Refinement Summary:
         Thin wrapper — delegates to phases/phase6_refinement/evaluate_results.py.
         """
         from phases.phase6_refinement.evaluate_results import generate_comparison_plot
+        # Read PFTs from A2MC_PFTS env var (set by site config), fallback to Kougarok default
+        pfts_env = os.environ.get('A2MC_PFTS', '')
+        try:
+            pft_ids = [int(p.strip()) for p in pfts_env.split(',') if p.strip()] if pfts_env else [7, 9, 10]
+        except ValueError:
+            pft_ids = [7, 9, 10]
         generate_comparison_plot(
             experiments=self.state.experiments,
             screening_data=self.state.screening_data or {},
             iteration=self.state.iteration,
-            pft_ids=self.config.pfts or [7, 9, 10],
+            pft_ids=pft_ids,
         )
 
     # =========================================================================
@@ -2893,7 +2960,7 @@ Refinement Summary:
 
         Called at the end of Phase 6 before the convergence/loop decision.
         """
-        if not self.reasoning_module:
+        if not self.reasoning:
             return
 
         session_id = os.environ.get('A2MC_SESSION_ID', '')
@@ -2942,16 +3009,24 @@ Refinement Summary:
                 ),
                 "iteration": self.state.iteration,
                 "experiment_count": self.state.experiment_count,
+                "skip_testing_count": self.state.skip_testing_count,
+                # experiment_count in state is 0-indexed (c00 = first cycle).
+                # For display, add 1 so users see "Cycle 1" not "Cycle 0".
+                "experiment_cycle_number": self.state.experiment_count + 1,
             }
 
             # Generate report via AI
-            report_content = self.reasoning_module.generate_session_report(
+            report_content = self.reasoning.generate_session_report(
                 artifacts=artifacts,
                 state_summary=state_summary,
             )
 
-            # Write to session directory
-            report_path = write_session_report(site_dir, session_id, report_content)
+            # Write to session directory with r{RR}_c{EE} prefix
+            report_path = write_session_report(
+                site_dir, session_id, report_content,
+                calibration_round=self.state.calibration_round,
+                experiment_count=self.state.experiment_count,
+            )
             logger.info(f"Session report written: {report_path}")
 
         except Exception as e:
@@ -2972,7 +3047,7 @@ Refinement Summary:
         """
         import yaml  # Lazy import
 
-        if not self.reasoning_module:
+        if not self.reasoning:
             logger.info("No reasoning module — skipping calibration round summary")
             return
 
@@ -3019,7 +3094,7 @@ Refinement Summary:
         logger.info(f"Generating AI summary for calibration round {round_number}...")
 
         try:
-            round_entry = self.reasoning_module.summarize_calibration_round(
+            round_entry = self.reasoning.summarize_calibration_round(
                 round_number=round_number,
                 previous_rounds=previous_rounds,
                 phase_history=self.state.phase_history,
@@ -3030,7 +3105,10 @@ Refinement Summary:
                 exit_reason=exit_reason,
             )
 
-            # Write back to YAML
+            # Write back to YAML — MERGE with any pre-seeded entry instead
+            # of overwriting. This preserves human-written rationale,
+            # changes_from_previous, overrides, etc., while letting the AI
+            # fill in or append the outcome and update status.
             if yaml_path.exists():
                 with open(yaml_path) as f:
                     data = yaml.safe_load(f) or {}
@@ -3040,7 +3118,11 @@ Refinement Summary:
             if "rounds" not in data:
                 data["rounds"] = {}
 
-            data["rounds"][round_number] = round_entry
+            existing_entry = data["rounds"].get(round_number, {}) or {}
+            merged_entry = self._merge_round_entry(
+                existing_entry, round_entry, exit_reason
+            )
+            data["rounds"][round_number] = merged_entry
 
             with open(yaml_path, "w") as f:
                 yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
@@ -3049,6 +3131,62 @@ Refinement Summary:
 
         except Exception as e:
             logger.error(f"Failed to generate calibration round summary: {e}")
+
+    @staticmethod
+    def _merge_round_entry(existing: dict, ai_generated: dict,
+                           exit_reason: str = "") -> dict:
+        """Merge AI-generated round entry into pre-seeded human entry.
+
+        Rules:
+        - All human-written fields are preserved (rationale, changes_from_previous,
+          overrides, sampling_scheme, source_round, etc.)
+        - AI fields are used ONLY for fields the human left null/empty
+        - For `outcome` specifically: AI content is APPENDED to any existing
+          content (with timestamp marker if appending), or used directly if null
+        - `status` is always updated by AI (in_progress → completed/etc.)
+
+        Args:
+            existing: Pre-seeded entry from YAML (may be empty dict for new rounds)
+            ai_generated: AI-generated round summary from summarize_calibration_round()
+            exit_reason: Why the round ended (used in append marker)
+
+        Returns:
+            Merged dict to write back to YAML
+        """
+        if not existing:
+            # No pre-seed — use AI version directly (legacy behavior)
+            return ai_generated
+
+        merged = dict(existing)  # start with human content
+
+        for key, ai_value in ai_generated.items():
+            existing_value = merged.get(key)
+
+            if key == "outcome":
+                # Append AI outcome to existing outcome (chronological story)
+                if not ai_value:
+                    continue
+                if existing_value:
+                    # Pre-seeded outcome present → append with timestamp marker
+                    timestamp = datetime.now().strftime("%Y-%m-%d")
+                    marker_parts = [f"AI summary, {timestamp}"]
+                    if exit_reason:
+                        marker_parts.append(exit_reason)
+                    marker = f"[{' - '.join(marker_parts)}]"
+                    merged[key] = f"{existing_value}\n\n{marker}\n{ai_value}"
+                else:
+                    # No pre-seed → just fill it (no marker, common case)
+                    merged[key] = ai_value
+            elif key == "status":
+                # Always let AI update status (in_progress → completed)
+                merged[key] = ai_value
+            else:
+                # All other fields: preserve human content if present and non-empty
+                if existing_value is None or existing_value == "" or existing_value == []:
+                    merged[key] = ai_value
+                # else: keep human content, drop AI's version
+
+        return merged
 
     # =========================================================================
     # CONVERGENCE - Final Report
@@ -3381,15 +3519,12 @@ Phase numbers:
 
     logger.info(f"Log file: {log_filepath}")
 
-    # Capture A2MC version (git describe) for provenance
+    # Read A2MC version from VERSION file
     a2mc_version = "unknown"
     try:
-        import subprocess as _sp
-        a2mc_root = Path(__file__).resolve().parent
-        a2mc_version = _sp.check_output(
-            ["git", "describe", "--tags", "--always", "--dirty"],
-            cwd=str(a2mc_root), stderr=_sp.DEVNULL
-        ).decode().strip()
+        _version_file = Path(__file__).resolve().parent / "VERSION"
+        if _version_file.exists():
+            a2mc_version = f"v{_version_file.read_text().strip()}"
     except Exception:
         pass
     logger.info(f"A2MC version: {a2mc_version}")
@@ -3401,51 +3536,99 @@ Phase numbers:
 
         # Handle start phase and iteration overrides
         if args.start_phase:
+            # When resuming a session with --session-id + --start-phase,
+            # backup state file and downstream phase_results before clearing.
+            if args.session_id and state_file and Path(state_file).exists():
+                import shutil
+                from datetime import datetime as _dt
+                backup_ts = _dt.now().strftime('%Y%m%d_%H%M%S')
+
+                # Backup state file
+                backup_path = f"{state_file}.backup_{backup_ts}"
+                shutil.copy2(state_file, backup_path)
+                logger.info(f"Backed up state file: {backup_path}")
+
+                # Backup downstream phase_results and session logs
+                # Phases at or after start_phase get backed up
+                phase_order = [p.value for p in Phase]
+                start_idx = phase_order.index(args.start_phase) if args.start_phase in phase_order else -1
+                if start_idx >= 0:
+                    try:
+                        from tools.config import config as _cfg
+                        _use_case = Path(_cfg.USE_CASE_DIR)
+                        phase_names = [
+                            "phase0_design", "phase1_exploration", "phase2_screening",
+                            "phase3_diagnosis", "phase4_hypothesis", "phase5_testing",
+                            "phase6_refinement",
+                        ]
+                        # Backup AND clear downstream phase_results and logs.
+                        # Clearing is critical: old logs with the same session_id
+                        # would otherwise be picked up by read_phase_log() and
+                        # confuse the AI with stale context from the previous run.
+                        for base_dir in [
+                            _use_case / "memory" / "phase_results" / session_id,
+                            _use_case / "memory" / "logs" / session_id,
+                        ]:
+                            if not base_dir.exists():
+                                continue
+                            for i, pname in enumerate(phase_names):
+                                if i >= start_idx:
+                                    pdir = base_dir / pname
+                                    if pdir.exists() and any(pdir.iterdir()):
+                                        backup_dir = base_dir / f"{pname}.backup_{backup_ts}"
+                                        shutil.copytree(pdir, backup_dir)
+                                        # Clear originals so stale logs aren't read
+                                        shutil.rmtree(pdir)
+                                        pdir.mkdir()
+                                        logger.info(f"Backed up & cleared {base_dir.parent.name}/{pname} "
+                                                    f"→ {pname}.backup_{backup_ts}")
+                    except Exception as e:
+                        logger.warning(f"Could not backup phase data: {e}")
+
             orchestrator.state.current_phase = args.start_phase
             logger.info(f"Starting from phase: {args.start_phase}")
 
-            # Clear cached results for this phase so it actually re-runs
-            # (otherwise the phase sees existing results and skips execution)
-            iteration = orchestrator.state.iteration
+            # Clear ALL downstream state from the start phase onward.
+            # Only data from earlier phases is preserved (e.g., Phase 1
+            # exploration_data when restarting from Phase 2).
+            phase_order = [p.value for p in Phase]
+            start_idx = phase_order.index(args.start_phase) if args.start_phase in phase_order else -1
 
-            # Screening or Diagnosis: reset skip-testing accumulators so
-            # stagnation detection starts fresh (not inheriting old history)
-            if args.start_phase in ('screening', 'diagnosis'):
-                if orchestrator.state.cumulative_insights:
-                    logger.info(f"Cleared {len(orchestrator.state.cumulative_insights)} "
-                               f"cumulative insights from previous run")
-                    orchestrator.state.cumulative_insights = []
-                if orchestrator.state.parameter_evidence_ledger:
-                    logger.info(f"Cleared parameter evidence ledger "
-                               f"({len(orchestrator.state.parameter_evidence_ledger)} params)")
-                    orchestrator.state.parameter_evidence_ledger = {}
-                orchestrator.state.skip_testing_count = 0
-                orchestrator.state.figures_analyzed_case_id = None
-
-            # Screening: clear screening_data dict
-            if args.start_phase == 'screening':
+            # Phase 2 (screening) and beyond: clear screening data
+            if start_idx <= phase_order.index('screening'):
                 if orchestrator.state.screening_data:
+                    logger.info(f"Cleared screening_data")
                     orchestrator.state.screening_data = {}
-                    logger.info("Cleared cached screening results (will re-run)")
 
-            # Diagnosis/Hypothesis: clear from result lists
-            phase_result_lists = {
-                'diagnosis': 'diagnoses',
-                'hypothesis': 'hypotheses',
-            }
-            result_key = phase_result_lists.get(args.start_phase)
-            if result_key:
-                result_list = getattr(orchestrator.state, result_key, [])
-                if result_list and result_list[-1].get('iteration') == iteration:
-                    removed = result_list.pop()
-                    logger.info(f"Cleared cached {args.start_phase} result for iteration {iteration} "
-                               f"(will re-run)")
-                    # Also clear downstream results for the same iteration
-                    if args.start_phase == 'diagnosis':
-                        hyp_list = orchestrator.state.hypotheses
-                        if hyp_list and hyp_list[-1].get('iteration') == iteration:
-                            hyp_list.pop()
-                            logger.info(f"  Also cleared cached hypothesis for iteration {iteration}")
+            # Phase 3 (diagnosis) and beyond: clear diagnoses
+            if start_idx <= phase_order.index('diagnosis'):
+                if orchestrator.state.diagnoses:
+                    logger.info(f"Cleared {len(orchestrator.state.diagnoses)} diagnoses")
+                    orchestrator.state.diagnoses = []
+
+            # Phase 4 (hypothesis) and beyond: clear hypotheses
+            if start_idx <= phase_order.index('hypothesis'):
+                if orchestrator.state.hypotheses:
+                    logger.info(f"Cleared {len(orchestrator.state.hypotheses)} hypotheses")
+                    orchestrator.state.hypotheses = []
+                if orchestrator.state.hypothesis_tests:
+                    orchestrator.state.hypothesis_tests = []
+
+            # Phase 5 (testing) and beyond: clear experiments
+            if start_idx <= phase_order.index('testing'):
+                if orchestrator.state.experiments:
+                    logger.info(f"Cleared {len(orchestrator.state.experiments)} experiments")
+                    orchestrator.state.experiments = []
+                orchestrator.state.best_experiment = None
+
+            # Always reset iteration counters when restarting
+            orchestrator.state.iteration = 1
+            orchestrator.state.skip_testing_count = 0
+            orchestrator.state.experiment_count = 0
+            orchestrator.state.cumulative_insights = []
+            orchestrator.state.parameter_evidence_ledger = {}
+            orchestrator.state.figures_analyzed_case_id = None
+            logger.info(f"Reset iteration counters (iteration=1, skip_testing=0, experiments=0)")
 
         if args.start_iteration is not None:
             orchestrator.state.calibration_round = args.start_iteration
