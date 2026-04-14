@@ -781,13 +781,22 @@ def run_monthly_extraction(case_list=None, case_file=None, parallel=8):
     try:
         case_numbers = load_case_numbers(case_list, case_file)
     except ValueError as e:
-        # No cases specified — generate full range from config
-        try:
-            from tools.config import config as a2mc_config
-            n_total = a2mc_config.TOTAL_ENSEMBLE
-            case_numbers = list(range(1, n_total + 1))
-        except (ImportError, AttributeError):
-            return {'status': 'failed', 'error': str(e)}
+        # No cases specified — try case list file from config (for subset_replay
+        # with non-sequential case numbers), then fall back to sequential range
+        _case_list_file = os.environ.get('A2MC_CASE_LIST_FILE', '')
+        if _case_list_file and Path(_case_list_file).is_file():
+            try:
+                case_numbers = load_case_numbers(case_file=_case_list_file)
+                print(f"Loaded {len(case_numbers)} case numbers from {_case_list_file}")
+            except (ValueError, Exception) as e2:
+                return {'status': 'failed', 'error': f'Case list file failed: {e2}'}
+        else:
+            try:
+                from tools.config import config as a2mc_config
+                n_total = a2mc_config.TOTAL_ENSEMBLE
+                case_numbers = list(range(1, n_total + 1))
+            except (ImportError, AttributeError):
+                return {'status': 'failed', 'error': str(e)}
 
     if not case_numbers:
         return {'status': 'failed', 'error': 'No case numbers to process'}

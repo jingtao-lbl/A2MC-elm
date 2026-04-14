@@ -277,6 +277,9 @@ print_config() {
         echo "  Number of parameters: ${A2MC_N_PARAMS}"
         if [ "$A2MC_SAMPLING_SCHEME" = "morris" ]; then
             echo "  Trajectories: ${A2MC_N_TRAJECTORIES}"
+        elif [ "$A2MC_SAMPLING_SCHEME" = "subset_replay" ]; then
+            echo "  Source round: R${A2MC_REPLAY_SOURCE_ROUND:-?}"
+            echo "  Top N cases: ${A2MC_REPLAY_TOP_N:-?}"
         else
             echo "  Samples: ${A2MC_N_SAMPLES}"
         fi

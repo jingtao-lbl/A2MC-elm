@@ -1061,6 +1061,30 @@ class CalibrationOrchestrator:
         """
         scheme = self.config.sampling_scheme
 
+        # Subset replay: copy top-N source-round parameter files with overrides
+        if scheme == "subset_replay":
+            logger.info("Running subset replay parameter generation...")
+            from phases.phase0_design.create_subset_replay import main as create_replay
+            rc = create_replay()
+            if rc != 0:
+                logger.error(f"create_subset_replay failed (exit code {rc})")
+                return None
+            # Read the generated case list to get actual case count
+            case_list_file = os.environ.get('A2MC_CASE_LIST_FILE', '')
+            n_cases = 0
+            if case_list_file and Path(case_list_file).is_file():
+                with open(case_list_file) as f:
+                    n_cases = sum(1 for line in f
+                                 if line.strip() and not line.strip().startswith('#'))
+            return {
+                'scheme': 'subset_replay',
+                'n_parameters': self.config.n_parameters,
+                'n_simulations': n_cases or self.config.total_ensemble,
+                'complete': True,
+                'note': f"Subset replay: {n_cases} cases with overrides applied",
+                'case_list_file': case_list_file,
+            }
+
         try:
             if scheme == "morris":
                 from SALib.sample import morris as sampler

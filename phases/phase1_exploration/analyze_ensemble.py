@@ -159,7 +159,15 @@ def run_monthly_extraction(
     try:
         from tools.extract_monthly_variables_FATES import run_monthly_extraction as _run_extraction
         logger.info("Starting monthly variable extraction from simulation output...")
-        result = _run_extraction()
+
+        # For subset_replay (non-sequential case numbers), pass the case list file
+        case_list_file = os.environ.get('A2MC_CASE_LIST_FILE', '')
+        if case_list_file and os.path.isfile(case_list_file):
+            logger.info(f"Using case list file: {case_list_file}")
+            result = _run_extraction(case_file=case_list_file)
+        else:
+            result = _run_extraction()
+
         if result.get('status') in ['completed', 'partial']:
             logger.info(f"Monthly extraction {result['status']}: "
                         f"{result.get('total_extracted', len(result.get('successful_cases', [])))} cases")

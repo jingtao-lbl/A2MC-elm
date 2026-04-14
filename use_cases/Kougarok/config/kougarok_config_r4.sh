@@ -72,6 +72,9 @@ export A2MC_PARAM_DIR="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fat
 # -----------------------------------------------------------------------------
 # Subset replay source (R3 inputs)
 # -----------------------------------------------------------------------------
+# Source round number (for display in config printout)
+export A2MC_REPLAY_SOURCE_ROUND=3
+
 # Where to read the top-N case ranking from
 export A2MC_REPLAY_SOURCE_STATE="${A2MC_USE_CASE_DIR}/memory/workflow_state_s0409h20m58.json"
 
@@ -83,6 +86,10 @@ export A2MC_REPLAY_SOURCE_PARAM_PATTERN="fates_params_api25.5.0_12pft_c230710__P
 
 # How many top cases to replay
 export A2MC_REPLAY_TOP_N=200
+
+# Case list file (non-sequential case numbers from subset replay)
+# Used by extraction to know which cases actually exist
+export A2MC_CASE_LIST_FILE="${A2MC_ENSEMBLE_OUTPUT}/subset_replay_case_list.txt"
 
 # Override(s) applied to all replayed cases (comma-separated param=value)
 # fates_cnp_prescribed_puptake=1.0 → P uptake forced at demand rate (no P limit)
