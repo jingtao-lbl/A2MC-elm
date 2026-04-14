@@ -209,7 +209,7 @@ export A2MC_AI_MAX_TOKENS="${A2MC_AI_MAX_TOKENS:-4096}"
 # Maximum tokens for diagnosis responses (Phase 3)
 # Diagnosis JSON is large: hypotheses with evidence, root causes, severity,
 # comparative analysis, visual observations, etc. Needs more than default.
-export A2MC_AI_DIAG_MAX_TOKENS="${A2MC_AI_DIAG_MAX_TOKENS:-16384}"
+export A2MC_AI_DIAG_MAX_TOKENS="${A2MC_AI_DIAG_MAX_TOKENS:-32768}"
 
 # API key env var name (auto-derived from provider if empty):
 #   anthropic → ANTHROPIC_API_KEY
