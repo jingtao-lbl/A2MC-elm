@@ -1,0 +1,612 @@
+{
+  "workflow_id": "a2mc_20260414_104007",
+  "use_case": "ValidationTargets",
+  "status": "running",
+  "current_phase": 5,
+  "current_phase_name": "testing",
+  "iteration": 11,
+  "created_at": "2026-04-13T17:34:25.573876",
+  "started_at": "2026-04-14T10:40:07.889370",
+  "updated_at": "2026-04-14T11:11:18.136409",
+  "phase_status": {
+    "phase0_design": {
+      "phase": 0,
+      "phase_name": "design",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "log_file": null,
+      "error": null,
+      "iteration": 0
+    },
+    "phase1_exploration": {
+      "phase": 1,
+      "phase_name": "exploration",
+      "status": "completed",
+      "started_at": "2026-04-13T17:56:32.473079",
+      "completed_at": "2026-04-13T17:56:32.478589",
+      "duration_seconds": 0.00551,
+      "log_file": null,
+      "error": null,
+      "iteration": 1
+    },
+    "phase2_screening": {
+      "phase": 2,
+      "phase_name": "screening",
+      "status": "completed",
+      "started_at": "2026-04-14T10:40:07.939214",
+      "completed_at": "2026-04-14T10:41:26.620804",
+      "duration_seconds": 78.68159,
+      "log_file": null,
+      "error": null,
+      "iteration": 1
+    },
+    "phase3_diagnosis": {
+      "phase": 3,
+      "phase_name": "diagnosis",
+      "status": "completed",
+      "started_at": "2026-04-14T11:08:09.753111",
+      "completed_at": "2026-04-14T11:09:21.182435",
+      "duration_seconds": 71.429324,
+      "log_file": null,
+      "error": null,
+      "iteration": 10
+    },
+    "phase4_hypothesis": {
+      "phase": 4,
+      "phase_name": "hypothesis",
+      "status": "completed",
+      "started_at": "2026-04-14T11:09:21.207302",
+      "completed_at": "2026-04-14T11:11:18.113669",
+      "duration_seconds": 116.906367,
+      "log_file": null,
+      "error": null,
+      "iteration": 10
+    },
+    "phase5_testing": {
+      "phase": 5,
+      "phase_name": "testing",
+      "status": "in_progress",
+      "started_at": "2026-04-14T11:11:18.136339",
+      "completed_at": null,
+      "duration_seconds": null,
+      "log_file": null,
+      "error": null,
+      "iteration": 11
+    },
+    "phase6_refinement": {
+      "phase": 6,
+      "phase_name": "refinement",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "log_file": null,
+      "error": null,
+      "iteration": 0
+    },
+    "phase7_converged": {
+      "phase": 7,
+      "phase_name": "converged",
+      "status": "pending",
+      "started_at": null,
+      "completed_at": null,
+      "duration_seconds": null,
+      "log_file": null,
+      "error": null,
+      "iteration": 0
+    }
+  },
+  "last_error": null,
+  "error_phase": null,
+  "error_timestamp": null,
+  "check_logs_at": "memory/phase_results/20260413_173425/phase5_testing/",
+  "events": [
+    {
+      "timestamp": "2026-04-13T17:34:28.892407",
+      "type": "workflow_started",
+      "phase": 0,
+      "iteration": 0,
+      "use_case": "ValidationTargets"
+    },
+    {
+      "timestamp": "2026-04-13T17:34:28.893002",
+      "type": "iteration_changed",
+      "phase": 0,
+      "iteration": 1
+    },
+    {
+      "timestamp": "2026-04-13T17:56:32.473096",
+      "type": "phase_started",
+      "phase": 1,
+      "iteration": 1,
+      "phase_name": "exploration"
+    },
+    {
+      "timestamp": "2026-04-13T17:56:32.478611",
+      "type": "phase_completed",
+      "phase": 1,
+      "iteration": 1,
+      "phase_name": "exploration",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-13T17:56:32.479996",
+      "type": "phase_started",
+      "phase": 2,
+      "iteration": 1,
+      "phase_name": "screening"
+    },
+    {
+      "timestamp": "2026-04-13T17:57:53.412835",
+      "type": "phase_completed",
+      "phase": 2,
+      "iteration": 1,
+      "phase_name": "screening",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-13T17:57:53.419271",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 1,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-13T18:03:10.376626",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 1,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-13T18:03:10.383563",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 1,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-13T18:05:02.819301",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 1,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-13T18:05:02.829353",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 2,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-13T18:12:17.816357",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 2,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-13T18:12:17.826440",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 2,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-13T18:14:48.313530",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 2,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-13T18:14:48.323397",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 3,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-13T18:21:44.647009",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 3,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-13T18:21:44.657617",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 3,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-13T18:23:37.837312",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 3,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-13T18:23:37.849135",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 4,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-13T18:30:06.197273",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 4,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-13T18:30:06.209423",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 4,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-13T18:32:20.209907",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 4,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-13T18:32:20.222763",
+      "type": "phase_started",
+      "phase": 5,
+      "iteration": 5,
+      "phase_name": "testing"
+    },
+    {
+      "timestamp": "2026-04-14T10:40:07.889423",
+      "type": "workflow_started",
+      "phase": 0,
+      "iteration": 0,
+      "use_case": "ValidationTargets"
+    },
+    {
+      "timestamp": "2026-04-14T10:40:07.891483",
+      "type": "iteration_changed",
+      "phase": 0,
+      "iteration": 1
+    },
+    {
+      "timestamp": "2026-04-14T10:40:07.939225",
+      "type": "phase_started",
+      "phase": 2,
+      "iteration": 1,
+      "phase_name": "screening"
+    },
+    {
+      "timestamp": "2026-04-14T10:41:26.620816",
+      "type": "phase_completed",
+      "phase": 2,
+      "iteration": 1,
+      "phase_name": "screening",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:41:26.631062",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 1,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-14T10:42:44.583419",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 1,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:42:44.591492",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 1,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-14T10:44:46.500648",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 1,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:44:46.512237",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 2,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-14T10:45:57.568012",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 2,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:45:57.575625",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 2,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-14T10:47:54.421656",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 2,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:47:54.444005",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 3,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-14T10:48:47.178188",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 3,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:48:47.189130",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 3,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-14T10:50:28.445728",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 3,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:50:28.458191",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 4,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-14T10:51:28.588904",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 4,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:51:28.599727",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 4,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-14T10:53:14.245423",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 4,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:53:14.255711",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 5,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-14T10:54:08.366986",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 5,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:54:08.383686",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 5,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-14T10:56:01.814783",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 5,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:56:01.826731",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 6,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-14T10:57:01.202295",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 6,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:57:01.277213",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 6,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-14T10:58:52.921817",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 6,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:58:52.962640",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 7,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-14T10:59:44.774823",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 7,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T10:59:44.787981",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 7,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-14T11:01:21.111790",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 7,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T11:01:21.126946",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 8,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-14T11:02:25.678265",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 8,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T11:02:25.691220",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 8,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-14T11:04:23.149160",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 8,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T11:04:23.185114",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 9,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-14T11:05:48.197580",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 9,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T11:05:48.214051",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 9,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-14T11:08:09.735774",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 9,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T11:08:09.753117",
+      "type": "phase_started",
+      "phase": 3,
+      "iteration": 10,
+      "phase_name": "diagnosis"
+    },
+    {
+      "timestamp": "2026-04-14T11:09:21.182450",
+      "type": "phase_completed",
+      "phase": 3,
+      "iteration": 10,
+      "phase_name": "diagnosis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T11:09:21.207309",
+      "type": "phase_started",
+      "phase": 4,
+      "iteration": 10,
+      "phase_name": "hypothesis"
+    },
+    {
+      "timestamp": "2026-04-14T11:11:18.113687",
+      "type": "phase_completed",
+      "phase": 4,
+      "iteration": 10,
+      "phase_name": "hypothesis",
+      "log_file": null
+    },
+    {
+      "timestamp": "2026-04-14T11:11:18.136343",
+      "type": "phase_started",
+      "phase": 5,
+      "iteration": 11,
+      "phase_name": "testing"
+    }
+  ]
+}
