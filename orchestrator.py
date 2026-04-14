@@ -1630,6 +1630,39 @@ Review the screening log at:
                 logger.info(f"Added evidence ledger context: {len(active_params)} active, "
                            f"{len(dropped_params)} dropped params")
 
+            # Cross-round comparison for subset_replay rounds
+            if self.config.sampling_scheme == 'subset_replay':
+                source_round_num = int(os.environ.get('A2MC_REPLAY_SOURCE_ROUND', '0'))
+                if source_round_num > 0:
+                    try:
+                        from tools.compare_rounds import compare_rounds as _compare_rounds
+                        use_case_dir = os.environ.get('A2MC_USE_CASE_DIR', '')
+                        yaml_path = str(Path(use_case_dir) / 'config' / 'calibration_rounds.yaml')
+
+                        try:
+                            from tools.config import config as _xr_cfg
+                            xr_output_dir = str(_xr_cfg.phase_results_dir("phase3_diagnosis")
+                                                / 'cross_round_comparison')
+                        except (ImportError, AttributeError):
+                            xr_output_dir = str(Path(use_case_dir) / 'memory'
+                                                / 'cross_round_comparison')
+
+                        xr_result = _compare_rounds(
+                            source_round=source_round_num,
+                            target_round=self.state.calibration_round,
+                            yaml_path=yaml_path,
+                            output_dir=xr_output_dir,
+                            generate_plots=bool(diagnostic_images),
+                        )
+                        diagnosis_input['cross_round_comparison'] = xr_result.summary_dict
+                        if xr_result.figure_paths:
+                            diagnostic_images.extend(xr_result.figure_paths)
+                        logger.info(f"Cross-round comparison: {xr_result.n_cases_paired}/"
+                                    f"{xr_result.n_cases_total} paired, "
+                                    f"{xr_result.n_cases_tgt_missing} target missing")
+                    except Exception as e:
+                        logger.warning(f"Cross-round comparison failed (non-fatal): {e}")
+
             # Use Claude API for diagnosis (if available)
             if self.reasoning:
                 logger.info("Using Claude API for diagnosis...")

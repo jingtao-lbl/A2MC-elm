@@ -173,6 +173,14 @@ def diagnose(self, results: Dict, targets: Dict,
         _figures_header = "No diagnostic figures attached for this iteration."
         _figures_detail = ""
 
+    # Add cross-round figure descriptions if present
+    if _cross_round_ctx:
+        _figures_detail += (
+            "\n- **Cross-round comparison plots**: Delta-biomass boxplots show R4-R3 changes per target. "
+            "Cost scatter shows whether R4 improves or degrades overall. Satisfaction bars show "
+            "target gains/losses. Use these to assess the P-limitation hypothesis quantitatively."
+        )
+
     # Extract previous phase log so AI can see the full narrative from the prior phase
     _previous_phase_log = results.pop("previous_phase_log", "")
 
@@ -182,6 +190,40 @@ def diagnose(self, results: Dict, targets: Dict,
 
     # Extract evidence ledger context (Iter 2+ hypothesis-driven diagnosis)
     _evidence_ledger_ctx = results.pop("evidence_ledger_context", "")
+
+    # Extract cross-round comparison context (subset_replay rounds)
+    _cross_round_ctx = results.pop("cross_round_comparison", None)
+    _cross_round_section = ""
+    if _cross_round_ctx:
+        xr = _cross_round_ctx
+        _cross_round_section = f"""## CROSS-ROUND COMPARISON: R{xr.get('source_round', '?')} vs R{xr.get('target_round', '?')}
+
+This round is a **controlled experiment**: the same {xr.get('n_cases_paired', '?')} parameter sets
+were run in both R{xr.get('source_round', '?')} and R{xr.get('target_round', '?')}, differing ONLY in:
+**{xr.get('override_description', 'one parameter override')}**.
+
+### Per-Target Biomass Changes (R{xr.get('target_round', '?')} minus R{xr.get('source_round', '?')})
+{xr.get('per_target_summary', '(not available)')}
+
+### Target Satisfaction Changes
+{xr.get('satisfaction_summary', '(not available)')}
+
+### Rank Correlation
+Spearman rho between R{xr.get('source_round', '?')} and R{xr.get('target_round', '?')} composite cost: {xr.get('rank_correlation', '?')}
+
+### Cases Missing (R{xr.get('target_round', '?')} crashed)
+{xr.get('n_cases_tgt_missing', 0)} out of {xr.get('n_cases_total', '?')} R{xr.get('target_round', '?')} cases crashed (likely P mass balance abort).
+
+### Interpretation Questions
+1. Does removing P limitation rescue PFT10 biomass?
+2. Which PFTs benefit vs degrade when P is no longer limiting?
+3. Do the crashed R{xr.get('target_round', '?')} cases share parameter characteristics?
+4. Is the rank ordering preserved (high rho) or reshuffled (low rho)?
+5. What does this imply about the dominant nutrient limitation bottleneck?
+
+**IMPORTANT**: This is the strongest evidence for or against the P-limitation hypothesis.
+Integrate these quantitative results into your root cause analysis.
+"""
 
     # Extract diagnostic data summary for prominent placement
     # (prevents AI from hallucinating numbers that contradict diagnostic tool output)
@@ -215,6 +257,8 @@ DO NOT fabricate numbers. If the tool reports 0 edge parameters, do not claim ot
 {_evidence_ledger_ctx}
 
 {_diag_summary}
+
+{_cross_round_section}
 
 ## Current Results (simulated values in g C/m²)
 {json.dumps(results, indent=2)}
