@@ -3539,6 +3539,18 @@ Phase numbers:
     log_filename = f"a2mc_run_{session_id}.log"
     log_filepath = log_parent / log_filename
 
+    # If a previous run wrote to the same log filename (e.g., the user is
+    # resuming with --session-id pointing at an existing session), preserve
+    # that history before TeeStream truncates the file.
+    if log_filepath.exists():
+        backup_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_backup = log_filepath.with_suffix(f".log.backup_{backup_stamp}")
+        try:
+            log_filepath.rename(log_backup)
+            logger.info(f"Backed up existing run log: {log_backup}")
+        except OSError as e:
+            logger.warning(f"Could not back up existing run log {log_filepath}: {e}")
+
     # Tee class: writes to both original stream and log file
     class TeeStream:
         """Duplicate output to both console and log file."""

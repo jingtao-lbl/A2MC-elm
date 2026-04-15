@@ -149,6 +149,10 @@ def diagnose(self, results: Dict, targets: Dict,
     # Build concise sensitivity summary so AI focuses on high-sensitivity params
     sensitivity_summary = _build_sensitivity_summary(sensitivity_rankings)
 
+    # Extract cross-round comparison context (subset_replay rounds) early so
+    # the figures-detail block below can reference it without NameError.
+    _cross_round_ctx = results.pop("cross_round_comparison", None)
+
     # Build diagnostic figures prompt section (outside f-string to avoid triple-quote nesting)
     if diagnostic_images:
         _figures_header = "The following diagnostic figures are attached as images. Analyze them carefully:"
@@ -191,8 +195,7 @@ def diagnose(self, results: Dict, targets: Dict,
     # Extract evidence ledger context (Iter 2+ hypothesis-driven diagnosis)
     _evidence_ledger_ctx = results.pop("evidence_ledger_context", "")
 
-    # Extract cross-round comparison context (subset_replay rounds)
-    _cross_round_ctx = results.pop("cross_round_comparison", None)
+    # Build cross-round comparison section (extracted earlier; see _cross_round_ctx)
     _cross_round_section = ""
     if _cross_round_ctx:
         xr = _cross_round_ctx

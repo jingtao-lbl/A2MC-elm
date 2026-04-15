@@ -164,7 +164,11 @@ def diagnose_with_claude(
 
 
 def diagnose_rule_based(diagnosis_input: Dict) -> Dict:
-    """Rule-based diagnosis when Claude API unavailable.
+    """Honest fallback when AI reasoning is unavailable.
+
+    Returns a placeholder diagnosis that does NOT invent mechanisms or
+    recommend parameters. Mechanistic root-cause analysis requires a working
+    AI provider — operators should rerun with one configured.
 
     Args:
         diagnosis_input: Dict with iteration and other context.
@@ -172,25 +176,40 @@ def diagnose_rule_based(diagnosis_input: Dict) -> Dict:
     Returns:
         Diagnosis dict with failing_targets, likely_causes, etc.
     """
-    # Based on known findings from December 2025 analysis
+    logger.warning(
+        "AI reasoning unavailable — returning placeholder diagnosis with "
+        "no mechanisms or parameter recommendations. Check earlier log lines "
+        "for 'Claude diagnosis failed' or reasoning module init errors."
+    )
+
+    # Extract real failing target names from input if available
+    failing_targets: List[str] = []
+    targets = diagnosis_input.get("targets") or {}
+    if isinstance(targets, dict):
+        for k, v in targets.items():
+            if isinstance(v, dict):
+                for organ in v.keys():
+                    failing_targets.append(f"{k}_{organ}")
+            else:
+                failing_targets.append(str(k))
+
     return {
-        "iteration": diagnosis_input["iteration"],
-        "failing_targets": ["froot_pft10", "leaf_pft10"],
+        "iteration": diagnosis_input.get("iteration"),
+        "failing_targets": failing_targets,
         "likely_causes": [
-            "P STARVATION: PFT#10 P uptake/demand ≈ 0.000005 (essentially zero)",
-            "Light competition: PFT#9 GPP is 5-10× higher than PFT#10",
-            "Excessive turnover: Default 1.0 yr vs 5.0 yr realistic for Arctic",
-            "Root distribution: Parameters BACKWARDS (graminoids should be deepest)"
+            "AI reasoning unavailable — no automated diagnosis performed. "
+            "Rerun orchestrator with a working AI provider (verify "
+            "A2MC_AI_PROVIDER and the corresponding API key are set) for "
+            "mechanistic root-cause analysis."
         ],
-        "parameter_recommendations": [
-            {"parameter": "fates_turnover_fnrt_10", "direction": "increase", "priority": 1},
-            {"parameter": "fates_allom_fnrt_prof_a_10", "direction": "decrease", "priority": 2},
-            {"parameter": "fates_allom_fnrt_prof_b_10", "direction": "decrease", "priority": 3}
-        ],
-        "cross_pft_conflicts": [
-            "ECA competition: PFT#9 outcompetes PFT#10 for soil P",
-            "Shared phenology parameters affect all PFTs differently"
-        ],
-        "confidence": 0.85,
-        "reasoning": "Based on comprehensive Dec 2025 diagnostic analysis identifying triple bottleneck"
+        "parameter_recommendations": [],
+        "cross_pft_conflicts": [],
+        "confidence": 0.0,
+        "reasoning": (
+            "Placeholder fallback: AI reasoning module is unavailable or its "
+            "diagnose() call raised an exception. This fallback intentionally "
+            "does not invent mechanisms or parameter directions. Search the "
+            "orchestrator run log for 'Claude diagnosis failed' to identify "
+            "the underlying cause."
+        )
     }
