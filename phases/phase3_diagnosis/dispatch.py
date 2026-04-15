@@ -102,7 +102,15 @@ def execute_requested_diagnostics(
         if case_id:
             extracted_dir = a2mc_config.EXTRACTED_DATA
             if extracted_dir and Path(extracted_dir).exists():
-                pattern = f"*En{case_id}_*all_variables*.nc"
+                # Build glob from the configured CASE_NAME_PATTERN so we
+                # match whatever naming the current round uses (R3:
+                # PtCNPEn{N}_TRANS, R4: PtCNPEn{N}PrescP_TRANS, etc.).
+                # Substitute case number, leave PHASE as a wildcard so
+                # any analysis phase suffix (TRANS/RGSP/...) is matched.
+                case_name_glob = a2mc_config.CASE_NAME_PATTERN.format(
+                    N=case_id, PHASE='*'
+                )
+                pattern = f"{case_name_glob}_all_variables*.nc"
                 nc_files_found = list(Path(extracted_dir).glob(pattern))
                 if nc_files_found:
                     nc_file = str(nc_files_found[0])
