@@ -21,6 +21,7 @@ def execute_requested_diagnostics(
     screening_data: Dict,
     config=None,
     phase_logger=None,
+    round_num: Optional[int] = None,
 ) -> Optional[Dict]:
     """
     Execute diagnostic analyses requested by Claude AI.
@@ -35,6 +36,10 @@ def execute_requested_diagnostics(
         config: CalibrationOrchestrator.config (needs .targets attribute) — used for
             load_morris_ensemble_data / get_morris_param_names in the fallback branch.
         phase_logger: PhaseLogger instance (for figure output directory)
+        round_num: Active calibration round. Plumbed through to
+            load_morris_ensemble_data() in the ensemble-test fallback branch
+            so the right round's Y matrix is loaded. If None, falls back to
+            A2MC_CALIBRATION_ROUND env var.
 
     Returns:
         Dict with combined diagnostic results, or None if all fail
@@ -538,7 +543,9 @@ def execute_requested_diagnostics(
                             load_morris_ensemble_data,
                             get_morris_param_names,
                         )
-                        param_matrix, y_outputs, _ensemble_ranges = load_morris_ensemble_data(config)
+                        param_matrix, y_outputs, _ensemble_ranges = load_morris_ensemble_data(
+                            config, round_num=round_num
+                        )
                         param_names = get_morris_param_names(config)
                         test_config = {
                             'param_names': param_names,

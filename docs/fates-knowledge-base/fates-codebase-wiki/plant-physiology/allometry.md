@@ -1,351 +1,236 @@
 # Allometric Relationships
 
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
+
 <details>
 <summary>Relevant source files</summary>
 
-
-- [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90)
-- [biogeochem/EDPhysiologyMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90)
-- [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)
-- [biogeochem/FatesSoilBGCFluxMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90)
-- [parteh/PRTAllometricCNPMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90)
-- [parteh/PRTAllometricCarbonMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90)
-- [parteh/PRTGenericMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90)
-- [parteh/PRTLossFluxesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTLossFluxesMod.F90)
-
+- `biogeochem/FatesAllometryMod.F90` (all core allometry routines)
+- `main/EDPftvarcon.F90` and `parteh/PRTParamsFATESMod.F90` (parameter access)
+- `biogeochem/DamageMainMod.F90` (`GetCrownReduction` called from bleaf/bagw/carea)
+- `parameter_files/fates_params_default.cdl`
 
 </details>
 
 ## Purpose and Scope
 
-This page documents the allometric relationships in FATES that define the mathematical relationships between plant diameter, height, and biomass pools. Allometry provides the fundamental scaling rules that constrain plant growth and determine how carbon is distributed across organs (leaves, fine roots, sapwood, structure, storage, reproduction).
+This document describes the allometric relationships in FATES that map diameter at breast height (dbh) to height and to organ biomass pools (leaf, fineroot, sapwood, above-/below-ground wood, structural dead wood, storage, crown area, LAI, SAI). All routines live in `biogeochem/FatesAllometryMod.F90`. Each allometric function takes a PFT-level mode flag (`allom_hmode`, `allom_lmode`, `allom_amode`, `allom_smode`, `allom_fmode`, `allom_cmode`, `allom_stmode`) that dispatches to one of several available functional forms.
 
-These relationships are implemented in [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90) and are used throughout the model to:
+## Dispatch Wrappers
 
-- Calculate target biomass pools for each organ based on diameter
-- Compute derivatives needed for growth integration
-- Enforce structural constraints on plant growth
-- Initialize cohorts with consistent size-biomass relationships
+Each top-level allometric function reads its mode flag from `prt_params` and calls the appropriate low-level routine.
 
+| Wrapper | Location | Dispatches on |
+|---|---|---|
+| `h_allom` | `FatesAllometryMod.F90:333-366` | `allom_hmode` |
+| `h2d_allom` | `FatesAllometryMod.F90:296-331` | inverse of `h_allom` |
+| `bagw_allom` | `FatesAllometryMod.F90:372-434` | `allom_amode` |
+| `blmax_allom` | `FatesAllometryMod.F90:440-470` | `allom_lmode` |
+| `carea_allom` | `FatesAllometryMod.F90:476-550` | `allom_lmode` (shares leaf exponent) |
+| `bleaf` | `FatesAllometryMod.F90:554-610` | wraps `blmax_allom` + trim + damage + `elongf_leaf` |
+| `bsap_allom` | `FatesAllometryMod.F90:922-1017` | `allom_smode` |
+| `bbgw_allom` | `FatesAllometryMod.F90:1025-1051` | `allom_cmode` (BGW from AGW) |
+| `bfineroot` | `FatesAllometryMod.F90:1057-1117` | `allom_fmode` |
+| `bstore_allom` | `FatesAllometryMod.F90:1124-1162` | `allom_stmode` |
+| `bdead_allom` | `FatesAllometryMod.F90:1170-1220` | derived from bagw/bbgw/bsap |
+| `tree_lai` | `FatesAllometryMod.F90:636-761` | exponential SLA profile via `decay_coeff_kn` |
+| `tree_sai` | `FatesAllometryMod.F90:765-827` | multiplier on target LAI |
+| `ForceDBH` | `FatesAllometryMod.F90:2439-2587` | iterative root-finder on target bdead |
+| `CheckIntegratedAllometries` | `FatesAllometryMod.F90:163-293` | consistency check |
 
-For information about how these allometric targets are used during daily carbon allocation, see [PARTEH: Plant Allocation System](plant-physiology/parteh/index.md) . For details on mortality processes that depend on allometric ratios, see [Mortality Processes](plant-physiology/mortality.md) .
+## Height Allometry
 
-## Overview of Allometric System
+`h_allom` (`FatesAllometryMod.F90:333-366`) selects one of five modes based on `prt_params%allom_hmode(ipft)`. All modes cap height at `allom_dbh_maxheight`. The actual formulas are as follows.
 
-FATES uses diameter at breast height (DBH) as the primary integrator variable for woody plant size. All other structural properties are diagnosed from DBH through allometric functions. For non-woody plants, different scaling relationships may apply.
+### Mode 1: O'Brien et al. 1995 (`d2h_obrien`)
 
-### Diagram: DBH as Central Integrator
+`FatesAllometryMod.F90:1670-1693`. **This is a power law, not an asymptotic exponential.**
 
-![SVG image](../assets/images/4.3__Allometric_Relationships__img-01.svg)
+```
+h = 10 ** ( log10(min(d, dbh_maxh)) * p1 + p2 )
+  = 10 ** p2  *  d ** p1       (for d < dbh_maxh)
+```
 
-Sources: [biogeochem/FatesAllometryMod.F90 1-144](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L1-L144)
+with `p1 = allom_d2h1`, `p2 = allom_d2h2`. The BCI default values cited in the source comments are `p1 = 0.64`, `p2 = 0.37`. The derivative is `dhdd = p1 * 10**p2 * d**(p1 - 1)`.
 
-## Core Allometric Relationships
+### Mode 2: Poorter et al. 2006 (`d2h_poorter2006`)
 
-### Height-Diameter Allometry
+`FatesAllometryMod.F90:1561-1606`. Weibull asymptote:
 
-Height is diagnosed from diameter using functions controlled by the `allom_hmode` parameter. Each PFT can use different height allometry functions.
+```
+h = p1 * ( 1 - exp( p2 * min(d, dbh_maxh)**p3 ) )
+```
 
-Available Height Functions ( `allom_hmode` ):
+with `p1 = h_max`, `p2 < 0`, `p3 > 0`. Three parameters.
 
-| Mode | Name | Function Form | Parameters | 
-| --- | --- | --- | --- |
-| 1 | O'Brien et al. 1995 | $h = p_1 \cdot (1 - e^{p_2 \cdot d})$ | allom_d2h1, allom_d2h2 | 
-| 2 | Poorter 2006 | $h = p_1 \cdot (1 - e^{p_2 \cdot d^{p_3}})$ | allom_d2h1, allom_d2h2, allom_d2h3 | 
-| 3 | 2-parameter power | $h = p_1 \cdot d^{p_2}$ | allom_d2h1, allom_d2h2 | 
-| 4 | Chave 2014 | $\ln(h) = p_1 + p_2 \cdot \ln(d) + p_3 \cdot \ln(d)^2$ | allom_d2h1, allom_d2h2, allom_d2h3 | 
-| 5 | Martinez-Cano | Height-capped variant | allom_d2h1, allom_d2h2, allom_d2h3 | 
+### Mode 3: 2-parameter power (`d2h_2pwr`)
 
+`FatesAllometryMod.F90:1610-1666`. Used for initialization and temperate species:
 
-Height Capping : Many allometries enforce a maximum height ( `allom_dbh_maxheight` ) beyond which height plateaus even as diameter continues to grow.
+```
+h = p1 * min(d, dbh_maxh) ** p2
+```
 
-Inverse Calculation : The function `h2d_allom()` provides the inverse relationship, calculating DBH from height. This is used during initialization and when forcing DBH to match structural constraints.
+### Mode 4: Chave et al. 2014 (`d2h_chave2014`)
 
-Sources: [biogeochem/FatesAllometryMod.F90 296-366](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L296-L366)
+`FatesAllometryMod.F90:1497-1557`. Log-quadratic with an environmental stress factor E baked into p1:
 
-### Leaf Biomass Allometry
+```
+h = exp( p1 + p2 * log(d) + p3 * log(d)**2 )   (for d < dbh_maxh)
+```
 
-Leaf biomass allometry calculates the maximum potential leaf biomass for a given diameter. Actual leaf biomass is then adjusted for canopy trimming, crown damage, and phenological status.
+### Mode 5: Martinez-Cano et al. 2016 (`d2h_martcano`)
 
-Maximum Leaf Biomass ( `blmax_allom` ):
+`FatesAllometryMod.F90:1697-1741`. **This is a three-parameter Michaelis-Menten, not a "height-capped variant".**
 
-| Mode (allom_lmode) | Function | Parameters | 
-| --- | --- | --- |
-| 1 | Saldarriaga | Complex function of diameter, height, wood density | 
-| 2 | 2-parameter power | $bl_{max} = p_1 \cdot d^{p_2} / c2b$ | 
-| 3 | Height-diameter 2-parameter power | $bl_{max} = p_1 \cdot d^{p_2} \cdot h^{p_2}$ | 
+```
+h = ( p1 * d**p2 ) / ( p3 + d**p2 )
+```
 
+with `p1 = h_max`, `p2 = shape exponent`, `p3 = half-saturation`. Originally fit at BCI by Martinez-Cano et al. 2016.
 
-Actual Leaf Biomass ( `bleaf` ):
+All five modes share the maximum-height cap at `dbh_maxh`; that cap is not what distinguishes Martinez-Cano from the others.
 
-Where:
+## Leaf Biomass Allometry
 
-- `canopy_trim`: Fraction of maximum LAI maintained (0-1), determined by carbon balance
-- `crown_reduction`: Biomass loss due to crown damage class
-- `elongf_leaf`: Leaf elongation factor for phenology (0-1)
+`blmax_allom` (`FatesAllometryMod.F90:440-470`) dispatches on `allom_lmode`. **All three modes return kgC (divided by `c2b`).** Actual leaf biomass `bleaf` additionally applies canopy trim, crown damage, and `elongf_leaf`.
 
+### Mode 1: Saldarriaga (`d2blmax_salda`)
 
-Sources: [biogeochem/FatesAllometryMod.F90 440-470](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L440-L470)  [biogeochem/FatesAllometryMod.F90 554-628](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L554-L628)
+`FatesAllometryMod.F90:1394-1423`. Three-parameter plus wood density:
 
-### Fine Root Biomass Allometry
+```
+blmax = p1 * min(d, dbh_maxh) ** p2 * rho ** p3
+```
 
-Fine root biomass is calculated from leaf biomass using a leaf-to-fine-root ratio ( `l2fr` ). The ratio can be static or dynamic.
+(Note: `c2b` is accepted as an argument but not used in the Saldarriaga form -- `blmax` is already carbon.)
 
-Function ( `bfineroot` ):
+### Mode 2: 2-parameter power (`d2blmax_2pwr`)
 
-Allometry Mode ( `allom_fmode` ):
+`FatesAllometryMod.F90:1427-1451`. Uncapped power law:
 
-| Mode | Description | L2FR Source | 
-| --- | --- | --- |
-| 1 | Dynamic with allometry | Uses canopy_trim to scale target fine root biomass | 
-| 2 | Fixed ratio | Uses fixed PFT parameter allom_l2fr | 
+```
+blmax = ( p1 * d ** p2 ) / c2b
+```
 
+### Mode 3: Height-capped 2-parameter power (`dh2blmax_2pwr`)
 
-For CNP allocation (see [CNP Allocation and Nutrient Dynamics](plant-physiology/parteh/cnp_allocation.md) ), `l2fr` is dynamically adjusted by a PID controller to balance nutrient uptake with demand. The minimum L2FR is constrained by `l2fr_min` (0.01) to prevent numerical issues.
+`FatesAllometryMod.F90:1455-1491`. **Does NOT include height despite its name** (the `dh` prefix is a historical misnomer -- height is never used). Same form as mode 2 but capped at `dbh_maxh`:
 
-Sources: [biogeochem/FatesAllometryMod.F90 630-697](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L630-L697)
+```
+blmax = ( p1 * min(d, dbh_maxh) ** p2 ) / c2b
+```
 
-### Woody Biomass Allometry
+The derivative is zero once `d >= dbh_maxh`, so large trees do not add leaf mass.
 
-Woody biomass is partitioned into above-ground (AGBW), below-ground (BGBW), sapwood, and structural components.
-Above-Ground Woody Biomass (`bagw_allom`)
-| Mode (allom_amode) | Function | Parameters | 
-| --- | --- | --- |
-| 1 | Saldarriaga | Function of diameter, height, wood density | 
-| 2 | 2-parameter power | $agbw = p_1 \cdot d^{p_2} / c2b$ | 
-| 3 | Chave 2014 | $agbw = 10^{(p_1 + p_2 \cdot \ln(\rho \cdot d^2 \cdot h))} / c2b$ | 
+### Wrapper: `bleaf`
 
+`FatesAllometryMod.F90:554-610`. `bleaf` calls `blmax_allom` then applies:
 
-Crown Damage and Phenology Adjustments :
+1. Canopy trim multiplier `canopy_trim` (0-1, set by `trim_canopy()`)
+2. Crown damage via `GetCrownReduction` from `DamageMainMod.F90`
+3. Phenological scaling by `elongf_leaf` (0-1)
 
-Where `branch_frac` is the fraction of AGBW allocated to branches (vs. bole).
+## Above-Ground Woody Biomass
 
-Sources: [biogeochem/FatesAllometryMod.F90 372-434](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L372-L434)
-Below-Ground Woody Biomass (`bbgw_allom`)
-Where `allom_agb_frac` is the fraction of total woody biomass above ground (typically 0.6-0.8).
+`bagw_allom` (`FatesAllometryMod.F90:372-434`) dispatches on `allom_amode`:
 
-Sources: [biogeochem/FatesAllometryMod.F90 699-747](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L699-L747)
-Sapwood Biomass (`bsap_allom`)
-Sapwood biomass is calculated from sapwood area, which is determined by leaf biomass and the leaf area per sapwood area ratio:
+### Mode 1: Saldarriaga (`dh2bagw_salda`)
 
-Parameters:
+`FatesAllometryMod.F90:1845-1904`. Function of dbh, height, wood density, and four parameters. Called after `h_allom(d, ipft, h, dhdd)`.
 
-- `allom_la_per_sa_int`: Leaf area per sapwood area, intercept (m²/cm²)
-- `allom_la_per_sa_slp`: Leaf area per sapwood area, slope (m²/cm²/cm)
+### Mode 2: 2-parameter power (`d2bagw_2pwr`)
 
+`FatesAllometryMod.F90:1794-1843`. `bagw = (p1 * d**p2) / c2b`.
 
-Sources: [biogeochem/FatesAllometryMod.F90 749-825](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L749-L825)
-Structural (Dead) Biomass (`bdead_allom`)
-Structural biomass represents the metabolically inactive structural tissues (heartwood, bark):
+### Mode 3: Chave 2014 (`dh2bagw_chave2014`)
 
-This pool does not respire and is not subject to turnover in living plants.
+`FatesAllometryMod.F90:1743-1792`. Standard Chave biomass equation involving wood density, diameter, and height.
 
-Sources: [biogeochem/FatesAllometryMod.F90 827-863](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L827-L863)
+All three are then scaled by `elongf_stem` (phenology) and optionally by a crown-damage reduction applied to the branch fraction only (`FatesAllometryMod.F90:416-430`).
 
-### Crown Area Allometry
+## Below-Ground Woody Biomass
 
-Crown area determines the horizontal space occupied by a cohort and is critical for canopy structure calculations (see [Canopy Layering and Perfect Plasticity](canopy-structure/ppa.md) ).
+`bbgw_allom` (`FatesAllometryMod.F90:1025-1051`). For supported modes, `bbgw` is computed as a fixed fraction of total woody biomass determined by `allom_agb_frac`:
 
-Function ( `carea_allom` ):
+```
+bbgw = elongf_stem * bagw * (1 - allom_agb_frac) / allom_agb_frac
+```
 
-With capping at maximum height:
+## Sapwood and Structural Biomass
 
-Parameters:
+| Function | Location | Role |
+|---|---|---|
+| `bsap_allom` | `FatesAllometryMod.F90:922-1017` | Sapwood biomass via sapwood area, LA per SA ratio, and `elongf_stem` |
+| `bdead_allom` | `FatesAllometryMod.F90:1170-1220` | Structural (dead-wood) biomass as `bagw + bbgw - bsap` |
 
-- `site_spread`: Site-level crowding factor (typically 0.0-1.0)
-- `d2ca_min`: Minimum crown area coefficient
-- `d2ca_max`: Maximum crown area coefficient (when capped)
-- `d2bl_ediff`: Difference between leaf and crown area scaling exponents
-- `d2bl_p2`: Leaf biomass scaling exponent
+Sapwood area is derived from target leaf area via `allom_la_per_sa_int + allom_la_per_sa_slp * h`.
 
+## Fine Root Allometry
 
-Crown Damage : Crown area is reduced for damaged cohorts:
+`bfineroot` (`FatesAllometryMod.F90:1057-1117`). Fine-root target is proportional to leaf target through the leaf-to-fineroot ratio `l2fr`:
 
-Inverse Calculation : Crown area can be inverted to calculate DBH in special cases (e.g., SP mode initialization):
+```
+bfr = l2fr * blmax(d) * canopy_trim * effnrt_coh
+```
 
-Sources: [biogeochem/FatesAllometryMod.F90 476-550](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L476-L550)
+For carbon-only allocation `l2fr` is a fixed PFT parameter `allom_l2fr`. For CNP allocation, `l2fr` is a dynamically updated cohort state adjusted by the PID controller in `parteh/PRTAllometricCNPMod.F90` (`CNPAdjustFRootTargets`). The minimum is `l2fr_min` (0.01) to prevent numerical issues.
 
-### Storage Carbon Target
+## Crown Area
 
-Storage carbon represents labile reserves used for maintenance, stress response, and phenological flushing.
+`carea_allom` (`FatesAllometryMod.F90:476-550`) uses the leaf-biomass exponent `allom_d2bl2` plus `allom_blca_expnt_diff` to derive a dbh exponent for crown area, optionally capping `d` at `dbh_maxh` (for modes 1 and 3) or not (mode 2). Crown damage is applied via `GetCrownReduction`.
 
-Function ( `bstore_allom` ):
+## Storage Carbon Target
 
-The storage fraction is PFT-dependent and represents the ratio of storage to leaf biomass at allometric target.
+`bstore_allom` (`FatesAllometryMod.F90:1124-1162`). Sizes storage carbon target as a PFT-dependent fraction of target leaf biomass. For CNP allocation, storage is additionally sized for N and P stoichiometry (see `parteh/cnp_allocation.md`).
 
-For CNP allocation, storage targets also include nutrient pools sized according to stoichiometric ratios (see [CNP Allocation and Nutrient Dynamics](plant-physiology/parteh/cnp_allocation.md) ).
+## LAI and SAI
 
-Sources: [biogeochem/FatesAllometryMod.F90 1114-1184](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L1114-L1184)
+### `tree_lai`
 
-## Diagram: Biomass Pool Relationships
+`FatesAllometryMod.F90:636-761`. Converts leaf carbon per cohort into leaf-area index, accounting for an exponential SLA profile with canopy depth:
 
-![SVG image](../assets/images/4.3__Allometric_Relationships__img-02.svg)
+```
+sla(depth) = slatop * exp( -kn * (canopy_lai_above + x) )
+```
 
-Sources: [biogeochem/FatesAllometryMod.F90 1-144](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L1-L144)
+capped at `slamax`. The decay coefficient `kn` comes from `decay_coeff_kn(pft, vcmax25top)`. There are two cases depending on whether `leafc_per_unitarea` is small enough to stay within the exponential regime or large enough to spill into a linear regime at `sla_max` (`FatesAllometryMod.F90:714-754`).
 
-## LAI and SAI Calculation
+### `tree_sai`
 
-Leaf Area Index (LAI) and Stem Area Index (SAI) are derived from biomass using specific leaf area (SLA).
+`FatesAllometryMod.F90:765-827`. Stem area index is a simple multiple of target (fully flushed) leaf area:
 
-### Tree-Level LAI (tree_lai)
+```fortran
+tree_sai = elongf_stem * prt_params%allom_sai_scaler(pft) * target_lai
+```
 
-Where:
+(`FatesAllometryMod.F90:797`). **The controlling parameter is `fates_allom_sai_scaler`, not `fates_phen_stem_drop_fraction`.** The `elongf_stem` factor does carry phenology information, but it is computed upstream in `phenology_leafonoff` from `phen_stem_drop_fraction` and `elong_factor`, not passed directly here. `target_lai` is computed from `bleaf(d, ..., elongf_leaf=1.0)` then passed through `tree_lai`, so SAI uses the fully flushed target leaf area regardless of current phenology.
 
-- `SLA`: Specific leaf area, which varies with canopy depth due to nitrogen profile
-- `c_area`: Crown area of the cohort
-- `leaf_c`: Actual leaf carbon per plant
+## CheckIntegratedAllometries
 
+`FatesAllometryMod.F90:163-293`. Verifies that integrated biomass pools match diagnosed allometric targets within tolerance to prevent accumulation of numerical error in the PARTEH ODE integration.
 
-Nitrogen Scaling : SLA increases with depth in the canopy according to:
+## ForceDBH
 
-Where `kn` is the nitrogen decay coefficient (see `decay_coeff_kn` ).
+`FatesAllometryMod.F90:2439-2587`. Iterative root-finder (bisection) that adjusts `d` to match a target `bdead` pool. Used in cohort fusion, damage recovery, and whenever the state is updated externally and allometric quantities must be re-synced.
 
-Sources: [biogeochem/FatesAllometryMod.F90 1260-1384](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L1260-L1384)
+## Key Allometry Parameters
 
-### Tree-Level SAI (tree_sai)
+| Parameter group | Typical keys (CDL prefix `fates_`) | Used in |
+|---|---|---|
+| Height | `allom_hmode`, `allom_d2h1`, `allom_d2h2`, `allom_d2h3`, `allom_dbh_maxheight` | `h_allom` |
+| Leaf | `allom_lmode`, `allom_d2bl1`, `allom_d2bl2`, `allom_d2bl3`, `slatop`, `slamax` | `blmax_allom`, `tree_lai` |
+| Crown area | `allom_d2ca_coefficient_min`, `allom_d2ca_coefficient_max`, `allom_blca_expnt_diff` | `carea_allom` |
+| Above-ground wood | `allom_amode`, `allom_agb1`..`allom_agb4`, `wood_density`, `allom_agb_frac` | `bagw_allom` |
+| Sapwood | `allom_smode`, `allom_la_per_sa_int`, `allom_la_per_sa_slp` | `bsap_allom` |
+| Fine root | `allom_fmode`, `allom_l2fr` | `bfineroot` |
+| Storage | `allom_stmode` | `bstore_allom` |
+| SAI | `allom_sai_scaler` | `tree_sai` |
+| Conversions | `c2b`, `wood_density` | all |
 
-Stem Area Index represents the occluding area of woody stems and branches:
+## Integration With PARTEH
 
-Where `fp_treeweight` is a PFT-specific parameter ( `fates_phen_stem_drop_fraction` ) controlling the seasonality of SAI for phenology.
-
-Sources: [biogeochem/FatesAllometryMod.F90 1386-1511](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L1386-L1511)
-
-## Integration with PARTEH Growth
-
-Allometric functions provide target biomass values that constrain growth in PARTEH allocation. The integration process differs between carbon-only and CNP hypotheses.
-
-### Diagram: Allometry-PARTEH Integration
-
-![SVG image](../assets/images/4.3__Allometric_Relationships__img-03.svg)
-
-Sources: [parteh/PRTAllometricCarbonMod.F90 260-702](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L260-L702)  [parteh/PRTAllometricCNPMod.F90 370-436](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L370-L436)
-
-### Growth Integration Details
-
-Carbon-Only Allocation (Hypothesis 1):
-
-Sources: [parteh/PRTAllometricCarbonMod.F90 260-702](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L260-L702)
-
-CNP Allocation (Hypothesis 2):
-
-Sources: [parteh/PRTAllometricCNPMod.F90 370-436](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L370-L436)  [parteh/PRTAllometricCNPMod.F90 1182-1541](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L1182-L1541)
-
-### Allometry Check Function
-
-The function `CheckIntegratedAllometries()` verifies that integrated biomass pools match diagnosed allometric targets within error tolerance:
-
-This prevents accumulation of numerical errors over long simulations.
-
-Sources: [biogeochem/FatesAllometryMod.F90 163-288](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L163-L288)
-
-## Derivatives for Growth Calculations
-
-Most allometric functions return optional derivative arguments ( `dXdd` = derivative with respect to diameter). These derivatives are used in numerical integration schemes.
-
-Example : Height derivative
-
-Usage in Integration :
-
-Available Derivatives :
-
-| Function | Derivative Output | Units | 
-| --- | --- | --- |
-| h_allom | dhdd | m/cm | 
-| blmax_allom | dblmaxdd | kgC/cm | 
-| bagw_allom | dbagwdd | kgC/cm | 
-| bbgw_allom | dbbgwdd | kgC/cm | 
-| bsap_allom | dbsapdd | kgC/cm | 
-
-
-Sources: [biogeochem/FatesAllometryMod.F90 296-366](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L296-L366)  [biogeochem/FatesAllometryMod.F90 440-470](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L440-L470)
-
-## Diameter Adjustment Functions
-
-In some cases, diameter must be forced to match other constraints rather than being freely grown.
-
-### ForceDBH
-
-The `ForceDBH()` subroutine recalculates DBH to match a target pool size when pools have been externally modified (e.g., cohort fusion, damage recovery):
-
-This uses iterative root-finding (bisection method) to solve:
-
-Sources: [biogeochem/FatesAllometryMod.F90 1186-1258](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L1186-L1258)
-
-## Root Vertical Distribution
-
-While not strictly allometry, the vertical distribution of fine roots is calculated as part of resource acquisition:
-
-The distribution follows a beta function controlled by PFT parameters `fates_root_radius` and `fates_root_depth` , constrained by soil depth and rooting depth limitations.
-
-Sources: [biogeochem/FatesAllometryMod.F90 1513-1668](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L1513-L1668)
-
-## Parameter Summary
-
-### Key Allometry Parameters (per PFT)
-
-| Parameter Group | Key Parameters | Purpose | 
-| --- | --- | --- |
-| Height | allom_hmode, allom_d2h1, allom_d2h2, allom_d2h3, allom_dbh_maxheight | Control height-diameter relationship | 
-| Leaf | allom_lmode, allom_d2bl1, allom_d2bl2, allom_d2bl3, slatop, slamax | Control leaf biomass and area | 
-| Fine Root | allom_fmode, allom_l2fr | Control fine root biomass | 
-| Woody Biomass | allom_amode, allom_agb1-4, allom_cmode, wood_density, allom_agb_frac | Control woody tissue biomass | 
-| Sapwood | allom_smode, allom_la_per_sa_int, allom_la_per_sa_slp | Control sapwood area and biomass | 
-| Crown | allom_d2ca_coefficient_min, allom_d2ca_coefficient_max, allom_blca_expnt_diff | Control crown area | 
-| Storage | Storage fraction parameters | Control storage pool size | 
-| Units | c2b, wood_density | Conversion factors | 
-
-
-All parameters are loaded from the parameter file via [FatesParametersInterface](getting-started/parameter_system.md) and accessed through `prt_params` module.
-
-Sources: [biogeochem/FatesAllometryMod.F90 43-62](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L43-L62)
-
-## Code Structure and Entry Points
-
-### Main Module File
-
-- **[biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)**
-- Lines 1-144: Module header, imports, parameter documentation
-- `h_allom``h2d_allom`Lines 296-366: Height allometry ( , )
-- `bagw_allom`Lines 372-434: Above-ground woody biomass ( )
-- `blmax_allom`Lines 440-470: Maximum leaf biomass ( )
-- `bleaf`Lines 554-628: Actual leaf biomass ( )
-- `bfineroot`Lines 630-697: Fine root biomass ( )
-- `bsap_allom`Lines 749-825: Sapwood biomass ( )
-- `bbgw_allom`Lines 699-747: Below-ground woody biomass ( )
-- `bdead_allom`Lines 827-863: Structural biomass ( )
-- `carea_allom`Lines 476-550: Crown area ( )
-- `bstore_allom`Lines 1114-1184: Storage target ( )
-- `tree_lai`Lines 1260-1384: Tree LAI ( )
-- `tree_sai`Lines 1386-1511: Tree SAI ( )
-- `CheckIntegratedAllometries`Lines 163-288: Allometry checking ( )
-- `ForceDBH`Lines 1186-1258: DBH forcing ( )
-
-
-
-
-### Integration Points
-
-PARTEH Carbon-Only :
-
-- [parteh/PRTAllometricCarbonMod.F90260-702](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L260-L702): Main allocation routine using allometry
-
-
-PARTEH CNP :
-
-- [parteh/PRTAllometricCNPMod.F90370-436](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L370-L436): Main allocation routine
-- [parteh/PRTAllometricCNPMod.F901182-1541](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L1182-L1541): Stature growth integration
-
-
-Cohort Dynamics :
-
-- [biogeochem/EDCohortDynamicsMod.F90160-289](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L160-L289): Cohort creation using allometry
-- [biogeochem/EDCohortDynamicsMod.F90694-1059](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L694-L1059): Cohort fusion updating allometry
-
-
-Physiology :
-
-- [biogeochem/EDPhysiologyMod.F90597-1149](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L597-L1149): Canopy trimming using allometry
-- [biogeochem/EDPhysiologyMod.F901489-1936](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1489-L1936): Recruitment using allometry
-
-
-Sources: [biogeochem/FatesAllometryMod.F90 1-144](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L1-L144)  [biogeochem/EDPhysiologyMod.F90 1-200](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1-L200)  [biogeochem/EDCohortDynamicsMod.F90 1-200](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L1-L200)  [parteh/PRTAllometricCarbonMod.F90 1-200](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L1-L200)  [parteh/PRTAllometricCNPMod.F90 1-200](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L1-L200)
+Allometric targets drive the growth ODE integration in `parteh/PRTAllometricCarbonMod.F90` (carbon-only) or `parteh/PRTAllometricCNPMod.F90` (CNP). Each day the allocator solves for `d` such that integrated pools match allometric targets, within the constraint of available photosynthate and, for CNP, nutrient uptake. See `parteh/index.md` for details.

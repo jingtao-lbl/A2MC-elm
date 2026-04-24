@@ -1,238 +1,213 @@
 # Model Output and Diagnostics
 
-<details>
-<summary>Relevant source files</summary>
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-
-- [main/EDInitMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDInitMod.F90)
-- [main/FatesHistoryInterfaceMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90)
-- [main/FatesInventoryInitMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInventoryInitMod.F90)
-- [main/FatesRestartInterfaceMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90)
-
-
-</details>
+**Relevant source files:**
+- `main/FatesHistoryInterfaceMod.F90`
+- `main/FatesHistoryVariableType.F90`
+- `main/FatesRestartInterfaceMod.F90`
+- `main/FatesRestartVariableType.F90`
+- `main/FatesIODimensionsMod.F90`
+- `main/FatesIOVariableKindMod.F90`
+- `main/EDMainMod.F90`
+- `main/ChecksBalancesMod.F90`
 
 ## Purpose and Scope
 
-This page documents FATES' model output and diagnostic systems, which provide mechanisms for extracting model state, tracking simulations, and verifying conservation. The primary systems covered are:
+This page surveys the two output paths FATES maintains (history and restart) and the conservation-checking layer that runs alongside them. History output is the time-series diagnostic pipeline that writes `FATES_*` variables to the host land model's history files. Restart output serializes the site/patch/cohort state needed for exact continuation. Mass balance is a separate verification layer, driven from `TotalBalanceCheck` in `EDMainMod`, that calls into `ChecksBalancesMod` to sum stocks at multiple points in the daily loop.
 
-- **History Output**[History Output System](output/history/index.md): Time-series diagnostic variables written during simulation (see )
-- **Restart Files**[Restart System](output/restart.md): Complete model state serialization for simulation continuation (see )
-- **Mass Balance Checking**[Mass Balance Checking](output/mass_balance.md): Conservation verification and error diagnostics (see )
+Related topics:
 
+- [History Output System](history/index.md) — variable registration and dimension system
+- [History Update Pipeline](history/pipeline.md) — update-routine flow and accumulation patterns
+- [History Variables and Dimensions](history/variables.md) — dimension kinds and multiplexing
+- [Restart System](restart.md) — state serialization and HLM coupling
+- [Mass Balance Checking](mass_balance.md) — `TotalBalanceCheck` and call-index semantics
 
-For information about parameter input files, see [Parameter System](getting-started/parameter_system.md) . For initialization procedures, see [Initialization Modes](getting-started/initialization.md) .
+## System Architecture
 
-## System Architecture Overview
+History and restart are two independent pipelines that share a common dimension and variable-kind infrastructure (in `FatesIODimensionsMod.F90` and `FatesIOVariableKindMod.F90`). Both systems register variables during initialization, maintain per-thread bounds, and exchange flat arrays with the host land model.
 
-FATES output and diagnostics operate through a two-track system: history output for time-series diagnostics and restart output for complete state preservation. Both systems use dimension mapping to handle FATES' complex subgrid structure (sites → patches → cohorts).
+The history interface is the `fates_history_interface_type` (in `main/FatesHistoryInterfaceMod.F90`, with a global instance `fates_hist`). It manages `fates_history_num_dimensions = 50` static dimension slots and `fates_history_num_dim_kinds = 50` dimension-kind slots.
 
-### Output System Architecture
+The restart interface is the `fates_restart_interface_type` (in `main/FatesRestartInterfaceMod.F90`). It uses a much smaller dimension space, with `fates_restart_num_dimensions = 2` (cohort, column) and `fates_restart_num_dim_kinds = 4` (cohort_int, cohort_r8, site_int, site_r8).
 
-![SVG image](../assets/images/9__Model_Output_and_Diagnostics__img-01.svg)
+Sources: `(main/FatesHistoryInterfaceMod.F90:743-854)`, `(main/FatesRestartInterfaceMod.F90:297-376)`
 
-Sources : [main/FatesHistoryInterfaceMod.F90 1-100](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L1-L100)  [main/FatesRestartInterfaceMod.F90 1-100](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L1-L100)
+## History Output Pipeline Overview
 
-## History Output Data Flow
+History output operates in three phases within each simulation:
 
-The history output system operates in three phases: initialization (variable registration), accumulation (data collection during simulation), and flushing (transfer to host model).
+1. **Initialization.** `define_history_vars` (invoked at interface init) calls `set_history_var` hundreds of times to register each `FATES_*` variable with a name, long name, units, averaging flag, `vtype` (dimension kind), flush value, and update frequency (`upfreq`). Each call increments a global `ivar` counter and stores the resulting index into module-level integers named `ih_*`.
+2. **Accumulation.** Four update routines are called at different points in the time loop (see [History Update Pipeline](history/pipeline.md)). Each routine iterates over sites, patches, and cohorts, computing indexed sums and writing them into the variable's data buffer.
+3. **Flush and zero.** At the end of each host-model output interval, `flush_hvars` transfers buffers to the host I/O and `zero_site_hvars` resets the accumulators.
 
-### History Output Pipeline
+Sources: `(main/FatesHistoryInterfaceMod.F90:777-854)`, `(main/FatesHistoryInterfaceMod.F90:1144-1260)`
 
-![SVG image](../assets/images/9__Model_Output_and_Diagnostics__img-02.svg)
+## Update Routines and Frequencies
 
-Sources : [main/FatesHistoryInterfaceMod.F90 777-851](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L777-L851)  [main/FatesHistoryInterfaceMod.F90 1144-1160](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L1144-L1160)
+Four update routines cover all FATES history output. The line ranges below are verified against `e85d997`.
 
-## Key Data Structures
+| Routine | Lines | Called from | Purpose |
+|---|---|---|---|
+| `update_history_dyn` | 2108–4387 | After `ed_ecosystem_dynamics` | Demographic state, biomass pools, mortality rates, disturbance rates, daily fluxes |
+| `update_history_hifrq` | 4389–4857 | Each photosynthesis timestep | GPP, autotrophic respiration, radiation, canopy temperature |
+| `update_history_hydraulics` | 4861–5207 | Each hydraulics timestep when `hlm_use_planthydro == itrue` | Tissue water potential, sapflow, conductance, stomatal diagnostics |
+| `update_history_nutrflux` | 1917–2104 | Daily, when `hlm_parteh_mode == prt_cnp_flex_allom_hyp` | NH4/NO3/P uptake, nutrient demand, N fixation, efflux |
 
-### History Interface Type
-
-The `fates_history_interface_type` manages all diagnostic output variables:
-
-![SVG image](../assets/images/9__Model_Output_and_Diagnostics__img-03.svg)
-
-Sources : [main/FatesHistoryInterfaceMod.F90 746-854](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L746-L854)
-
-### Restart Interface Type
-
-The `fates_restart_interface_type` manages complete model state serialization:
-
-![SVG image](../assets/images/9__Model_Output_and_Diagnostics__img-04.svg)
-
-Sources : [main/FatesRestartInterfaceMod.F90 326-376](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L326-L376)  [main/FatesRestartInterfaceMod.F90 319-322](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L319-L322)
+Sources: `(main/FatesHistoryInterfaceMod.F90:1917-5207)`
 
 ## Dimension System
 
-FATES uses a sophisticated dimension system to handle its hierarchical data structure. Variables can be dimensioned by site, patch, cohort, PFT, size class, age class, and combinations thereof.
+FATES variables are dimensioned across base dimensions (site, soil level, PFT, size class, age class, canopy layer, leaf layer, damage class, element, etc.) and multiplexed dimensions that combine several base dimensions into a single flat index. Multiplexing is needed because history files impose low dimensionality per variable.
+
+### Base dimension kinds
+
+Defined in `FatesIOVariableKindMod.F90`:
+
+| Kind (constant name) | `name` string | Role |
+|---|---|---|
+| `site_r8` | `SI_R8` | Site-level real |
+| `site_int` | `SI_INT` | Site-level integer |
+| `cohort_r8` | `CO_R8` | Cohort-level real |
+| `cohort_int` | `CO_INT` | Cohort-level integer |
+| `site_pft_r8` | `SI_PFT_R8` | Site × PFT |
+| `site_age_r8` | `SI_AGE_R8` | Site × patch age |
+| `site_size_r8` | `SI_SCLS_R8` | Site × size class |
+| `site_size_pft_r8` | `SI_SCPF_R8` | Site × (size × PFT) |
+| `site_coage_r8` | `SI_CACLS_R8` | Site × cohort-age class |
+| `site_coage_pft_r8` | `SI_CAPF_R8` | Site × (cohort age × PFT) |
+| `site_height_r8` | `SI_HEIGHT_R8` | Site × height bin |
+| `site_fuel_r8` | `SI_FUEL_R8` | Site × fuel class |
+| `site_cwdsc_r8` | `SI_CWDSC_R8` | Site × CWD size class |
+| `site_can_r8` | `SI_CAN_R8` | Site × canopy layer |
+| `site_cnlf_r8` | `SI_CNLF_R8` | Site × (canopy layer × leaf layer) |
+| `site_cnlfpft_r8` | `SI_CNLFPFT_R8` | Site × (canopy × leaf × PFT) |
+| `site_cdpf_r8` | `SI_CDPF_R8` | Site × (size × damage × PFT) |
+| `site_cdsc_r8` | `SI_CDSC_R8` | Site × (damage × size) |
+| `site_cdam_r8` | `SI_CDAM_R8` | Site × damage class |
+| `site_scag_r8` | `SI_SCAG_R8` | Site × (size × age) |
+| `site_scagpft_r8` | `SI_SCAGPFT_R8` | Site × (size × age × PFT) |
+| `site_agepft_r8` | `SI_AGEPFT_R8` | Site × (age × PFT) |
+| `site_agefuel_r8` | `SI_AGEFUEL_R8` | Site × (age × fuel) |
+| `site_clscpf_r8` | `SI_CLSCPF_R8` | Site × (canopy layer × size × PFT) |
+| `site_soil_r8` | `SI_SOIL_R8` | Site × soil level |
+| `site_elem_r8` | `SI_ELEM_R8` | Site × element (C/N/P) |
+| `site_elpft_r8` | `SI_ELEMPFT_R8` | Site × (element × PFT) |
+| `site_elcwd_r8` | `SI_ELEMCWD_R8` | Site × (element × CWD) |
+| `site_elage_r8` | `SI_ELEMAGE_R8` | Site × (element × patch age) |
+
+Sources: `(main/FatesIOVariableKindMod.F90:19-49)`
+
+### Multiplexed dimension suffixes in output names
+
+Output variable names encode their dimensionality using short suffixes. **These are the actual NetCDF variable names produced by FATES, not the internal `ih_*` index names.** Do not confuse the internal-style suffixes `_scpf`, `_cnlf`, `_cnlfpft` (used in `ih_*_si_scpf` variable-index identifiers inside the source) with the user-facing suffixes used in the history file.
+
+| Output-name suffix | Dimensionality | Meaning |
+|---|---|---|
+| `_PF` | site × PFT | Per PFT |
+| `_AP` | site × patch age | Per patch age class |
+| `_APPF` | site × age × PFT | Per age × PFT |
+| `_SZ` | site × size class | Per size class |
+| `_SZPF` | site × size × PFT | Per size × PFT (by far the most common multi-PFT dimension, 100+ variables) |
+| `_SZAP` | site × size × age | Per size × age |
+| `_SZAPPF` | site × size × age × PFT | Per size × age × PFT |
+| `_AC` | site × patch age (cohort-age variant) | Per cohort-age bin |
+| `_ACPF` | site × cohort-age × PFT | Per cohort age × PFT |
+| `_CDPF` | site × size × damage × PFT | Per size × damage × PFT |
+| `_CL` | site × canopy layer | Per canopy layer |
+| `_CLLL` | site × canopy layer × leaf layer | Canopy × leaf layer (radiation/PAR profile) |
+| `_CLLLPF` | site × canopy layer × leaf layer × PFT | Canopy × leaf × PFT |
+| `_SL` | site × soil level | Per soil layer |
+| `_EL` | site × element | Per element (C/N/P) |
+| `_FC` | site × fuel class | Per fuel size class |
+| `_DC` | site × CWD decomposition class | Per CWD size class |
+| `_SE_SZ` | site × size, "secondary" subset | Secondary-forest-only variant |
+
+Sources: `(main/FatesHistoryInterfaceMod.F90:5326-7180)` (sample registration calls), `(main/FatesInterfaceTypesMod.F90:244-293)`
+
+## Common History Variables
+
+The following variables are registered via `set_history_var` with `vname=` exactly as shown. All carry `avgflag='A'` (time-mean over the output interval; see [History Update Pipeline](history/pipeline.md)). Units are quoted from the source (no unit conversion).
+
+| `vname` | Kind | Units | Description |
+|---|---|---|---|
+| `FATES_GPP` | `site_r8` | `kg m-2 s-1` | Gross primary productivity (site total) |
+| `FATES_NPP` | `site_r8` | `kg m-2 s-1` | Net primary productivity (site total) |
+| `FATES_AR` | `site_r8` | `kg m-2 s-1` | Autotrophic respiration (site total) |
+| `FATES_HET_RESP` | `site_r8` | `kg m-2 s-1` | Heterotrophic respiration (handed from HLM) |
+| `FATES_NEP` | `site_r8` | `kg m-2 s-1` | Net ecosystem production |
+| `FATES_VEGC` | `site_r8` | `kg m-2` | Total live vegetation carbon |
+| `FATES_VEGC_ABOVEGROUND` | `site_r8` | `kg m-2` | Above-ground live vegetation carbon |
+| `FATES_LEAFC` | `site_r8` | `kg m-2` | Leaf carbon (all PFTs) |
+| `FATES_FROOTC` | `site_r8` | `kg m-2` | Fine-root carbon |
+| `FATES_STOREC` | `site_r8` | `kg m-2` | Storage carbon |
+| `FATES_STRUCTC` | `site_r8` | `kg m-2` | Structural carbon |
+| `FATES_SAPWOODC` | `site_r8` | `kg m-2` | Sapwood carbon |
+| `FATES_LAI` | `site_r8` | `m2 m-2` | Total leaf area index |
+| `FATES_NPLANT_PF` | `site_pft_r8` | `m-2` | Plant density per PFT |
+| `FATES_NPLANT_SZPF` | `site_size_pft_r8` | `m-2` | Plant density per size × PFT |
+| `FATES_BASALAREA_SZPF` | `site_size_pft_r8` | `m2 m-2` | Basal area per size × PFT |
+| `FATES_LEAFC_SZPF` | `site_size_pft_r8` | `kg m-2` | Leaf carbon per size × PFT |
+| `FATES_GPP_SZPF` | `site_size_pft_r8` | `kg m-2 s-1` | GPP per size × PFT |
+| `FATES_NPP_SZPF` | `site_size_pft_r8` | `kg m-2 s-1` | NPP per size × PFT |
+| `FATES_DDBH_SZPF` | `site_size_pft_r8` | `m s-1` | Stem diameter increment per size × PFT |
+| `FATES_MORTALITY_CANOPY_SZPF` | `site_size_pft_r8` | `m-2 s-1` | Canopy mortality rate per size × PFT |
+| `FATES_MORTALITY_USTORY_SZPF` | `site_size_pft_r8` | `m-2 s-1` | Understory mortality rate per size × PFT |
+| `FATES_MORTALITY_CSTARV_SZPF` | `site_size_pft_r8` | `m-2 s-1` | Carbon-starvation mortality |
+| `FATES_MORTALITY_HYDRAULIC_SZPF` | `site_size_pft_r8` | `m-2 s-1` | Hydraulic failure mortality |
+| `FATES_MORTALITY_FIRE_SZPF` | `site_size_pft_r8` | `m-2 s-1` | Fire-induced mortality |
+| `FATES_MORTALITY_LOGGING_SZPF` | `site_size_pft_r8` | `m-2 s-1` | Logging-induced mortality |
+| `FATES_BURNFRAC` | `site_r8` | `s-1` | Fractional area burned (per second) |
+| `FATES_FIRE_INTENSITY` | `site_r8` | `J s-1 m-1` | Fire-line intensity |
+| `FATES_DISTURBANCE_RATE_LOGGING` | `site_r8` | `m2 m-2 yr-1` | Logging disturbance rate |
+| `FATES_DISTURBANCE_RATE_FIRE` | `site_r8` | `m2 m-2 yr-1` | Fire disturbance rate |
+| `FATES_DISTURBANCE_RATE_TREEFALL` | `site_r8` | `m2 m-2 yr-1` | Treefall disturbance rate |
+| `FATES_PARSUN_Z_CLLL` | `site_cnlf_r8` | `W m-2` | Sunlit PAR by canopy × leaf layer |
+| `FATES_PARSHA_Z_CLLL` | `site_cnlf_r8` | `W m-2` | Shaded PAR by canopy × leaf layer |
+| `FATES_LAISUN_Z_CLLLPF` | `site_cnlfpft_r8` | `m2 m-2` | Sunlit LAI by canopy × leaf × PFT |
+| `FATES_NH4UPTAKE_SZPF` | `site_size_pft_r8` | `kg m-2 s-1` | NH4 uptake by size × PFT |
+| `FATES_NO3UPTAKE_SZPF` | `site_size_pft_r8` | `kg m-2 s-1` | NO3 uptake by size × PFT |
+| `FATES_PUPTAKE_SZPF` | `site_size_pft_r8` | `kg m-2 s-1` | P uptake by size × PFT |
+| `FATES_CBALANCE_ERROR` | `site_r8` | `kg` | Reported carbon-balance error from `TotalBalanceCheck` |
 
-### Dimension Kinds and Multiplexing
+**Naming correction note.** Earlier versions of this wiki used internal-style suffixes like `FATES_NPLANT_SCPF`, `FATES_MORTALITY_SCPF`, `FATES_DDBH_SCPF`, `FATES_STOREC_SCPF`, and `FATES_PARSUN_Z_CNLF`. These strings are **not** registered anywhere in `set_history_var`. The actual output names use `_SZPF`, `_CLLL`, and related suffixes above. There is no `FATES_FIRE_AREA` variable; fractional burned area is `FATES_BURNFRAC` (units `s-1`), and `FATES_NOCOMP_BURNEDAREA_PF` exists for nocomp PFT-specific burn area. Units for `FATES_GPP`/`FATES_NPP` are `kg m-2 s-1`, not `gC m-2 s-1` — differs by a factor of 1000.
 
-| Dimension Kind | Description | Example Variables | 
-| --- | --- | --- |
-| site_r8 | Site-level real values | Total GPP, NPP, fire area | 
-| site_int | Site-level integers | Number of patches, phenology status | 
-| site_pft_r8 | Site × PFT | Biomass by PFT, recruitment rate | 
-| site_size_pft_r8 | Site × Size Class × PFT | Number density by size and PFT | 
-| site_age_r8 | Site × Patch Age | Area distribution by age | 
-| cohort_r8 | Cohort-level real | DBH, height, carbon pools | 
-| cohort_int | Cohort-level integers | PFT, canopy layer, damage class | 
+Sources: `(main/FatesHistoryInterfaceMod.F90:5326-8543)`
 
+## Restart Output Overview
 
-Multiplexed Dimensions combine multiple indices into a single dimension to reduce dimensionality:
+The restart pipeline serializes complete model state for exact continuation. State is packed into flat 1-D arrays by cohort and by site (via `set_restart_vectors`) and unpacked on restart read (`get_restart_vectors`). The linked-list structure (sites → patches → cohorts) is rebuilt from the flat arrays by `create_patchcohort_structure` before state is populated.
 
-| Multiplexed Name | Components | Purpose | 
-| --- | --- | --- |
-| scpf | Size class × PFT | Size-structured PFT distributions | 
-| scls | Size class | Size-only distributions | 
-| cacpf | Cohort age class × PFT | Cohort age by PFT | 
-| cnlf | Canopy layer × Leaf layer | Vertical canopy structure | 
-| scag | Size class × Patch age | Joint size-age distributions | 
-| scagpft | Size class × Patch age × PFT | Full size-age-PFT structure | 
+Optional subsystems (plant hydraulics, CNP nutrient dynamics, tree damage) are conditionally registered — their variables only exist in the restart file if the corresponding `hlm_use_*` / `hlm_parteh_mode` flag is active. PARTEH plant carbon/nitrogen/phosphorus pools are serialized through a dedicated loop (`DefinePRTRestartVars`) described in [Restart System](restart.md).
 
+Sources: `(main/FatesRestartInterfaceMod.F90:297-376, 1636-1762)`
 
-Sources : [main/FatesHistoryInterfaceMod.F90 134-152](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L134-L152)  [main/FatesHistoryInterfaceMod.F90 1144-1200](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L1144-L1200)
+## Mass Balance Overview
 
-## Variable Registration and Indexing
+Mass balance is enforced by `TotalBalanceCheck` in `main/EDMainMod.F90:847-1024`, which runs at eight distinct call indices through the daily dynamics loop. At each call it invokes `SiteMassStock` from `ChecksBalancesMod.F90` to sum current stocks, compares the change-in-stock against the net flux-in minus flux-out, and aborts the run if the fractional error exceeds `10e-6`. See [Mass Balance Checking](mass_balance.md) for the full call-index table and flux-field inventory.
 
-History and restart variables are registered during initialization using a systematic indexing scheme. Each variable receives an index ( `ih_*` for history, `ir_*` for restart) used for fast lookup during updates.
+Sources: `(main/EDMainMod.F90:847-1024)`, `(main/ChecksBalancesMod.F90:32-125)`
 
-### Variable Registration Pattern
+## Flush and Thread Safety
 
-![SVG image](../assets/images/9__Model_Output_and_Diagnostics__img-05.svg)
+Both history and restart systems initialize arrays to sentinel values so that uninitialized reads are detectable:
 
-Example Registration (from [main/FatesHistoryInterfaceMod.F90 2348-2353](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L2348-L2353) ):
+| Constant | Value | Use |
+|---|---|---|
+| `flushinvalid` | `-9999.0` | Variables that must be explicitly set (error if still at flush) |
+| `flushzero` | `0.0` | Accumulators that naturally default to zero |
+| `flushone` | `1.0` | Variables that default to one |
 
-Sources : [main/FatesHistoryInterfaceMod.F90 818-820](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L818-L820)  [main/FatesRestartInterfaceMod.F90 631-1200](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L631-L1200)
+Thread safety is handled through `fates_io_dimension_type` objects that track per-thread lower/upper bounds. `SetThreadBoundsEach` is called during history/restart initialization, and subsequent variable accesses use those bounds to index into the shared HLM I/O arrays. A separate `restart_map_type` (fields `site_index` and `cohort1_index`) maps FATES site indices and cohort offsets to the host I/O positions.
 
-## Update Frequencies and Timing
+Sources: `(main/FatesHistoryInterfaceMod.F90:1024-1260)`, `(main/FatesRestartInterfaceMod.F90:297-437)`
 
-History variables are updated at different frequencies depending on the process being tracked:
+## Host Land Model Integration
 
-### Update Routine Timing
+Each history variable carries an `hlms` metadata string (e.g., `hlms='CLM:ALM'`) that marks it as compatible with specific host models. A sentinel `hlm_hio_ignore_val` flags missing data. Boundary condition types `bc_in_type` and `bc_out_type` (defined in `FatesInterfaceTypesMod.F90`) move data between FATES and the host.
 
-![SVG image](../assets/images/9__Model_Output_and_Diagnostics__img-06.svg)
-
-Key Update Routines :
-
-- 
-`update_history_dyn`  [main/FatesHistoryInterfaceMod.F90 4500-6500](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L4500-L6500) : Called once per day after `ed_ecosystem_dynamics` . Updates demographic variables, biomass states, mortality rates, and disturbance metrics.
-
-- 
-`update_history_hifrq`  [main/FatesHistoryInterfaceMod.F90 6600-7200](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L6600-L7200) : Called during photosynthesis calculations. Updates GPP, autotrophic respiration, radiation absorption.
-
-- 
-`update_history_hydraulics`  [main/FatesHistoryInterfaceMod.F90 7300-7800](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L7300-L7800) : Called during hydraulic calculations if `hlm_use_planthydro==itrue` . Updates water potential, transpiration, hydraulic conductance.
-
-- 
-`update_history_nutrflux`  [main/FatesHistoryInterfaceMod.F90 7900-8200](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L7900-L8200) : Called during nutrient dynamics if CNP mode is active. Updates nutrient uptake, demand, and efflux.
-
-
-
-Sources : [main/FatesHistoryInterfaceMod.F90 782-786](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L782-L786)
-
-## Restart System Operation
-
-The restart system enables exact simulation continuation by saving and restoring complete model state. Unlike history output (which provides diagnostic snapshots), restarts capture all information needed to reconstruct the site-patch-cohort hierarchy.
-
-### Restart Save and Restore Flow
-
-![SVG image](../assets/images/9__Model_Output_and_Diagnostics__img-07.svg)
-
-Sources : [main/FatesRestartInterfaceMod.F90 1600-2200](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L1600-L2200)  [main/FatesRestartInterfaceMod.F90 2300-3300](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L2300-L3300)
-
-### Critical Restart Variables
-
-The restart system saves ~150 variables capturing complete state:
-
-| Variable Category | Example Variables | Index Names | 
-| --- | --- | --- |
-| Site metadata | Number of patches, phenology status, fire danger | ir_npatch_si, ir_cd_status_si, ir_acc_ni_si | 
-| Patch metadata | Number of cohorts, age, area, disturbance category | ir_ncohort_pa, ir_age_pa, ir_area_pa | 
-| Cohort structure | DBH, height, PFT, number density | ir_dbh_co, ir_height_co, ir_pft_co, ir_nplant_co | 
-| Cohort physiology | Canopy layer, phenology status, elongation factors | ir_canopy_layer_co, ir_status_co, ir_efleaf_co | 
-| Carbon pools | Stored in PARTEH (via ir_prt_base) | Leaf, root, sapwood, structure, storage, reproduction | 
-| Litter pools | CWD, leaf litter, root litter, seeds (per element) | ir_agcwd_litt, ir_leaf_litt, ir_seed_litt | 
-| Hydraulics | Water content, recruitment water, dead water | ir_hydro_th_ag_covec, ir_hydro_recruit_si | 
-
-
-Sources : [main/FatesRestartInterfaceMod.F90 85-295](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L85-L295)
-
-## Mass Balance Verification
-
-FATES includes a comprehensive mass balance system to verify conservation of carbon and nutrients. Mass balance checks occur at multiple points during the daily dynamics loop.
-
-### Mass Balance Architecture
-
-![SVG image](../assets/images/9__Model_Output_and_Diagnostics__img-08.svg)
-
-Sources : [main/EDMainMod.F90 200-500](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L200-L500)  [main/ChecksBalancesMod.F90 1-300](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/ChecksBalancesMod.F90#L1-L300)
-
-### Balance Check Implementation
-
-The `TotalBalanceCheck` routine (in [main/ChecksBalancesMod.F90 100-400](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/ChecksBalancesMod.F90#L100-L400) ) performs the following:
-
-Error reporting includes detailed diagnostics:
-
-- Element being checked (C, N, P)
-- Location in dynamics loop (check point 0-5)
-- Site coordinates
-- Magnitude of error and tolerance
-- Individual flux components contributing to imbalance
-
-
-Sources : [main/ChecksBalancesMod.F90 1-500](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/ChecksBalancesMod.F90#L1-L500)  [main/FatesHistoryInterfaceMod.F90 354-356](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L354-L356)
-
-## Diagnostic Variable Examples
-
-### Common History Variables
-
-| Variable Name | Dimension | Units | Description | 
-| --- | --- | --- | --- |
-| FATES_GPP | site_r8 | gC/m²/s | Gross primary production | 
-| FATES_NPP | site_r8 | gC/m²/s | Net primary production | 
-| FATES_NPLANT_SCPF | site_size_pft_r8 | plants/m² | Number density by size and PFT | 
-| FATES_MORTALITY_SCPF | site_size_pft_r8 | plants/m²/yr | Mortality rate by size and PFT | 
-| FATES_LAI | site_r8 | m²/m² | Total leaf area index | 
-| FATES_FIRE_AREA | site_r8 | fraction/day | Fraction of site burned | 
-| FATES_DDBH_SCPF | site_size_pft_r8 | cm/yr | Diameter growth rate | 
-| FATES_STOREC_SCPF | site_size_pft_r8 | gC/m² | Storage carbon by size/PFT | 
-| FATES_CANOPYCROWNAREA_PF | site_pft_r8 | m² | Crown area in canopy by PFT | 
-| FATES_PARSUN_Z_CNLF | site_cnlf_r8 | W/m² | Sunlit PAR by canopy/leaf layer | 
-
-
-Sources : [main/FatesHistoryInterfaceMod.F90 2300-4000](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L2300-L4000)
-
-## Implementation Notes
-
-### Thread Safety and Bounds
-
-Both history and restart systems support multi-threaded execution through careful dimension bounds management:
-
-- **Dimension bounds**`fates_io_dimension_type`( ) track lower/upper indices for each thread
-- **Thread-specific bounds**`SetThreadBoundsEach`set via during initialization
-- **Index mapping**`restart_map_type`( ) maps FATES site/cohort indices to HLM I/O positions
-
-
-Sources : [main/FatesHistoryInterfaceMod.F90 1024-1141](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L1024-L1141)  [main/FatesRestartInterfaceMod.F90 416-437](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L416-L437)
-
-### Flush Values
-
-Variables use flush values to initialize arrays between updates:
-
-- `flushzero`: Variables that accumulate (fluxes, rates)
-- `flushone`: Variables that should default to 1.0
-- `flushinvalid`: Variables that must be explicitly set (metadata)
-
-
-Sources : [main/FatesRestartInterfaceMod.F90 304-306](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L304-L306)
-
-### Host Model Integration
-
-FATES output systems are designed to integrate with host land models (CLM/ALM/ELM) through:
-
-- **Boundary condition types**`bc_in_type``bc_out_type`: , for bi-directional data exchange
-- **Host-specific compilation**`hlms='CLM:ALM'`: Variables tagged with indicating compatible hosts
-- **Ignore values**`hlm_hio_ignore_val`: flags missing/unavailable data
-
-
-Sources : [main/FatesHistoryInterfaceMod.F90 38-56](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L38-L56)  [main/FatesRestartInterfaceMod.F90 20-28](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L20-L28)
+Sources: `(main/FatesHistoryInterfaceMod.F90:38-56)`, `(main/FatesRestartInterfaceMod.F90:20-28)`

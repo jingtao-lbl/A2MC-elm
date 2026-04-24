@@ -1,338 +1,135 @@
 # Advanced Topics
 
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
+
 <details>
 <summary>Relevant source files</summary>
 
-
-- [biogeophys/FatesPlantRespPhotosynthMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantRespPhotosynthMod.F90)
-- [main/EDParamsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90)
-- [main/EDPftvarcon.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90)
-- [main/FatesInterfaceMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90)
-- [main/FatesInterfaceTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90)
-- [parameter_files/fates_params_default.cdl](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl)
-
+- `biogeophys/FatesPlantRespPhotosynthMod.F90`
+- `biogeochem/FatesSoilBGCFluxMod.F90`
+- `main/EDParamsMod.F90`
+- `main/EDPftvarcon.F90`
+- `main/FatesInterfaceMod.F90`
+- `main/FatesInterfaceTypesMod.F90`
+- `main/FatesConstantsMod.F90`
+- `parameter_files/fates_params_default.cdl`
 
 </details>
 
 ## Purpose and Scope
 
-This page covers advanced model configurations, specialized operational modes, and extensibility features in FATES. It documents simulation modes that modify standard model behavior, nutrient competition alternatives, and the framework for extending model capabilities with new hypotheses.
-
-For information about the standard daily dynamics loop, see [Daily Dynamics Loop](core-dynamics/daily_loop.md) . For details on the PARTEH allocation system's standard operation, see [PARTEH: Plant Allocation System](plant-physiology/parteh/index.md) . For initialization procedures, see [Initialization Modes](getting-started/initialization.md) .
+This page covers advanced model configurations, specialized simulation modes, and extensibility features in FATES. It documents the main simulation mode flags, the nutrient competition alternatives, and the extensibility framework used to add new hypotheses. For the standard daily dynamics loop, see `../core-dynamics/daily_loop.md`. For the default PARTEH allocation system, see `../plant-physiology/parteh/index.md`. For initialization procedures, see `../getting-started/initialization.md`.
 
 ## 10.1 Simulation Modes
 
-FATES supports several specialized simulation modes that modify the standard ecosystem dynamics to enable specific research applications or simplify model behavior for testing and analysis.
+FATES exposes several alternative simulation modes that modify the standard ecosystem dynamics. They are controlled by host-land-model flags declared in `FatesInterfaceTypesMod.F90` and set during FATES initialization.
 
 ### Mode Configuration Flags
 
-All simulation modes are controlled by flags in the host land model interface, set during initialization and remaining constant throughout the simulation.
+| Mode | Flag variable | Declared at | Purpose | Mutual exclusivity |
+|---|---|---|---|---|
+| Satellite phenology (SP) | `hlm_use_sp` | `FatesInterfaceTypesMod.F90:194` | Drive FATES with prescribed LAI/SAI/height | Implies no competition and no growth dynamics |
+| No competition | `hlm_use_nocomp` | `FatesInterfaceTypesMod.F90:191` | Separate each PFT into its own patch (no inter-PFT competition) | Incompatible with standard multi-PFT-per-patch mode |
+| Fixed biogeography | `hlm_use_fixed_biogeog` | `FatesInterfaceTypesMod.F90:188` | Prescribe PFT area fractions from the surface dataset | Usually combined with nocomp |
+| Prescribed physiology | `hlm_use_ed_prescribed_phys` | `FatesInterfaceTypesMod.F90:165-173` | Replace photosynthesis / respiration with a prescribed NPP per area | Cannot combine with ST3 |
+| Static stand structure (ST3) | `hlm_use_ed_st3` | `FatesInterfaceTypesMod.F90:155-162` | Freeze demography (no growth / mortality / recruitment) | Cannot combine with prescribed physiology |
 
-| Mode Flag | Variable Name | Purpose | Mutual Exclusivity | 
-| --- | --- | --- | --- |
-| Satellite Phenology (SP) | hlm_use_sp | Prescribe LAI from external data | Yes (with standard ED) | 
-| No Competition | hlm_use_nocomp | Disable PFT competition | Yes (with standard ED) | 
-| Fixed Biogeography | hlm_use_fixed_biogeog | Fixed PFT spatial distribution | Compatible with nocomp | 
-| Prescribed Physiology | hlm_use_ed_prescribed_phys | Prescribe NPP, disable biophysics | Yes (with ST3) | 
-| Static Stand Structure (ST3) | hlm_use_ed_st3 | Disable dynamics (growth, mortality) | Yes (with prescribed phys) | 
+Sources: `main/FatesInterfaceTypesMod.F90:155-195`.
 
+For the full mode walk-through, see `simulation_modes.md`.
 
-Sources: [main/FatesInterfaceTypesMod.F90 155-195](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L155-L195)
+### Key Correction: `hlm_use_nocomp` Semantics
 
-### Satellite Phenology Mode
+Setting `hlm_use_nocomp = 1` does not "fix PFT areas". The flag:
 
-Diagram: SP Mode Data Flow
+1. Puts each PFT into its own patch, so different PFTs cannot share light, water, or nutrients within a patch.
+2. Leaves the FATES demographic equations (growth, recruitment, mortality) operating inside each patch.
 
-![SVG image](../assets/images/10__Advanced_Topics__img-01.svg)
-
-In SP mode, leaf area index and canopy structure are prescribed from external datasets rather than simulated dynamically. This mode is useful for isolating biogeochemical processes from structural dynamics.
-
-Key Characteristics:
-
-The patch allocation logic differs from standard mode:
-
-Sources: [main/FatesInterfaceMod.F90 762-780](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L762-L780)  [main/FatesInterfaceTypesMod.F90 194-195](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L194-L195)  [main/FatesInterfaceTypesMod.F90 558-560](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L558-L560)
-
-### No Competition Mode
-
-Diagram: No Competition Mode Structure
-
-![SVG image](../assets/images/10__Advanced_Topics__img-02.svg)
-
-No competition mode disables light competition between PFTs by assigning each PFT to its own patch. This allows studying PFT-specific responses without competitive interactions.
-
-Key Characteristics:
-
-Patch count is constrained to accommodate all PFTs:
-
-The `nocomp_pft_label` identifies which PFT each patch represents, used throughout the code to maintain PFT isolation.
-
-Sources: [main/FatesInterfaceMod.F90 787-795](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L787-L795)  [main/FatesInterfaceTypesMod.F90 191-192](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L191-L192)  [main/FatesInterfaceTypesMod.F90 723](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L723-L723)
-
-### Prescribed Physiology Mode
-
-In prescribed physiology mode, photosynthesis and respiration are disabled and replaced with prescribed net primary production (NPP) rates. This mode is experimental and useful for benchmarking demographic processes independently from biophysical calculations.
-
-Key Parameters (PFT-specific):
-
-| Parameter | Variable | Units | Purpose | 
-| --- | --- | --- | --- |
-| Canopy NPP | prescribed_npp_canopy | kgC/m²/yr | NPP for canopy trees | 
-| Understory NPP | prescribed_npp_understory | kgC/m²/yr | NPP for understory trees | 
-| Canopy Mortality | prescribed_mortality_canopy | 1/yr | Mortality rate, canopy | 
-| Understory Mortality | prescribed_mortality_understory | 1/yr | Mortality rate, understory | 
-| Recruitment Rate | prescribed_recruitment | 1/yr | Recruitment rate | 
-
-
-Constraints:
-
-- Cannot be used simultaneously with ST3 mode
-- Requires prescription of all demographic rates
-- Compatible with disturbance and patch dynamics
-
-
-Sources: [main/EDPftvarcon.F90 156-165](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#L156-L165)  [parameter_files/fates_params_default.cdl 473-490](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl#L473-L490)
-
-### Static Stand Structure Mode (ST3)
-
-ST3 mode freezes ecosystem structure by disabling all demographic processes. This is useful for analyzing fast biophysical processes (photosynthesis, respiration) with fixed canopy structure.
-
-Disabled Processes:
-
-- Growth (diameter and height increment)
-- Mortality (all types)
-- Recruitment (seedling establishment)
-- Disturbance-driven patch creation
-- Cohort fusion and termination
-
-
-Active Processes:
-
-- Photosynthesis and respiration
-- Phenology (leaf flush and abscission)
-- Plant hydraulics
-- Radiation transfer
-- Canopy layering (if structure changes via phenology)
-
-
-Constraints:
-
-- Cannot be used with prescribed physiology mode
-- Initial stand structure must be specified via inventory or near-bare-ground initialization
-- Patch areas remain constant
-
-
-Sources: [main/FatesInterfaceTypesMod.F90 155-163](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L155-L163)
+Fixing PFT area fractions is a separate flag: `hlm_use_fixed_biogeog`. In practice `nocomp` is almost always combined with `fixed_biogeog` to get a stable, PFT-isolated experiment, but they are independent switches.
 
 ## 10.2 Nutrient Competition Modes
 
-FATES supports two fundamentally different approaches for simulating plant nutrient acquisition when coupled to soil biogeochemistry models: Ecosystem Competition Approach (ECA) and Relative Demand (RD).
+FATES supports two HLM-side competition algorithms (ECA and RD), two scaling schemes (coupled and trivial), and two uptake modes (prescribed and coupled). See `nutrient_competition.md` for full details.
 
-### Nutrient Competition Framework
+### Selecting the HLM Competition Algorithm
 
-Diagram: Nutrient Competition Mode Selection
+Set via the character string `hlm_nu_com` (`main/FatesInterfaceTypesMod.F90:54`). Valid values:
 
-![SVG image](../assets/images/10__Advanced_Topics__img-03.svg)
+- `'ECA'` Ecosystem Chemistry Approximation (Michaelis-Menten competition)
+- `'RD'` Relative Demand
 
-The nutrient competition mode is set via the `hlm_nu_com` character string in the host land model interface. Current valid options are `"ECA"` and `"RD"` .
+### Competitor Scaling Modes
 
-Mode Determination:
+`fates_np_comp_scaling` is an **internal FATES integer** (module variable, declared as `integer, public :: fates_np_comp_scaling` in `FatesConstantsMod.F90:124`) whose value is set automatically at initialization (`FatesInterfaceMod.F90:875-900`). The enum constants, also in `FatesConstantsMod.F90`, are:
 
-Sources: [main/FatesInterfaceTypesMod.F90 54-60](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L54-L60)  [main/EDParamsMod.F90 95-96](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90#L95-L96)  [main/FatesInterfaceMod.F90 73-82](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L73-L82)
+| Constant | Integer value | Declared at |
+|---|---|---|
+| `coupled_np_comp_scaling` | **1** | `FatesConstantsMod.F90:96` |
+| `trivial_np_comp_scaling` | **2** | `FatesConstantsMod.F90:115` |
 
-### ECA: Ecosystem Competition Approach
+The initialization rule is: if `hlm_parteh_mode == prt_cnp_flex_allom_hyp` and **either** N or P uptake is coupled, use `coupled_np_comp_scaling = 1`. Otherwise use `trivial_np_comp_scaling = 2` (`FatesInterfaceMod.F90:887-900`). This means the scaling mode is derived from the uptake mode, not an independent namelist switch.
 
-The ECA mode simulates explicit competition between plants, microbes, and mineral surfaces for nutrients using enzyme kinetics based on Michaelis-Menten formulations.
+**Correction over earlier documentation:** previous versions of this wiki stated that `trivial_np_comp_scaling = 0`. The correct value is `2`. Anyone pattern-matching the integer value by hand would silently misconfigure FATES.
 
-Conceptual Model:
+### Boundary Condition Scalars `cn_scalar` and `cp_scalar`
 
-![SVG image](../assets/images/10__Advanced_Topics__img-04.svg)
+When ECA is active, the boundary condition arrays `bc_out%cn_scalar` and `bc_out%cp_scalar` are used to send plant-side C:N and C:P stress information to the HLM's BGC competition routine. In the FATES source at commit `e85d997`, the only place these arrays are assigned is `PrepNutrientAquisitionBCs` at `FatesSoilBGCFluxMod.F90:436-437`:
 
-ECA Parameters (PFT-specific):
+```fortran
+bc_out%cn_scalar(:) = 1._r8
+bc_out%cp_scalar(:) = 1._r8
+```
 
-| Parameter | Variable | Units | Description | 
-| --- | --- | --- | --- |
-| NH4 Half-Saturation | eca_km_nh4 | gN/m³ | Km for ammonium uptake | 
-| NO3 Half-Saturation | eca_km_no3 | gN/m³ | Km for nitrate uptake | 
-| P Half-Saturation | eca_km_p | gP/m³ | Km for phosphorus uptake | 
-| Ptase Km | eca_km_ptase | gP/m³ | Km for phosphatase enzyme | 
-| Ptase Vmax | eca_vmax_ptase | gP/m²/s | Max phosphatase production rate | 
-| Ptase Alpha | eca_alpha_ptase | fraction | Direct plant P fraction from ptase | 
-| Ptase Lambda | eca_lambda_ptase | fraction | P vs N stress threshold for ptase | 
-| Microbial C | eca_decompmicc | gC/m³ | Microbial decomposer biomass | 
-| Plant Scalar | eca_plant_escalar | unitless | Root biomass to enzyme scaling | 
+There is no branch that computes these from plant C:N or C:P ratios inside FATES. They are **initialized to 1.0 by FATES and left for the HLM's BGC model to re-compute or consume as-is**. Any earlier description that said "computed from plant C:N and C:P ratios in coupled scaling mode" did not match this version of the source.
 
+Sources: `biogeochem/FatesSoilBGCFluxMod.F90:400-518`.
 
-Uptake Calculation:
+### Prescribed vs Coupled Uptake
 
-For each nutrient species (NH4, NO3, P), the ECA approach calculates competitive uptake:
+In prescribed mode, plants receive a PFT-specific fraction of their nutrient demand (parameter `fates_cnp_prescribed_nuptake(pft)` for N and `fates_cnp_prescribed_puptake(pft)` for P), with no mass removed from soil BGC pools. In coupled mode, the HLM returns the actual uptake through the boundary condition arrays `bc_in%plant_nh4_uptake_flux`, `bc_in%plant_no3_uptake_flux`, and `bc_in%plant_p_uptake_flux`.
 
-where competition terms account for uptake by other organisms.
+The switch between prescribed and coupled is made per-site at initialization, based on whether **any** PFT has a non-zero `fates_cnp_prescribed_nuptake` or `fates_cnp_prescribed_puptake` (`FatesInterfaceMod.F90:875-885`). **If any PFT has a non-zero value, the entire site runs in prescribed mode for that element.**
 
-Phosphatase Production:
+### Prescribed Physiology Parameters (CDL names)
 
-FATES can simulate phosphatase enzyme production to access organic P:
+The five parameters actually used by `hlm_use_ed_prescribed_phys` are declared in the parameter file with `fates_` prefixes:
 
-A fraction `alpha_ptase` of mineralized P goes directly to the plant; the remainder enters the mineral pool.
+| CDL parameter | Units | Role |
+|---|---|---|
+| `fates_prescribed_npp_canopy` | kgC / m2 / yr | Canopy-tree NPP (`fates_params_default.cdl:473-475`) |
+| `fates_prescribed_npp_understory` | kgC / m2 / yr | Understory-tree NPP (`fates_params_default.cdl:476-478`) |
+| `fates_mort_prescribed_canopy` | 1/yr | Canopy mortality rate (`fates_params_default.cdl:413-415`) |
+| `fates_mort_prescribed_understory` | 1/yr | Understory mortality rate (`fates_params_default.cdl:416-418`) |
+| `fates_recruit_prescribed_rate` | n/yr | Prescribed recruitment rate (`fates_params_default.cdl:515-517`) |
 
-Sources: [main/EDPftvarcon.F90 196-213](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#L196-L213)  [parameter_files/fates_params_default.cdl 170-193](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl#L170-L193)  [main/EDParamsMod.F90 304-310](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90#L304-L310)  [main/FatesInterfaceTypesMod.F90 760-773](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L760-L773)
-
-### RD: Relative Demand Approach
-
-The RD mode uses simpler demand-based nutrient acquisition where plants specify their nutrient demand and uptake is allocated proportionally.
-
-Key Characteristics:
-
-RD Parameters (PFT-specific):
-
-| Parameter | Variable | Units | Description | 
-| --- | --- | --- | --- |
-| NH4 Vmax | vmax_nh4 | gN/gC/s | Max NH4 uptake rate per root C | 
-| NO3 Vmax | vmax_no3 | gN/gC/s | Max NO3 uptake rate per root C | 
-| P Vmax | vmax_p | gP/gC/s | Max P uptake rate per root C | 
-
-
-Demand Calculation:
-
-Uptake is then scaled by available nutrients and Vmax constraints.
-
-Sources: [main/EDPftvarcon.F90 181-188](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#L181-L188)  [parameter_files/fates_params_default.cdl 227-235](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl#L227-L235)
-
-### Competition Scaling Modes
-
-Both ECA and RD support two scaling approaches for nutrient competition:
-
-Diagram: Competition Scaling Impact
-
-![SVG image](../assets/images/10__Advanced_Topics__img-05.svg)
-
-Coupled Scaling ( `fates_np_comp_scaling = 1` ):
-
-- `cn_scalar``cp_scalar`Scaling factors ( , ) computed from plant C:N and C:P ratios
-- Accounts for variable plant nutrient status
-- More realistic representation of plant nutrient demand
-
-
-Trivial Scaling ( `fates_np_comp_scaling = 0` ):
-
-- All scaling factors set to 1.0
-- Simplified calculation
-- Useful for testing or when nutrient dynamics are prescribed
-
-
-The scaling factors are passed to the soil BGC model via boundary condition arrays:
-
-Sources: [main/FatesInterfaceMod.F90 80-82](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L80-L82)  [main/FatesInterfaceTypesMod.F90 665-670](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L665-L670)
-
-### Prescribed vs Coupled Nutrient Uptake
-
-Independent of ECA vs RD mode, FATES can operate in prescribed or coupled nutrient mode:
-
-Prescribed Mode ( `prescribed_n_uptake > 0` ):
-
-- Nutrient uptake specified as fraction of plant demand
-- No mass removed from soil BGC pools
-- Useful for testing or when soil BGC is not active
-
-
-Coupled Mode ( `coupled_n_uptake` ):
-
-- Uptake dynamically calculated based on soil nutrient availability
-- Mass conserving interaction with soil BGC
-- Standard mode for coupled Earth system models
-
-
-The mode is determined during initialization based on PFT parameters:
-
-Sources: [main/FatesInterfaceMod.F90 875-910](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L875-L910)  [main/FatesConstantsMod](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesConstantsMod#LNaN-LNaN)  [main/EDPftvarcon.F90 223-228](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#L223-L228)
+**Correction over earlier documentation:** earlier versions of this wiki listed these as `prescribed_mortality_canopy`, `prescribed_mortality_understory`, and `prescribed_recruitment` using the module-internal derived-type field names from `EDPftvarcon.F90` rather than the CDL parameter names. The module-internal names are correct Fortran, but users editing parameter files must use the `fates_` prefixed CDL names. The recruitment rate is also declared in units of `n/yr`, not `1/yr`.
 
 ## 10.3 Model Extensibility
 
-FATES is designed to be extensible, allowing researchers to implement new hypotheses for allocation, mortality, and other processes without modifying core code structure.
+FATES is designed to be extended with new parameters, allocation hypotheses, mortality mechanisms, and history variables without modifying the core dispatch. See `extensibility.md` for the full guide. The key entry points are:
 
-### Parameter System Extension
+| Extension type | Primary files |
+|---|---|
+| PFT parameters | `parameter_files/fates_params_default.cdl`, `main/EDPftvarcon.F90` (`Register_PFT` and `Receive_PFT`) |
+| Allocation hypotheses | `parteh/PRTGenericMod.F90` (base class), `parteh/PRTAllometricCarbonMod.F90` (`prt_carbon_allom_hyp = 1`), `parteh/PRTAllometricCNPMod.F90` (`prt_cnp_flex_allom_hyp = 2`) |
+| Mortality mechanisms | `biogeochem/EDPhysiologyMod.F90` and parameter names of the form `fates_mort_*` |
+| History variables | `main/FatesHistoryInterfaceMod.F90` |
 
-Diagram: Adding a New PFT Parameter
+The PARTEH dispatch is a `select case(hlm_parteh_mode)` in `FatesInterfaceMod.F90` that picks between the two allocation hypotheses. Adding a new hypothesis means defining a new integer constant in `PRTGenericMod.F90` and wiring it into the dispatcher.
 
-![SVG image](../assets/images/10__Advanced_Topics__img-06.svg)
+Sources: `parteh/PRTGenericMod.F90:69-70`, `main/FatesInterfaceMod.F90:335-370`, `main/EDPftvarcon.F90:315-700`.
 
-Step-by-Step Process:
+---
 
-Sources: [main/EDPftvarcon.F90 315-346](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#L315-L346)  [main/EDPftvarcon.F90 349-695](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#L349-L695)  [parameter_files/fates_params_default.cdl 1-60](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl#L1-L60)
+## Summary
 
-### PARTEH: Adding New Allocation Hypotheses
+Advanced FATES features provide three axes of flexibility:
 
-The Plant Allocation and Reactive Transport Extensible Hypotheses (PARTEH) framework allows implementation of new allocation strategies through object-oriented inheritance.
+- **Simulation modes** modify or freeze parts of the standard ecosystem dynamics (SP, no-comp, fixed biogeography, prescribed physiology, ST3).
+- **Nutrient competition** modes control whether plants compete through the HLM's BGC model (ECA or RD), how FATES presents competitors to the HLM (coupled or trivial scaling, selected automatically), and whether uptake is coupled to the soil pool or prescribed as a fraction of demand.
+- **Extensibility** hooks let researchers add parameters, PFTs, allocation hypotheses, mortality mechanisms, and history variables without touching core dispatch code.
 
-Diagram: PARTEH Extensibility Pattern
-
-![SVG image](../assets/images/10__Advanced_Topics__img-07.svg)
-
-Required Methods for New Hypothesis:
-
-| Method | Purpose | Must Implement | 
-| --- | --- | --- |
-| InitPRTVartype | Initialize organ pools and variables | Yes | 
-| DailyPRT | Main daily allocation routine | Yes | 
-| CheckMassConservation | Verify mass balance | Yes | 
-| DailyPRTAllometry | Apply allometric constraints | Depends on hypothesis | 
-| GetState | Retrieve organ/element pool value | Inherited | 
-| SetState | Set organ/element pool value | Inherited | 
-
-
-Implementation Template:
-
-Registration:
-
-Add initialization routine in `FatesInterfaceMod.F90` :
-
-Set mode constant in parameter file and interface.
-
-Sources: [main/FatesInterfaceMod.F90 87-98](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L87-L98)  [parteh/PRTGenericMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90#LNaN-LNaN)  [parteh/PRTAllometricCarbonMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#LNaN-LNaN)  [parteh/PRTAllometricCNPMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#LNaN-LNaN)
-
-### Adding New Mortality Mechanisms
-
-New mortality mechanisms can be added by extending the mortality calculation framework while integrating with existing mortality types.
-
-Diagram: Mortality System Integration
-
-![SVG image](../assets/images/10__Advanced_Topics__img-08.svg)
-
-Implementation Steps:
-
-Mortality Rate Constraints:
-
-- Rates are per-year (1/year units)
-- Must be non-negative
-- Combined rates should not exceed ~0.99 (numerical stability)
-- Consider interaction with existing mortality types
-
-
-Sources: [main/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDCohortDynamicsMod.F90#LNaN-LNaN)  [main/EDPftvarcon.F90 93-103](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#L93-L103)  [parameter_files/fates_params_default.cdl 395-433](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl#L395-L433)
-
-### Adding New PFTs
-
-Process for Adding PFTs to Parameter File:
-
-PFT Index Management:
-
-FATES uses 1-based PFT indexing internally. Parameter files may use 0-based or 1-based indexing depending on dimension `lower_bound` attribute.
-
-Sources: [parameter_files/fates_params_default.cdl 1-20](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl#L1-L20)  [tools/modify_fates_paramfile.py](https://github.com/jingtao-lbl/fates/blob/e85d9977/tools/modify_fates_paramfile.py)  [tools/FatesPFTIndexSwapper.py](https://github.com/jingtao-lbl/fates/blob/e85d9977/tools/FatesPFTIndexSwapper.py)
-
-### History Output Extension
-
-Adding New History Variables:
-
-Sources: [main/FatesHistoryInterfaceMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#LNaN-LNaN)  [main/FatesHistoryInterfaceMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#LNaN-LNaN)
-
-Summary
-
-Advanced FATES features provide flexibility for specialized research applications:
-
-- **Simulation modes**modify standard dynamics to isolate specific processes or simplify model behavior
-- **Nutrient competition modes**(ECA vs RD) offer different levels of mechanistic detail in plant-soil nutrient interactions
-- **Extensibility framework**enables implementation of new hypotheses through well-defined interfaces for parameters, allocation, mortality, and other processes
-
-
-The modular design allows researchers to extend FATES capabilities while maintaining compatibility with existing model infrastructure and ensuring scientific reproducibility through version-controlled parameter files.
+All three axes are controlled by flags declared in `FatesInterfaceTypesMod.F90`, constants declared in `FatesConstantsMod.F90`, and PFT parameters declared in `fates_params_default.cdl`. Anyone configuring FATES for calibration should verify their settings against these three sources rather than against derived-type field names inside `EDPftvarcon.F90`.

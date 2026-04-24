@@ -1,245 +1,111 @@
-# 4.5 Litter Production and Turnover
+# Litter Production and Turnover
+
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
 <details>
 <summary>Relevant source files</summary>
 
-
-- [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90)
-- [biogeochem/EDPhysiologyMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90)
-- [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)
-- [biogeochem/FatesSoilBGCFluxMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90)
-- [parteh/PRTAllometricCNPMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90)
-- [parteh/PRTAllometricCarbonMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90)
-- [parteh/PRTGenericMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90)
-- [parteh/PRTLossFluxesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTLossFluxesMod.F90)
-
+- `biogeochem/FatesLitterMod.F90` (litter type + `ncwd`/`ndcmpy` constants, `adjust_SF_CWD_frac`)
+- `biogeochem/EDPhysiologyMod.F90` (`CWDInput`, `PreDisturbanceIntegrateLitter`, `CWDOut`)
+- `biogeochem/EDCohortDynamicsMod.F90` (`SendCohortToLitter`)
+- `parteh/PRTLossFluxesMod.F90` (`PRTMaintTurnover`, `PRTDeciduousTurnover`, `PRTBurnLosses`, `PRTDamageLosses`)
 
 </details>
 
 ## Purpose and Scope
 
-This page documents the mechanisms by which plant biomass is converted to litter in FATES, including both continuous maintenance turnover and event-based losses. Litter production encompasses the transfer of carbon and nutrients from living plant organs to dead organic matter pools. For information about how plant mortality rates are calculated, see [4.4 Mortality Processes](plant-physiology/mortality.md) . For details on nutrient uptake from soil, see [4.2.3 Soil-Plant Nutrient Interface](plant-physiology/parteh/soil_plant_interface.md) .
+This document describes how plant biomass becomes litter in FATES, including maintenance turnover, deciduous abscission, damage losses, fire losses, and cohort mortality transfers. For mortality rates that drive whole-cohort transfers see `mortality.md`. For nutrient retranslocation that accompanies abscission see `parteh/soil_plant_interface.md`.
 
-The litter production system handles:
+## Litter Pool Structure
 
-- **Turnover fluxes**from living plants (leaves, fine roots, reproductive organs)
-- **Retranslocation**of nutrients back to storage before abscission
-- **Event-based losses**from fire, damage, and disturbance
-- **Mortality transfers**when entire cohorts die or are terminated
-- **Litter fragmentation**as organic matter breaks down into decomposable pools
+`FatesLitterMod.F90` defines:
 
+- `ncwd = 4` (number of coarse woody debris size classes, `FatesLitterMod.F90:48`)
+- `ndcmpy = 3` (number of fine-litter decomposability classes, `:51`)
+- `ilabile = 1`, `icellulose = 2`, `ilignin = 3` (`:54-56`)
 
-## Litter Pool Organization
+| Pool category | Spatial resolution | Size/chemistry dimensions | Purpose |
+|---|---|---|---|
+| Above-ground CWD | Patch-level | `ncwd` size classes | Standing and fallen large wood |
+| Below-ground CWD | By soil layer | `ncwd` size classes | Coarse root debris |
+| Leaf fine litter | Patch-level | `ndcmpy` decomposability classes | Leaf and reproductive litter |
+| Root fine litter | By soil layer | `ndcmpy` decomposability classes | Fine-root litter |
+| Seed bank | Patch-level | By PFT | Viable seeds for recruitment |
 
-FATES organizes litter into element-specific pools within each patch. The litter structure distinguishes between coarse woody debris (CWD), fine litter, and viable seeds.
-
-### Litter Type Structure
-
-| Pool Category | Spatial Resolution | Size Classes | Purpose | 
-| --- | --- | --- | --- |
-| Above-ground CWD | Patch-level | 4 size classes (ncwd) | Large woody debris | 
-| Below-ground CWD | By soil layer | 4 size classes | Coarse root debris | 
-| Leaf fine litter | Patch-level | 3 decomposability classes (ndcmpy) | Leaf and reproductive tissue litter | 
-| Root fine litter | By soil layer | 3 decomposability classes | Fine root litter | 
-| Seed bank | Patch-level | By PFT | Viable seeds for recruitment | 
-
-
-The decomposability classes ( `ilabile` , `icellulose` , `ilignin` ) allow differential rates of fragmentation based on tissue chemistry, determined by `GetDecompyFrac` in EDPftvarcon.
-
-Sources: [biogeochem/FatesLitterMod (lines referenced in EDPhysiologyMod.F90)]
+Decomposability partitioning of leaf/fineroot litter is determined by `GetDecompyFrac(pft, organ, dcmpy)` in `EDPftvarcon.F90`.
 
 ## Litter Production Pathways
 
-![SVG image](../assets/images/4.5__Litter_Production_and_Turnover__img-01.svg)
+1. **Maintenance turnover** (continuous): `PRTMaintTurnover()` in `parteh/PRTLossFluxesMod.F90` applies daily background losses for leaves, fine roots, and woody tissues according to `leaf_long`, `froot_long`, and branchfall parameters.
+2. **Deciduous turnover** (event): `PRTDeciduousTurnover()` handles leaf/fineroot/stem abscission triggered by `phenology_leafonoff`. Applied to large fractions at once. See `phenology.md`.
+3. **Damage losses**: `PRTDamageLosses()` transfers biomass from the crown fraction lost during a damage event (see `crown_damage.md`).
+4. **Fire losses**: `PRTBurnLosses()` consumes biomass during fire events. Uniform `mass_fraction` across elements in an organ, tracked separately in `prt%variables(i_var)%burned`.
+5. **Cohort mortality transfer**: `SendCohortToLitter()` in `EDCohortDynamicsMod.F90` transfers all biomass from a specified number of plants in a dead cohort to patch-level litter pools.
 
-Sources: [parteh/PRTLossFluxesMod.F90:1-641], [biogeochem/EDPhysiologyMod.F90:428-501], [biogeochem/EDCohortDynamicsMod.F90:560-688]
+## Retranslocation During Turnover
 
-## Maintenance Turnover
+Turnover (both maintenance and deciduous) retains nutrients back to storage before the carbon is released to litter. The retained fractions come from:
 
-Maintenance turnover represents the continuous background loss of plant tissues (primarily leaves and fine roots) for evergreen species and woody tissues for all plants. This process operates daily and is handled by the PARTEH module.
+- `prt_params%turnover_nitr_retrans(ipft, i_organ)`
+- `prt_params%turnover_phos_retrans(ipft, i_organ)`
 
-### PRTMaintTurnover Function
+**The array indexing is PFT-first, organ-second.** Retranslocation applies to leaves and fine roots; carbon is never retranslocated (always goes to litter).
 
-The `PRTMaintTurnover` subroutine calculates daily turnover rates based on PFT-specific parameters:
+## Maintenance Turnover Details
 
-Key parameters from `prt_params` :
+`PRTMaintTurnover()` applies daily fractional losses:
 
-- `leaf_long(ipft, age_class)`- leaf longevity by age class [years]
-- `root_long(ipft)`- fine root longevity [years]
-- `turnover_nitr_retrans(ipft, organ)`- nitrogen retranslocation fraction
-- `turnover_phos_retrans(ipft, organ)`- phosphorus retranslocation fraction
+| Tissue | Loss rate source |
+|---|---|
+| Evergreen leaves | `1 / (ndays_per_year * leaf_long(ipft, age_class))` |
+| Fine roots | `1 / (ndays_per_year * root_long(ipft))` |
+| Branchfall from stems | Allometric/PFT-dependent |
 
+## Cohort Mortality Transfer
 
-Retranslocation during maintenance turnover: For each organ and element, the subroutine partitions losses between:
+`SendCohortToLitter()`:
 
-The mass balance is:
+- Operates on an absolute number of plants `nplant`, not on the whole cohort
+- Transfers all organs (leaf, fnrt, sapw, store, struct, repro) for all elements (C, N, P)
+- Does NOT modify per-plant PARTEH pools; only reduces `cohort%n`
+- CWD size-class distribution is adjusted by cohort dbh via `adjust_SF_CWD_frac(dbh, ncwd, SF_val_CWD_frac, SF_val_CWD_frac_adj)` in `FatesLitterMod.F90:439-493`, which gives smaller plants more weight in smaller CWD classes
 
-Sources: [parteh/PRTLossFluxesMod.F90:630-800], [parteh/PRTGenericMod.F90:180-200]
+## CWD Input and Fragmentation
 
-## Deciduous Turnover and Retranslocation
+`CWDInput()` in `EDPhysiologyMod.F90` aggregates turnover fluxes into the site-level litter pool inputs. The daily sequence is:
 
-Deciduous turnover handles the abscission of leaves and fine roots during seasonal or stress-induced phenology events. This is an event-based process, in contrast to the continuous maintenance turnover.
+1. Each PARTEH organ computes its turnover, retranslocation, burned, damaged fluxes
+2. `CWDInput` sums losses by pool class and transfers them to `leaf_fines_in`, `root_fines_in`, `ag_cwd_in`, `bg_cwd_in`
+3. `PreDisturbanceIntegrateLitter()` updates litter state variables
+4. `CWDOut()` computes fragmentation fluxes to soil BGC using a `fragmentation_scaler` (temperature and moisture dependent)
+5. `frag_out` accumulates into `site_mass` for mass balance checks
 
-### Deciduous Turnover Process
-
-The workflow for deciduous leaf drop:
-
-![SVG image](../assets/images/4.5__Litter_Production_and_Turnover__img-02.svg)
-
-Key distinctions from maintenance turnover:
-
-- **is not**Carbon retranslocated (retrans = 0 for C)
-- **are**Nutrients retranslocated at PFT-specific rates
-- Applied to entire organ pools (leaves, fine roots)
-- Only allowed for leaves and fine roots in woody PFTs
-
-
-Sources: [parteh/PRTLossFluxesMod.F90:461-626], [biogeochem/EDPhysiologyMod.F90:148-149, 428-501]
-
-### Retranslocation Mechanics
-
-Retranslocation parameters control the fraction of nutrients salvaged before abscission:
-
-| Parameter | Organ | Typical Range | Purpose | 
-| --- | --- | --- | --- |
-| turnover_nitr_retrans | leaf, fine root | 0.0 - 0.5 | N recovery during turnover | 
-| turnover_phos_retrans | leaf, fine root | 0.0 - 0.5 | P recovery during turnover | 
-
-
-The retranslocated nutrients are added to the storage pool and become available for future growth. Carbon is never retranslocated; it always goes to litter.
-
-Implementation note: The code uses a single retranslocation mode per PFT ( `prt_params%turnover_retrans_mode` ), but as of the current implementation, only simple proportional retranslocation is active.
-
-Sources: [parteh/PRTLossFluxesMod.F90:503-626]
-
-## Cohort Mortality and Litter Transfer
-
-When cohorts die or are terminated, all of their biomass is transferred to litter pools. This is handled separately from turnover because it involves whole-plant transfer and cross-patch considerations during disturbance.
-
-### SendCohortToLitter Routine
-
-The `SendCohortToLitter` subroutine in EDCohortDynamicsMod transfers biomass from a specified number of plants in a cohort to patch-level litter pools.
-
-Key characteristics:
-
-- **absolute number of plants**`nplant`Operates on ( ), not whole cohort
-- **all organs**Transfers (leaf, fine root, sapwood, storage, structure, reproductive)
-- **all elements**Processes (C, N, P)
-- **Does NOT**`n`modify per-plant PARTEH pools (only affects cohort )
-- **Does NOT**handle disturbance-related cross-patch transfers
-
-
-Partitioning scheme:
-
-The CWD size class distribution is adjusted based on cohort DBH using `adjust_SF_CWD_frac` , allowing smaller plants to contribute more to smaller CWD classes.
-
-Sources: [biogeochem/EDCohortDynamicsMod.F90:560-688]
-
-### Litter Flux Diagnostics
-
-Fluxes are tracked for history output via `site_fluxdiags_type` :
-
-Sources: [biogeochem/EDCohortDynamicsMod.F90:631-683]
-
-## Damage-Related Litter Production
-
-Crown damage events generate litter from the damaged fraction of the crown. This is distinct from mortality—the plant survives but loses a portion of its canopy biomass.
-
-### Damage Litter Workflow
-
-![SVG image](../assets/images/4.5__Litter_Production_and_Turnover__img-03.svg)
-
-Key calculations:
-
-The `branch_frac` parameter ( `param_derived%branch_frac` ) represents the fraction of above-ground woody biomass in branches (vs. bole), allowing realistic partitioning of structural losses.
-
-Sources: [biogeochem/EDPhysiologyMod.F90:256-424], [parteh/PRTLossFluxesMod.F90:337-389]
-
-## Fire-Related Losses
-
-Fire consumes biomass from plants that survive the fire event. The `PRTBurnLosses` subroutine tracks these losses separately from other turnover mechanisms.
-
-### Burn Loss Tracking
-
-Unlike turnover or damage, burned biomass:
-
-- **no retranslocation**Has (complete loss)
-- `prt%variables(i_var)%burned`Is tracked in a dedicated flux array ( )
-- Destiny is determined by fire model (fraction to atmosphere vs. litter)
-- `mass_fraction`Applies a uniform to all elements in the specified organ
-
-
-The separation of burn fluxes allows the fire module to distinguish between:
-
-Sources: [parteh/PRTLossFluxesMod.F90:281-333]
-
-## Litter Integration and Fragmentation
-
-After litter fluxes are calculated, they must be integrated into the litter pool state variables and then fragmented for transfer to the soil biogeochemistry model.
-
-### Pre-Disturbance Litter Workflow
-
-The daily litter calculation sequence in `EDMainMod::ed_ecosystem_dynamics` :
-
-![SVG image](../assets/images/4.5__Litter_Production_and_Turnover__img-04.svg)
-
-Sources: [biogeochem/EDPhysiologyMod.F90:428-591]
-
-### CWDInput and Fragmentation
-
-The `CWDInput` subroutine (called within `PreDisturbanceLitterFluxes` ) processes turnover fluxes from the PARTEH rate variables and translates them into litter pool inputs:
-
-Input sources to litter:
-
-Fragmentation process: The `CWDOut` subroutine calculates the transfer from litter pools to soil decomposition:
-
-- `fragmentation_scaler`Uses (temperature and moisture-dependent, calculated per patch)
-- Fragments CWD → smaller CWD classes and fine litter
-- `bc_out`Fragments fine litter → soil decomposition pools (via )
-- `nlev_eff_decomp`Operates over soil layers for below-ground pools
-
-
-The fragmentation flux is accumulated in `site_mass%frag_out` for mass balance checking.
-
-Sources: [biogeochem/EDPhysiologyMod.F90:428-501, 505-591]
-
-## Call Sequence for Litter Production
-
-The daily dynamics loop orchestrates litter production in a specific sequence to ensure mass conservation and proper integration:
-
-![SVG image](../assets/images/4.5__Litter_Production_and_Turnover__img-05.svg)
-
-Key ordering considerations:
-
-Sources: [biogeochem/EDPhysiologyMod.F90:202-253, 428-591], [biogeochem/EDMainMod (call sequence)]
-
-## Mass Balance and Conservation
-
-The litter production system maintains strict mass balance through several mechanisms:
-
-### Flux Tracking Structure
+## Mass Balance
 
 Each PARTEH variable tracks multiple flux components:
 
-| Flux Component | Sign Convention | Meaning | 
-| --- | --- | --- |
-| net_alloc | + gain, - loss | Net allocation (includes retranslocation) | 
-| turnover | + is loss | Mass sent to litter | 
-| burned | + is loss | Mass consumed by fire | 
-| damaged | + is loss | Mass lost to damage | 
+| Flux | Sign | Meaning |
+|---|---|---|
+| `net_alloc` | + gain, - loss | Net allocation (includes retranslocation in) |
+| `turnover` | + | Mass sent to litter |
+| `burned` | + | Mass consumed by fire |
+| `damaged` | + | Mass lost to damage |
 
+`CheckMassConservation` methods verify daily balance. `site_massbal_type` accumulates `frag_out`, inputs, and losses for each element; `TotalBalanceCheck` is called at multiple points in `EDMainMod` to catch drift.
 
-The fundamental balance equation over a timestep:
+## Code Entry Points
 
-### Mass Balance Checks
-
-The `CheckMassConservation` method (in `prt_vartypes` ) verifies:
-
-Site-level mass balance tracking via `site_massbal_type` accumulates:
-
-- `frag_out`- total fragmentation flux to soil [kg/site/day]
-- Inputs and losses for each element type
-- `TotalBalanceCheck``EDMainMod`Checked at multiple points via in
-
-
-Sources: [parteh/PRTGenericMod.F90:180-200, 900-1050], [biogeochem/EDPhysiologyMod.F90:489-496]
+| Function | Location | Purpose |
+|---|---|---|
+| `PRTMaintTurnover` | `parteh/PRTLossFluxesMod.F90` | Continuous maintenance turnover |
+| `PRTDeciduousTurnover` | `parteh/PRTLossFluxesMod.F90` | Event-based abscission |
+| `PRTDamageLosses` | `parteh/PRTLossFluxesMod.F90` | Damage-driven loss |
+| `PRTBurnLosses` | `parteh/PRTLossFluxesMod.F90` | Fire-driven loss |
+| `SendCohortToLitter` | `EDCohortDynamicsMod.F90` | Whole-cohort mortality transfer |
+| `CWDInput` | `EDPhysiologyMod.F90` | Aggregate flux-to-pool inputs |
+| `PreDisturbanceIntegrateLitter` | `EDPhysiologyMod.F90` | Integrate litter state |
+| `CWDOut` | `EDPhysiologyMod.F90` | Fragmentation flux out |
+| `adjust_SF_CWD_frac` | `FatesLitterMod.F90:439-493` | DBH-dependent CWD size partitioning |

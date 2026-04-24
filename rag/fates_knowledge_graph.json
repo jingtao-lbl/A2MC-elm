@@ -2345,7 +2345,7 @@
       "name": "fates_cnp_nfix1",
       "pft": null,
       "category": "cnp",
-      "description": "fractional surcharge added to maintenance respiration that drives symbiotic fixation",
+      "description": "Fractional surcharge added to maintenance respiration that drives",
       "units": "fraction",
       "bounds": null,
       "code_location": null,
@@ -12868,50 +12868,6 @@
     },
     {
       "node_type": "Parameter",
-      "name": "fates_cnp_nfix",
-      "pft": null,
-      "category": "cnp",
-      "description": "Symbiotic N fixation fraction (0-1).",
-      "units": null,
-      "bounds": null,
-      "code_location": null,
-      "id": "parameter:fates_cnp_nfix"
-    },
-    {
-      "node_type": "Parameter",
-      "name": "fates_cnp_nfix",
-      "pft": 7,
-      "category": "cnp",
-      "description": "Symbiotic N fixation fraction (0-1). (PFT#7)",
-      "units": null,
-      "bounds": null,
-      "code_location": null,
-      "id": "parameter:fates_cnp_nfix:pft7"
-    },
-    {
-      "node_type": "Parameter",
-      "name": "fates_cnp_nfix",
-      "pft": 9,
-      "category": "cnp",
-      "description": "Symbiotic N fixation fraction (0-1). (PFT#9)",
-      "units": null,
-      "bounds": null,
-      "code_location": null,
-      "id": "parameter:fates_cnp_nfix:pft9"
-    },
-    {
-      "node_type": "Parameter",
-      "name": "fates_cnp_nfix",
-      "pft": 10,
-      "category": "cnp",
-      "description": "Symbiotic N fixation fraction (0-1). (PFT#10)",
-      "units": null,
-      "bounds": null,
-      "code_location": null,
-      "id": "parameter:fates_cnp_nfix:pft10"
-    },
-    {
-      "node_type": "Parameter",
       "name": "fates_cnp_km_nh4",
       "pft": null,
       "category": "cnp",
@@ -16654,30 +16610,6 @@
       "relation_type": "contains",
       "weight": 1.0,
       "source": "category:cnp",
-      "target": "parameter:fates_cnp_nfix"
-    },
-    {
-      "relation_type": "contains",
-      "weight": 1.0,
-      "source": "category:cnp",
-      "target": "parameter:fates_cnp_nfix:pft7"
-    },
-    {
-      "relation_type": "contains",
-      "weight": 1.0,
-      "source": "category:cnp",
-      "target": "parameter:fates_cnp_nfix:pft9"
-    },
-    {
-      "relation_type": "contains",
-      "weight": 1.0,
-      "source": "category:cnp",
-      "target": "parameter:fates_cnp_nfix:pft10"
-    },
-    {
-      "relation_type": "contains",
-      "weight": 1.0,
-      "source": "category:cnp",
       "target": "parameter:fates_cnp_km_nh4"
     },
     {
@@ -16939,10 +16871,22 @@
       "target": "dimension:fates_pft"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nfix1",
+      "target": "output:FATES_NFIX_SYM"
+    },
+    {
       "relation_type": "belongs_to",
       "weight": 1.0,
       "source": "parameter:fates_cnp_nfix1:pft7",
       "target": "pft:PFT7"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nfix1:pft7",
+      "target": "output:FATES_NFIX_SYM"
     },
     {
       "relation_type": "belongs_to",
@@ -16951,10 +16895,22 @@
       "target": "pft:PFT9"
     },
     {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nfix1:pft9",
+      "target": "output:FATES_NFIX_SYM"
+    },
+    {
       "relation_type": "belongs_to",
       "weight": 1.0,
       "source": "parameter:fates_cnp_nfix1:pft10",
       "target": "pft:PFT10"
+    },
+    {
+      "relation_type": "affects",
+      "weight": 1.0,
+      "source": "parameter:fates_cnp_nfix1:pft10",
+      "target": "output:FATES_NFIX_SYM"
     },
     {
       "relation_type": "has_dimension",
@@ -26170,24 +26126,6 @@
       "relation_type": "belongs_to",
       "weight": 1.0,
       "source": "parameter:fates_cnp_vmax_ptase:pft10",
-      "target": "pft:PFT10"
-    },
-    {
-      "relation_type": "belongs_to",
-      "weight": 1.0,
-      "source": "parameter:fates_cnp_nfix:pft7",
-      "target": "pft:PFT7"
-    },
-    {
-      "relation_type": "belongs_to",
-      "weight": 1.0,
-      "source": "parameter:fates_cnp_nfix:pft9",
-      "target": "pft:PFT9"
-    },
-    {
-      "relation_type": "belongs_to",
-      "weight": 1.0,
-      "source": "parameter:fates_cnp_nfix:pft10",
       "target": "pft:PFT10"
     },
     {

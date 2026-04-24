@@ -1,186 +1,154 @@
 # LAI and SAI Profiles
 
 <details>
-<summary>Relevant source files</summary>
+<summary>Relevant source files (FATES commit e85d997)</summary>
 
-
-- [biogeochem/EDCanopyStructureMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90)
-- [biogeophys/EDBtranMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90)
-- [biogeophys/EDSurfaceAlbedoMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90)
-
+- `biogeochem/EDCanopyStructureMod.F90`
+- `biogeochem/FatesAllometryMod.F90`
+- `biogeochem/FatesPatchMod.F90`
+- `biogeophys/EDSurfaceAlbedoMod.F90`
 
 </details>
 
 ## Purpose and Scope
 
-LAI (Leaf Area Index) and SAI (Stem Area Index) profiles describe the vertical distribution of leaf and stem area within the canopy. These profiles are fundamental to FATES canopy structure representation, providing the spatial organization needed for accurate radiation transfer, photosynthesis, and water transport calculations. This page documents how FATES organizes, calculates, and uses these vertical profiles.
+LAI (Leaf Area Index) and SAI (Stem Area Index) profiles describe the vertical distribution of leaf and stem area within the canopy. They are the direct inputs to the Norman two-stream radiation transfer model and therefore shape photosynthesis, transpiration, and surface albedo. This page documents how FATES stores these profiles, how they are calculated from cohort state, and how they are aggregated to patch-level totals.
 
-For information about how cohorts are assigned to canopy layers and the Perfect Plasticity Approximation, see [Canopy Layering and Perfect Plasticity](canopy-structure/ppa.md) . For details on radiation transfer through these profiles, see [Radiation Transfer and Albedo](biophysics/radiation.md) .
+For layer assignment and the Perfect Plasticity Approximation, see [Canopy Layering and Perfect Plasticity](ppa.md). For the radiation solver that consumes these profiles, see `biophysics/radiation.md`.
 
 ## Profile Data Structure
 
-LAI and SAI profiles are stored as three-dimensional arrays indexed by canopy layer, plant functional type (PFT), and vertical position within the layer:
+Profile variables live in `fates_patch_type` and are three-dimensional arrays indexed by `(canopy layer, PFT, vertical sub-layer)`:
 
-### Array Dimensions
-
-| Dimension | Parameter | Description | 
+| Dimension | Size parameter | Description |
 | --- | --- | --- |
-| Canopy Layer | nclmax | Maximum number of canopy layers (typically 2: canopy and understory) | 
-| PFT | numpft | Number of plant functional types in the simulation | 
-| Vertical Layer | nlevleaf | Number of vertical leaf layers within each canopy layer | 
+| Canopy layer | `nclmax` | Compile-time constant = 2 (`EDParamsMod.F90:98`) |
+| PFT | `maxpft` | Maximum PFTs compiled in |
+| Vertical sub-layer | `nlevleaf` | Number of vertical discretisation bins within a canopy layer |
 
+### Profile variables (`FatesPatchMod.F90:99-103`)
 
-### Key Profile Variables
+```fortran
+real(r8) :: elai_profile(nclmax,maxpft,nlevleaf)
+    ! exposed leaf area [m2 leaf / m2 contributing crown area]
+real(r8) :: esai_profile(nclmax,maxpft,nlevleaf)
+    ! exposed stem area [m2 stem / m2 contributing crown area]
+real(r8) :: tlai_profile(nclmax,maxpft,nlevleaf)
+    ! total (including snow-occluded) leaf area [m2 leaf / m2 contributing crown area]
+real(r8) :: tsai_profile(nclmax,maxpft,nlevleaf)
+    ! total stem area [m2 stem / m2 contributing crown area]
+real(r8) :: canopy_area_profile(nclmax,maxpft,nlevleaf)
+    ! fraction of patch ground area occupied by this (cl, ft, iv) element [0-1]
+```
 
-The following profile arrays are stored in the `fates_patch_type` :
+**Critical unit convention.** `tlai_profile`, `elai_profile`, `tsai_profile`, and `esai_profile` are all expressed **per unit contributing crown area**, not per unit ground area. The source header comment is explicit (`FatesPatchMod.F90:99-100`): `[m2 leaf/m2 contributing crown area]`. To obtain patch-level totals expressed per unit ground area, these profiles must be multiplied by `canopy_area_profile` (which carries the crown-area-to-ground-area weighting) and summed. This is exactly what `calc_areaindex` does (see below).
 
-- **`elai_profile(L,ft,iv)`**- Effective leaf area index profile [m² leaf / m² ground]
-- **`esai_profile(L,ft,iv)`**- Effective stem area index profile [m² stem / m² ground]
-- **`canopy_area_profile(L,ft,iv)`**- Fraction of ground area occupied by this profile element [0-1]
+The `e` prefix (`elai_profile`, `esai_profile`) denotes the **exposed** fraction — the portion of leaf/stem area that is not occluded by snow. The `t` prefix denotes the **total** area including snow-occluded material.
 
+## Calculation Workflow
 
-Sources:  [biogeochem/EDCanopyStructureMod.F90 1-100](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L1-L100)  [biogeophys/EDSurfaceAlbedoMod.F90 315-343](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L315-L343)
+The relevant subroutines all live in `EDCanopyStructureMod.F90`:
 
-## Profile Organization Diagram
-
-![SVG image](../assets/images/5.2__LAI_and_SAI_Profiles__img-01.svg)
-
-Sources:  [biogeophys/EDSurfaceAlbedoMod.F90 308-347](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L308-L347)  [biogeochem/EDCanopyStructureMod.F90 26](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L26-L26)
-
-## Profile Calculation and Update
-
-LAI and SAI profiles are calculated from cohort-level properties and updated through several pathways:
-
-### Calculation Functions
-
-- **`UpdateCohortLAI`**- Updates individual cohort LAI from biomass using allometric relationships
-- **`UpdatePatchLAI`**- Aggregates cohort LAI values into patch-level vertical profiles
-- **`calc_areaindex`**- Integrates profiles to compute total patch LAI or SAI
-
-
-### Cohort to Profile Workflow
-
-![SVG image](../assets/images/5.2__LAI_and_SAI_Profiles__img-02.svg)
-
-Sources:  [biogeochem/EDCanopyStructureMod.F90 55-60](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L55-L60)  [biogeophys/EDSurfaceAlbedoMod.F90 1209](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L1209-L1209)
-
-## Vertical Discretization
-
-Within each canopy layer and PFT column, the leaf and stem area is distributed across `nlevleaf` vertical layers. This discretization enables:
-
-### Layer Properties
-
-Each vertical layer `iv` contains:
-
-| Property | Variable | Description | 
+| Routine | Location | Responsibility |
 | --- | --- | --- |
-| Leaf Area | elai_profile(L,ft,iv) | LAI in this layer [m²/m²] | 
-| Stem Area | esai_profile(L,ft,iv) | SAI in this layer [m²/m²] | 
-| Crown Coverage | canopy_area_profile(L,ft,iv) | Fraction of ground covered [0-1] | 
+| `UpdateCohortLAI` | `:2171-2206` | For one cohort, call `tree_lai` and `tree_sai` to set `currentCohort%treelai` and `currentCohort%treesai` (both per crown area), and set `currentCohort%nv` (number of filled vertical sub-layers in that cohort's crown) |
+| `UpdatePatchLAI` | `:2122-2168` | Walk all cohorts from top layer downward. Call `UpdateCohortLAI` on each and accumulate `canopy_layer_tlai(cl)` as an average weighted by `c_area / total_canopy_area` |
+| `leaf_area_profile` | `:1467-1794` | Build the full `tlai_profile`, `elai_profile`, `tsai_profile`, `esai_profile`, `canopy_area_profile`, and `layer_height_profile` arrays from cohort state, distributing each cohort's LAI/SAI across `nlevleaf` vertical bins |
+| `calc_areaindex` | `:2024-2086` | Integrate a given profile (`elai`, `tlai`, `esai`, or `tsai`) to a single patch-level scalar (per unit ground area) |
 
+`tree_lai` (`FatesAllometryMod.F90:636-761`) is the workhorse for individual-cohort LAI. It takes `leaf_c`, `c_area`, `nplant`, and cohort context, computes `leafc_per_unitarea = leaf_c / (c_area/nplant)` (kgC per m² of cohort crown), then integrates an exponential-in-depth SLA profile. When the SLA floor (`slamax`) is reached, the remaining leaf carbon is added linearly (see the [index page](index.md) for the equation). The return value is in units of `m² leaf / m² crown`.
 
-The vertical layers are numbered from top (iv=1) to bottom (iv=nlevleaf) within each canopy layer.
+`tree_sai` (`FatesAllometryMod.F90:765-827`) scales SAI as:
 
-Sources:  [biogeophys/EDSurfaceAlbedoMod.F90 308-347](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L308-L347)  [biogeochem/EDCanopyStructureMod.F90 26](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L26-L26)
+```fortran
+tree_sai = elongf_stem * allom_sai_scaler(pft) * target_lai
+```
 
-## Leaf and Stem Area Fractions
+where `target_lai` is `tree_lai` recomputed with `elongf_leaf = 1.0` (i.e. using target, fully-flushed leaf biomass rather than current leaf biomass). SAI therefore tracks the stable allometric target rather than the current leaf phenology state, but can still be modulated down by stem phenology (`elongf_stem`) for grasses.
 
-When both leaves and stems are present in a layer, their relative contributions are calculated:
+## Integrating to Patch Totals: `calc_areaindex`
 
-[biogeophys/EDSurfaceAlbedoMod.F90 315-323](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L315-L323)
+The function that turns the 3-D profiles into scalar patch totals is `calc_areaindex` (`EDCanopyStructureMod.F90:2024-2086`). Its header comment states the conversion explicitly: *"this is the square meters of leaf per square meter of ground area. It does so by integrating over the depth and functional type profile of leaf area which are per area of crown. This value has to be scaled by crown area to convert to ground area."*
 
-These fractions weight the optical properties (reflectance, transmittance) for radiation calculations:
+For `ai_type = 'elai'`:
 
-[biogeophys/EDSurfaceAlbedoMod.F90 327-328](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L327-L328)
+```fortran
+ai = 0._r8
+do cl = 1, cpatch%NCL_p
+   do ft = 1, numpft
+      ai = ai + sum( cpatch%canopy_area_profile(cl,ft,1:cpatch%nrad(cl,ft)) * &
+                     cpatch%elai_profile(cl,ft,1:cpatch%nrad(cl,ft)) )
+   enddo
+enddo
+```
 
-Sources:  [biogeophys/EDSurfaceAlbedoMod.F90 315-342](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L315-L342)
+Three things to note:
 
-## Snow Occlusion Effects
+1. The profile values (`elai_profile`, in m² leaf / m² crown area) are multiplied by `canopy_area_profile` (the fraction of ground the element covers) to yield the per-ground-area contribution.
+2. The sum runs over both PFT and the filled vertical sub-layers up to `nrad(cl,ft)`.
+3. A legacy minimum floor `ai = max(ai_min, ai)` with `ai_min = 0.1` is applied at the end (`EDCanopyStructureMod.F90:2082`). This is flagged in the source as an artifact from old testing that has been retained to preserve bitwise reproducibility, and is on the TODO list for removal.
 
-Snow on the canopy modifies the optical properties of LAI and SAI profiles. The fraction of canopy covered by snow ( `fcansno` ) blends vegetation optical properties with snow properties:
+The same function is called for `'tlai'`, `'esai'`, and `'tsai'`, substituting the appropriate profile. These calls produce the four patch-level diagnostics that are exported to the host land model:
 
-[biogeophys/EDSurfaceAlbedoMod.F90 331-334](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L331-L334)
-
-Where:
-
-- `rho_snow(ib)`- Snow reflectance by waveband (typically 0.80 for visible, 0.55 for NIR)
-- `tau_snow(ib)`- Snow transmittance by waveband (typically 0.01 for both bands)
-- `fcansno`- Fraction of canopy area covered by snow [0-1]
-
-
-Sources:  [biogeophys/EDSurfaceAlbedoMod.F90 60-65](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L60-L65)  [biogeophys/EDSurfaceAlbedoMod.F90 331-334](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L331-L334)
-
-## Sunlit and Shaded LAI Partitioning
-
-LAI profiles are partitioned into sunlit and shaded fractions for photosynthesis calculations. This partitioning accounts for the fact that sunlit leaves receive both direct and diffuse radiation, while shaded leaves receive only diffuse radiation.
-
-### Calculation
-
-The sunlit fraction of each layer is determined by direct beam penetration:
-
-[biogeophys/EDSurfaceAlbedoMod.F90 501-506](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L501-L506)
-
-Where:
-
-- `k_dir(ft)`- Direct beam extinction coefficient (function of leaf angle and solar zenith angle)
-- `laisum`- Cumulative LAI from top of canopy to middle of current layer
-- `f_sun(L,ft,iv)`- Fraction of LAI that is sunlit [0-1]
-
-
-### Profile Storage
-
-Sunlit and shaded LAI profiles are stored separately:
-
-[biogeophys/EDSurfaceAlbedoMod.F90 1178-1185](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L1178-L1185)
-
-Sources:  [biogeophys/EDSurfaceAlbedoMod.F90 485-527](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L485-L527)  [biogeophys/EDSurfaceAlbedoMod.F90 1178-1185](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L1178-L1185)
-
-## Profile Usage in Model Processes
-
-### Radiation Transfer
-
-LAI and SAI profiles are the foundation for the Norman two-stream radiation model. Each vertical layer acts as a scattering element:
-
-![SVG image](../assets/images/5.2__LAI_and_SAI_Profiles__img-03.svg)
-
-The radiation code iterates through each layer, calculating transmission, reflection, and absorption using the profile values [biogeophys/EDSurfaceAlbedoMod.F90 836-843](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L836-L843)
-
-Sources:  [biogeophys/EDSurfaceAlbedoMod.F90 178-1104](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L178-L1104)  [biogeophys/EDSurfaceAlbedoMod.F90 308-347](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L308-L347)
-
-### Transpiration and Water Uptake
-
-While transpiration calculations do not directly use the vertical LAI profiles, they use the integrated patch-level LAI calculated from the profiles:
-
-[biogeophys/EDSurfaceAlbedoMod.F90 1209](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L1209-L1209)
-
-This total LAI is used with sunlit/shaded fractions to determine transpiration demand:
-
-[biogeophys/EDSurfaceAlbedoMod.F90 1211-1212](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L1211-L1212)
-
-Sources:  [biogeophys/EDSurfaceAlbedoMod.F90 1209-1213](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L1209-L1213)  [biogeophys/EDBtranMod.F90 88-262](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L88-L262)
-
-### Canopy Structure Diagnostics
-
-LAI and SAI profiles provide diagnostic output variables:
-
-| Variable | Description | Usage | 
+| Diagnostic | Profile integrated | Description |
 | --- | --- | --- |
-| elai_pa | Total effective LAI per patch | Host model boundary condition | 
-| tlai_pa | Total LAI per patch | Host model boundary condition | 
-| esai_pa | Total effective SAI per patch | Host model boundary condition | 
-| tsai_pa | Total SAI per patch | Host model boundary condition | 
-| laisun_pa | Sunlit LAI per patch | Photosynthesis, diagnostics | 
-| laisha_pa | Shaded LAI per patch | Photosynthesis, diagnostics | 
+| `elai_pa` | `elai_profile` | Exposed LAI per patch (per unit ground area) |
+| `tlai_pa` | `tlai_profile` | Total LAI per patch (including snow-occluded) |
+| `esai_pa` | `esai_profile` | Exposed SAI per patch |
+| `tsai_pa` | `tsai_profile` | Total SAI per patch |
 
+## `canopy_layer_tlai`: a Different Aggregation
 
-These integrated values are calculated by summing over all profile elements, weighted by their canopy area coverage.
+`UpdatePatchLAI` also maintains `currentPatch%canopy_layer_tlai(cl)`, which is a coarser per-layer total (`FatesPatchMod.F90:93`, units `m2 veg / m2 canopy area`). It is accumulated as:
 
-Sources:  [biogeophys/EDSurfaceAlbedoMod.F90 1196-1213](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L1196-L1213)  [biogeochem/EDCanopyStructureMod.F90 55](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L55-L55)
+```fortran
+currentPatch%canopy_layer_tlai(cl) = &
+    currentPatch%canopy_layer_tlai(cl) + &
+    currentCohort%treelai * currentCohort%c_area / currentPatch%total_canopy_area
+```
 
-## Profile Update Timing
+(`EDCanopyStructureMod.F90:2159-2160`). This is the average cohort `treelai` weighted by crown-area fraction of the canopy. Its primary use is inside `tree_lai` itself, which takes `canopy_layer_tlai` of the layer above as `canopy_lai_above` to offset the exponential SLA profile (`FatesAllometryMod.F90:685-695`). It is not the same quantity as `tlai_pa` from `calc_areaindex`; the two normalise by different areas (canopy area vs ground area).
 
-LAI and SAI profiles are updated at different frequencies depending on the process:
+## Sunlit / Shaded Partitioning
 
-The profiles must be recalculated whenever cohort properties change or cohorts are promoted/demoted between canopy layers.
+LAI is further partitioned into sunlit and shaded fractions inside `EDSurfaceAlbedoMod.F90` for the photosynthesis calculation. The sunlit fraction of each sub-layer is computed from the direct-beam extinction coefficient and cumulative LAI from the top of the canopy:
 
-Sources:  [biogeochem/EDCanopyStructureMod.F90 90-332](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L90-L332)  [biogeophys/EDSurfaceAlbedoMod.F90 68-173](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L68-L173)
+```fortran
+f_sun(L,ft,iv) = exp( -k_dir(ft) * laisum )
+```
+
+(`EDSurfaceAlbedoMod.F90:501-506`, where `laisum` is the cumulative LAI to the middle of layer `iv`). The resulting sunlit and shaded LAI profiles are then stored separately and exported as `laisun_pa` / `laisha_pa` (`EDSurfaceAlbedoMod.F90:1178-1213`).
+
+## Snow Occlusion
+
+The difference between `tlai`/`tsai` and `elai`/`esai` comes from canopy-snow occlusion. In the radiation solver, `fcansno` blends vegetation optical properties with snow properties (`EDSurfaceAlbedoMod.F90:331-334`):
+
+```fortran
+rho_blend = (1 - fcansno) * rho_veg + fcansno * rho_snow
+tau_blend = (1 - fcansno) * tau_veg + fcansno * tau_snow
+```
+
+where `rho_snow` is typically 0.80 (visible) / 0.55 (NIR) and `tau_snow` is ~0.01 in both bands. The exposed-area profiles therefore already account for the snow-occluded fraction having been excluded from the photosynthetically active area.
+
+## Update Timing
+
+Profiles are rebuilt whenever cohort state changes or cohorts cross canopy layers:
+
+| Trigger | Routine invoked | Source |
+| --- | --- | --- |
+| Daily dynamics (after growth, mortality, fusion) | `canopy_structure` → `leaf_area_profile` | `EDCanopyStructureMod.F90:1437` |
+| Start of a radiation timestep | `leaf_area_profile` (via ED interface) | `EDCanopyStructureMod.F90:1467` |
+| Per-cohort update inside the daily loop | `UpdateCohortLAI` → `UpdatePatchLAI` | `EDCanopyStructureMod.F90:2122-2206` |
+
+## Key Profile Variables Reference
+
+| Variable | Where defined | Units | Meaning |
+| --- | --- | --- | --- |
+| `elai_profile(cl,ft,iv)` | `FatesPatchMod.F90:99` | m² leaf / m² crown area | Exposed LAI in sub-layer `iv` of `(cl,ft)` |
+| `esai_profile(cl,ft,iv)` | `FatesPatchMod.F90:100` | m² stem / m² crown area | Exposed SAI in sub-layer `iv` |
+| `tlai_profile(cl,ft,iv)` | `FatesPatchMod.F90:101` | m² leaf / m² crown area | Total LAI (incl. snow-occluded) |
+| `tsai_profile(cl,ft,iv)` | `FatesPatchMod.F90:102` | m² stem / m² crown area | Total SAI (incl. snow-occluded) |
+| `canopy_area_profile(cl,ft,iv)` | `FatesPatchMod.F90:103` | fraction [0, 1] | Fraction of patch ground area covered by this (cl,ft,iv) element. Used as the crown→ground weight in `calc_areaindex`. |
+| `canopy_layer_tlai(cl)` | `FatesPatchMod.F90:93` | m² leaf / m² canopy area | Per-layer mean LAI, used internally by `tree_lai` |
+| `currentCohort%treelai` | `FatesCohortMod.F90` | m² leaf / m² crown area | Cohort LAI, per the cohort's own crown footprint |
+| `currentCohort%treesai` | `FatesCohortMod.F90` | m² stem / m² crown area | Cohort SAI |

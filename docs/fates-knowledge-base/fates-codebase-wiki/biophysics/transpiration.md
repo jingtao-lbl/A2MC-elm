@@ -1,175 +1,140 @@
-# 6.4 Transpiration and Soil Moisture Stress
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-<details>
-<summary>Relevant source files</summary>
-
-
-- [biogeophys/EDBtranMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90)
-- [biogeophys/EDSurfaceAlbedoMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90)
-- [biogeophys/FatesHydroWTFMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesHydroWTFMod.F90)
-- [biogeophys/FatesPlantHydraulicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90)
-- [functional_unit_testing/hydro/HydroUTestDriver.py](https://github.com/jingtao-lbl/fates/blob/e85d9977/functional_unit_testing/hydro/HydroUTestDriver.py)
-- [main/FatesHydraulicsMemMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHydraulicsMemMod.F90)
-
-
-</details>
+# Transpiration and Soil Moisture Stress (BTRAN)
 
 ## Purpose and Scope
 
-This page documents how FATES calculates soil moisture stress on transpiration and distributes root water uptake across soil layers. When plant hydraulics is disabled, FATES uses a simple empirical stress function (BTRAN) to limit photosynthesis based on soil water potential. When plant hydraulics is enabled (see [6.3 Plant Hydraulics](biophysics/hydraulics/index.md) ), a mechanistic water transport model replaces the empirical approach, though BTRAN is still calculated for diagnostic purposes.
+This page documents how FATES calculates the soil moisture stress factor `BTRAN` and distributes root water uptake across soil layers when plant hydraulics is disabled. When plant hydraulics is enabled (`hlm_use_planthydro == itrue`), the mechanistic soil-plant-atmosphere water transport model in `FatesPlantHydraulicsMod` replaces the empirical `BTRAN` approach, though a diagnostic `btran_pa` is still produced for the host land model.
 
-This page focuses on:
+For the mechanistic pathway see [Plant Hydraulics](hydraulics/index.md). For how `btran_eff` multiplies into the stomatal conductance solve, see [Photosynthesis and Respiration](photosynthesis.md).
 
-- The BTRAN calculation algorithm and parameters
-- Root uptake distribution across soil layers
-- [6.2 Photosynthesis and Respiration](biophysics/photosynthesis.md)Integration with photosynthesis (covered in )
-- The interface between simple and hydraulic stress calculations
+Primary source file: `biogeophys/EDBtranMod.F90`.
 
+## CRITICAL: Parameter Units and Semantics
 
-For the detailed plant hydraulic architecture and water transport equations, see [6.3 Plant Hydraulics](biophysics/hydraulics/index.md) .
+The two PFT parameters that control the BTRAN stress curve, `smpsc` and `smpso`, are a well-known documentation hazard.
 
-## BTRAN Stress Function Overview
+- **Both parameters are in millimetres (mm) of water potential, NOT MPa.** `parameter_files/fates_params_default.cdl:437-442` declares `fates_nonhydro_smpsc:units = "mm"` and `fates_nonhydro_smpso:units = "mm"`.
+- **Default values** in `parameter_files/fates_params_default.cdl:1348,1351` are `fates_nonhydro_smpsc = -255000` mm and `fates_nonhydro_smpso = -66000` mm for every PFT. Converted to MPa these are roughly -2.50 MPa and -0.65 MPa, but the parameter file stores and the code consumes them in **mm**.
+- **`smpsc` is the water potential at FULL stomatal closure**, and **`smpso` is the water potential at FULL stomatal opening**. The letter suffix matches: `o`=open, `c`=close. `main/EDPftvarcon.F90:75-77` declares them as "Soil water potential at full stomatal opening" and "Soil water potential at full stomatal closure", which `parameter_files/fates_params_default.cdl:439,442` repeats verbatim.
+- Because both are negative and `smpsc` is more negative than `smpso`, the inequality `smpsc < smpso < 0` holds. The wet end (rresis→1) is bounded above by `smpso`; the dry end (rresis→0) is bounded below by `smpsc`.
 
-The transpiration wetness factor (BTRAN) is a dimensionless scalar [0-1] that reduces stomatal conductance and photosynthesis when soil water becomes limiting. The calculation integrates soil water stress across all soil layers, weighted by the vertical distribution of fine roots.
+Setting these parameters off by a factor of ~1000, or swapping their roles, silently shifts the entire BTRAN response and is a leading source of spurious calibration results. Always verify units against `fates_params_default.cdl` before assigning new values.
 
-![SVG image](../assets/images/6.4__Transpiration_and_Soil_Moisture_Stress__img-01.svg)
+## Implementation Module
 
-Sources:  [biogeophys/EDBtranMod.F90 88-262](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L88-L262)
+`biogeophys/EDBtranMod.F90` exports three public procedures:
 
-## Implementation: EDBtranMod
-
-The primary implementation is in module `EDBtranMod` , which provides three key functions:
-
-| Function | Purpose | Returns | 
+| Procedure | Purpose | Output |
 | --- | --- | --- |
-| btran_ed | Main driver for BTRAN calculation | Updates bc_out%btran_pa, bc_out%rootr_pasl | 
-| check_layer_water | Determines if soil layer has available liquid water | Logical (true if water available) | 
-| get_active_suction_layers | Identifies which layers can provide water uptake | Updates bc_out%active_suction_sl | 
+| `btran_ed` | Main driver for the BTRAN calculation | Updates `bc_out%btran_pa`, `bc_out%rootr_pasl` |
+| `get_active_suction_layers` | Marks layers where soil water can be extracted | Sets `bc_out%active_suction_sl` |
+| `check_layer_water` | Tests whether a single layer has liquid water above freezing | Returns a logical |
 
+`check_layer_water` (lines 41-56) returns `.true.` only when `h2o_liq_vol > 0` and `tempk > tfrz - 2 K`, so frozen and fully dry layers are excluded from uptake.
 
-### Root Resistance Calculation
+## The BTRAN Algorithm
 
-For each PFT and soil layer, root resistance is calculated as:
+`btran_ed` (lines 88-262) walks the site-patch-PFT hierarchy and, for each `(ft, j)` pair, computes a layer root resistance `rresis`:
 
-Where:
+```fortran
+smp_node = max(smpsc(ft), bc_in(s)%smp_sl(j))
+rresis   = min( (bc_in(s)%eff_porosity_sl(j) / bc_in(s)%watsat_sl(j)) *            &
+                 (smp_node - smpsc(ft)) / (smpso(ft) - smpsc(ft)), 1._r8 )
+```
+(`biogeophys/EDBtranMod.F90:160-163`).
 
-- `smp_node``smpsc`= soil matric potential in the layer [MPa], bounded by
-- `smpsc`= matric potential at onset of stomatal closure (PFT parameter) [MPa]
-- `smpso`= matric potential at complete stomatal closure (PFT parameter) [MPa]
-- `eff_porosity`= unfrozen porosity in the layer [-]
-- `watsat`= total porosity at saturation [-]
+Reading the code carefully:
 
+1. `smp_node` is the layer soil matric potential clipped to be no lower (no more negative) than `smpsc`. The host-model `smp_sl(j)` is in **mm**, matching the parameter units.
+2. `rresis` is the linear ramp `(smp_node - smpsc) / (smpso - smpsc)`, multiplied by an ice fraction `(eff_porosity / watsat)`, and capped at `1.0`.
+3. At the driest end, `smp_node = smpsc` gives `rresis = 0` → complete stomatal closure.
+4. At `smp_node = smpso` (and `eff_porosity = watsat`), the numerator equals the denominator and the min clamps to `rresis = 1.0` → no water stress.
+5. For any `smp_sl > smpso`, the unclamped value exceeds 1 and the `min(..., 1._r8)` keeps the result at unity.
 
-The `(eff_porosity / watsat)` term accounts for ice content reducing available water.
+The `(eff_porosity / watsat)` factor further suppresses uptake in partially frozen layers, because only unfrozen porosity is considered effective.
 
-Sources:  [biogeophys/EDBtranMod.F90 160-174](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L160-L174)
+### Piecewise-linear BTRAN shape
 
-### Weighted Integration Across Layers
+Combining the clamp and the linear ramp gives the conventional piecewise description:
 
-The PFT-level BTRAN is the sum of root resistances across all layers:
+| Layer state | Condition | `rresis` |
+| --- | --- | --- |
+| Wet (no stress) | `smp_sl >= smpso` | `1.0` |
+| Transitional | `smpsc < smp_sl < smpso` | `(smp_sl - smpsc) / (smpso - smpsc)`, scaled by `eff_porosity/watsat` |
+| Dry (full stress) | `smp_sl <= smpsc` | `0.0` |
 
-Root uptake distribution is then normalized:
+The **width of the transition** is `|smpso - smpsc|` ≈ 189000 mm (~1.85 MPa) with defaults. Narrowing this width makes the PFT behave more like an on-off switch; widening it makes the stress response gentler.
 
-This ensures `Σ rootr(j) = 1.0` and distributes total transpiration across layers based on both root density and water availability.
+## Layer Weighting and Root Uptake Distribution
 
-Sources:  [biogeophys/EDBtranMod.F90 165-185](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L165-L185)
+The per-PFT wetness factor `cpatch%btran_ft(ft)` is accumulated across layers weighted by root fraction:
 
-## Data Flow and Structure Integration
+```fortran
+root_resis(ft,j)     = rootfrac_scr(j) * rresis
+cpatch%btran_ft(ft) = sum_j root_resis(ft,j)
+```
+(`biogeophys/EDBtranMod.F90:165-170`).
 
-![SVG image](../assets/images/6.4__Transpiration_and_Soil_Moisture_Stress__img-02.svg)
+Root fractions come from `set_root_fraction` in `biogeochem/FatesAllometryMod.F90`, which uses the two-parameter Zeng (2001) exponential model controlled by PFT parameters `roota` and `rootb` plus a maximum-rooting-depth bound.
 
-Sources:  [biogeophys/EDBtranMod.F90 88-262](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L88-L262)  [main/EDTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90#LNaN-LNaN)  [biogeophys/FatesInterfaceTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesInterfaceTypesMod.F90#LNaN-LNaN)
+Root uptake is then renormalized so the per-layer fractions sum to one across layers that had water (lines 179-185), guaranteeing that the total transpiration flux handed back to the host model is distributed among layers in proportion to both root density and layer water availability.
 
-## Root Vertical Distribution
+## Patch-Level Output to the Host Land Model
 
-Root fraction profiles are calculated using the two-parameter exponential model from Zeng (2001):
+After the PFT loop, `btran_ed` produces two patch-level outputs via the `bc_out` structure:
 
-Where `β = depth_scale_factor(roota, rootb, max_rooting_depth)` .
-
-The parameters `roota` and `rootb` are PFT-specific and control the vertical distribution shape. This calculation is performed by `set_root_fraction` from `FatesAllometryMod` .
-
-Sources:  [biogeophys/EDBtranMod.F90 149-150](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L149-L150)  [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#LNaN-LNaN)
-
-## Integration with Plant Hydraulics
-
-When plant hydraulics is enabled ( `hlm_use_planthydro == itrue` ), the mechanistic hydraulic model calculates water stress directly from xylem water potentials. However, BTRAN is still computed for diagnostic output to the host model:
-
-![SVG image](../assets/images/6.4__Transpiration_and_Soil_Moisture_Stress__img-03.svg)
-
-The cohort-level hydraulic stress ( `ccohort%co_hydr%btran` ) is calculated from the leaf water potential in the hydraulics solver and represents the fractional loss of conductivity at the stomata. See [6.3 Plant Hydraulics](biophysics/hydraulics/index.md) for details on this calculation.
-
-Sources:  [biogeophys/EDBtranMod.F90 224-258](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L224-L258)  [biogeophys/FatesPlantHydraulicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#LNaN-LNaN)
-
-## PFT Weighting for Patch-Level Output
-
-The patch-level BTRAN output to the host model is computed as a weighted average across PFTs, where weights are the LAI-weighted stomatal conductances:
-
-Similarly, the root uptake distribution `rootr_pasl(patch, layer)` is averaged across PFTs weighted by their conductances. This ensures that the spatial distribution of transpiration reflects both root architecture and canopy conductance.
-
-Sources:  [biogeophys/EDBtranMod.F90 189-248](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L189-L248)
-
-## Layer Water Availability Check
-
-The function `check_layer_water` determines if a soil layer can supply water:
-
-This checks for:
-
-Layers failing this check are excluded from root uptake calculations, with their `root_resis` set to zero.
-
-Sources:  [biogeophys/EDBtranMod.F90 41-56](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L41-L56)
-
-## Key Parameters
-
-The stress response curve is controlled by two PFT-specific parameters in `EDPftvarcon` :
-
-| Parameter | Description | Typical Range | Units | 
-| --- | --- | --- | --- |
-| smpsc | Soil matric potential at which stomatal closure begins | -1.5 to -0.5 | MPa | 
-| smpso | Soil matric potential at complete stomatal closure | -5.0 to -2.0 | MPa | 
-
-
-The difference `(smpso - smpsc)` determines the steepness of the stress response. A larger difference creates a more gradual stress response, while a smaller difference creates an abrupt cutoff.
-
-These parameters are read from the parameter file and stored in the `EDPftvarcon_inst` object.
-
-Sources:  [biogeophys/EDBtranMod.F90 128-131](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L128-L131)  [main/EDPftvarcon.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#LNaN-LNaN)
-
-## Stress Response Curve
-
-The relationship between soil matric potential and root resistance follows a piecewise linear function:
-
-- `smp > smpsc``rresis = 1.0`For : no stress,
-- `smpso < smp < smpsc``rresis = (smp - smpsc) / (smpso - smpsc)`For : linear decline,
-- `smp < smpso``rresis = 0.0`For : complete stress,
-
-
-The actual BTRAN value is the root-fraction-weighted sum of `rresis` values across all layers, so partial stress in deep layers with low root density has less impact than stress in shallow layers with high root density.
-
-Sources:  [biogeophys/EDBtranMod.F90 160-174](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L160-L174)
+- `bc_out(s)%btran_pa(ifp)` — PFT-weighted wetness factor for diagnostic output. The PFT weights are the cohort LAI-weighted stomatal conductances `cpatch%pftgs(ft) = Σ cohort%g_sb_laweight` summed over cohorts (lines 193-198). When `hlm_use_planthydro == itrue`, this branch is skipped and a companion routine `BTranForHLMDiagnosticsFromCohortHydr` in `FatesPlantHydraulicsMod` fills `btran_pa` from the hydraulic `co_hydr%btran` instead (lines 224-235).
+- `bc_out(s)%rootr_pasl(ifp,j)` — layer fractions of transpired water. Computed by averaging `root_resis(ft,j)` across PFTs using the same conductance weights (lines 206-218), then rescaled so the layer sum is exactly one within `1e-10` tolerance (lines 237-246).
 
 ## Connection to Photosynthesis
 
-The BTRAN value computed here is used in the photosynthesis calculations to limit stomatal conductance. In `FatesPlantRespPhotosynthMod` , the stomatal conductance is multiplied by BTRAN (when hydraulics is off) or by the hydraulic stress factor (when hydraulics is on). This reduces the diffusion of CO₂ into the leaf and therefore limits photosynthesis under water stress.
+Inside `FatesPlantRespPhotosynthMod`, each PFT's `btran_ft` is used as the stomatal multiplier `btran_eff` (line 475). `btran_eff` scales the stomatal conductance intercept and, through the Ball-Berry / Medlyn solve, suppresses net assimilation under dry conditions. See [Photosynthesis and Respiration](photosynthesis.md).
 
-See [6.2 Photosynthesis and Respiration](biophysics/photosynthesis.md) for details on how BTRAN modulates stomatal conductance in the photosynthesis solver.
+### Salinity stress overlay
 
-Sources:  [biogeophys/EDBtranMod.F90 88-262](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L88-L262)  [biogeophys/FatesPlantRespPhotosynthMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantRespPhotosynthMod.F90#LNaN-LNaN)
+When the optional salinity module is active (`do_fates_salinity == .true.`), an additional multiplicative factor `bstress_sal_ft(ft)` is applied after `btran_eff` is assigned:
+
+```fortran
+btran_eff = btran_eff * currentPatch%bstress_sal_ft(ft)
+```
+(`biogeophys/FatesPlantRespPhotosynthMod.F90:488-490`).
+
+`bstress_sal_ft` is computed by `FatesBstressMod.F90` and is independent of the soil moisture pathway. The BTRAN diagnostics reported back to the host do NOT include this salinity factor. This means that under salt stress the effective gs multiplier seen by photosynthesis is `btran_eff × bstress_sal_ft`, while the patch-level `btran_pa` output still reports only the moisture component.
+
+## Key Parameters
+
+| Parameter | Description | Units | Default (all PFTs) | Source |
+| --- | --- | --- | --- | --- |
+| `fates_nonhydro_smpsc` | Soil water potential at full stomatal closure | mm | -255000 | `fates_params_default.cdl:437-439, 1348` |
+| `fates_nonhydro_smpso` | Soil water potential at full stomatal opening | mm | -66000 | `fates_params_default.cdl:440-442, 1351` |
+| `fates_allom_zroot_*` / `roota` / `rootb` | Root vertical distribution controls | varies | PFT-specific | `main/EDPftvarcon.F90` |
+
+`smpsc` and `smpso` are stored in `EDPftvarcon_inst%smpsc(:)` and `EDPftvarcon_inst%smpso(:)`. They are PFT-indexed and must satisfy `smpsc < smpso < 0` in mm. If the user writes positive values or supplies MPa-scale numbers (e.g. `-2.0`), the code will still run but the stress curve will be crushed against the wet end and `BTRAN` will effectively be identically one at all soil moisture states.
+
+## Integration with Plant Hydraulics
+
+The BTRAN computation above is executed only when `hlm_use_planthydro == ifalse` (integer flag, not logical). When hydraulics is active (`hlm_use_planthydro == itrue`), FATES bypasses the empirical ramp and relies on the mechanistic leaf water potential passed back from `wkf_plant(stomata_p_media,ft)%p%ftc_from_psi(psi_ag(1))`, as shown in `FatesPlantHydraulicsMod.F90:2651`. The routine `BTranForHLMDiagnosticsFromCohortHydr` then populates `bc_out%btran_pa` from the cohort-level hydraulic `btran`, so the host model always receives a scalar stress diagnostic regardless of which pathway is active.
 
 ## Diagnostic Output
 
-The module outputs three key arrays through the `bc_out` boundary condition structure:
+Through the `bc_out` interface the host land model receives:
 
-These outputs are used by the host land model (CLM/ELM) to:
+- `bc_out(s)%btran_pa(ifp)` — patch-level moisture wetness factor, `[0, 1]`.
+- `bc_out(s)%rootr_pasl(ifp,j)` — fraction of transpiration drawn from each soil layer, summing to `1.0`.
+- `bc_out(s)%active_suction_sl(j)` — boolean indicating which layers can currently supply water (frozen/dry layers are `.false.`).
 
-- Diagnose water stress for output
-- Distribute the total transpiration flux across soil layers for the soil hydrology calculations
-- Identify frozen layers for diagnostics
+These arrays are consumed by CLM/ELM to compute the soil moisture sink, to report the transpiration wetness diagnostic, and to short-circuit root uptake in frozen soil layers.
 
+## Source References
 
-Sources:  [biogeophys/EDBtranMod.F90 88-262](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDBtranMod.F90#L88-L262)  [main/FatesInterfaceTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#LNaN-LNaN)
-
-## Testing and Validation
-
-Unit tests for the water transfer functions used in plant hydraulics are available in `functional_unit_testing/hydro/` . The driver `HydroUTestDriver.py` tests the water retention and conductivity functions that underpin both the simple BTRAN approach (through the `smpsc` / `smpso` parameterization) and the full hydraulic model.
-
-Sources:  [functional_unit_testing/hydro/HydroUTestDriver.py 1-389](https://github.com/jingtao-lbl/fates/blob/e85d9977/functional_unit_testing/hydro/HydroUTestDriver.py#L1-L389)
+- `biogeophys/EDBtranMod.F90:88-262` — `btran_ed` implementation
+- `biogeophys/EDBtranMod.F90:160-163` — root resistance formula
+- `biogeophys/EDBtranMod.F90:206-246` — layer renormalization and patch output
+- `main/EDPftvarcon.F90:75-77, 444-448` — `smpsc` / `smpso` declarations and registration
+- `parameter_files/fates_params_default.cdl:437-442, 1348-1353` — units and default values
+- `biogeophys/FatesPlantRespPhotosynthMod.F90:475, 488-490` — assignment of `btran_eff` and salinity overlay
+- `biogeophys/FatesPlantHydraulicsMod.F90:2651` — hydraulic `btran` diagnostic path

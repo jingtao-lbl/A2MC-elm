@@ -1,400 +1,375 @@
 # Fire Spread and Intensity
 
-<details>
-<summary>Relevant source files</summary>
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-
-- [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90)
-- [biogeochem/EDPhysiologyMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90)
-- [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)
-- [fire/SFMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90)
-
-
-</details>
+**Relevant source files:**
+- `fire/SFMainMod.F90`
+- `fire/SFParamsMod.F90`
+- `biogeochem/FatesLitterMod.F90`
 
 ## Purpose and Scope
 
-This page documents the fire spread and intensity calculations in FATES, which determine how rapidly fire propagates across a landscape and its energetic intensity. These calculations form the core of the Rothermel fire spread model as implemented in SPITFIRE. This page specifically covers:
+This document describes how the SPITFIRE module in FATES computes daily fire spread and intensity. These calculations form the Rothermel (1972) fire spread core adapted from Thonicke et al. 2010. Topics covered:
 
-- Fuel characteristic calculations (moisture, bulk density, surface-area-to-volume ratio)
-- Rate of spread calculations (forward and backward ROS)
-- Fire intensity calculations
-- Area burnt calculations
-- Wind effects on fire spread
+- Fuel characteristic calculations (moisture, bulk density, surface-area-to-volume ratio, moisture of extinction)
+- Wind effect on the effective windspeed at the fire front
+- Rate of spread (forward and backward) using the Rothermel equation
+- Ground fuel consumption and fire residence time
+- Fire ellipse, area burnt, and fire line intensity
 
+For fire danger indices, ignition counts, and mode selection see `ignition.md`. For the translation of fire intensity and residence time into per-cohort mortality see `effects.md`.
 
-For information about fire danger indices and ignition probability, see [Fire Danger and Ignition](fire/ignition.md) . For information about how fire affects vegetation mortality and crown damage, see [Fire Effects on Vegetation](fire/effects.md) .
+## Execution Order
 
-## Overview
+The spread-and-intensity subroutines run back-to-back inside `fire_model` `(fire/SFMainMod.F90:104-108)`:
 
-The fire spread and intensity system is executed daily as part of the SPITFIRE fire model. Once fire danger and ignition have been established (see [7.1](fire/ignition.md) ), the model calculates how fire spreads based on fuel characteristics, meteorological conditions, and landscape properties. The calculation proceeds through several sequential steps:
+```
+wind_effect              -> effect_wspeed            (patch)
+charecteristics_of_fuel  -> fuel_bulkd, fuel_sav,
+                            fuel_mef, fuel_eff_moist,
+                            fuel_frac, litter_moisture (patch)
+rate_of_spread           -> ROS_front, ROS_back      (patch)
+ground_fuel_consumption  -> burnt_frac_litter,
+                            TFC_ROS, tau_l           (patch)
+area_burnt_intensity     -> FDI, NF, NF_successful,
+                            FD, frac_burnt, FI, fire (site + patch)
+```
 
-Calculation Flow Diagram
-
-![SVG image](../assets/images/7.2__Fire_Spread_and_Intensity__img-01.svg)
-
-Sources: [fire/SFMainMod.F90 80-115](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L80-L115)
+Each patch is processed independently; bareground patches are skipped via the `nocomp_pft_label .ne. nocomp_bareground` guard in every routine.
 
 ## Fuel Characteristics
 
-### Overview
-
-The `charecteristics_of_fuel` subroutine calculates spatially-averaged fuel properties across six fuel size classes at the patch level. These properties drive the rate of spread and fuel consumption calculations.
-
 ### Fuel Size Classes
 
-FATES uses six fuel size classes ( `nfsc = 6` ), indexed by constants:
+SPITFIRE uses `NFSC = 6` fuel size classes. The named integer constants come from `biogeochem/FatesLitterMod.F90` and are imported by `SFMainMod` `(fire/SFMainMod.F90:30-36)`:
 
-| Index | Symbol | Description | Typical Diameter | 
-| --- | --- | --- | --- |
-| 1 | tw_sf | Twigs | < 0.64 cm | 
-| 2 | sb_sf | Small branches | 0.64-2.54 cm | 
-| 3 | lb_sf | Large branches | 2.54-7.62 cm | 
-| 4 | tr_sf | Trunks | > 7.62 cm | 
-| 5 | dl_sf | Dead leaves | fine litter | 
-| 6 | lg_sf | Live grass | herbaceous | 
+| Index | Constant | Description |
+|---|---|---|
+| 1 | `TW_SF` | Twigs (fine CWD) |
+| 2 | — (no named constant) | Small branches |
+| 3 | `LB_SF` | Large branches |
+| 4 | `TR_SF` | Trunks (coarse CWD; excluded from ROS) |
+| 5 | `DL_SF` | Dead leaves / fine litter |
+| 6 | `LG_SF` | Live grass |
 
+Index 2 has no named constant; small branches are accessed via array ranges like `tw_sf:lb_sf`. The 1h/10h/100h/1000h "time-lag" labels commonly attached to indices 1–4 are interpretive (from Thonicke 2010 / Rothermel), not written in FATES source.
 
-Fuel Size Class Mapping
+### Fuel Moisture
 
-![SVG image](../assets/images/7.2__Fire_Spread_and_Intensity__img-02.svg)
+`charecteristics_of_fuel` `(fire/SFMainMod.F90:177-344)` computes per-class fuel moisture (Thonicke 2010 Eq. 6) using an exponential decay with the accumulated Nesterov Index `(fire/SFMainMod.F90:260-280)`:
 
-Sources: [fire/SFMainMod.F90 177-344](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L177-L344)  [fire/SFMainMod.F90 218-243](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L218-L243)
+```
+alpha_FMC(c)   = SF_val_SAV(c) / SF_val_drying_ratio     (c = tw..dl)
+fuel_moisture(c) = exp(-alpha_FMC(c) * acc_NI)
+fuel_moisture(lg_sf) = exp(-(SF_val_SAV(tw_sf)/SF_val_drying_ratio) * acc_NI)
+```
 
-### Fuel Property Calculations
+Live grass uses the twigs SAV but retains more moisture because of species biology: the `fuel_moisture` formulation is the same exponential form but live grass has its own weighting. Trunks get the same exponential drying as other CWD classes for bookkeeping, but are excluded from spread calculations.
 
-For each patch, the model calculates weighted-average fuel properties across the first three CWD classes plus dead leaves and live grass (trunks are excluded from ROS calculations):
+### Moisture of Extinction
 
-![SVG image](../assets/images/7.2__Fire_Spread_and_Intensity__img-03.svg)
+Peterson & Ryan 1986 Eq. 27 `(fire/SFMainMod.F90:260)`:
 
-Sources: [fire/SFMainMod.F90 240-309](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L240-L309)
+```
+MEF(c) = 0.524 - 0.066 * log(SF_val_SAV(c))        (for c = 1..nfsc)
+```
 
-### Moisture of Extinction (MEF)
+The code comment notes that propagating Thonicke 2010 SAV values through this equation yields approximate MEFs of 0.355 (twigs), 0.44 (small branches), 0.525 (large branches), 0.63 (trunks), 0.248 (dead leaves), 0.248 (live grass).
 
-The moisture of extinction is the fuel moisture content above which fire cannot spread. It is calculated for each fuel class based on the Peterson and Ryan (1986) equation:
+The relative litter moisture used downstream is the ratio `fuel_moisture / MEF` per class `(fire/SFMainMod.F90:305-308)`:
 
-MEF(i) = 0.524 - 0.066 × ln(SAV(i))
+```
+litter_moisture(c) = fuel_moisture(c) / MEF(c)
+```
 
-where `SAV(i)` is the surface-area-to-volume ratio for fuel class `i` .
+### Patch-Level Averages
 
-The effective fuel moisture is then expressed relative to MEF:
+`charecteristics_of_fuel` computes averaged properties over classes 1–3 and 5–6, then rescales to exclude trunks `(fire/SFMainMod.F90:282-302)`:
 
-litter_moisture(i) = fuel_moisture(i) / MEF(i)
+```
+fuel_bulkd     = sum(fuel_frac(tw..lb) * SF_val_FBD(tw..lb))
+               + sum(fuel_frac(dl..lg) * SF_val_FBD(dl..lg))
+fuel_sav       = similar sum over SF_val_SAV
+fuel_mef       = similar sum over MEF
+fuel_eff_moist = similar sum over fuel_moisture
 
-Sources: [fire/SFMainMod.F90 260-308](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L260-L308)
+# rescale so that trunk fraction does not dilute
+fuel_bulkd     = fuel_bulkd     / (1 - fuel_frac(tr_sf))
+fuel_sav       = fuel_sav       / (1 - fuel_frac(tr_sf))
+fuel_mef       = fuel_mef       / (1 - fuel_frac(tr_sf))
+fuel_eff_moist = fuel_eff_moist / (1 - fuel_frac(tr_sf))
+```
 
-### Key State Variables
+Per-class fuel fractions are taken from the litter pools `(fire/SFMainMod.F90:230-250)`:
 
-After `charecteristics_of_fuel` executes, the following patch-level variables are populated:
+```
+sum_fuel                = sum(leaf_fines) + sum(ag_cwd) + livegrass
+fuel_frac(dl_sf)        = sum(leaf_fines) / sum_fuel
+fuel_frac(tw_sf:tr_sf)  = ag_cwd(:) / sum_fuel
+fuel_frac(lg_sf)        = livegrass / sum_fuel
+```
 
-| Variable | Description | Units | 
-| --- | --- | --- |
-| fuel_bulkd | Weighted average bulk density | kg/m³ | 
-| fuel_sav | Weighted average surface-area-to-volume | cm²/cm³ | 
-| fuel_mef | Weighted average moisture of extinction | - | 
-| fuel_eff_moist | Weighted average effective moisture | - | 
-| fuel_frac(1:6) | Fraction of total fuel in each class | - | 
-| litter_moisture(1:6) | Relative moisture for each class | - | 
-| sum_fuel | Total fuel load | kgC/m² | 
+### Key State Variables After `charecteristics_of_fuel`
 
+| Variable | Units | Description |
+|---|---|---|
+| `sum_fuel` | kgC/m² | Total fuel load |
+| `fuel_frac(1:6)` | – | Fraction of total fuel in each class |
+| `fuel_bulkd` | kg/m³ | Weighted-average bulk density |
+| `fuel_sav` | cm⁻¹ | Weighted-average SAV |
+| `fuel_mef` | – | Weighted-average MEF |
+| `fuel_eff_moist` | – | Weighted-average effective moisture |
+| `litter_moisture(1:6)` | – | Per-class relative moisture |
 
-Sources: [fire/SFMainMod.F90 282-309](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L282-L309)
+Sources: `(fire/SFMainMod.F90:177-344)`
 
-## Wind Effect on Fire Spread
+## Wind Effect
 
-### Effective Wind Speed Calculation
+`wind_effect` `(fire/SFMainMod.F90:348-446)` converts host-model wind (converted to m/min at `(fire/SFMainMod.F90:381)`) into an effective wind speed at the fire front. Tree and grass fractions are computed from cohort crown areas, with grass capped to `1 - tree_fraction` to avoid double-counting under canopy `(fire/SFMainMod.F90:425)`. Effective wind speed per patch `(fire/SFMainMod.F90:439)`:
 
-The `wind_effect` subroutine calculates effective wind speed at the fire front, accounting for surface roughness created by vegetation. The calculation distinguishes between tree-covered, grass-covered, and bare areas.
+```
+effect_wspeed = wind * (0.4*tree_fraction + 0.6*(grass_fraction + bare_fraction))
+```
 
-Wind Adjustment Process
+The factors `0.4` (trees) and `0.6` (grass/bare) represent 60% and 40% reductions from the host-model wind, respectively, reflecting surface roughness.
 
-![SVG image](../assets/images/7.2__Fire_Spread_and_Intensity__img-04.svg)
+Sources: `(fire/SFMainMod.F90:348-446)`
 
-The key reduction factors are:
+## Rate of Spread
 
-- **Trees**: 0.4 (60% wind speed reduction)
-- **Grass and bare ground**: 0.6 (40% wind speed reduction)
+`rate_of_spread` `(fire/SFMainMod.F90:449-592)` implements the Rothermel (1972) fire spread model as laid out in Thonicke et al. 2010 Appendix A.
 
+### Packing Ratio
 
-This reflects the greater surface roughness and wind shelter provided by trees compared to shorter vegetation or bare ground.
+```
+beta      = fuel_bulkd / SF_val_part_dens               (A6)
+beta_op   = 0.200395 * fuel_sav^(-0.8189)               (A6, optimum)
+beta_ratio = beta / beta_op
+```
 
-Sources: [fire/SFMainMod.F90 348-446](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L348-L446)  [fire/SFMainMod.F90 381-439](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L381-L439)
+Mineral content is first removed from `sum_fuel` via `sum_fuel = sum_fuel * (1 - SF_val_miner_total)` `(fire/SFMainMod.F90:484)` for the reaction-intensity calculation.
 
-## Rate of Spread: Rothermel Model
+### Heat of Pre-ignition
 
-### Overview
+Thonicke 2010 Eq. A4 / Rothermel 1972 Eq. 12 (converted from Btu/lb to kJ/kg) `(fire/SFMainMod.F90:514)`:
 
-The `rate_of_spread` subroutine implements the Rothermel (1972) fire spread model, which calculates forward and backward rates of spread based on fuel properties, moisture, and wind. The model calculates several intermediate quantities before arriving at ROS.
+```
+q_ig = 581 + 2594 * fuel_eff_moist                      [kJ/kg]
+```
 
-### Rothermel Model Components
+### Wind Coefficient
 
-Rothermel ROS Calculation Flow
+Thonicke 2010 Eqs. A5, A7, A8, A9 `(fire/SFMainMod.F90:520-538)`:
 
-![SVG image](../assets/images/7.2__Fire_Spread_and_Intensity__img-05.svg)
+```
+b        = 0.15988 * fuel_sav^0.54
+c        = 7.47    * exp(-0.8711 * fuel_sav^0.55)
+e        = 0.715   * exp(-0.01094 * fuel_sav)
+phi_wind = c * (3.281 * effect_wspeed)^b * beta_ratio^(-e)
+```
 
-Sources: [fire/SFMainMod.F90 449-592](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L449-L592)
+The factor `3.281` converts wind speed from m/min to ft/min for compatibility with the original Rothermel formulation.
 
-### Key Equations
-1. Packing Ratio
-The packing ratio (β) represents the fraction of the fuel bed volume occupied by fuel:
+### Propagating Flux and Effective Heating Number
 
-β = ρ_b / ρ_p
+Thonicke 2010 Eqs. A2, A3 `(fire/SFMainMod.F90:518, 544-545)`:
 
-where:
+```
+eps = exp(-4.528 / fuel_sav)
+xi  = exp((0.792 + 3.7597 * fuel_sav^0.5) * (beta + 0.1))
+      / (192 + 7.9095 * fuel_sav)
+```
 
-- `fuel_bulkd`ρ_b = fuel bulk density ( ) [kg/m³]
-- `SF_val_part_dens`ρ_p = particle density ( ) [kg/m³]
+### Reaction Intensity
 
+Thonicke 2010 Table A1 / Rothermel 1972 Eqs. 36, 38 `(fire/SFMainMod.F90:549-570)`:
 
-The optimum packing ratio (β_op) depends on surface-area-to-volume ratio:
+```
+a              = 8.9033 * fuel_sav^(-0.7913)
+a_beta         = exp(a * (1 - beta_ratio))
+reaction_v_max = 1 / (0.0591 + 2.926 * fuel_sav^(-1.5))
+reaction_v_opt = reaction_v_max * beta_ratio^a * a_beta
 
-β_op = 0.200395 × SAV^(-0.8189)
-2. Heat of Pre-ignition
-Amount of heat required to ignite fuel:
+mw_weight  = fuel_eff_moist / fuel_mef
+moist_damp = max(0, 1 - 2.59*mw_weight + 5.11*mw_weight^2 - 3.52*mw_weight^3)
 
-q_ig = 581 + 2594 × M_f [kJ/kg]
+ir = reaction_v_opt * (sum_fuel / 0.45) * SF_val_fuel_energy
+     * moist_damp * SF_val_miner_damp        [kJ/m^2/min]
+```
 
-where M_f is the effective fuel moisture content ( `fuel_eff_moist` ).
-3. Reaction Intensity
-The energy release rate per unit area:
+The `/0.45` converts `kgC/m²` to `kgBiomass/m²`.
 
-I_R = Γ × (W_n / 0.45) × h × η_M × η_s [kJ/m²/min]
+### Forward and Backward ROS
 
-where:
+Thonicke 2010 Eqs. 9, 10 `(fire/SFMainMod.F90:574-585)`:
 
-- Γ = reaction velocity [1/min]
-- W_n = net fuel load (excluding minerals) [kgC/m²]
-- `SF_val_fuel_energy`h = fuel heat content ( ) [kJ/kg]
-- η_M = moisture damping coefficient
-- `SF_val_miner_damp`η_s = mineral damping coefficient ( )
+```
+if fuel_bulkd <= 0 or eps <= 0 or q_ig <= 0:
+    ROS_front = 0
+else:
+    ROS_front = (ir * xi * (1 + phi_wind)) / (fuel_bulkd * eps * q_ig)  [m/min]
+ROS_back = ROS_front * exp(-0.012 * currentSite%wind)                   [m/min]
+```
 
-4. Rate of Spread
-Forward ROS is calculated as:
+Backward ROS uses the **raw** site wind, not `effect_wspeed`, reflecting that backing fires are less sheltered by surface roughness.
 
-ROS = (I_R × ξ × (1 + φ_wind)) / (ρ_b × ε × q_ig) [m/min]
-
-where:
-
-- ξ = propagating flux ratio
-- φ_wind = wind coefficient
-- ε = effective heating number
-- ρ_b = fuel bulk density [kg/m³]
-- q_ig = heat of pre-ignition [kJ/kg]
-
-
-Backward ROS (fire spreading against the wind) is reduced exponentially:
-
-ROS_back = ROS_front × exp(-0.012 × wind)
-
-Sources: [fire/SFMainMod.F90 483-585](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L483-L585)
-
-### Wind Effect on ROS
-
-The wind coefficient (φ_wind) modulates the rate of spread based on wind speed:
-
-φ_wind = C × (3.281 × wspeed)^B × (β/β_op)^(-E)
-
-where parameters B, C, and E are functions of surface-area-to-volume ratio:
-
-- B = 0.15988 × SAV^0.54
-- C = 7.47 × exp(-0.8711 × SAV^0.55)
-- E = 0.715 × exp(-0.01094 × SAV)
-
-
-Wind speed is converted from m/min to ft/min (factor of 3.281) for compatibility with the original Rothermel formulation.
-
-Sources: [fire/SFMainMod.F90 520-538](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L520-L538)
+Sources: `(fire/SFMainMod.F90:449-592)`
 
 ## Ground Fuel Consumption
 
-### Overview
+`ground_fuel_consumption` `(fire/SFMainMod.F90:595-683)` computes the burnt fraction of each fuel class as a piecewise linear function of relative moisture `(fire/SFMainMod.F90:622-644)`. Using `m` as shorthand for `litter_moisture(c)`:
 
-The `ground_fuel_consumption` subroutine calculates what fraction of each fuel class is consumed by the fire. This depends on the moisture content of each fuel class relative to its moisture of extinction.
+| Moisture range | `burnt_frac_litter(c)` |
+|---|---|
+| `m ≤ SF_val_min_moisture(c)` | `1.0` |
+| `SF_val_min_moisture(c) < m ≤ SF_val_mid_moisture(c)` | `SF_val_low_moisture_Coeff(c) - SF_val_low_moisture_Slope(c)*m`, clipped to `[0, 1]` |
+| `SF_val_mid_moisture(c) < m ≤ 1.0` | `SF_val_mid_moisture_Coeff(c) - SF_val_mid_moisture_Slope(c)*m`, clipped to `[0, 1]` |
+| `m ≥ 1.0` | `0.0` |
 
-Fuel Consumption Calculation
+Live grass is capped at 0.8 to prevent complete removal `(fire/SFMainMod.F90:647)`, and every burnt fraction is then reduced by mineral content `(fire/SFMainMod.F90:650)`:
 
-![SVG image](../assets/images/7.2__Fire_Spread_and_Intensity__img-06.svg)
+```
+burnt_frac_litter(lg_sf) = min(0.8, burnt_frac_litter(lg_sf))
+burnt_frac_litter(:)     = burnt_frac_litter(:) * (1 - SF_val_miner_total)
+```
 
-Sources: [fire/SFMainMod.F90 595-683](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L595-L683)
+### Total Fuel Consumed in ROS
 
-### Burnt Fraction by Moisture Content
+Per-class ground fuel consumption is computed `(fire/SFMainMod.F90:654-657)`:
 
-The fraction of each fuel class consumed depends on its relative moisture content. Parameters `SF_val_min_moisture(i)` , `SF_val_mid_moisture(i)` , and associated slope/intercept coefficients define piecewise linear relationships:
+```
+FC_ground(tw..tr) = burnt_frac_litter(tw..tr) * litt_c%ag_cwd(tw..tr)
+FC_ground(dl_sf)  = burnt_frac_litter(dl_sf)  * sum(leaf_fines)
+FC_ground(lg_sf)  = burnt_frac_litter(lg_sf)  * livegrass
+```
 
-| Moisture Range | Burnt Fraction Formula | 
-| --- | --- |
-| M ≤ M_min | 1.0 (complete consumption) | 
-| M_min < M ≤ M_mid | SF_val_low_moisture_Coeff - SF_val_low_moisture_Slope × M | 
-| M_mid < M ≤ 1.0 | SF_val_mid_moisture_Coeff - SF_val_mid_moisture_Slope × M | 
-| M > 1.0 | 0.0 (no consumption) | 
+Only fuels affecting ROS are summed into `TFC_ROS` (trunks excluded) `(fire/SFMainMod.F90:676)`:
 
-
-Sources: [fire/SFMainMod.F90 622-644](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L622-L644)
+```
+TFC_ROS = sum(FC_ground) - FC_ground(tr_sf)              [kgC/m^2]
+```
 
 ### Fire Residence Time
 
-The fire residence time (τ_l) is the duration for which lethal heating occurs at the base of tree stems. This is calculated following Peterson & Ryan (1986):
+Peterson & Ryan 1986 / Thonicke 2010, per fuel class and then summed `(fire/SFMainMod.F90:666-672)`:
 
-τ_b(i) = 39.4 × (fuel_frac(i) × sum_fuel/4.5) × (1 - (1 - burnt_frac(i))^0.5)
+```
+tau_b(c)      = 39.4 * (fuel_frac(c) * sum_fuel / 0.45 / 10)
+                * (1 - (1 - burnt_frac_litter(c))^0.5)
+tau_b(tr_sf)  = 0
+tau_l         = min(8, sum_c tau_b(c))                   [min]
+```
 
-where:
+The `/ 0.45 / 10` converts from `kgC/m²` to `gBiomass/cm²` (factor 0.45 for C → biomass, factor 10 for kg/m² → g/cm²). `tau_l` is capped at 8 minutes per Peterson & Ryan's literature survey, and is consumed downstream by `cambial_damage_kill` in `effects.md`.
 
-- fuel_frac(i) = fraction of total fuel in class i
-- sum_fuel/4.5 = conversion from kgC/m² to g/cm² (factor of 10) and C to biomass (factor of 0.45)
-- burnt_frac(i) = fraction of fuel class i consumed
-
-
-Total residence time is the sum across fuel classes, capped at 8 minutes:
-
-τ_l = min(8.0, Σ τ_b(i))
-
-This residence time is later used in cambial damage calculations (see [7.3](fire/effects.md) ).
-
-Sources: [fire/SFMainMod.F90 666-672](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L666-L672)
+Sources: `(fire/SFMainMod.F90:595-683)`
 
 ## Area Burnt and Fire Intensity
 
-### Overview
-
-The `area_burnt_intensity` subroutine calculates the fraction of each patch that burns and the fire intensity at the flame front. These calculations integrate information from fire danger, ignitions, rate of spread, and fuel consumption.
-
-### Fire Ellipse Model
-
-Fires spread in an elliptical pattern, with the major axis aligned with the wind direction. The model calculates fire shape and area using the Canadian Forest Fire Behavior Prediction System (CFFBPS) approach.
-
-Fire Area Calculation Process
-
-![SVG image](../assets/images/7.2__Fire_Spread_and_Intensity__img-07.svg)
-
-Sources: [fire/SFMainMod.F90 687-885](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L687-L885)
+`area_burnt_intensity` `(fire/SFMainMod.F90:687-885)` combines fire danger, ignition counts, ROS, residence time, and fuel consumption into daily area burnt and fire line intensity per patch.
 
 ### Fire Duration
 
-Fire duration (FD) is calculated from fire danger index using a sigmoidal function:
+Thonicke 2010 Eq. 14 `(fire/SFMainMod.F90:785-786)`:
 
-FD = (FD_max + 1) / (1 + FD_max × exp(FD_slope × FDI))
+```
+FD = (SF_val_max_durat + 1)
+     / (1 + SF_val_max_durat * exp(SF_val_durat_slope * FDI))  [min]
+```
 
-where:
-
-- `SF_val_max_durat`FD_max = maximum fire duration parameter ( ) [min]
-- `SF_val_durat_slope`FD_slope = slope parameter ( )
-- FDI = fire danger index (0-1)
-
-
-Higher fire danger leads to longer-burning fires.
-
-Sources: [fire/SFMainMod.F90 785-786](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L785-L786)
+Higher `FDI` → longer-burning fires. Typical CDL defaults: `SF_val_max_durat ≈ 240 min`, `SF_val_durat_slope ≈ -10`.
 
 ### Length-to-Breadth Ratio
 
-The length-to-breadth ratio (lb) of the fire ellipse depends on wind speed and vegetation type:
+Fires spread in an ellipse with wind along the major axis. The length-to-breadth ratio `lb` depends on wind speed and vegetation type `(fire/SFMainMod.F90:803-814)`. Below 1 km/hr effective wind the fire is circular (`lb = 1`). Otherwise:
 
-For circular fire (low wind < 1 km/hr):
+**Forest fuels** (`tree_fraction > 0.55`, CFFBPS Eq. 79):
+```
+lb = 1 + 8.729 * (1 - exp(-0.03 * effect_wspeed_kmh))^2.155
+```
 
-For forest fuels (tree_fraction > 0.55):
+**Grassland fuels** (`tree_fraction ≤ 0.55`, CFFBPS Eq. 80 with Wotton et al. 2009 typo correction):
+```
+lb = 1.1 * effect_wspeed_kmh^0.464
+```
 
-For grassland fuels (tree_fraction ≤ 0.55):
-
-where wspeed_kmh is wind speed converted to km/hr.
-
-Sources: [fire/SFMainMod.F90 803-814](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L803-L814)
+where `effect_wspeed_kmh = effect_wspeed * 0.06` converts m/min to km/hr.
 
 ### Fire Size and Area Burnt
 
-Individual fire size is calculated as the area of an ellipse:
+Arora & Boer 2005 Eq. 14 + Thonicke 2010 Eq. 1 `(fire/SFMainMod.F90:820-844)`:
 
-size_of_fire = (π / (4 × lb)) × (df + db)²
+```
+db           = ROS_back  * FD                             [m]
+df           = ROS_front * FD                             [m]
+size_of_fire = (pi / (4 * lb)) * (df + db)^2              [m^2]
+AB           = size_of_fire * NF * FDI                    [m^2 per km^2 per day]
+frac_burnt   = min(0.99, AB / 1e6)
+```
 
-where:
+The 0.99 cap prevents a single-day complete patch consumption.
 
-- df = forward spread distance = ROS_front × FD
-- db = backward spread distance = ROS_back × FD
-- lb = length-to-breadth ratio
+### Fire Line Intensity
 
+Thonicke 2010 Eq. 15 `(fire/SFMainMod.F90:854-859)`:
 
-Daily area burnt per km² of patch area:
+```
+ROS = ROS_front / 60                              [m/min -> m/s]
+W   = TFC_ROS   / 0.45                            [kgC/m^2 -> kgBiomass/m^2]
+FI  = SF_val_fuel_energy * W * ROS                [kJ/kg * kg/m^2 * m/s = kW/m]
+```
 
-AB = size_of_fire × NF × FDI
+### Fire Flag
 
-where:
+Only fires exceeding `SF_val_fire_threshold` (default 50 kW/m) are considered successful `(fire/SFMainMod.F90:866-876)`:
 
-- NF = number of ignitions per km² per day
-- FDI = probability that ignition starts a fire
+```
+if FI > SF_val_fire_threshold:
+    fire          = 1
+    NF_successful += NF * FDI * (currentPatch%area / AREA)
+else:
+    fire = 0, FD = 0, frac_burnt = 0
+```
 
-
-Fraction of patch burnt:
-
-frac_burnt = min(0.99, AB / 1×10⁶)
-
-The 0.99 cap prevents complete patch consumption.
-
-Sources: [fire/SFMainMod.F90 820-844](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L820-L844)
-
-### Fire Intensity
-
-Fire intensity (FI) at the flame front is calculated from the energy release rate:
-
-FI = h × W × ROS [kW/m]
-
-where:
-
-- `SF_val_fuel_energy`h = heat content of fuel ( = 18,000 kJ/kg)
-- W = fuel consumed per unit area = TFC_ROS / 0.45 [kgBiomass/m²]
-- ROS = forward rate of spread [m/s]
-
-
-Fire intensity is the power (energy per time) per unit length of fire front. Only fires exceeding a threshold intensity ( `SF_val_fire_threshold` , typically 50 kW/m) are considered successful fires.
-
-Sources: [fire/SFMainMod.F90 854-876](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L854-L876)
+Sources: `(fire/SFMainMod.F90:687-885)`
 
 ## Key Patch-Level State Variables
 
-The following table summarizes the key state variables that are computed and stored at the patch level:
+| Variable | Units | Set by |
+|---|---|---|
+| `fuel_bulkd` | kg/m³ | `charecteristics_of_fuel` |
+| `fuel_sav` | cm⁻¹ | `charecteristics_of_fuel` |
+| `fuel_mef` | – | `charecteristics_of_fuel` |
+| `fuel_eff_moist` | – | `charecteristics_of_fuel` |
+| `fuel_frac(1:6)` | – | `charecteristics_of_fuel` |
+| `litter_moisture(1:6)` | – | `charecteristics_of_fuel` |
+| `effect_wspeed` | m/min | `wind_effect` |
+| `ROS_front`, `ROS_back` | m/min | `rate_of_spread` |
+| `burnt_frac_litter(1:6)` | – | `ground_fuel_consumption` |
+| `TFC_ROS` | kgC/m² | `ground_fuel_consumption` |
+| `tau_l` | min | `ground_fuel_consumption` |
+| `FD` | min | `area_burnt_intensity` |
+| `frac_burnt` | – | `area_burnt_intensity` |
+| `FI` | kW/m | `area_burnt_intensity` |
+| `fire` | 0/1 | `area_burnt_intensity` |
 
-| Variable | Description | Units | Set By | 
-| --- | --- | --- | --- |
-| fuel_bulkd | Bulk density of fuel bed | kg/m³ | charecteristics_of_fuel | 
-| fuel_sav | Surface-area-to-volume ratio | cm⁻¹ | charecteristics_of_fuel | 
-| fuel_mef | Moisture of extinction | - | charecteristics_of_fuel | 
-| fuel_eff_moist | Effective fuel moisture | - | charecteristics_of_fuel | 
-| fuel_frac(1:6) | Fuel fraction by size class | - | charecteristics_of_fuel | 
-| litter_moisture(1:6) | Relative moisture by class | - | charecteristics_of_fuel | 
-| effect_wspeed | Effective wind speed | m/min | wind_effect | 
-| ROS_front | Forward rate of spread | m/min | rate_of_spread | 
-| ROS_back | Backward rate of spread | m/min | rate_of_spread | 
-| burnt_frac_litter(1:6) | Fraction consumed by class | - | ground_fuel_consumption | 
-| TFC_ROS | Total fuel consumed (excl. trunks) | kgC/m² | ground_fuel_consumption | 
-| tau_l | Fire residence time | min | ground_fuel_consumption | 
-| FD | Fire duration | min | area_burnt_intensity | 
-| FI | Fire line intensity | kW/m | area_burnt_intensity | 
-| frac_burnt | Fraction of patch burnt | - | area_burnt_intensity | 
-| fire | Fire occurrence flag | 0/1 | area_burnt_intensity | 
-
-
-Sources: [fire/SFMainMod.F90 80-885](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L80-L885)
+Sources: `(fire/SFMainMod.F90:80-885)`
 
 ## Integration with Other Fire Components
 
-This module interacts with other parts of the fire system:
+**Upstream (from `ignition.md`):**
+- `acc_NI` → fuel moisture and `FDI`
+- `NF` lightning/anthropogenic ignition counts
+- Host-model wind, temperature, humidity, precipitation
+- Litter pools (`leaf_fines`, `ag_cwd`, `livegrass`)
 
-Upstream Dependencies:
+**Downstream (to `effects.md`):**
+- `FI` drives scorch height (and thus crown damage)
+- `tau_l` drives cambial damage
+- `frac_burnt` weights area-integrated impacts in patch dynamics
+- Fuel consumption drives litter pool depletion
 
-- `acc_NI``fire_danger_index`[7.1](fire/ignition.md)Fire danger index ( ) computed by (see )
-- Meteorological inputs: wind speed, temperature, humidity from boundary conditions
-- `NF`[7.1](fire/ignition.md)Ignition counts ( ) from lightning or anthropogenic sources (see )
-- Litter pools from vegetation turnover and mortality
-
-
-Downstream Effects:
-
-- `FI`[7.3](fire/effects.md)Fire intensity ( ) and scorch height drive crown damage calculations (see )
-- `tau_l`[7.3](fire/effects.md)Fire residence time ( ) drives cambial damage (see )
-- `frac_burnt`Fraction burnt ( ) determines area-weighted impacts on vegetation
-- Fuel consumption drives litter pool depletion and trace gas emissions
-
-
-Data Flow Between Fire Modules
-
-![SVG image](../assets/images/7.2__Fire_Spread_and_Intensity__img-08.svg)
-
-Sources: [fire/SFMainMod.F90 80-115](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L80-L115)
+Sources: `(fire/SFMainMod.F90:80-115)`

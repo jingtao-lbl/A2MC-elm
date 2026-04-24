@@ -1,221 +1,162 @@
 # History Update Pipeline
 
-<details>
-<summary>Relevant source files</summary>
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-
-- [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90)
-- [biogeochem/EDPhysiologyMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90)
-- [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)
-- [main/FatesHistoryInterfaceMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90)
-
-
-</details>
+**Relevant source files:**
+- `main/FatesHistoryInterfaceMod.F90`
+- `main/FatesHistoryVariableType.F90`
+- `main/FatesSizeAgeTypeIndicesMod.F90`
+- `biogeochem/EDCohortDynamicsMod.F90`
+- `biogeochem/EDPhysiologyMod.F90`
 
 ## Purpose and Scope
 
-This page explains how FATES transfers ecosystem state and flux data from its internal data structures (sites, patches, cohorts) into the history output arrays during each timestep. It focuses on the pipeline mechanisms that accumulate, aggregate, and dimension-map the data for writing to output files.
+This page explains how FATES actually populates its history output buffers each timestep. It documents the four update routines, their call frequencies, the hierarchical aggregation pattern (cohort → patch → site → history arrays), the index-calculation step for multiplexed dimensions, and the flush/reset cycle that runs at each host-model output interval.
 
-For information about the structure and registration of history variables, see [History Variables and Dimensions](../output/history/variables.md) . For details on restart files and mass balance checking, see [Restart System](../output/restart.md) and [Mass Balance Checking](../output/mass_balance.md) .
+For variable registration and the dimension kinds themselves, see [History Output System](index.md) and [History Variables and Dimensions](variables.md).
 
-## Overview of the Update Pipeline
+## Update Routines
 
-The history update pipeline consists of several distinct update routines called at different frequencies during the simulation. Each routine is responsible for transferring specific categories of data from FATES internal structures to the history output arrays.
+FATES has exactly four update routines. Their line ranges below are verified against `e85d997`.
 
-### Update Routine Types
+| Routine | Lines | Frequency | Called from | Updates |
+|---|---|---|---|---|
+| `update_history_dyn` | 2108–4387 | Daily | After `ed_ecosystem_dynamics` | Biomass state, demographic pools (nplant, basal area), growth, mortality, disturbance rates, litter/CWD pools, per-size-class and per-size-PFT aggregations, fire diagnostics |
+| `update_history_hifrq` | 4389–4857 | Each photosynthesis timestep | During biophysics | GPP, autotrophic respiration, sunlit/shaded LAI, absorbed PAR by canopy and leaf layer, canopy temperature, stomatal conductance |
+| `update_history_hydraulics` | 4861–5207 | Each hydraulics timestep (when `hlm_use_planthydro == itrue`) | During hydraulics solve | Tissue water potential, sapflow, root/stem/leaf conductance fractions |
+| `update_history_nutrflux` | 1917–2104 | Daily (when `hlm_parteh_mode == prt_cnp_flex_allom_hyp`) | After nutrient dynamics | NH4/NO3/P uptake rates by size × PFT, N demand, P demand, N fixation, nutrient efflux, L2FR dynamics |
 
-![SVG image](../../assets/images/9.1.2__History_Update_Pipeline__img-01.svg)
+Sources: `(main/FatesHistoryInterfaceMod.F90:1917-5207)`
 
-Sources: [main/FatesHistoryInterfaceMod.F90 782-785](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L782-L785)
+## `update_history_dyn`
 
-### Calling Context
+This is the primary daily routine. It loops over all sites, all patches in each site, and all cohorts in each patch, extracting per-cohort state and flux variables and accumulating them into the registered history buffers. The registered variables touched here fall into several categories:
 
-The history update routines are called from the main FATES interface during the dynamics and biophysics calculation phases. The calling hierarchy is:
+**Cohort-level variables aggregated by size × PFT (`site_size_pft_r8` / `_SZPF`).** Number density (`FATES_NPLANT_SZPF`), biomass pools (`FATES_LEAFC_SZPF`, `FATES_SAPWOODC_SZPF`, `FATES_FROOTC_SZPF`, `FATES_STOREC_SZPF`, etc.), fluxes (`FATES_GPP_SZPF`, `FATES_NPP_SZPF`), growth (`FATES_DDBH_SZPF`, `FATES_GROWTHFLUX_SZPF`), and mortality partitioned by mechanism (`FATES_MORTALITY_CANOPY_SZPF`, `FATES_MORTALITY_USTORY_SZPF`, `FATES_MORTALITY_HYDRAULIC_SZPF`, `FATES_MORTALITY_CSTARV_SZPF`, `FATES_MORTALITY_FIRE_SZPF`, `FATES_MORTALITY_LOGGING_SZPF`, etc.).
 
-| Update Routine | Frequency | Called From | Purpose | 
-| --- | --- | --- | --- |
-| update_history_dyn | Daily | After ed_ecosystem_dynamics | Growth, mortality, recruitment, patch dynamics | 
-| update_history_hifrq | Sub-daily | After biophysical calculations | Photosynthesis, respiration, radiation | 
-| update_history_hydraulics | Sub-daily | During hydraulics solve | Plant water status, transpiration | 
-| update_history_nutrflux | Daily | After nutrient dynamics | N/P uptake, efflux, demand | 
+**Patch-level variables aggregated by age (`site_age_r8` / `_AP`).** Patch area by age class, LAI by age, GPP by age, canopy crown area by age.
 
+**Site-level variables (`site_r8`).** Totals like `FATES_VEGC`, `FATES_LEAFC`, `FATES_LAI`, `FATES_AR`, `FATES_NPATCHES`, `FATES_NCOHORTS`.
 
-## Data Flow Architecture
+**Disturbance rates by process.** `FATES_DISTURBANCE_RATE_FIRE`, `FATES_DISTURBANCE_RATE_LOGGING`, `FATES_DISTURBANCE_RATE_TREEFALL`, `FATES_DISTURBANCE_RATE_P2P`, `FATES_DISTURBANCE_RATE_P2S`, `FATES_DISTURBANCE_RATE_S2S` (primary-to-primary, primary-to-secondary, secondary-to-secondary transitions).
 
-The history update pipeline follows a consistent pattern of data aggregation across FATES' hierarchical structure: cohorts → patches → sites → history arrays.
+Sources: `(main/FatesHistoryInterfaceMod.F90:2108-4387)`
 
-### Hierarchical Aggregation Pattern
+## `update_history_hifrq`
 
-![SVG image](../../assets/images/9.1.2__History_Update_Pipeline__img-02.svg)
+This routine handles variables with sub-daily dynamics. Called once per photosynthesis timestep (so multiple times per simulation day), it updates the radiation/photosynthesis diagnostics that cannot be meaningfully averaged across a full day from a single daily call.
 
-Sources: [main/FatesHistoryInterfaceMod.F90 746-854](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L746-L854)  [biogeochem/EDPhysiologyMod.F90 1-200](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1-L200)
+Primary variables: `FATES_GPP`, `FATES_GPP_PF`, `FATES_GPP_SZPF`, `FATES_AR`, `FATES_AR_CANOPY`, `FATES_AR_UNDERSTORY`, `FATES_RDARK_SZPF`, `FATES_MAINT_RESP`, `FATES_GROWTH_RESP`, `FATES_LBLAYER_COND`, `FATES_STOMATAL_COND`, `FATES_TVEG`, `FATES_FABD_SHA_CLLL`, `FATES_FABD_SUN_CLLL`, `FATES_PARSUN_Z_CLLL`, `FATES_PARSHA_Z_CLLL`, and the PFT-stratified canopy/leaf-layer variants with suffix `_CLLLPF`. Because `avgflag='A'` applies, these accumulate during the day and are divided by the sample count at flush time to produce the reported time-mean.
 
-## The update_history_dyn Routine
+Sources: `(main/FatesHistoryInterfaceMod.F90:4389-4857)`
 
-This is the primary daily update routine that transfers ecosystem dynamics data to history arrays. It is called once per day after all daily dynamics calculations complete.
+## `update_history_hydraulics`
 
-### Process Flow
+Invoked only when plant hydraulics is enabled. It accumulates tissue-scale water variables used for hydraulic diagnostics: `FATES_SAPFLOW`, `FATES_SAPFLOW_SZPF`, `FATES_LEAF_H2O_SZPF`, `FATES_LEAF_H2OPOT_SZPF`, `FATES_LEAF_CONDFRAC_SZPF`, `FATES_STEM_H2O_SZPF`, `FATES_STEM_H2OPOT_SZPF`, `FATES_STEM_CONDFRAC_SZPF`, `FATES_TRANSROOT_H2O_SZPF`, `FATES_ABSROOT_H2O_SZPF`, `FATES_ROOTUPTAKE`, `FATES_ROOTUPTAKE_SL`, plus `FATES_BTRAN_SZPF` and `FATES_TRAN_SZPF`.
 
-Sources: [main/FatesHistoryInterfaceMod.F90 782](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L782-L782)
+Sources: `(main/FatesHistoryInterfaceMod.F90:4861-5207)`
 
-### Key Data Categories Updated
+## `update_history_nutrflux`
 
-The `update_history_dyn` routine populates history variables in the following categories:
+Invoked once per day after nutrient dynamics, only when PARTEH is in flexible CNP mode. It updates uptake, demand, and efflux diagnostics: `FATES_NH4UPTAKE`, `FATES_NH4UPTAKE_SZPF`, `FATES_NO3UPTAKE`, `FATES_NO3UPTAKE_SZPF`, `FATES_PUPTAKE`, `FATES_PUPTAKE_SZPF`, `FATES_NDEMAND`, `FATES_NDEMAND_SZPF`, `FATES_PDEMAND`, `FATES_PDEMAND_SZPF`, `FATES_NFIX_SYM`, `FATES_NFIX_SYM_SZPF`, `FATES_NEFFLUX`, `FATES_NEFFLUX_SZPF`, `FATES_PEFFLUX`, `FATES_PEFFLUX_SZPF`, plus L2FR (leaf-to-fine-root) ratio diagnostics.
 
-Cohort-Level Variables (aggregated by size class × PFT):
+Sources: `(main/FatesHistoryInterfaceMod.F90:1917-2104)`
 
-- `nplant_si_scpf`Number density:
-- `leafc_scpf``sapwc_scpf``fnrtc_scpf``storec_scpf`Biomass pools: , , ,
-- `gpp_si_scpf``npp_totl_si_scpf``mortality_si_scpf`Fluxes: , ,
-- `ddbh_si_scpf``growthflux_si_scpf`Growth: ,
+## Data Aggregation Pattern
 
+The typical accumulation pattern for a cohort-level variable (size × PFT output) is:
 
-Patch-Level Variables (aggregated by age class):
+```
+for each site:
+   for each patch in site:
+      for each cohort in patch:
+         isc, iscpf = size_class_indices(cohort%dbh, cohort%pft)
+         buf(ih_leafc_si_scpf, iscpf) += cohort%leaf_c * cohort%n * patch%area / AREA
+```
 
-- `area_si_age`Patch area:
-- `lai_si_age`LAI:
-- `fire_disturbance_rate_si`Disturbance:
+Three principles underlie this pattern:
 
+1. **Mass-conservative weighting.** Intensive per-plant variables (like `cohort%leaf_c`, which is kgC per plant) are multiplied by `cohort%n` (plants per unit patch area) and `patch%area / AREA` before summing, so the result is in `kgC / site` (or equivalently `kgC / m²` when the site is normalized to 1 ha = 10000 m²).
+2. **Emit numerators and denominators separately.** When a variable is really a ratio (e.g., average biomass per plant), the source code advises emitting the numerator and denominator as separate variables so that post-processing can compute the correct weighted mean even when cohort numbers change between output intervals. This is explicitly documented in the header comments of `FatesHistoryInterfaceMod.F90`.
+3. **Size/age class bin membership is recomputed on the fly.** Because cohorts are continuous in DBH and patches in age, the index-mapping functions (below) are called every step during accumulation — they are not cached on the cohort or patch.
 
-Site-Level Variables :
+Sources: `(main/FatesHistoryInterfaceMod.F90:100-132, 272-286)`
 
-- `totvegc_si``balive_si``bdead_si`Total carbon: , ,
-- `npp_si``gpp_si``hr_si`Fluxes: , ,
-- `ncohorts_si``npatches_si`Cohort/patch counts: ,
+## Dimension Index Calculation
 
+Continuous attributes are mapped to discrete bins using helper functions in `main/FatesSizeAgeTypeIndicesMod.F90`:
 
-Sources: [main/FatesHistoryInterfaceMod.F90 172-516](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L172-L516)
+| Function | Input | Output |
+|---|---|---|
+| `sizetype_class_index` | `dbh, pft` | `size_class`, `size_by_pft_class` |
+| `get_sizeage_class_index` | `dbh, age` | `iscag` |
+| `get_sizeagepft_class_index` | `dbh, age, pft` | `iscagpft` |
+| `get_agepft_class_index` | `age, pft` | `iagepft` |
+| `get_age_class_index` | `age` | `iage` |
+| `get_layersizetype_class_index` | `canopy_layer, dbh, pft` | `iclscpf` |
 
-### Dimension Index Calculation
+For a multiplexed dimension like `levscpf` (size class × PFT), the linear index is computed as a row-major flattening:
 
-A critical aspect of the update pipeline is calculating the correct dimension index for each cohort's contribution. This involves mapping the cohort's continuous attributes to discretized bins.
+```
+iscpf = (size_class - 1) * numpft + pft
+```
 
-![SVG image](../../assets/images/9.1.2__History_Update_Pipeline__img-03.svg)
+The reverse maps `fates_hdim_pfmap_levscpf(:)` and `fates_hdim_scmap_levscpf(:)` (in `FatesInterfaceTypesMod.F90`) recover the PFT and size class from a linear index, e.g., for post-processing or when emitting per-bin metadata.
 
-Sources: [main/FatesHistoryInterfaceMod.F90 1163-1239](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L1163-L1239)  [biogeochem/EDCohortDynamicsMod.F90 68-69](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L68-L69)
+Sources: `(main/FatesSizeAgeTypeIndicesMod.F90)`, `(main/FatesInterfaceTypesMod.F90:252-293)`
 
-### Accumulation Example: Leaf Carbon by Size Class × PFT
+## Weighting Strategy Table
 
-The typical accumulation pattern for a cohort-level variable follows this structure:
+| Variable type | Weight factor | Example |
+|---|---|---|
+| Per-plant intensive (biomass kgC/plant) | `cohort%n * patch%area / AREA` | `hio_leafc_si_scpf += leaf_c * n * pa / AREA` |
+| Plant density (m-2) | `cohort%n * patch%area / AREA` | `hio_nplant_si_scpf += n * pa / AREA` |
+| Patch area fraction | `patch%area / AREA` | `hio_area_si_age += pa / AREA` |
+| Site-level total (already kg/site) | Direct | `hio_npp_si += npp_acc` |
+| Crown area | `cohort%c_area` | `hio_crown_area_pf += c_area` |
 
-![SVG image](../../assets/images/9.1.2__History_Update_Pipeline__img-04.svg)
+The `patch%area / AREA` factor normalizes patch fractional area to the site unit of 1 ha (`AREA = 10000 m²`). `n` is typically already in units of plants per m², so no further division is needed.
 
-This pattern is repeated for all biomass pools, fluxes, and state variables at the cohort level. The key principle is mass-conservative aggregation : multiply intensive properties (per-plant values) by extensive properties (number of plants) before accumulating.
+Sources: `(main/FatesHistoryInterfaceMod.F90:100-132)`
 
-Sources: [main/FatesHistoryInterfaceMod.F90 272-286](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L272-L286)
+## Flush and Reset
 
-## The update_history_nutrflux Routine
+At the end of each host-model history interval (controlled by the HLM's `hist_mfilt`/`hist_nhtfrq` settings, not by FATES), the host calls `flush_hvars` and `zero_site_hvars` in that order.
 
-This specialized routine handles nutrient-related fluxes when the CNP flexible allocation hypothesis is active ( `hlm_parteh_mode == prt_cnp_flex_allom_hyp` ). It is called after nutrient dynamics calculations.
+`flush_hvars` walks each registered variable and, based on its `avgflag`, produces the final time-mean value to hand to the host. Because **every FATES history variable in `e85d997` uses `avgflag='A'`**, the flush step divides each accumulator by its sample count and returns the average. `'I'` (instantaneous), `'M'` (minimum), and `'X'` (maximum) are not currently used by any FATES variable, though the machinery supports them. The semantics follow the CLM/ALM `histFileMod` convention exactly.
 
-### Nutrient Flux Categories
+`zero_site_hvars` then resets each variable's data buffer to its `flushval` (`flushzero`, `flushone`, or `flushinvalid`), clearing the accumulator for the next interval.
 
-![SVG image](../../assets/images/9.1.2__History_Update_Pipeline__img-05.svg)
+Sources: `(main/FatesHistoryInterfaceMod.F90:850-851)`, `(main/FatesHistoryVariableType.F90:42-90)`
 
-Sources: [main/FatesHistoryInterfaceMod.F90 785](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L785-L785)  [main/FatesHistoryInterfaceMod.F90 226-241](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L226-L241)
+## Threading and Boundary Management
 
-### CNP Boundary Condition Access
+History accumulation is threaded: each thread runs its own copies of the update routines over its own subset of sites/patches/cohorts, writing into thread-specific regions of the shared history arrays. Thread bounds are maintained in `dim_bounds` and initialized by `SetThreadBoundsEach` during FATES interface setup. This means all accumulator writes inside an update routine are into thread-local array slices, and no locking is required.
 
-The nutrient update routine accesses cohort-level CNP boundary conditions from the PARTEH allocation object:
+Sources: `(main/FatesHistoryInterfaceMod.F90:1024-1260)`
 
-![SVG image](../../assets/images/9.1.2__History_Update_Pipeline__img-06.svg)
+## End-to-End Data Path
 
-Sources: [biogeochem/EDCohortDynamicsMod.F90 105-121](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L105-L121)
+```
+cohort%leaf_c, n, dbh, pft
+   ↓
+size_class, pft_class = sizetype_class_index(dbh, pft)
+iscpf = (size_class - 1) * numpft + pft_class
+   ↓
+buf(ih_leafc_si_scpf, iscpf) += leaf_c * n * patch%area / AREA
+   ↓  [daily, inside update_history_dyn]
+accumulator builds up over history interval
+   ↓  [end of interval, host calls flush_hvars]
+final value = accumulator / sample_count    (because avgflag='A')
+   ↓
+written to NetCDF as FATES_LEAFC_SZPF[site, iscpf]
+   ↓  [host calls zero_site_hvars]
+buffer reset to flushval; next interval begins
+```
 
-## Dimension Mapping and Multiplexing
+This pipeline runs every timestep (high-frequency variables) or every day (daily variables), continuously building the output dataset that represents the ecosystem's evolution.
 
-FATES uses "multiplexed" dimensions to combine multiple classification axes into single output dimensions. This is necessary because netCDF has limitations on the number of dimensions per variable.
-
-### Multiplexed Dimension Types
-
-| Dimension Name | Components | Total Size | Example Usage | 
-| --- | --- | --- | --- |
-| levscpf | size class × PFT | nlevsclass × numpft | Cohort biomass, mortality | 
-| levscag | size class × age | nlevsclass × nlevage | Size-age distributions | 
-| levscagpft | size class × age × PFT | nlevsclass × nlevage × numpft | Fine-grained cohort tracking | 
-| levcnlf | canopy layer × leaf layer | nclmax × nlevleaf | Radiation profiles | 
-| levcnlfpft | canopy × leaf × PFT | nclmax × nlevleaf × numpft | PFT-specific radiation | 
-| levagepft | age × PFT | nlevage × numpft | Patch age by PFT composition | 
-| levcdpf | crown damage × PFT | nlevdamage × numpft | Damage class distributions | 
-
-
-### Index Calculation for Multiplexed Dimensions
-
-The conversion from multi-dimensional indices to a single linear index follows standard row-major ordering. For a size class × PFT dimension:
-
-![SVG image](../../assets/images/9.1.2__History_Update_Pipeline__img-07.svg)
-
-This indexing is performed by dimension-specific helper functions such as `get_layersizetype_class_index` .
-
-Sources: [main/FatesHistoryInterfaceMod.F90 135-152](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L135-L152)  [biogeochem/FatesAllometryMod.F90 68-69](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L68-L69)
-
-## Accumulation Patterns and Weighting
-
-Different history variables require different accumulation and weighting strategies depending on whether they represent:
-
-- Intensive properties (per plant)
-- Extensive properties (per site area)
-- Rates vs. states
-- Instantaneous vs. averaged values
-
-
-### Weighting Strategy Table
-
-| Variable Type | Weight Factor | Example | 
-| --- | --- | --- |
-| Cohort biomass (per plant) | cohort%n | hio_leafc += leaf_c × n | 
-| Cohort density | 1 / patch%area | hio_nplant += n / area | 
-| Patch area fraction | patch%area | hio_area_age += area | 
-| Site-level total | Direct accumulation | hio_npp_si += npp | 
-| Per-area flux | cohort%n / patch%area | hio_gpp_scpf += gpp × n / area | 
-| Crown area | cohort%c_area | hio_crown_area += c_area | 
-
-
-### Conservative vs. Non-Conservative Averaging
-
-For variables that must conserve mass or energy, the history system outputs both numerators and denominators separately:
-
-![SVG image](../../assets/images/9.1.2__History_Update_Pipeline__img-08.svg)
-
-This approach ensures conservation even when cohort numbers and weights change between output timesteps.
-
-Sources: [main/FatesHistoryInterfaceMod.F90 106-132](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L106-L132)
-
-## Thread Safety and Boundary Management
-
-The history interface supports threaded execution by maintaining separate dimension boundaries for each thread. Each thread operates on its own subset of sites/patches/cohorts without interference.
-
-### Thread Boundary Structure
-
-![SVG image](../../assets/images/9.1.2__History_Update_Pipeline__img-09.svg)
-
-The `SetThreadBoundsEach` method initializes these boundaries during the setup phase, and all subsequent history updates use these boundaries to calculate correct array indices.
-
-Sources: [main/FatesHistoryInterfaceMod.F90 1024-1141](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L1024-L1141)
-
-## Flush and Reset Operations
-
-At the end of each output interval, the history arrays are "flushed" to the output file and then reset to prepare for the next accumulation period.
-
-### Flush-Reset Cycle
-
-![SVG image](../../assets/images/9.1.2__History_Update_Pipeline__img-10.svg)
-
-The averaging operation depends on the variable's `avgflag` :
-
-- `'A'`: Instantaneous (no averaging)
-- `'M'`: Time-mean (divide by sample count)
-- `'I'`: Time-integral (no normalization)
-
-
-Sources: [main/FatesHistoryInterfaceMod.F90 850-851](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L850-L851)
-
-## Summary: Complete Data Path
-
-The complete path from cohort attributes to output file follows these stages:
-
-![SVG image](../../assets/images/9.1.2__History_Update_Pipeline__img-11.svg)
-
-This pipeline executes multiple times per day (for high-frequency variables) or once per day (for daily dynamics variables), continuously building up the output dataset that represents the ecosystem's evolution over time.
-
-Sources: [main/FatesHistoryInterfaceMod.F90 1-854](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L1-L854)  [biogeochem/EDPhysiologyMod.F90 1-1248](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1-L1248)  [biogeochem/EDCohortDynamicsMod.F90 1-1243](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L1-L1243)
+Sources: `(main/FatesHistoryInterfaceMod.F90:1-5207)`

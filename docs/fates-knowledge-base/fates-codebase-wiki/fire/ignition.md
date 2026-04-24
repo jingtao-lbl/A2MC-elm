@@ -1,185 +1,184 @@
 # Fire Danger and Ignition
 
-<details>
-<summary>Relevant source files</summary>
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-
-- [biogeophys/FatesPlantRespPhotosynthMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantRespPhotosynthMod.F90)
-- [fire/SFMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90)
-- [main/EDParamsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90)
-- [main/EDPftvarcon.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90)
-- [parameter_files/fates_params_default.cdl](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl)
-
-
-</details>
+**Relevant source files:**
+- `fire/SFMainMod.F90`
+- `fire/SFParamsMod.F90`
+- `main/EDParamsMod.F90`
+- `main/EDPftvarcon.F90`
+- `parameter_files/fates_params_default.cdl`
 
 ## Purpose and Scope
 
-This page describes how FATES calculates fire danger and processes ignition sources using the SPITFIRE fire model. Fire danger quantifies the probability that environmental conditions will support fire spread, while ignition sources determine where fires can potentially start. Together, these determine whether and where fires occur in a simulation.
+This document describes how FATES computes daily fire danger and determines the number of potential fire ignitions per unit area using the SPITFIRE module. Fire danger is represented by the Nesterov Index (`acc_NI`) and derived Fire Danger Index (`FDI`), and ignitions come from lightning (always) and optionally from anthropogenic sources following Li et al. 2012. The outputs of this step — `acc_NI`, `FDI`, `NF` — feed directly into fuel moisture, rate of spread, and area burnt.
 
-For information about fire spread and intensity after ignition, see [Fire Spread and Intensity](fire/spread.md) . For information about how fire affects vegetation, see [Fire Effects on Vegetation](fire/effects.md) .
+For spread and intensity calculations see `spread.md`. For vegetation effects see `effects.md`.
 
 ## Overview
 
-Fire danger and ignition calculations operate at the site level and occur daily as part of the fire model workflow. The system uses the Nesterov Index (a meteorologically-based fire danger metric) to calculate a Fire Danger Index (FDI) representing ignition probability. This FDI is then combined with ignition sources (lightning and optionally anthropogenic) to determine the number of successful fire starts.
+Fire danger and ignition execute at the site level inside the daily `fire_model` driver `(fire/SFMainMod.F90:80-115)`. The data flow is:
 
-Fire Model Execution Flow
+```
+fire_danger_index       -> updates acc_NI
+charecteristics_of_fuel -> uses acc_NI for fuel moisture
+...
+area_burnt_intensity    -> computes FDI from acc_NI
+                           computes NF (lightning [+ anthropogenic])
+                           computes NF_successful from patch FI threshold
+```
 
-![SVG image](../assets/images/7.1__Fire_Danger_and_Ignition__img-01.svg)
+Note that the subroutine named `fire_danger_index` only accumulates `acc_NI`. The actual `FDI` calculation happens inside `area_burnt_intensity` `(fire/SFMainMod.F90:731-738)`.
 
-Sources: [fire/SFMainMod.F90 80-115](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L80-L115)
+## Nesterov Index
 
-## Nesterov Index Calculation
+### Daily Update
 
-The Nesterov Index (NI) is a cumulative fire danger metric based on daily temperature and humidity. It increases during dry, warm periods and resets when substantial rainfall occurs.
+The `fire_danger_index` subroutine `(fire/SFMainMod.F90:118-173)` updates `currentSite%acc_NI` each day using daily-mean temperature, precipitation, and relative humidity from the oldest vegetated patch. Dewpoint is recovered from a Magnus–Tetens formulation:
 
-### Daily Calculation Procedure
+```
+yipsolon = (SF_val_fdi_a * T) / (SF_val_fdi_b + T) + log(max(1, rh)/100)
+T_dew    = (SF_val_fdi_b * yipsolon) / (SF_val_fdi_a - yipsolon)
+```
 
-The `fire_danger_index` subroutine [fire/SFMainMod.F90 118-173](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L118-L173) executes the following steps:
+where `T` is in Celsius, `rh` is relative humidity in %, and `SF_val_fdi_a`, `SF_val_fdi_b` are the standard Magnus–Tetens constants (typical CDL values 17.27 and 237.3). The daily NI increment follows Nesterov 1968 (Thonicke 2010 Eq. 5) `(fire/SFMainMod.F90:160-171)`:
 
-Nesterov Index Data Flow
+```
+if rainfall > 3 mm/day:
+    d_NI = 0
+    acc_NI = 0                  (reset)
+else:
+    d_NI = max(0, (T - T_dew) * T)
+acc_NI = acc_NI + d_NI
+```
 
-![SVG image](../assets/images/7.1__Fire_Danger_and_Ignition__img-02.svg)
+The accumulated `acc_NI` persists across days and is also used inside `charecteristics_of_fuel` to drive the exponential decay of fuel moisture with drying time `(fire/SFMainMod.F90:266-280)`.
 
-Sources: [fire/SFMainMod.F90 118-173](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L118-L173)  [fire/SFParamsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFParamsMod.F90)
+### Site-Level Patch Selection
 
-### Site-Level Calculation
+`acc_NI` is calculated once per site using the forcing from a single patch. The oldest patch is used by default; in no-competition mode, if the oldest patch is bareground, the next younger (vegetated) patch is used instead `(fire/SFMainMod.F90:146-152)`. This is a simplification — the model does not currently compute a separate `acc_NI` per patch.
 
-The Nesterov Index is calculated once per site, using meteorological data from the oldest vegetated patch. In no-competition mode, if the oldest patch is bare ground, the next younger (vegetated) patch is used instead [fire/SFMainMod.F90 146-152](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L146-L152)
+Sources: `(fire/SFMainMod.F90:118-173)`
 
-The accumulated value ( `currentSite%acc_NI` ) persists across days and is used throughout the fire model, including:
+## Fire Danger Index
 
-- Fire Danger Index calculation
-- [Fire Spread and Intensity](fire/spread.md)Fuel moisture calculations (see )
+`FDI` is computed at the start of `area_burnt_intensity` `(fire/SFMainMod.F90:731-738)`:
 
+```
+if hlm_spitfire_mode == hlm_sf_successful_ignitions_def:
+    FDI                   = 1
+    cloud_to_ground_strikes = 1
+else:
+    FDI                   = 1 - exp(-SF_val_fdi_alpha * acc_NI)
+    cloud_to_ground_strikes = cg_strikes
+```
 
-## Fire Danger Index (FDI)
+This is Venevsky et al. 2002 Eq. 7 (a modification of Thonicke 2010 Eq. 8). With the typical `SF_val_fdi_alpha = 0.000337` the code comment reports the approximate bands `FDI ≈ 0.1` (low), `0.3` (moderate), `0.75` (high), and `1.0` (extreme) `(fire/SFMainMod.F90:729-730)`. The value is stored in `currentSite%FDI` and is later multiplied into both area-burnt and duration calculations.
 
-The Fire Danger Index converts the accumulated Nesterov Index into a probability that an ignition will successfully start a spreading fire. This calculation occurs in the `area_burnt_intensity` subroutine [fire/SFMainMod.F90 729-738](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L729-L738)
-
-### FDI Calculation Modes
-
-The calculation depends on the SPITFIRE mode ( `hlm_spitfire_mode` ):
-
-| Mode | Value | FDI Calculation | Cloud-to-Ground Fraction | 
-| --- | --- | --- | --- |
-| hlm_sf_successful_ignitions_def | Reading successful ignition data | FDI = 1.0 | cg_strikes = 1.0 | 
-| Other modes | Using lightning data | FDI = 1 - exp(-SF_val_fdi_alpha * acc_NI) | cg_strikes parameter | 
-
-
-For typical simulations using lightning data:
-
-where `SF_val_fdi_alpha = 0.000337`  [fire/SFParamsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFParamsMod.F90) is a calibration parameter from Venevsky et al. (2002).
-
-The FDI ranges from 0 (no fire danger) to 1 (extreme fire danger):
-
-- FDI ≈ 0.1: Low fire danger
-- FDI ≈ 0.3: Moderate fire danger
-- FDI ≈ 0.75: High fire danger
-- FDI ≈ 1.0: Extreme fire danger
-
-
-Sources: [fire/SFMainMod.F90 729-738](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L729-L738)  [fire/SFParamsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFParamsMod.F90)
+Sources: `(fire/SFMainMod.F90:731-738)`, `(fire/SFParamsMod.F90)`
 
 ## Ignition Sources
 
-FATES processes multiple ignition sources that determine the number of potential fire starts per day per km².
+The total ignition count `currentSite%NF` (count per km² per day) is computed per site after FDI `(fire/SFMainMod.F90:748-768)`:
+
+```
+NF_lightning = lightning source (see below)
+NF           = NF_lightning
+if mode == hlm_sf_anthro_ignitions_def:
+    NF = NF + NF_anthropogenic
+```
 
 ### Lightning Ignitions
 
-Lightning strikes are the primary natural ignition source. The number of lightning ignitions is calculated based on the SPITFIRE mode [fire/SFMainMod.F90 748-754](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L748-L754) :
+The lightning branch has two modes `(fire/SFMainMod.F90:750-754)`:
 
-Scalar Lightning Mode ( `hlm_sf_scalar_lightning_def` ):
+**Scalar mode** (`hlm_sf_scalar_lightning_def`):
+```
+NF_lightning = ED_val_nignitions * years_per_day * cloud_to_ground_strikes
+```
+where `ED_val_nignitions` is the annual lightning strike rate (count/km²/yr) from the parameter file, `years_per_day = 1/365` (or similar; the exact conversion constant used in the call), and `cloud_to_ground_strikes` comes from `cg_strikes`.
 
-where:
-
-- `ED_val_nignitions`: Annual lightning strikes per km² (parameter)
-- `years_per_day`: Converts annual rate to daily rate
-- `cg_strikes`: Fraction of cloud-to-ground strikes (parameter)
-
-
-External Lightning Data Mode (default):
-
-where `bc_in%lightning24(iofp)` provides observed daily lightning strike data from the host land model.
+**External lightning data mode** (default for all other ignition modes):
+```
+NF_lightning = bc_in%lightning24(iofp) * cloud_to_ground_strikes
+```
+where `bc_in%lightning24(iofp)` provides daily observed lightning strike counts per km² from the host land model boundary condition at the index of the oldest (vegetated) fates patch. When mode is `hlm_sf_successful_ignitions_def`, `cloud_to_ground_strikes` is forced to 1.0 earlier so that every incoming observation is treated as a successful ignition.
 
 ### Anthropogenic Ignitions
 
-When `hlm_spitfire_mode == hlm_sf_anthro_ignitions_def` , anthropogenic ignitions are added following Li et al. (2012) [fire/SFMainMod.F90 761-767](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L761-L767) :
+When `hlm_spitfire_mode == hlm_sf_anthro_ignitions_def`, human ignitions following Li et al. (2012) are added `(fire/SFMainMod.F90:761-767)`:
 
-where:
+```
+anthro_ign_count = 0.0035 * 6.8 * pop_density^0.43 / 30
+NF               = NF_lightning + anthro_ign_count
+```
 
-- `pot_hmn_ign_counts_alpha = 0.0035`: Potential human ignitions per person per month
-- `pop_density``bc_in%pop_density`: Population density from boundary conditions ( )
-- Division by 30: Approximate conversion from monthly to daily rate
+Where:
+- `0.0035` is `pot_hmn_ign_counts_alpha`, a hard-coded local parameter representing the Li et al. 2012 potential human ignition counts in ignitions per person per month `(fire/SFMainMod.F90:721)`.
+- `6.8` is the Li et al. 2012 multiplier.
+- `^0.43` is the Li et al. 2012 power-law exponent on population density; together with the `6.8` multiplier it produces the saturation behaviour of human ignitions at high population densities.
+- `pop_density` comes from the host land model boundary condition `bc_in%pop_density(iofp)` (people per km²).
+- `30` is the approximate conversion from monthly to daily rate.
 
+The two previous coefficients (`6.8` and `^0.43`) are not tunable — they are literal constants in the source and only apply in this ignition mode.
 
-Ignition Source Processing
+Sources: `(fire/SFMainMod.F90:721-722, 748-768)`
 
-![SVG image](../assets/images/7.1__Fire_Danger_and_Ignition__img-03.svg)
+## Successful Fires
 
-Sources: [fire/SFMainMod.F90 748-768](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L748-L768)
+After ROS, ground fuel consumption, and fire-line intensity have been computed per patch, a patch is counted as having a successful fire when `currentPatch%FI > SF_val_fire_threshold` `(fire/SFMainMod.F90:866-876)`:
 
-## Successful Fire Calculation
+```
+if FI > SF_val_fire_threshold:
+    fire                     = 1
+    NF_successful += NF * FDI * (currentPatch%area / AREA)
+else:
+    fire = 0, FD = 0, frac_burnt = 0
+```
 
-The number of successful fires ( `currentSite%NF_successful` ) is calculated at the patch level after determining fire intensity [fire/SFMainMod.F90 869-870](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L869-L870) :
+Only patches crossing the intensity threshold contribute to `currentSite%NF_successful`, and each patch contributes weighted by its area fraction.
 
-This represents the expected number of fires that:
+Sources: `(fire/SFMainMod.F90:727, 866-876)`
 
-Only fires with intensity ( `currentPatch%FI` ) exceeding `SF_val_fire_threshold` are counted as successful [fire/SFMainMod.F90 866-876](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L866-L876)
+## Key Variables and Parameters
 
-## Key Data Structures and Variables
+### Site-Level State
 
-Site-Level Fire Danger Variables
+| Variable | Units | Description |
+|---|---|---|
+| `currentSite%acc_NI` | °C² | Accumulated Nesterov Index |
+| `currentSite%FDI` | – | Fire Danger Index (0–1) |
+| `currentSite%NF` | count/km²/day | Daily total ignitions (lightning + anthropogenic) |
+| `currentSite%NF_successful` | count | Area-weighted count of successful fires |
 
-| Variable | Type | Units | Description | Location | 
-| --- | --- | --- | --- | --- |
-| currentSite%acc_NI | real(r8) | C² | Accumulated Nesterov Index | EDTypesMod.F90 | 
-| currentSite%FDI | real(r8) | fraction | Fire Danger Index (0-1) | EDTypesMod.F90 | 
-| currentSite%NF | real(r8) | count/km²/day | Number of ignitions | EDTypesMod.F90 | 
-| currentSite%NF_successful | real(r8) | count | Successful fires | EDTypesMod.F90 | 
+Defined in `biogeochem/EDTypesMod.F90`.
 
+### Parameters
 
-Key Parameters
+| Name | Source | Notes |
+|---|---|---|
+| `SF_val_fdi_alpha` | `SFParamsMod.F90` / CDL | FDI sensitivity (typ. 0.000337) |
+| `SF_val_fdi_a` | `SFParamsMod.F90` / CDL | Magnus–Tetens a (typ. 17.27) |
+| `SF_val_fdi_b` | `SFParamsMod.F90` / CDL | Magnus–Tetens b (typ. 237.3) |
+| `SF_val_fire_threshold` | `SFParamsMod.F90` / CDL | Minimum FI for a successful fire (typ. 50 kW/m) |
+| `ED_val_nignitions` | `EDParamsMod.F90` (`main/EDParamsMod.F90:57`) | Annual lightning count per km² |
+| `cg_strikes` | `EDParamsMod.F90` (`main/EDParamsMod.F90:83-84`) | Cloud-to-ground fraction |
+| `pot_hmn_ign_counts_alpha` | local, hard-coded `(fire/SFMainMod.F90:721)` | 0.0035 ign/person/month |
 
-| Parameter | Default Value | Units | Description | File Reference | 
-| --- | --- | --- | --- | --- |
-| SF_val_fdi_alpha | 0.000337 | 1/C² | FDI calibration coefficient | fire/SFParamsMod.F90 | 
-| SF_val_fdi_a | 17.27 | — | Magnus-Tetens constant | fire/SFParamsMod.F90 | 
-| SF_val_fdi_b | 237.3 | — | Magnus-Tetens constant | fire/SFParamsMod.F90 | 
-| ED_val_nignitions | — | count/km²/yr | Annual lightning ignitions | main/EDParamsMod.F9057 | 
-| cg_strikes | — | fraction | Cloud-to-ground fraction | main/EDParamsMod.F9083-84 | 
-| SF_val_fire_threshold | 50.0 | kW/m | Minimum fire intensity threshold | fire/SFParamsMod.F90 | 
+All `SF_val_*` scalars in `SFParamsMod` initialize to NaN and are populated from the CDL parameter file; the numerical defaults cited above reflect the standard `fates_params_default.cdl`.
 
+## SPITFIRE Mode Constants
 
-Sources: [fire/SFMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90)  [fire/SFParamsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFParamsMod.F90)  [main/EDParamsMod.F90 57-84](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90#L57-L84)
+`hlm_spitfire_mode` is imported from `FatesInterfaceTypesMod` `(fire/SFMainMod.F90:15-19)`. The four mode constants are:
 
-## Integration with Fire Model Workflow
+| Mode | Description |
+|---|---|
+| `hlm_sf_nofire_def` | Fire disabled — `fire_model` never enters the pipeline |
+| `hlm_sf_scalar_lightning_def` | Lightning from `ED_val_nignitions` scalar |
+| `hlm_sf_successful_ignitions_def` | External successful-ignitions data, forces `FDI = 1` and `cg = 1` |
+| `hlm_sf_anthro_ignitions_def` | Lightning data + Li et al. 2012 anthropogenic ignitions |
 
-Fire danger and ignition calculations are called early in the daily fire model sequence [fire/SFMainMod.F90 80-115](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L80-L115) :
-
-![SVG image](../assets/images/7.1__Fire_Danger_and_Ignition__img-04.svg)
-
-The calculated `acc_NI` persists across days and is used in:
-
-- **Fire Danger Index**: Determines ignition success probability
-- **Fuel Moisture**[fire/SFMainMod.F90268](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L268-L268): Exponential decay of fuel moisture with NI
-- **Fire Spread**: Indirectly affects rate of spread through fuel moisture
-
-
-Sources: [fire/SFMainMod.F90 80-115](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L80-L115)
-
-## SPITFIRE Modes
-
-FATES supports multiple SPITFIRE operational modes controlled by the `hlm_spitfire_mode` parameter:
-
-| Mode Constant | Value | Description | 
-| --- | --- | --- |
-| hlm_sf_nofire_def | 0 | Fire disabled | 
-| hlm_sf_scalar_lightning_def | 1 | Use scalar lightning parameter | 
-| hlm_sf_successful_ignitions_def | 2 | Read successful ignition data | 
-| hlm_sf_anthro_ignitions_def | 3 | Include anthropogenic ignitions | 
-
-
-These constants are defined in [FatesInterfaceTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/FatesInterfaceTypesMod.F90) and control the execution path through the fire danger and ignition calculations.
-
-Sources: [fire/SFMainMod.F90 16-19](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L16-L19)  [FatesInterfaceTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/FatesInterfaceTypesMod.F90)
+Sources: `(fire/SFMainMod.F90:15-19, 731-768)`, `(FatesInterfaceTypesMod.F90)`

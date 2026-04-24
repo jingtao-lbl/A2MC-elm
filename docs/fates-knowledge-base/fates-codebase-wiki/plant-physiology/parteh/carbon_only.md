@@ -1,383 +1,249 @@
 # Carbon-Only Allocation
 
-<details>
-<summary>Relevant source files</summary>
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-
-- [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90)
-- [biogeochem/EDPhysiologyMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90)
-- [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)
-- [biogeochem/FatesSoilBGCFluxMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90)
-- [parteh/PRTAllometricCNPMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90)
-- [parteh/PRTAllometricCarbonMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90)
-- [parteh/PRTGenericMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90)
-- [parteh/PRTLossFluxesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTLossFluxesMod.F90)
-
-
-</details>
+**Relevant source files:**
+- `parteh/PRTAllometricCarbonMod.F90`
+- `parteh/PRTGenericMod.F90`
+- `parteh/PRTLossFluxesMod.F90`
+- `parteh/PRTParametersMod.F90`
+- `biogeochem/FatesAllometryMod.F90`
+- `main/EDMainMod.F90`
 
 ## Purpose and Scope
 
-This page describes the carbon-only allometric allocation hypothesis implemented in FATES PARTEH (Plant Allocation and Reactive Transport Extensible Hypotheses). This hypothesis governs how plants allocate daily net carbon gain across different biomass pools using allometric relationships, without explicit tracking of nitrogen or phosphorus.
+The carbon-only allocation hypothesis (`prt_carbon_allom_hyp = 1`) is the simpler of FATES' two PARTEH hypotheses. It tracks only carbon (no nitrogen or phosphorus state), allocates daily net carbon balance to tissues in a priority order, and grows DBH along the allometric curve once the tissue-replacement and storage-refill stages are complete.
 
-For information about CNP (Carbon-Nitrogen-Phosphorus) allocation with flexible stoichiometry, see [CNP Allocation and Nutrient Dynamics](../plant-physiology/parteh/cnp_allocation.md) . For the overall PARTEH framework architecture, see [PARTEH: Plant Allocation System](../plant-physiology/parteh/index.md) .
-
-Sources:  [parteh/PRTAllometricCarbonMod.F90 1-66](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L1-L66)  [parteh/PRTGenericMod.F90 1-80](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90#L1-L80)
+For the CNP allocation hypothesis, see [CNP Allocation and Nutrient Dynamics](./cnp_allocation.md). For the framework overview, see [PARTEH: Plant Allocation System](./index.md).
 
 ## Hypothesis Overview
 
-The carbon-only allocation hypothesis ( `prt_carbon_allom_hyp` ) assumes that plant growth is limited solely by carbon availability and constrained by allometric relationships between diameter and biomass pools. This hypothesis is identified by the global constant `prt_carbon_allom_hyp = 1` and is instantiated through the `callom_prt_vartypes` class.
+Key characteristics:
 
-Key Characteristics:
+- All biomass pools contain only carbon (C12). No nitrogen or phosphorus state is kept.
+- Growth is constrained by allometric relationships between DBH and target biomass for each tissue.
+- Allocation priorities favor tissue-turnover replacement first, then storage, then leaves/fine-roots/sapwood to target, then structure, then stature growth.
+- DBH is integrated alongside the carbon pools during stature growth via an ODE solver (Euler by default, RKF45 optionally).
+- No nutrient limitation, no uptake from soil, no retranslocation (`retrans = 0` for carbon in `PRTLossFluxesMod`).
 
-- All biomass pools contain only carbon (no explicit N or P tracking)
-- Growth follows strict allometric relationships based on diameter at breast height (DBH)
-- Allocation priorities favor leaf and fine-root replacement, then storage, then structural growth
-- DBH is integrated alongside carbon pools during growth
-- No nutrient limitation or soil nutrient uptake
+The class is `callom_prt_vartypes`, extending `prt_vartypes`. Selection is controlled by the host-model variable `hlm_parteh_mode`.
 
+Sources: `(parteh/PRTAllometricCarbonMod.F90:1-143)`, `(parteh/PRTGenericMod.F90:69-70)`
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 67-131](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L67-L131)  [parteh/PRTGenericMod.F90 69-71](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90#L69-L71)
+## State Variables
 
-## Class Structure and State Variables
+| Local index | Name | Symbol | Positions |
+|---|---|---|---|
+| 1 | `leaf_c_id` | leaf C | 1..`nleafage` (up to `max_nleafage = 4`) |
+| 2 | `fnrt_c_id` | fine-root C | 1 |
+| 3 | `sapw_c_id` | sapwood C | 1 |
+| 4 | `store_c_id` | storage C | 1 |
+| 5 | `repro_c_id` | reproduction C | 1 |
+| 6 | `struct_c_id` | structure C | 1 |
 
-### Core Type Definition
+Only leaves are age-stratified; new allocation always flows into position 1 (the youngest bin). The DBH slot is added as index 7 (`dbh_id`) for the purpose of the integration step (`num_intgr_vars = 7`).
 
-The carbon-only allocation is implemented through the `callom_prt_vartypes` class, which extends the base `prt_vartypes` class and provides specialized allocation procedures.
-
-Sources:  [parteh/PRTAllometricCarbonMod.F90 136-143](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L136-L143)
-
-### State Variables
-
-The hypothesis tracks six carbon pools , each representing a different plant organ or function:
-
-| Variable ID | Symbol | Description | Organ | Element | Coordinates | 
-| --- | --- | --- | --- | --- | --- |
-| leaf_c_id (1) | leaf_c | Leaf Carbon | leaf_organ | carbon12_element | Multiple (age classes) | 
-| fnrt_c_id (2) | fnrt_c | Fine Root Carbon | fnrt_organ | carbon12_element | 1 | 
-| sapw_c_id (3) | sapw_c | Sapwood Carbon | sapw_organ | carbon12_element | 1 | 
-| store_c_id (4) | store_c | Storage Carbon | store_organ | carbon12_element | 1 | 
-| repro_c_id (5) | repro_c | Reproductive Carbon | repro_organ | carbon12_element | 1 | 
-| struct_c_id (6) | struct_c | Structural Carbon | struct_organ | carbon12_element | 1 | 
-
-
-Note: Leaf carbon is discretized by age class (typically 1-4 classes), while other pools have a single spatial position.
-
-Sources:  [parteh/PRTAllometricCarbonMod.F90 76-82](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L76-L82)  [parteh/PRTGenericMod.F90 78-86](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90#L78-L86)
-
-### Integration Variables
-
-During allocation, the hypothesis integrates 7 variables simultaneously:
-
-1-6: The six carbon pools listed above  7: `dbh_id` - Diameter at breast height [cm]
-
-DBH is treated as a boundary condition externally but is integrated alongside carbon pools to maintain consistency with allometric constraints.
-
-Sources:  [parteh/PRTAllometricCarbonMod.F90 87-90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L87-L90)
+Sources: `(parteh/PRTAllometricCarbonMod.F90:76-90)`
 
 ## Boundary Conditions
 
-### Input/Output Boundary Conditions
+### Input-Output (`bc_inout`)
 
-| ID | Symbol | Description | Type | Units | 
-| --- | --- | --- | --- | --- |
-| ac_bc_inout_id_dbh (1) | dbh | Diameter at breast height | In/Out | cm | 
-| ac_bc_inout_id_netdc (2) | carbon_balance | Net daily carbon gain | In/Out | kgC | 
+| Index | Constant | Symbol | Units |
+|---|---|---|---|
+| 1 | `ac_bc_inout_id_dbh` | DBH | cm |
+| 2 | `ac_bc_inout_id_netdc` | `carbon_balance` (daily NPP-MR) | kgC |
 
+### Input-Only (`bc_in`)
 
-These boundary conditions are both read and modified by the allocation routine.
+| Index | Constant | Symbol | Type |
+|---|---|---|---|
+| 1 | `ac_bc_in_id_pft` | PFT index | integer |
+| 2 | `ac_bc_in_id_ctrim` | canopy trim factor [0-1] | real |
+| 3 | `ac_bc_in_id_lstat` | leaf status (`leaves_on`/`leaves_off`/`leaves_shedding`) | integer |
+| 4 | `ac_bc_in_id_cdamage` | crown damage class | integer |
+| 5 | `ac_bc_in_id_efleaf` | leaf elongation factor [0-1] | real |
+| 6 | `ac_bc_in_id_effnrt` | fine-root elongation factor [0-1] | real |
+| 7 | `ac_bc_in_id_efstem` | stem elongation factor [0-1] | real |
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 101-104](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L101-L104)
+Elongation factors gate the allometric target calculations during non-fully-expanded phenology stages.
 
-### Input-Only Boundary Conditions
+Sources: `(parteh/PRTAllometricCarbonMod.F90:99-118)`
 
-| ID | Symbol | Description | Type | 
-| --- | --- | --- | --- |
-| ac_bc_in_id_pft (1) | ipft | Plant functional type index | Integer | 
-| ac_bc_in_id_ctrim (2) | canopy_trim | Canopy trimming function [0-1] | Real | 
-| ac_bc_in_id_lstat (3) | leaf_status | Leaf status (on/off/shedding) | Integer | 
-| ac_bc_in_id_cdamage (4) | crowndamage | Crown damage class | Integer | 
-| ac_bc_in_id_efleaf (5) | elongf_leaf | Leaf elongation factor [0-1] | Real | 
-| ac_bc_in_id_effnrt (6) | elongf_fnrt | Fine-root elongation factor [0-1] | Real | 
-| ac_bc_in_id_efstem (7) | elongf_stem | Stem elongation factor [0-1] | Real | 
+## Daily Allocation: `DailyPRTAllometricCarbon`
 
+The main routine is `DailyPRTAllometricCarbon(this, phase)` in `PRTAllometricCarbonMod.F90:260-977`. Unlike CNP, the carbon-only hypothesis actually uses the `phase` argument. It dispatches on it via a single Fortran `select case (phase)` with exactly **three** case branches: `case(1)`, `case(2)`, and `case(3)` (lines 524-949). Source comments label internal sub-blocks inside those three cases with Roman numerals (III, IV, V, VI, VII, VIII); the following subsections preserve those labels.
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 107-114](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L107-L114)
+Hence "three-phase" is the correct count. The older wiki labeling of "five phases" referred to Roman-numeral sub-blocks, not to the actual `select case (phase)` dispatch.
 
-## Daily Allocation Algorithm
+Sources: `(parteh/PRTAllometricCarbonMod.F90:524)` (`select case (phase)`)
 
-### Main Entry Point
+### Step 0 (before dispatch): Allometric Targets
 
-The daily allocation is executed through `DailyPRTAllometricCarbon` , which allocates the net daily carbon balance ( `carbon_balance` ) across all biomass pools while maintaining allometric relationships.
+Before the `select case`, the routine computes current allometric targets for every organ from DBH, PFT, canopy trim, crown damage, and the three elongation factors (lines ~442-500):
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 260-300](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L260-L300)
+```
+call bleaf(dbh, ipft, crowndamage, canopy_trim, elongf_leaf, target_leaf_c)
+call bfineroot(dbh, ipft, canopy_trim, l2fr, elongf_fnrt, target_fnrt_c)
+call bsap_allom(...); call bagw_allom(...); call bbgw_allom(...)
+call bdead_allom(...); call bstore_allom(...)
+```
 
-### Algorithm Flow Diagram
+If the PFT is drought-deciduous and currently dormant (`is_hydecid_dormant`), tissue targets (leaf, fine-root, sapwood, structure) are zeroed and any positive carbon balance is steered directly to storage at lines 511-517. This check runs before dispatch.
 
-![SVG image](../../assets/images/4.2.1__Carbon-Only_Allocation__img-01.svg)
+Sources: `(parteh/PRTAllometricCarbonMod.F90:442-517)`
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 442-911](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L442-L911)
+### `case(1)` — Replace Turnover, Settle Carbon-Balance Sign
 
-### Allocation Phases in Detail
-Phase 1: Replace Maintenance Turnover
-When `carbon_balance < 0` (daily respiration exceeds photosynthesis), the deficit is covered by drawing from storage. Leaf and fine-root turnover demands are calculated and fulfilled from storage reserves.
+Two sub-blocks (III and IV) execute inside `case(1)`:
 
-Key Variables:
+**Sub-block III (lines 531-584): Pay leaf/fine-root turnover.** Demand is
 
-- `leaf_c_demand`: Carbon needed to replace leaf turnover [kgC]
-- `fnrt_c_demand`: Carbon needed to replace fine-root turnover [kgC]
-- `total_c_demand`: Sum of leaf and fine-root demands [kgC]
+```
+leaf_c_demand = leaf_stor_priority(ipft) * sum(turnover(leaf, :))    ! evergreen
+fnrt_c_demand = leaf_stor_priority(ipft) * turnover(fnrt, 1)
+```
 
+with special cases for drought-deciduous dormant state (both demands zero) and cold-deciduous/drought-deciduous leaves-on state (leaf demand zero, fnrt demand set to maintain fine roots). The routine spends up to `store_c + carbon_balance` on these demands proportionally:
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 505-559](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L505-L559)
-Phase 2: Refill Storage
-Positive carbon gain first goes to replenishing storage up to its allometric target. The storage target is calculated as a fraction of leaf biomass.
+```
+allocation_factor = min(1, (store_c + carbon_balance) / total_c_demand)
+leaf_c_flux       = leaf_c_demand * allocation_factor
+fnrt_c_flux       = fnrt_c_demand * allocation_factor
+```
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 561-586](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L561-L586)
-Phase 3: Leaves and Fine-Roots to Allometry
-Remaining carbon gain is allocated to bring leaves and fine-roots up to their allometric targets. The allocation is proportional to the deficit in each pool.
+`leaf_c(iexp_leaf)` and `fnrt_c` are updated and `carbon_balance` is reduced. If the pulled demand pushed `carbon_balance` below zero, the deficit is made up from storage in sub-block IV (below).
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 588-621](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L588-L621)
-Phase 4: Sapwood and Structure to Allometry
-If carbon remains, it is allocated to sapwood and structural pools to bring them to allometric targets.
+**Sub-block IV (lines 586-613): Reconcile negative balance or deposit to storage.**
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 623-671](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L623-L671)
-Phase 5: Concurrent Growth (Stature Growth)
-If all pools are at allometry and carbon still remains, the plant grows in stature. All pools and DBH are integrated simultaneously using an ODE solver to maintain allometric consistency.
+- If `carbon_balance < 0`: storage covers the deficit. `store_c_flux = carbon_balance` (negative); `store_c += store_c_flux`.
+- If `carbon_balance ≥ 0`: deposit some of the positive balance into storage using the same saturating function as CNP (lines 603-611):
 
-Integration Methods:
+    ```
+    store_below_target    = max(0, target_store_c - store_c)
+    store_target_fraction = max(0, store_c / target_store_c)
+    store_c_flux          = min(store_below_target, carbon_balance * max(exp(-store_target_fraction^4) - exp(-1), 0))
+    ```
 
-- `ODESolve = 1`: Runge-Kutta-Fehlberg (RKF45) adaptive method
-- `ODESolve = 2`: Simple Euler method (default)
+    The exponential weighting pushes a large share to storage when storage is near empty and a vanishing share when near target.
 
+Therefore `case(1)` is **not** only the negative-balance branch. It handles turnover replacement and both signs of carbon balance, in the same `DailyPRT` call.
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 673-882](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L673-L882)
+Sources: `(parteh/PRTAllometricCarbonMod.F90:525-613)`
 
-## Allometric Constraints
+### `case(2)` — Push Live Pools Toward Allometric Targets
 
-### Allometry Functions Used
+Three sub-blocks execute inside `case(2)`:
 
-The allocation algorithm relies on allometric functions from `FatesAllometryMod` to calculate target biomass for each pool based on DBH:
+- **V (lines 615-645):** Bring leaves and fine-roots up to target by proportional allocation, using `leaf_below_target = max(0, target_leaf_c - sum(leaf_c))` and similarly for `fnrt`.
+- **VI (lines 647-681):** Push all live pools (leaf, fnrt, sapw, store) proportionally toward their below-target amounts, using one shared allocation factor. Structure is excluded here.
+- **VII (lines 683-700):** If carbon remains, replenish the structural pool directly to its below-target amount.
 
-| Function | Purpose | Key Parameters | 
-| --- | --- | --- |
-| bleaf() | Target leaf biomass | dbh, ipft, crowndamage, canopy_trim, elongf_leaf | 
-| bfineroot() | Target fine-root biomass | dbh, ipft, canopy_trim, l2fr, elongf_fnrt | 
-| bsap_allom() | Target sapwood biomass | dbh, ipft, crowndamage, canopy_trim, elongf_stem | 
-| bstore_allom() | Target storage biomass | dbh, ipft, crowndamage, canopy_trim | 
-| bagw_allom() | Target above-ground woody biomass | dbh, ipft, crowndamage, elongf_stem | 
-| bbgw_allom() | Target below-ground woody biomass | dbh, ipft, elongf_stem | 
-| bdead_allom() | Target structural biomass | bagw, bgw, sapw, ipft | 
-| h_allom() | Height from diameter | dbh, ipft | 
+Fusion can leave pools above target; any such pool is not reduced — it just waits for the other pools to catch up.
 
+Sources: `(parteh/PRTAllometricCarbonMod.F90:615-700)`
 
-Note:  `elongf_leaf` , `elongf_fnrt` , and `elongf_stem` are elongation factors [0-1] that allow phenology to modify allometric targets (e.g., during leaf-off periods for deciduous plants).
+### `case(3)` — Stature Growth
 
-Sources:  [biogeochem/FatesAllometryMod.F90 106-128](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L106-L128)  [parteh/PRTAllometricCarbonMod.F90 442-500](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L442-L500)
+Two sub-blocks execute inside `case(3)`:
 
-### Allometry During Integration
+- **VII ½ (lines 702-715):** If the plant is semi-deciduous and shedding leaves but still has positive `carbon_balance`, stash the whole carbon balance into storage (even above target) and skip growth. This avoids building new tissue when the plant is in a leaf-shedding regime.
+- **VIII (lines 718-947):** Integrate all carbon pools and DBH along the allometric curve. An adaptive integrator (`RKF45` or Euler) advances the seven-element state vector `c_pool = [leaf, fnrt, sapw, store, repro, struct, dbh]`, with a `c_mask` that excludes pools already above target. After each step, `CheckIntegratedAllometries` verifies the step stayed on allometry; if not, the step is halved and retried. `max_substeps = 300` iterations are allowed before the run aborts with a diagnostic dump.
 
-During concurrent growth (Phase 5), the integration derivatives are calculated based on allometric derivatives:
+On success, the integrated pool deltas are corrected by a proportional factor `flux_adj = carbon_balance / total_flux` to guarantee exact mass conservation, then committed to the state (lines 900-933). `dbh` is updated at line 933.
 
-Where `dBiomass/dDBH` comes from the derivative output of allometry functions (e.g., `dbldd` , `dbadd` , etc.).
+Sources: `(parteh/PRTAllometricCarbonMod.F90:702-947)`
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 1083-1175](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L1083-L1175)
+### After Dispatch: Flux Diagnostics
 
-## Integration Method and ODE Solver
+After `select case`, the routine accumulates `net_alloc` on each pool as `new - old`:
 
-### Concurrent Growth Integration
+```fortran
+! PRTAllometricCarbonMod.F90:951-971
+this%variables(leaf_c_id)%net_alloc(icd) += (leaf_c(icd) - leaf_c0(icd))
+! ... similar for fnrt, sapw, store, repro, struct
+```
 
-When all pools are at allometric targets and excess carbon remains, the plant grows by simultaneously integrating:
+This feeds the `CheckMassConservation` diagnostic and the NPP accumulators in `FatesSoilBGCFluxMod::PrepCH4BCs`.
 
-- The 6 carbon pools
-- DBH
+Sources: `(parteh/PRTAllometricCarbonMod.F90:951-977)`
 
+## Allometric Functions Used
 
-The system is represented as:
+| Function | Purpose | Primary inputs |
+|---|---|---|
+| `bleaf` | Target leaf biomass | dbh, ipft, crowndamage, canopy_trim, elongf_leaf |
+| `bfineroot` | Target fine-root biomass | dbh, ipft, canopy_trim, l2fr, elongf_fnrt |
+| `bsap_allom` | Target sapwood biomass | dbh, ipft, crowndamage, canopy_trim, elongf_stem |
+| `bstore_allom` | Target storage biomass | dbh, ipft, crowndamage, canopy_trim |
+| `bagw_allom` | Above-ground woody biomass target | dbh, ipft, crowndamage, elongf_stem |
+| `bbgw_allom` | Below-ground woody biomass target | dbh, ipft, elongf_stem |
+| `bdead_allom` | Structural biomass target | agw, bgw, sapw, ipft |
+| `h_allom` | Height from DBH | dbh, ipft |
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 1035-1082](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L1035-L1082)
+For carbon-only, `l2fr` is the **static** parameter `prt_params%allom_l2fr(ipft)`. CNP plants instead modify `l2fr` dynamically through the PID controller.
 
-### ODE Solver Selection
+Sources: `(biogeochem/FatesAllometryMod.F90)`, `(parteh/PRTAllometricCarbonMod.F90:442-500)`
 
-The model supports two integration methods:
+## Integration With FATES Daily Loop
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 405-406](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L405-L406)  [FatesIntegratorsMod](https://github.com/jingtao-lbl/fates/blob/e85d9977/FatesIntegratorsMod)
+Inside `EDMainMod::ed_integrate_state_variables`:
 
-### Integration Convergence Check
+```
+1. call PRTMaintTurnover(...)            [line 535, retrans is zero for C]
+2. call currentCohort%prt%DailyPRT(phase=1)   [line 582, executes case(1)]
+3. call currentCohort%prt%DailyPRT(phase=2)   [line 585, executes case(2)]
+4. (damage module runs between phase=2 and phase=3 if enabled)
+5. call currentCohort%prt%DailyPRT(phase=3)   [line 601, executes case(3)]
+```
 
-After integration, the routine verifies that integrated pools match allometric targets within tolerance:
+Deciduous leaf drop and leaf flush run in `EDPhysiologyMod::phenology` independently of `DailyPRT` (call sites at `EDPhysiologyMod.F90:1692-1749`). They invoke `PRTDeciduousTurnover` (which for carbon-only just subtracts `(1-retrans) * mass_fraction * val` from the pool and adds it to the turnover diagnostic, with `retrans = 0`) and `PRTPhenologyFlush` (which transfers a fraction of storage into leaves or fine roots as part of spring leaf-out).
 
-Maximum allowable error: `calloc_abs_error` (typically ~1e-9 kgC)
+Sources: `(main/EDMainMod.F90:535-601)`, `(biogeochem/EDPhysiologyMod.F90:1692-1749)`, `(parteh/PRTLossFluxesMod.F90:461-870)`
 
-Sources:  [biogeochem/FatesAllometryMod.F90 163-288](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L163-L288)
+## Integration Method
 
-## Initialization and Object Creation
+The ODE integrator is chosen by a hard-coded switch at `PRTAllometricCarbonMod.F90:405-406`:
 
-### Global Initialization
+```fortran
+integer, parameter :: ODESolve = 2   ! 1 = RKF45, 2 = Euler
+```
 
-The carbon-only allocation hypothesis is initialized once per simulation through:
+With `ODESolve = 2`, each integration attempt first tries to span the whole `carbon_balance` in one Euler step, then validates with `CheckIntegratedAllometries`. If the allometry check fails, the step is halved and retried. `max_substeps = 300` iterations max. RKF45 is available but not the default.
 
-This routine:
+Sources: `(parteh/PRTAllometricCarbonMod.F90:405-406,829-836)`
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 169-255](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L169-L255)
+## Loss Fluxes in Carbon-Only Mode
 
-### Variable Registration
+The carbon-only hypothesis uses the same `PRTLossFluxesMod` routines as CNP, but with `retrans = 0` for the carbon element branch (`PRTLossFluxesMod.F90:571-575` and `:775-776`). Practically:
 
-Each state variable is registered using:
+- **Evergreen maintenance turnover** (`PRTMaintTurnover`): Drains `val(i_pos)` by `base_turnover(organ) * val`, routes all of it to the `turnover(i_pos)` diagnostic, and adds nothing back to storage.
+- **Deciduous leaf drop** (`PRTDeciduousTurnover`): Drains the specified `mass_fraction` of leaf (and fnrt, sapw, struct for non-woody) and routes all of it to turnover.
+- **Leaf flush** (`PRTPhenologyFlush`): Transfers a fraction `c_store_transfer_frac` of storage C into the target organ (leaf or fnrt or, for non-woody, sapw/struct).
 
-This creates bidirectional mappings between variable IDs and organ/element combinations via:
+No nutrient is retranslocated because the carbon-only hypothesis has no nutrient state.
 
-- `prt_global_ac%sp_organ_map(organ_id, element_id)`→ variable ID
-- `prt_global_ac%organ_map(organ_id)%var_id(:)`→ list of variable IDs for an organ
+Sources: `(parteh/PRTLossFluxesMod.F90:73-277,461-870)`
 
+## Key Parameters
 
-Sources:  [parteh/PRTAllometricCarbonMod.F90 237-242](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L237-L242)  [parteh/PRTGenericMod.F90 447-483](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90#L447-L483)
+| Parameter | Role |
+|---|---|
+| `allom_hmode`, `allom_lmode`, etc. | Select which allometry function form to use for each relationship |
+| `allom_d2h1..3`, `allom_d2bl1..3`, `allom_agb1..3` | Allometry coefficients |
+| `allom_l2fr` | Fixed leaf-to-fine-root biomass ratio (carbon-only; CNP overrides this) |
+| `wood_density`, `c2b`, `allom_agb_frac` | Tissue property coefficients |
+| `leaf_long`, `root_long` | Turnover timescales (years) |
+| `season_decid`, `stress_decid` | Phenology flags |
+| `leaf_stor_priority` | Fraction of tissue turnover demand paid at priority 1 in sub-block III |
 
-### Per-Cohort Initialization
+Sources: `(parteh/PRTParametersMod.F90)`, `(biogeochem/FatesAllometryMod.F90)`
 
-When a new cohort is created, its PARTEH object is initialized through:
+## Summary
 
-This routine (defined in `EDCohortDynamicsMod` ):
+The carbon-only hypothesis runs its daily allocation in three dispatches of `DailyPRT(phase)` with `phase = 1, 2, 3`. Each dispatch executes one `case` of a single `select case (phase)` in `DailyPRTAllometricCarbon`. The branches do, respectively: turnover replacement and carbon-balance reconciliation; tissue refill toward allometric targets; stature growth via numerical integration along the allometric curve. The carbon-only hypothesis lacks nutrient state, so the PID controller and equivalent-carbon limiter used by CNP are absent; `l2fr` is a fixed PFT parameter.
 
-Sources:  [biogeochem/EDCohortDynamicsMod.F90 293-342](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L293-L342)
-
-### Setting Initial Conditions
-
-Initial biomass values are set through the generic interface:
-
-For new recruits, initial values are calculated from:
-
-- Target DBH (from recruitment scheme)
-- Allometric functions
-- PFT-specific parameters
-
-
-Sources:  [biogeochem/EDPhysiologyMod.F90 1200-1400](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1200-L1400) (recruitment routine)
-
-## Integration with FATES Dynamics
-
-### Call Sequence Diagram
-
-![SVG image](../../assets/images/4.2.1__Carbon-Only_Allocation__img-02.svg)
-
-Sources:  [biogeochem/EDMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMainMod.F90)  [parteh/PRTAllometricCarbonMod.F90 260-911](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L260-L911)
-
-### Turnover and Loss Fluxes
-
-Maintenance turnover (for evergreens) and deciduous leaf drop are handled through generic loss flux routines:
-
-These routines:
-
-- Calculate turnover mass for each pool
-- Handle retranslocation to storage (for nutrients in CNP mode; zero for C-only)
-- `turnover`Update flux diagnostic
-- Reduce pool values
-
-
-Sources:  [parteh/PRTLossFluxesMod.F90 630-807](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTLossFluxesMod.F90#L630-L807)
-
-## Key Design Decisions and Assumptions
-
-### Carbon-Only Simplifications
-
-Sources:  [parteh/PRTAllometricCarbonMod.F90 1-66](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L1-L66)
-
-### Allocation Priorities
-
-The five-phase priority system reflects plant survival strategy:
-
-Sources:  [parteh/PRTAllometricCarbonMod.F90 260-300](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L260-L300)
-
-### Deciduous vs. Evergreen
-
-- **Deciduous PFTs**
-- `PRTDeciduousTurnover`Leaf drop occurs via (triggered by phenology)
-- Storage refills during leaf-off period
-- `PRTPhenologyFlush`Leaf flush via transfers storage → leaves
-
-:
-- **Evergreen PFTs**
-- `PRTMaintTurnover`Continuous maintenance turnover via
-- No seasonal storage dynamics
-- Leaf biomass relatively stable
-
-:
-
-
-Sources:  [parteh/PRTAllometricCarbonMod.F90 436-440](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L436-L440)  [parteh/PRTLossFluxesMod.F90 73-277](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTLossFluxesMod.F90#L73-L277)
-
-## Comparison with CNP Allocation
-
-| Aspect | Carbon-Only (prt_carbon_allom_hyp) | CNP Allocation (prt_cnp_flex_allom_hyp) | 
-| --- | --- | --- |
-| Tracked Elements | Carbon only | Carbon, Nitrogen, Phosphorus | 
-| Growth Limitation | Carbon availability + allometry | Carbon, N, P availability + allometry | 
-| Storage | Carbon only | Separate C, N, P storage pools | 
-| Soil Coupling | None | Uptake from soil BGC via bc_in%plant_*_uptake_flux | 
-| Retranslocation | None | N and P retranslocated during turnover | 
-| Leaf:Fineroot Ratio | Fixed by allom_l2fr parameter | Dynamic via PID controller (l2fr optimizes for N/P acquisition) | 
-| Stoichiometry | Implicit (not tracked) | Explicit per organ (growth-minimum and maximum) | 
-| Computational Cost | Lower | Higher (additional elements, optimization) | 
-
-
-For details on CNP allocation, see [CNP Allocation and Nutrient Dynamics](../plant-physiology/parteh/cnp_allocation.md) .
-
-Sources:  [parteh/PRTAllometricCarbonMod.F90 1-20](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L1-L20)  [parteh/PRTAllometricCNPMod.F90 1-80](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L1-L80)
-
-## Code Entry Points and Key Functions
-
-### Primary Functions
-
-| Function | Location | Purpose | 
-| --- | --- | --- |
-| InitPRTGlobalAllometricCarbon() | parteh/PRTAllometricCarbonMod.F90169-255 | Initialize global hypothesis descriptor | 
-| DailyPRTAllometricCarbon() | parteh/PRTAllometricCarbonMod.F90260-911 | Main daily allocation routine | 
-| AgeLeaves() | parteh/PRTAllometricCarbonMod.F90913-1030 | Transfer carbon between leaf age classes | 
-| InitPRTObject() | biogeochem/EDCohortDynamicsMod.F90293-342 | Allocate PRT object for new cohort | 
-| TargetAllometricCarbon() | parteh/PRTAllometricCarbonMod.F901083-1175 | Calculate allocation targets during integration | 
-
-
-### Supporting Allometry Functions
-
-| Function | Location | Purpose | 
-| --- | --- | --- |
-| bleaf() | biogeochem/FatesAllometryMod.F90554-623 | Leaf biomass target | 
-| bfineroot() | biogeochem/FatesAllometryMod.F90625-707 | Fine-root biomass target | 
-| bsap_allom() | biogeochem/FatesAllometryMod.F90753-835 | Sapwood biomass target | 
-| bstore_allom() | biogeochem/FatesAllometryMod.F90837-880 | Storage biomass target | 
-| bagw_allom() | biogeochem/FatesAllometryMod.F90372-434 | Above-ground woody biomass | 
-| bbgw_allom() | biogeochem/FatesAllometryMod.F90709-751 | Below-ground woody biomass | 
-| bdead_allom() | biogeochem/FatesAllometryMod.F90882-906 | Structural biomass | 
-
-
-Sources:  [parteh/PRTAllometricCarbonMod.F90 1-911](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L1-L911)  [biogeochem/FatesAllometryMod.F90 1-1000](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L1-L1000)
-
-## Parameter Dependencies
-
-The carbon-only allocation relies on the following PFT-specific parameters (from `prt_params` ):
-
-### Allometry Parameters
-
-- `allom_hmode``allom_lmode``allom_amode`, , , etc. - Select allometry function types
-- `allom_d2h1``allom_d2h2``allom_d2h3`, , - Height allometry coefficients
-- `allom_d2bl1``allom_d2bl2``allom_d2bl3`, , - Leaf biomass allometry coefficients
-- `allom_agb1``allom_agb2``allom_agb3`, , - Above-ground biomass allometry coefficients
-- `allom_l2fr`- Leaf to fine-root biomass ratio
-
-
-### Tissue Properties
-
-- `wood_density`- Wood specific gravity [g/cm³]
-- `c2b`- Carbon to biomass ratio (typically ~2.0)
-- `allom_agb_frac`- Fraction of wood above ground
-
-
-### Turnover and Phenology
-
-- `leaf_long`- Leaf longevity [years] (by age class)
-- `root_long`- Fine-root longevity [years]
-- `season_decid`- Is PFT cold-deciduous? (integer flag)
-- `stress_decid`- Is PFT drought-deciduous? (integer flag)
-
-
-Sources:  [PRTParametersMod](https://github.com/jingtao-lbl/fates/blob/e85d9977/PRTParametersMod)  [biogeochem/FatesAllometryMod.F90 80-150](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L80-L150)
+Sources: `(parteh/PRTAllometricCarbonMod.F90:260-977)`

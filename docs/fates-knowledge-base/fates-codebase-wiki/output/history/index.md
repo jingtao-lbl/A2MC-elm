@@ -1,229 +1,146 @@
 # History Output System
 
-<details>
-<summary>Relevant source files</summary>
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-
-- [main/FatesHistoryInterfaceMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90)
-- [main/FatesInterfaceMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90)
-- [main/FatesInterfaceTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90)
-
-
-</details>
+**Relevant source files:**
+- `main/FatesHistoryInterfaceMod.F90`
+- `main/FatesHistoryVariableType.F90`
+- `main/FatesIODimensionsMod.F90`
+- `main/FatesIOVariableKindMod.F90`
+- `main/FatesInterfaceMod.F90`
+- `main/FatesInterfaceTypesMod.F90`
 
 ## Purpose and Scope
 
-The History Output System manages the definition, registration, accumulation, and output of diagnostic variables from FATES simulations. Due to FATES' complex sub-gridscale structure—with multiple patches per site and multiple cohorts per patch—the system handles multi-dimensional output across various classification schemes (PFT, size class, age class, canopy layer, etc.). It provides dimension multiplexing to work within host land model output constraints and maintains efficient variable indexing to avoid repeated name lookups during simulation timesteps.
+The History Output System manages the definition, registration, accumulation, and flushing of FATES diagnostic variables. Because FATES organizes vegetation hierarchically (sites → patches → cohorts) and its patches and cohorts are born and die continuously, the output system has to bin continuous cohort attributes (DBH, age) into discrete classes and aggregate per-plant quantities into per-site arrays that can be written into a rectangular NetCDF file.
+
+Related topics:
+
+- [History Update Pipeline](pipeline.md) — where and how each update routine is called
+- [History Variables and Dimensions](variables.md) — dimension kinds and multiplexed dimensions
+- [Restart System](../restart.md) — the separate pipeline for state serialization
+- [Mass Balance Checking](../mass_balance.md) — conservation enforcement
 
-For information about restart file I/O, see [Restart System](../output/restart.md) . For mass balance verification, see [Mass Balance Checking](../output/mass_balance.md) .
+## Architecture
+
+The system lives in `main/FatesHistoryInterfaceMod.F90` and centers on the type `fates_history_interface_type`, with a global instance `fates_hist`. It manages:
+
+- An `hvars(:)` array of history variable objects of type `fates_history_variable_type` (defined in `main/FatesHistoryVariableType.F90`), each carrying `vname`, `long_name`, `units`, `avgflag`, `vtype`, `flushval`, `upfreq`, and one or more data buffers.
+- A `dim_kinds(:)` registry of dimension-kind objects (sized to `fates_history_num_dim_kinds = 50`).
+- A `dim_bounds(:)` registry of per-thread dimension bounds (sized to `fates_history_num_dimensions = 50`).
+- A set of integer indices into `dim_bounds`, one per dimension (e.g., `column_index_`, `levscpf_index_`, `levpft_index_`).
 
-## System Architecture
+Sources: `(main/FatesHistoryInterfaceMod.F90:743-862)`
 
-The History Output System is implemented primarily in `FatesHistoryInterfaceMod` and interfaces with host land models through boundary condition types. The system operates in two phases: initialization (where variables and dimensions are defined) and runtime (where variables are updated and flushed to output).
+## Initialization, Runtime, Flushing
 
-### Core Components
+The system moves through three phases:
 
-![SVG image](../../assets/images/9.1__History_Output_System__img-01.svg)
+1. **Initialization.** `define_history_vars` (called from `initialize_history_vars`) invokes `set_history_var` hundreds of times, once per `FATES_*` variable, to register the variable's metadata, look up its dimension kind via `iotype_index`, allocate its data buffer, and stamp its integer index (e.g., `ih_leafc_pf`) into a module-level variable. There are 479 such registrations in `e85d997`.
+2. **Runtime.** Four update routines (`update_history_dyn`, `update_history_hifrq`, `update_history_hydraulics`, `update_history_nutrflux`) walk the site/patch/cohort hierarchy and accumulate data into the registered variables. See [History Update Pipeline](pipeline.md) for details on when each is called.
+3. **Flushing.** At the end of each host-model history interval, `flush_hvars` copies the accumulated buffers into the host's I/O arrays and `zero_site_hvars` resets the buffers using each variable's `flushval`.
 
-Sources:  [main/FatesHistoryInterfaceMod.F90 1-170](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L1-L170)  [main/FatesHistoryInterfaceMod.F90 746-854](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L746-L854)
+Sources: `(main/FatesHistoryInterfaceMod.F90:777-862, 1144-1260)`
 
-The `fates_history_interface_type`  [main/FatesHistoryInterfaceMod.F90 746-854](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L746-L854) serves as the central coordinator, containing:
+## Dimension Registry
 
-- `hvars(:)`- array of history variable definitions with metadata and data arrays
-- `dim_kinds(:)`- registry of dimension/kind combinations (50 static entries)
-- `dim_bounds(:)`- thread-specific dimension boundaries (50 static entries)
-- Integer indices for each dimension type (column, levsoil, levscpf, etc.)
+FATES tracks output across multiple axes. Each base dimension and each multiplexed dimension is registered once into the `dim_bounds` array during initialization, and a dedicated getter method returns its index:
 
+| Dimension | Getter | Axis |
+|---|---|---|
+| `column` | `column_index()` | Site / gridcell |
+| `levsoil` | `levsoil_index()` | Soil layer |
+| `levpft` | `levpft_index()` | Plant functional type |
+| `levscls` | `levscls_index()` | Cohort size class |
+| `levage` | `levage_index()` | Patch age class |
+| `levcoage` | — | Cohort age class |
+| `levcan` | — | Canopy layer (`nclmax`, typically 2) |
+| `levleaf` | — | Leaf layer |
+| `levcwdsc` | — | CWD size class |
+| `levfuel` | — | Fuel size class |
+| `levheight` | — | Height bin |
+| `levelem` | — | Chemical element (C, N, P) |
+| `levdamage` | — | Crown damage class |
+| `levscpf` | `levscpf_index()` | Size × PFT (multiplexed) |
+| `levscag` | `levscag_index()` | Size × patch age (multiplexed) |
+| `levscagpft` | `levscagpft_index()` | Size × age × PFT (multiplexed) |
+| `levagepft` | — | Age × PFT (multiplexed) |
+| `levagefuel` | — | Age × fuel size (multiplexed) |
+| `levcnlf` | — | Canopy layer × leaf layer |
+| `levcnlfpft` | — | Canopy × leaf × PFT |
+| `levcdpf` | — | Size × damage × PFT (3D, not 2D) |
+| `levelcwd` | — | Element × CWD |
+| `levelpft` | — | Element × PFT |
 
-A global instance `fates_hist` is declared at [main/FatesHistoryInterfaceMod.F90 862](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L862-L862) and used throughout the model.
+Note: `levcdpf` is three-dimensional (`nlevsclass × nlevdamage × numpft`), not two-dimensional. See [History Variables and Dimensions](variables.md) for the full dimension-kind table, including the `dimsize` values used for allocation.
 
-## Dimension System and Multiplexing
+Sources: `(main/FatesHistoryInterfaceMod.F90:134-152, 869-1260)`, `(main/FatesInterfaceMod.F90:1168-1170)`
 
-### Dimension Types
+## Variable Indexing (`ih_*`)
 
-FATES tracks variables across multiple dimensions representing the hierarchical structure of vegetation and the discretization of various classification schemes:
+Each history variable receives a module-level integer index of the form `ih_<name>_<dim_suffix>` (e.g., `ih_nplant_si_scpf`, `ih_leafc_pf`, `ih_parsun_z_si_cllllpft`). These indices are set during registration and are used at runtime to access variables without string lookups. They are **not** the user-facing output variable names.
 
-| Dimension Code | Full Name | Description | Source | 
-| --- | --- | --- | --- |
-| column | Column/Site | Host model grid cell or column | N/A | 
-| levsoil | Soil Level | Vertical soil layers | Host model | 
-| levpft | PFT Level | Plant functional types | Parameter file | 
-| levscls | Size Class Level | Cohort diameter size bins | Parameter file | 
-| levage | Age Level | Patch age bins | Parameter file | 
-| levcoage | Cohort Age Level | Cohort age bins | Parameter file | 
-| levcan | Canopy Level | Canopy layers (1 to nclmax) | Fixed | 
-| levleaf | Leaf Level | Leaf area vertical bins | Calculated | 
-| levcwdsc | CWD Size Class | Coarse woody debris size classes | Fixed | 
-| levfuel | Fuel Class | Fire fuel size classes | Fixed | 
-| levheight | Height Level | Height bins for output | Parameter file | 
-| levelem | Element Level | Chemical elements (C, N, P) | PARTEH mode | 
-| levdamage | Damage Level | Crown damage classes | Parameter file | 
+User-facing output names are the `vname=` strings passed to `set_history_var` and follow a distinct convention using suffixes like `_SZPF`, `_PF`, `_CLLL`, `_CLLLPF`. For example, the internal index `ih_nplant_si_scpf` is attached to the output variable whose `vname` is `FATES_NPLANT_SZPF`. A user grepping a NetCDF history file for `FATES_NPLANT_SCPF` will find nothing — the actual output name is `FATES_NPLANT_SZPF`.
 
+Sources: `(main/FatesHistoryInterfaceMod.F90:174-740, 7077)`
 
-Sources:  [main/FatesHistoryInterfaceMod.F90 134-152](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L134-L152)  [main/FatesInterfaceTypesMod.F90 323-331](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L323-L331)
+## Variable Registration Call Pattern
 
-### Multiplexed Dimensions
+Every history variable is registered with a call structurally like:
 
-Since host land models have limitations on the number of dimensions per output variable, FATES "multiplexes" multiple dimensions into single combined dimensions:
+```fortran
+call this%set_history_var(                           &
+     vname='FATES_LEAFC_SZPF',                       &
+     units='kg m-2',                                 &
+     long='leaf biomass by size class and PFT',      &
+     use_default='active',                           &
+     avgflag='A',                                    &
+     vtype=site_size_pft_r8,                         &
+     hlms='CLM:ALM',                                 &
+     upfreq=1,                                       &
+     ivar=ivar, initialize=initialize_variables,     &
+     index=ih_leafc_si_scpf)
+```
 
-![SVG image](../../assets/images/9.1__History_Output_System__img-02.svg)
+Fields:
 
-Sources:  [main/FatesHistoryInterfaceMod.F90 142-152](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L142-L152)  [main/FatesInterfaceTypesMod.F90 252-293](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L252-L293)
+- `vname` — User-facing NetCDF variable name.
+- `units` — Unit string (SI units; `kg m-2 s-1` for fluxes, `kg m-2` for stocks, `m-2` for densities, `s-1` for rates, `m2 m-2` for LAI, etc.).
+- `long` — Long name.
+- `avgflag` — Time-aggregation flag; see below.
+- `vtype` — Dimension kind (e.g., `site_r8`, `site_pft_r8`, `site_size_pft_r8`, `site_cnlf_r8`). The `vtype` determines how the data buffer is sized and how the variable is indexed.
+- `hlms` — Colon-separated list of compatible host land models.
+- `upfreq` — Which update routine is responsible for this variable.
+- `ivar` — Global counter, incremented by `set_history_var`.
+- `index` — Module-level integer (written only when `initialize=.true.`).
 
-Mapping arrays track how multiplexed dimensions map back to their component dimensions. For example, `fates_hdim_pfmap_levscpf(:)` and `fates_hdim_scmap_levscpf(:)`  [main/FatesInterfaceTypesMod.F90 256-257](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L256-L257) map each element of the `levscpf` dimension back to its constituent PFT and size class indices.
+### Averaging Flag (`avgflag`)
 
-### Dimension Initialization
+FATES follows the same convention as the CLM/ALM `histFileMod` host:
 
-Dimension setup occurs in three stages:
+| `avgflag` | Meaning |
+|---|---|
+| `'A'` | **Average** over the history interval (accumulator divided by sample count on flush) |
+| `'I'` | **Instantaneous** (no averaging; last value wins) |
+| `'M'` | Minimum |
+| `'X'` | Maximum |
 
-![SVG image](../../assets/images/9.1__History_Output_System__img-03.svg)
+In `e85d997`, every FATES history variable is registered with `avgflag='A'` (479 of 479 registrations). The output you read from a FATES history file is the **time-mean** of the variable over the host-model history interval, not an instantaneous snapshot.
 
-Sources:  [main/FatesHistoryInterfaceMod.F90 869-1021](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L869-L1021)  [main/FatesHistoryInterfaceMod.F90 1144-1240](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L1144-L1240)  [main/FatesInterfaceMod.F90 1097-1333](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L1097-L1333)
+Sources: `(main/FatesHistoryVariableType.F90:42-90)`, `(main/FatesHistoryInterfaceMod.F90:5326-7180)`
 
-## Variable Registration and Indexing
+## Host Land Model Integration
 
-### Registration System
+The history interface is called from the host's main integration loop. The host is responsible for allocating the flat output arrays, invoking FATES' update and flush routines at the right times, and writing the arrays to NetCDF files. FATES is responsible for:
 
-The system uses integer indices (prefix `ih_` ) to reference variables efficiently without string lookups during model execution. Each variable is registered once during initialization through the `define_history_vars()` subroutine (not shown in provided excerpt but referenced at [main/FatesHistoryInterfaceMod.F90 818](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L818-L818) ).
+- Defining all diagnostic variables and their metadata during initialization.
+- Accumulating into the per-variable buffers during each update routine call.
+- Managing the dimension registry and multiplexed mappings.
+- Ensuring unit consistency — all registered `units` strings are the units FATES writes; no conversion happens on the host side.
 
-Variable indices are declared as module-level integers:
+Each variable's `hlms` field marks it as compatible with specific host models. A sentinel value `hlm_hio_ignore_val` is used for variables that are not active in the current configuration. Boundary-condition types `bc_in_type` and `bc_out_type` (defined in `FatesInterfaceTypesMod.F90`) move other data between FATES and the host but are not directly involved in history output.
 
-Sources:  [main/FatesHistoryInterfaceMod.F90 174-740](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L174-L740)
-
-### Variable Categories
-
-Variables are organized by update frequency and dimension structure:
-
-| Category | Update Frequency | Example Variables | 
-| --- | --- | --- |
-| Site-level state | Daily | ih_totvegc_si, ih_lai_si, ih_agb_si | 
-| Size×PFT state | Daily | ih_nplant_si_scpf, ih_ba_si_scpf, ih_leafc_scpf | 
-| Size×Age×PFT | Daily | ih_nplant_si_scagpft | 
-| Canopy×Leaf×PFT | High-frequency | ih_parsun_z_si_cnlfpft, ih_laisun_z_si_cnlfpft | 
-| Hydraulics | Variable | ih_sapflow_scpf, ih_btran_scpf | 
-| Nutrient fluxes | Daily | ih_nh4uptake_scpf, ih_puptake_si | 
-
-
-Sources:  [main/FatesHistoryInterfaceMod.F90 172-740](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L172-L740)
-
-### Registration Process
-
-During initialization, variables are registered with metadata:
-
-![SVG image](../../assets/images/9.1__History_Output_System__img-04.svg)
-
-Sources:  [main/FatesHistoryInterfaceMod.F90 155-170](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L155-L170)  [main/FatesHistoryInterfaceMod.F90 818-819](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L818-L819)
-
-Each variable registration specifies:
-
-- Variable name (for output file)
-- Long descriptive name
-- Physical units
-- Averaging flag (e.g., "A" for average, "I" for instantaneous)
-- `site_r8``site_size_pft_r8`Dimension kind (e.g., , )
-- Update frequency (daily, high-frequency, etc.)
-- Integer index for fast access
-
-
-## Update Pipeline
-
-The History Output System accumulates data through multiple update subroutines called at different frequencies during model execution:
-
-### Update Subroutines
-
-![SVG image](../../assets/images/9.1__History_Output_System__img-05.svg)
-
-Sources:  [main/FatesHistoryInterfaceMod.F90 782-786](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L782-L786)
-update_history_dyn
-The primary update routine called daily during `ed_ecosystem_dynamics()` . It accumulates:
-
-- Biomass state variables (leaf, stem, root carbon/nutrients)
-- Population density by size class and PFT
-- Growth rates (diameter increment)
-- Mortality rates by mechanism
-- NPP/GPP/respiration fluxes
-- Patch-level disturbance rates
-- Fire diagnostics
-- Litter production
-
-
-This routine loops through all sites, patches, and cohorts to aggregate data into appropriate output bins.
-
-Sources:  [main/FatesHistoryInterfaceMod.F90 782](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L782-L782)
-update_history_hifrq
-Called during radiation and photosynthesis calculations (potentially multiple times per day). Accumulates:
-
-- Sunlit/shaded leaf area by canopy layer
-- Absorbed radiation (PAR) by layer and PFT
-- Radiation absorption fractions
-- Canopy-layer crown area
-
-
-Sources:  [main/FatesHistoryInterfaceMod.F90 783](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L783-L783)
-update_history_hydraulics
-Called when plant hydraulics is enabled ( `hlm_use_planthydro == itrue` ). Accumulates:
-
-- Transpiration by size×PFT
-- Water potential by tissue compartment
-- Hydraulic conductance
-- Xylem cavitation (fractional loss of conductivity)
-- Soil-to-root water flux
-
-
-Sources:  [main/FatesHistoryInterfaceMod.F90 784](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L784-L784)
-update_history_nutrflux
-Called when CNP allocation is active ( `hlm_parteh_mode == prt_cnp_flex_allom_hyp` ). Accumulates:
-
-- NH4/NO3/P uptake rates by size×PFT
-- Nutrient demand by size×PFT
-- N fixation
-- Nutrient efflux (losses back to soil)
-- Leaf-to-fine-root ratio dynamics
-
-
-Sources:  [main/FatesHistoryInterfaceMod.F90 785](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L785-L785)
-
-### Data Aggregation Pattern
-
-The typical pattern for accumulating cohort-level data to output arrays:
-
-![SVG image](../../assets/images/9.1__History_Output_System__img-06.svg)
-
-Sources:  [main/FatesHistoryInterfaceMod.F90 100-132](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L100-L132)
-
-A key principle stated in the code comments [main/FatesHistoryInterfaceMod.F90 100-132](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L100-L132) : when outputting averages across dimensions with dynamic structure (patches, cohorts), it's better to output both the numerator and denominator separately rather than the average itself. This allows proper conservation even when weights change rapidly and simplifies logic when the number of patches/cohorts varies from zero to many.
-
-For example:
-
-- `nplant_si_scpf`Output (number density in #/m²) as the denominator
-- `nplant_si_scpf * biomass_per_plant`Output as the numerator
-- Calculate average biomass per plant in post-processing
-
-
-### Flushing and Zeroing
-
-At the end of each output interval, accumulated data is written to the host model's I/O buffers through `flush_hvars()`  [main/FatesHistoryInterfaceMod.F90 850](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L850-L850) and then accumulators are zeroed through `zero_site_hvars()`  [main/FatesHistoryInterfaceMod.F90 851](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L851-L851)
-
-## Integration with Host Land Model
-
-The History Output System is called from the host land model's main integration loop:
-
-![SVG image](../../assets/images/9.1__History_Output_System__img-07.svg)
-
-Sources:  [main/FatesHistoryInterfaceMod.F90 777-786](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L777-L786)  [main/FatesHistoryInterfaceMod.F90 850-851](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L850-L851)
-
-The host land model is responsible for:
-
-FATES is responsible for:
-
-- Defining all diagnostic variables and their metadata
-- Accumulating data from internal state during updates
-- Managing dimension mappings and multiplexing
-- Ensuring mass balance and unit conversions are correct
-
-
-Primary Sources:
-
-- [main/FatesHistoryInterfaceMod.F901-12000](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHistoryInterfaceMod.F90#L1-L12000)
-- [main/FatesInterfaceTypesMod.F90244-293](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L244-L293)
-- [main/FatesInterfaceMod.F901097-1333](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L1097-L1333)
+Sources: `(main/FatesHistoryInterfaceMod.F90:38-56, 777-862)`, `(main/FatesInterfaceTypesMod.F90:244-293)`

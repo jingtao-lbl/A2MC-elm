@@ -887,6 +887,7 @@ class CalibrationOrchestrator:
             # Update environment variables for PhaseLogger and config to pick up
             os.environ['A2MC_ITERATION'] = str(self.state.iteration)
             os.environ['A2MC_SESSION_ID'] = self.config.session_id
+            os.environ['A2MC_CALIBRATION_ROUND'] = str(self.state.calibration_round)
 
             logger.info(f"\n{'='*60}")
             logger.info(f"PHASE: {phase.value.upper()}")
@@ -1945,6 +1946,7 @@ Diagnosis Summary:{skip_header}
         return execute_requested_diagnostics(
             requested_diagnostics, screening_data,
             config=self.config, phase_logger=self._phase_logger,
+            round_num=self.state.calibration_round,
         )
 
     # =========================================================================
@@ -2078,7 +2080,8 @@ Diagnosis Summary:{skip_header}
                 hypothesis=hypothesis,
                 config=self.config,
                 screening_data=self.state.screening_data,
-                diagnostic_runner=self._run_diagnostic_scripts if HAS_DIAGNOSIS_TOOLS else None
+                diagnostic_runner=self._run_diagnostic_scripts if HAS_DIAGNOSIS_TOOLS else None,
+                round_num=self.state.calibration_round,
             )
             test_result['iteration'] = self.state.iteration
 
@@ -2528,16 +2531,12 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             # --- 3.6 Generate reviewable experiment scripts ---
             if self.config.review_experiment_scripts:
                 from phases.phase5_testing import generate_experiment_scripts
-                # Auto-detect site config for proper ELM_OPTIONS resolution
-                import glob as _glob
-                _site_cfg_dir = os.path.join(
-                    os.environ.get('A2MC_USE_CASE_DIR', ''), 'config')
-                _site_cfgs = _glob.glob(os.path.join(_site_cfg_dir, '*_config.sh'))
-                _site_config = _site_cfgs[0] if _site_cfgs else ""
+                # Let generate_experiment_scripts() auto-detect site_config —
+                # its _detect_site_config() prefers A2MC_SITE_CONFIG and warns
+                # on filesystem ambiguity, which a local glob here would not.
                 experiments = generate_experiment_scripts(
                     experiments=experiments,
                     output_dir=output_dir,
-                    site_config=_site_config,
                 )
                 generated = sum(1 for e in experiments if e.get("script_file"))
                 logger.info(f"Generated {generated} reviewable experiment scripts in {output_dir}")

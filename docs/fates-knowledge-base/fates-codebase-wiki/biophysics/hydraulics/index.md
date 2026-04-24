@@ -1,532 +1,234 @@
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
+
 # Plant Hydraulics
-
-<details>
-<summary>Relevant source files</summary>
-
-
-- [biogeophys/FatesHydroWTFMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesHydroWTFMod.F90)
-- [biogeophys/FatesPlantHydraulicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90)
-- [biogeophys/FatesPlantRespPhotosynthMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantRespPhotosynthMod.F90)
-- [functional_unit_testing/hydro/HydroUTestDriver.py](https://github.com/jingtao-lbl/fates/blob/e85d9977/functional_unit_testing/hydro/HydroUTestDriver.py)
-- [main/EDParamsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90)
-- [main/EDPftvarcon.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90)
-- [main/FatesHydraulicsMemMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHydraulicsMemMod.F90)
-- [parameter_files/fates_params_default.cdl](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl)
-
-
-</details>
 
 ## Purpose and Scope
 
-The plant hydraulics module in FATES simulates water transport through the soil-plant-atmosphere continuum, accounting for water potential gradients, xylem cavitation, and hydraulic limitations on stomatal conductance. This is an experimental feature that replaces the simpler BTRAN-based water stress approach with a mechanistic representation of plant water transport.
+The FATES plant hydraulics module simulates water transport through the soil-plant-atmosphere continuum using an explicit compartment model. Water moves from bulk soil through rhizosphere shells, absorbing roots, transporting roots, stems, and leaves, and finally out through stomata. The module tracks water content, water potential, and fractional conductivity (cavitation) in each compartment and uses a mechanistic limitation on stomatal conductance in place of the empirical `BTRAN` ramp.
 
-Warning : Plant hydraulics is still undergoing testing and development. Production simulations typically use the non-hydraulic water stress model (see [Transpiration and Soil Moisture Stress](../biophysics/transpiration.md) ).
+Plant hydraulics is **enabled** at the host-land-model interface by the integer flag `hlm_use_planthydro == itrue`. Note that this flag is an integer (0/1), not a Fortran `logical`, and is compared directly against `itrue`/`ifalse` in code such as `EDBtranMod.F90:224,256` and `FatesPlantHydraulicsMod.F90:1309`.
 
-For the integration of plant hydraulics with photosynthesis and stomatal conductance, see [Photosynthesis and Respiration](../biophysics/photosynthesis.md) . For root water uptake in non-hydraulic mode, see [Transpiration and Soil Moisture Stress](../biophysics/transpiration.md) .
+For the empirical pathway used when hydraulics is disabled, see [Transpiration and Soil Moisture Stress](../transpiration.md). For details of the data structures, see [Hydraulic Architecture](architecture.md). For numerical methods, see [Hydraulic Solvers](solvers.md).
 
-The plant hydraulics model is enabled by setting `hlm_use_planthydro = .true.` at the host land model interface level.
+Key reference: Christoffersen et al. (2016), *Geoscientific Model Development*, 9(11), 4227-4255, `doi:10.5194/gmd-9-4227-2016`.
 
-Key Citation : Christoffersen et al. (2016), Geoscientific Model Development, 9(11), 4227-4255, DOI: 10.5194/gmd-9-4227-2016.
+## Calling Frequency and Integration Point
 
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 1-22](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L1-L22)
+**Hydraulics is called sub-daily, NOT once per day.** The entry point `hydraulics_drive` is invoked from the host land model through `alm_fates%wrap_hydraulics_drive(...)`, which is called from `elm/src/biogeophys/CanopyFluxesMod.F90:1279` inside the `CanopyFluxes` routine. `CanopyFluxes` is executed every host flux timestep (typically 30 minutes in ELM/CLM). `hydraulics_drive` receives the host timestep `dtime` as an argument (`FatesPlantHydraulicsMod.F90:282-290`), and the solvers integrate over that sub-daily interval.
 
-## Hydraulic Architecture
+Within one call to `hydraulics_drive`, FATES:
 
-The plant hydraulics system divides the water transport pathway into discrete compartments from soil to atmosphere. Each compartment has its own water potential, water content, and hydraulic conductance properties.
+1. Synchronizes rhizosphere shells with the current host soil moisture (`FillDrainRhizShells`),
+2. Dispatches to the selected solver (Taylor 1D, Picard 2D, or Newton 2D) for every cohort on every patch,
+3. Updates plant water potentials and the stomatal vulnerability factor `cohort_hydr%btran`, which is consumed by `FatesPlantRespPhotosynthMod` on the same sub-daily iteration (`FatesPlantHydraulicsMod.F90:2649-2651`).
 
-### Compartment Structure
+Earlier versions of this wiki stated that the hydraulics module was called "once per day from the main FATES driver". That is **incorrect**. The ED daily dynamics loop (growth, allocation, mortality) is separate from the sub-daily biophysical loop that drives hydraulics and photosynthesis.
 
-![SVG image](../../assets/images/6.3__Plant_Hydraulics__img-01.svg)
+## Hydraulic Architecture Summary
 
-Each compartment is characterized by:
+Each cohort is divided into a fixed set of water-storage compartments whose counts are hard-coded in `main/FatesHydraulicsMemMod.F90:33-37`:
 
-- **Node height**`z_node_*`( ): Vertical position relative to soil surface [m]
-- **Volume**`v_*`( ): Water storage capacity [m³]
-- **Water content**`th_*`( ): Volumetric water content [m³/m³]
-- **Water potential**`psi_*`( ): Matric potential [MPa]
-- **Conductance**`kmax_*`( ): Maximum hydraulic conductance [kg H₂O s⁻¹ MPa⁻¹]
-- **Fractional conductivity**`ftc_*`( ): Loss of conductivity due to cavitation [0-1]
+```fortran
+integer, parameter, public :: n_hypool_leaf  = 1
+integer, parameter, public :: n_hypool_stem  = 1
+integer, parameter, public :: n_hypool_troot = 1  ! CANNOT BE CHANGED
+integer, parameter, public :: n_hypool_aroot = 1  ! per soil layer
+integer, parameter, public :: nshell         = 1
+```
 
+This means there is exactly one leaf node, one stem node, one transporting-root node, one absorbing-root node per rhizosphere layer, and one rhizosphere soil shell per rhizosphere layer. `nshell = 1` is a hard-coded constant, so in practice all radial soil-shell discretization collapses to a single shell; the `nshell` loops in the source retain the structure for possible future multi-shell implementations.
 
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 120-126](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L120-L126)  [main/FatesHydraulicsMemMod.F90 32-46](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHydraulicsMemMod.F90#L32-L46)  [main/FatesHydraulicsMemMod.F90 200-321](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHydraulicsMemMod.F90#L200-L321)
+Plant media types (used to index water transfer functions) are declared in `FatesHydraulicsMemMod.F90:50-55`:
 
-### Cohort-Level Hydraulic State
+| Index name | Value | Usage |
+| --- | --- | --- |
+| `stomata_p_media` | 0 | Stomatal cavitation curve (not a storage compartment) |
+| `leaf_p_media` | 1 | Leaf tissue |
+| `stem_p_media` | 2 | Stem xylem and sapwood |
+| `troot_p_media` | 3 | Transporting root xylem |
+| `aroot_p_media` | 4 | Absorbing root tissue |
+| `rhiz_p_media` | 5 | Rhizosphere soil |
 
-The `ed_cohort_hydr_type` class manages all hydraulic state variables for an individual cohort:
+`n_plant_media = 4` (leaf, stem, troot, aroot). Soil is handled separately at the site level.
 
-| Array/Variable | Dimension | Description | Units | 
-| --- | --- | --- | --- |
-| z_node_ag | n_hypool_ag | Node heights for aboveground compartments | m | 
-| z_node_troot | scalar | Transporting root node height | m | 
-| v_ag | n_hypool_ag | Aboveground compartment volumes | m³ | 
-| v_troot | scalar | Transporting root volume | m³ | 
-| v_aroot_layer | nlevrhiz | Absorbing root volumes by soil layer | m³ | 
-| l_aroot_layer | nlevrhiz | Absorbing root length by soil layer | m | 
-| th_ag | n_hypool_ag | Aboveground water content | m³/m³ | 
-| th_troot | scalar | Transporting root water content | m³/m³ | 
-| th_aroot | nlevrhiz | Absorbing root water content by layer | m³/m³ | 
-| psi_ag | n_hypool_ag | Aboveground water potential | MPa | 
-| psi_troot | scalar | Transporting root water potential | MPa | 
-| psi_aroot | nlevrhiz | Absorbing root water potential by layer | MPa | 
-| ftc_ag | n_hypool_ag | Fractional conductivity aboveground | - | 
-| ftc_troot | scalar | Fractional conductivity transporting root | - | 
-| ftc_aroot | nlevrhiz | Fractional conductivity absorbing roots | - | 
-| btran | scalar | Leaf water stress factor for stomatal conductance | 0-1 | 
-| qtop | scalar | Transpiration rate | kg/cohort/s | 
-
-
-Sources: [main/FatesHydraulicsMemMod.F90 200-321](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHydraulicsMemMod.F90#L200-L321)
-
-### Site-Level Rhizosphere State
-
-The `ed_site_hydr_type` class manages the rhizosphere compartments at the site level, which are shared across cohorts:
-
-| Array/Variable | Dimension | Description | Units | 
-| --- | --- | --- | --- |
-| nlevrhiz | scalar | Number of rhizosphere layers | - | 
-| zi_rhiz | nlevrhiz | Depth of bottom edge of each layer | m | 
-| dz_rhiz | nlevrhiz | Width of each layer | m | 
-| v_shell | nlevrhiz × nshell | Volume of rhizosphere shells | m³ | 
-| r_node_shell | nlevrhiz × nshell | Nodal radius of shells | m | 
-| r_out_shell | nlevrhiz × nshell | Outer radius of shells | m | 
-| h2osoi_liqvol_shell | nlevrhiz × nshell | Volumetric water in shells | m³/m³ | 
-| l_aroot_layer | nlevrhiz | Total absorbing root length by layer | m | 
-| kmax_upper_shell | nlevrhiz × nshell | Max conductance to upper boundary | kg s⁻¹ MPa⁻¹ | 
-| kmax_lower_shell | nlevrhiz × nshell | Max conductance to lower boundary | kg s⁻¹ MPa⁻¹ | 
-
-
-Sources: [main/FatesHydraulicsMemMod.F90 68-196](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHydraulicsMemMod.F90#L68-L196)
+For details of the `ed_cohort_hydr_type` and `ed_site_hydr_type` fields, see [Hydraulic Architecture](architecture.md).
 
 ## Water Transfer Functions (WTFs)
 
-Water transfer functions describe the relationships between water potential, water content, and hydraulic conductivity in porous media (xylem, soil). FATES supports multiple hypotheses through an extensible object-oriented framework.
+Plant compartments and rhizosphere shells are characterized by two functions implemented in `biogeophys/FatesHydroWTFMod.F90`:
 
-### Water Retention Functions (WRFs)
+- **Water Retention Function (WRF)** — relates volumetric water content `θ` [m³ m⁻³] to matric potential `ψ` [MPa]. Provides `th_from_psi`, `psi_from_th`, and the derivative `dpsidth_from_th`.
+- **Water Conductivity Function (WKF)** — relates matric potential `ψ` to the fraction of total conductivity `ftc ∈ [0, 1]`, representing xylem cavitation. Provides `ftc_from_psi` and `dftcdpsi_from_psi`.
 
-Water retention functions relate volumetric water content (θ) to matric potential (ψ):
+The module defines several functional forms, but **not all of them are available for plant tissues**. Verified against `InitHydroGlobals` in `FatesPlantHydraulicsMod.F90:6198-6320`:
 
-Available WRF Types:
+### Plant WTFs available at runtime
 
-![SVG image](../../assets/images/6.3__Plant_Hydraulics__img-02.svg)
+Only two forms are wired into the plant WRF/WKF allocation loop (`FatesPlantHydraulicsMod.F90:6236-6275`):
 
-The WRF type for each plant organ is specified in the parameter file via `fates_hydro_htftype_node` (dimension: `fates_hydr_organs × fates_pft` ). The global parameter `hydr_htftype_node` is read from this parameter.
+- `van_genuchten_type = 2` — Van Genuchten (1980) retention curve. Parameters come from the `hydr_vg_alpha_node`, `hydr_vg_n_node`, `hydr_vg_m_node`, `hydr_thetas_node`, `hydr_resid_node` PFT arrays.
+- `tfs_type = 1` — Tissue Fraction Saturation model (Christoffersen/Xu TFS). Parameters come from `hydr_thetas_node`, `hydr_resid_node`, `hydr_pinot_node`, `hydr_epsil_node`, plus `rwcft`/`rwccap` derived constants for capillary/elastic regions.
 
-Sources: [biogeophys/FatesHydroWTFMod.F90 50-242](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesHydroWTFMod.F90#L50-L242)  [main/EDParamsMod.F90 150-164](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90#L150-L164)  [parameter_files/fates_params_default.cdl 35-37](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl#L35-L37)
+Any other value of `hydr_htftype_node(pm)` — including Campbell (`campbell_type = 3`) or the smoothed Campbell variants (`smooth1_campbell_type = 31`, `smooth2_campbell_type = 32`) — falls through to the `case default` branch in `InitHydroGlobals`:
 
-### Water Conductivity Functions (WKFs)
+```fortran
+case default
+   write(fates_log(),*) 'undefined water retention type for plants, pm:',pm,'type: ',hydr_htftype_node(pm)
+   call endrun(msg=errMsg(sourcefile, __LINE__))
+```
 
-Water conductivity functions relate hydraulic conductivity to water potential, capturing the effects of cavitation (xylem embolism):
+So **Campbell is not a valid plant WTF choice in this FATES version**, despite the source comment at `FatesPlantHydraulicsMod.F90:200-206` noting that it "could technically be used". Earlier wiki text listing "TFS, VG, Campbell, CCH Smooth" as plant-side options should be disregarded.
 
-Available WKF Types:
+Default `fates_params_default.cdl:905` sets `fates_hydro_htftype_node = 1, 1, 1, 1`, so the standard configuration uses TFS for all four plant media.
 
-![SVG image](../../assets/images/6.3__Plant_Hydraulics__img-03.svg)
+The stomatal WKF is always the TFS/sigmoidal form with PFT parameters `hydr_p50_gs` and `hydr_avuln_gs` (`FatesPlantHydraulicsMod.F90:6311-6316`).
 
-Global arrays `wrf_plant` and `wkf_plant` (dimension: `n_porous_media × numpft` ) store pointers to the appropriate WRF and WKF objects for each porous media type and PFT.
+### Soil WTF is hard-coded to Campbell
 
-Sources: [biogeophys/FatesHydroWTFMod.F90 88-242](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesHydroWTFMod.F90#L88-L242)  [biogeophys/FatesPlantHydraulicsMod.F90 218-226](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L218-L226)
+In the same module, the soil retention and conductivity types are compile-time constants (`FatesPlantHydraulicsMod.F90:214-215`):
 
-## Hydraulic Solvers
+```fortran
+integer, parameter :: soil_wrf_type  = campbell_type
+integer, parameter :: soil_wkf_type  = campbell_type
+```
 
-FATES provides multiple numerical methods for solving the water transport equations. The solver is selected via the global parameter `hydr_solver` .
+`hydr_htftype_node` therefore controls ONLY the plant media (`n_plant_media = 4`). It has no effect on the rhizosphere soil functions, which always use Campbell-Clapp-Hornberger and draw their parameters (`watsat`, `sucsat`, `bsw`) from the host land model via `bc_in`. See `RestartHydrStates` / `UpdateSizeDepRhizHydProps` for the allocation path. The Van-Genuchten-parameterized soil block is present in the code but the module comment (lines 202-206) explicitly says "Right now we just hard-code the use of `campbell_type` for the soil".
 
-### Solver Options
+The stomatal vulnerability curve used by TFS is
 
-![SVG image](../../assets/images/6.3__Plant_Hydraulics__img-04.svg)
+```
+ftc = max(min_ftc, 1 / (1 + (ψ_eff / p50)^avuln))
+```
 
-### Taylor 1D Sequential Solver (hydr_solver = 1)
+(`FatesHydroWTFMod.F90:1727-1738`). This is the **sigmoidal Pammenter and Vanderwilligen (1998) form**, not a Weibull. Because the same functional form is used for the stomatal WKF, the cohort leaf water stress `btran` follows a symmetric S-curve around `p50`.
 
-The Taylor solver handles each soil layer independently, sequencing through layers from deepest to shallowest. Within each layer:
+## Numerical Solvers
 
-This approach is computationally efficient but may accumulate errors across layers.
+FATES provides three solvers for the coupled plant-soil water-potential equations. All three are implemented and dispatched at runtime; none of them is deprecated.
 
-Key routine : `hydraulics_BC` in [biogeophys/FatesPlantHydraulicsMod.F90 676-1489](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L676-L1489)
+### Solver Constants
 
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 282-308](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L282-L308)  [main/FatesHydraulicsMemMod.F90 17-19](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHydraulicsMemMod.F90#L17-L19)  [main/EDParamsMod.F90 218-227](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90#L218-L227)
+Defined in `main/FatesHydraulicsMemMod.F90:17-19`:
 
-### Picard 2D Iterative Solver (hydr_solver = 2)
+```fortran
+integer, parameter, public :: hydr_solver_1DTaylor = 1
+integer, parameter, public :: hydr_solver_2DPicard = 2
+integer, parameter, public :: hydr_solver_2DNewton = 3
+```
 
-The Picard solver treats the entire soil-plant system as a single coupled problem:
+Note the mapping: the integer `3` corresponds to the **Newton-Raphson 2D solver**, and `2` corresponds to **Picard**. This differs from the natural "alphabetical" ordering and must be matched exactly when writing user parameters.
 
-This provides better conservation properties but is more computationally expensive.
+### Dispatch at Runtime
 
-Matrix structure : The Jacobian and residual arrays are allocated in `ed_site_hydr_type` :
+`FatesPlantHydraulicsMod.F90:2567-2607` selects the solver at every sub-daily call:
 
-- `ajac(num_nodes, num_nodes)`: Jacobian matrix
-- `residual(num_nodes)`: Residual vector
-- `conn_up(num_connections)``conn_dn(num_connections)`, : Connectivity
-- `pm_node(num_nodes)`: Porous media type for each node
+```fortran
+if (hydr_solver == hydr_solver_2DNewton) then
+   call MatSolve2D(...)
+elseif (hydr_solver == hydr_solver_2DPicard) then
+   call PicardSolve2D(...)
+elseif (hydr_solver == hydr_solver_1DTaylor) then
+   call OrderLayersForSolve1D(...)
+   call ImTaylorSolve1D(...)
+end if
+```
 
+All three code paths are live and tested:
 
-Sources: [main/FatesHydraulicsMemMod.F90 159-183](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHydraulicsMemMod.F90#L159-L183)  [biogeophys/FatesPlantHydraulicsMod.F90 282-308](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L282-L308)
+- **2D Newton (`hydr_solver = 3`).** Full coupled system solved by Newton-Raphson using a banded Jacobian. Implementation: `MatSolve2D` at `FatesPlantHydraulicsMod.F90:4689-5403`. The comment at `EDParamsMod.F90:222-224` labels Newton-Raphson as "(Deprecated)", but that comment is inaccurate as of `e85d997`: `MatSolve2D` is actively dispatched, so calling Newton "deprecated" in documentation is misleading. Treat it as an active option.
+- **2D Picard (`hydr_solver = 2`).** Fixed-point iteration over the entire plant-soil continuum with lagged conductances. Implementation: `PicardSolve2D`.
+- **1D Taylor (`hydr_solver = 1`).** Sequential layer-by-layer implicit Taylor linearization. Implementation: `OrderLayersForSolve1D` followed by `ImTaylorSolve1D`. The layers are ordered by decreasing root-soil conductance so that the strongest sink is solved first; each subsequent layer inherits the already-updated plant node states.
 
-## Parameters and Configuration
+Node counts differ between the two modes (`FatesHydraulicsMemMod.F90:500-544`):
 
-### Global Hydraulic Parameters
+- **2D solvers (Newton or Picard):** `num_nodes = n_hypool_leaf + n_hypool_stem + n_hypool_troot + (n_hypool_aroot + nshell) * nlevrhiz`. One Jacobian is allocated per site, sized `(num_nodes, num_nodes)`.
+- **1D Taylor solver:** `num_nodes = n_hypool_leaf + n_hypool_stem + n_hypool_troot + n_hypool_aroot + nshell`, i.e. the rhizosphere-layer dimension is collapsed because each Richards solve handles one layer at a time.
 
-These parameters are defined in `EDParamsMod` and loaded from the parameter file:
+### Solver comparison
 
-| Parameter | Symbol | Default | Units | Description | 
+| Solver ID | Name | Method | Scope | Cost | Robustness |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `hydr_solver_1DTaylor` | Implicit first-order Taylor | Per-layer sequential | Low | Good for mild gradients |
+| 2 | `hydr_solver_2DPicard` | Fixed-point with lagged k | Full plant × rhiz system | Moderate | Better for strong coupling |
+| 3 | `hydr_solver_2DNewton` | Newton-Raphson on coupled system | Full plant × rhiz system | High (Jacobian, LAPACK solve) | Quadratic convergence when successful |
+
+For solver algorithmic details, see [Hydraulic Solvers](solvers.md).
+
+## Global Parameters
+
+Global (non-PFT) parameters are read in `main/EDParamsMod.F90` and include:
+
+| Parameter | Symbol | Description | Default | Units |
 | --- | --- | --- | --- | --- |
-| hydr_kmax_rsurf1 | - | - | kg/(m² MPa s) | Max conductivity at root surface, soil→root | 
-| hydr_kmax_rsurf2 | - | - | kg/(m² MPa s) | Max conductivity at root surface, root→soil | 
-| hydr_psi0 | - | 0.0 | MPa | Sapwood water potential at saturation | 
-| hydr_psicap | - | -0.6 | MPa | Potential at which capillary reserves exhausted | 
-| hydr_solver | - | 1 | - | Solver selection (1=Taylor, 2=Picard, 3=Newton) | 
+| `fates_hydro_solver` | `hydr_solver` | Solver selection (1=Taylor, 2=Picard, 3=Newton) | user-specified | - |
+| `fates_hydro_kmax_rsurf1` | `hydr_kmax_rsurf1` | Soil→root root-surface conductance | parameter file | kg m⁻² MPa⁻¹ s⁻¹ |
+| `fates_hydro_kmax_rsurf2` | `hydr_kmax_rsurf2` | Root→soil root-surface conductance | parameter file | kg m⁻² MPa⁻¹ s⁻¹ |
+| `fates_hydro_psi0` | `hydr_psi0` | Reference capillary potential (TFS) | 0.0 | MPa |
+| `fates_hydro_psicap` | `hydr_psicap` | Capillary-exhaustion potential (TFS) | -0.6 | MPa |
+| `fates_hydro_htftype_node` | `hydr_htftype_node(1:n_plant_media)` | Plant-tissue WRF/WKF selector (1=TFS, 2=VG only) | `1, 1, 1, 1` | - |
 
+## PFT-Specific Parameters
 
-Sources: [main/EDParamsMod.F90 201-227](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90#L201-L227)  [parameter_files/fates_params_default.cdl 1-43](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl#L1-L43)
+Read in `main/EDPftvarcon.F90:238-270`. For each organ (leaf, stem, troot, aroot):
 
-### PFT-Specific Hydraulic Parameters
+- `fates_hydro_p50_node` — `ψ` at 50% conductivity loss [MPa]
+- `fates_hydro_avuln_node` — Vulnerability curve shape [-]
+- `fates_hydro_kmax_node` — Maximum xylem conductivity per unit area [kg m⁻¹ MPa⁻¹ s⁻¹]
+- `fates_hydro_epsil_node` — Bulk elastic modulus [MPa] (TFS only)
+- `fates_hydro_pitlp_node` — Turgor loss point [MPa] (TFS only)
+- `fates_hydro_pinot_node` — Osmotic potential at full turgor [MPa] (TFS only)
+- `fates_hydro_thetas_node` — Saturated water content [cm³ cm⁻³]
+- `fates_hydro_resid_node` — Residual water content [cm³ cm⁻³]
+- `fates_hydro_fcap_node` — Capillary-reserve fraction of non-residual water [-] (TFS only)
 
-The following parameters are PFT-specific and some are also organ-specific (dimension: `fates_hydr_organs × fates_pft` ):
+Van Genuchten organs additionally use `fates_hydro_vg_alpha_node`, `fates_hydro_vg_n_node`, `fates_hydro_vg_m_node` (see the `case(van_genuchten_type)` branch in `InitHydroGlobals`).
 
-Xylem Properties (per organ):
+Whole-plant parameters: `fates_hydro_p_taper` (xylem taper exponent), `fates_hydro_rfrac_stem` (stem fraction of troot-to-canopy resistance), `fates_hydro_rs2` (absorbing root radius), `fates_hydro_srl` (specific root length).
 
-- `fates_hydro_avuln_node`: Vulnerability curve shape parameter [-]
-- `fates_hydro_p50_node`: Water potential at 50% conductivity loss [MPa]
-- `fates_hydro_kmax_node`: Maximum xylem conductivity per unit area [kg/(m MPa s)]
-- `fates_hydro_epsil_node`: Bulk elastic modulus [MPa]
-- `fates_hydro_pitlp_node`: Turgor loss point [MPa]
-- `fates_hydro_pinot_node`: Osmotic potential at full turgor [MPa]
-- `fates_hydro_thetas_node`: Saturated water content [cm³/cm³]
-- `fates_hydro_resid_node`: Residual water content [cm³/cm³]
-- `fates_hydro_fcap_node`: Fraction of non-residual water that is capillary [-]
+Stomatal control: `fates_hydro_p50_gs`, `fates_hydro_avuln_gs`, and `fates_hydro_k_lwp`. The stomatal vulnerability is always TFS/sigmoidal, independent of `hydr_htftype_node`.
 
+## Coupling to Photosynthesis
 
-Van Genuchten Parameters (if using VG curves):
+After each hydraulic solve, the cohort leaf water stress is updated (`FatesPlantHydraulicsMod.F90:2649-2651`):
 
-- `fates_hydro_vg_alpha_node`: Capillary length parameter [MPa⁻¹]
-- `fates_hydro_vg_n_node`: Pore size distribution parameter [-]
-- `fates_hydro_vg_m_node`: Pore size distribution parameter [-]
+```fortran
+call UpdatePlantPsiFTCFromTheta(ccohort, csite_hydr)
+ccohort_hydr%btran = wkf_plant(stomata_p_media, ft)%p%ftc_from_psi(ccohort_hydr%psi_ag(1))
+```
 
-
-Whole-Plant Properties (per PFT):
-
-- `fates_hydro_p_taper`: Xylem taper exponent [-]
-- `fates_hydro_rfrac_stem`: Fraction of resistance from troot to canopy in stem [-]
-- `fates_hydro_rs2`: Absorbing root radius [m]
-- `fates_hydro_srl`: Specific root length [m/g]
-
-
-Stomatal Control :
-
-- `fates_hydro_avuln_gs`: Shape parameter for stomatal response [-]
-- `fates_hydro_p50_gs`: Water potential at 50% stomatal closure [MPa]
-- `fates_hydro_k_lwp`: Inner leaf humidity scaling coefficient [-]
-
-
-Sources: [main/EDPftvarcon.F90 238-270](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#L238-L270)  [parameter_files/fates_params_default.cdl 284-341](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl#L284-L341)
-
-### Parameter Initialization Example
-
-![SVG image](../../assets/images/6.3__Plant_Hydraulics__img-05.svg)
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 2916-3112](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L2916-L3112)
-
-## Integration with Model Processes
-
-### Coupling with Photosynthesis
-
-Plant hydraulics affects photosynthesis through the `btran` variable, which represents the water stress limitation on stomatal conductance:
-
-![SVG image](../../assets/images/6.3__Plant_Hydraulics__img-06.svg)
-
-Calculation : `btran = wkf_plant(stomata_p_media,ft)%p%ftc_from_psi(psi_ag(1))`
-
-The `btran` value:
-
-- Multiplies the minimum stomatal conductance (Ball-Berry intercept or Medlyn intercept)
-- Reduces maximum stomatal conductance under water stress
-- Is updated every timestep based on current leaf water potential
-
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 653-659](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L653-L659)  [biogeophys/FatesPlantRespPhotosynthMod.F90 202-203](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantRespPhotosynthMod.F90#L202-L203)
-
-### Daily Update Sequence
-
-The hydraulics module is called once per day from the main FATES driver:
-
-![SVG image](../../assets/images/6.3__Plant_Hydraulics__img-07.svg)
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 282-308](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L282-L308)  [main/EDMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90) (referenced via high-level diagrams)
-
-### Growth and Recruitment Updates
-
-When plants grow or recruits are added, hydraulic properties must be updated because they are size-dependent:
-
-After growth or recruitment :
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 246-267](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L246-L267)  [biogeophys/FatesPlantHydraulicsMod.F90 521-674](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L521-L674)
-
-## Size-Dependent Hydraulic Properties
-
-Many hydraulic properties scale with plant size through allometric relationships:
-
-### Compartment Volumes
-
-Compartment volumes are calculated from biomass pools:
-
-Aboveground volumes :
-
-- `v_ag(leaf) = bleaf_allom / (c2b × thetas_leaf × denh2o)`Leaf:
-- `v_ag(stem) = bsap_allom × agb_frac / (c2b × thetas_stem × denh2o)`Stem:
-
-
-Belowground volumes :
-
-- `v_troot = bsap_allom × (1-agb_frac) / (c2b × thetas_troot × denh2o)`Transporting root:
-- `v_aroot = bfineroot × layer_fraction / (c2b × thetas_aroot × denh2o)`Absorbing roots:
-
-
-Where:
-
-- `bleaf_allom`: Allometric leaf biomass [kgC]
-- `bsap_allom`: Allometric sapwood biomass [kgC]
-- `c2b`: Carbon to biomass conversion factor [kgC/kgBiomass]
-- `thetas_*`: Saturated water content [m³/m³]
-- `denh2o`: Density of water [kg/m³]
-- `agb_frac`: Fraction of sapwood aboveground
-
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 1668-1796](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L1668-L1796)
-
-### Maximum Conductances
-
-Maximum hydraulic conductances ( `kmax` ) scale with conducting area and path length:
-
-Xylem conductance : `kmax = kmax_node × A_cond / L_path × ftc`
-
-Where:
-
-- `kmax_node`: PFT-specific conductivity per unit area [kg/(m MPa s)]
-- `A_cond`: Conducting xylem area [m²]
-- `L_path`: Path length [m]
-- `ftc`: Fractional total conductivity (accounts for cavitation)
-
-
-Root-soil conductance : `kmax_radial = (kmax_rsurf1 or kmax_rsurf2) × A_root`
-
-Where:
-
-- `kmax_rsurf1``kmax_rsurf2`, : Root surface conductivity [kg/(m² MPa s)]
-- `A_root`: Root surface area [m²]
-
-
-The conducting xylem area is calculated from sapwood biomass and specific leaf area relationships, ensuring consistency with the plant's allometric constraints.
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 1836-2274](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L1836-L2274)
-
-### Xylem Taper
-
-Xylem taper describes how conducting area changes with height within the stem. The taper is controlled by the PFT parameter `hydr_p_taper` :
-
-`A_cond(z) = A_cond(base) × (z/h)^p_taper`
-
-Where:
-
-- `z`: Height above ground [m]
-- `h`: Total tree height [m]
-- `p_taper`: Taper exponent (typically 0.5-2.0)
-
-
-A value of 1.0 gives linear taper, values >1 concentrate conducting area near the base.
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 1836-2274](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L1836-L2274)
-
-## Key Subroutines and Workflow
-
-### Main Entry Point
-
-`hydraulics_drive`  [biogeophys/FatesPlantHydraulicsMod.F90 282-308](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L282-L308)
-
-- Top-level driver called once per day
-- `FillDrainRhizShells`Calls to synchronize rhizosphere with soil
-- `hydraulics_BC`Dispatches to appropriate solver (currently only is active)
-
-
-### Rhizosphere Management
-
-`FillDrainRhizShells`  [biogeophys/FatesPlantHydraulicsMod.F90 3146-3309](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L3146-L3309)
-
-- Matches rhizosphere shell water content to soil moisture
-- Handles water flow between soil layers and rhizosphere
-- `h2osoi_liqvol_shell`Updates arrays
-
-
-`UpdateSizeDepRhizVolLenCon`  [biogeophys/FatesPlantHydraulicsMod.F90 2369-2641](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L2369-L2641)
-
-- Recalculates rhizosphere shell volumes and radii
-- Updates conductances between shells and soil
-- Called after growth or recruitment events
-
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 260-263](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L260-L263)
-
-### State Initialization
-
-`InitHydrSites`  [biogeophys/FatesPlantHydraulicsMod.F90 2689-2845](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L2689-L2845)
-
-- Allocates site-level hydraulic arrays during initialization
-- Sets up rhizosphere layering (maps soil layers to rhizosphere layers)
-- Initializes water transfer function objects
-
-
-`InitHydrCohort`  [biogeophys/FatesPlantHydraulicsMod.F90 2851-2903](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L2851-L2903)
-
-- Allocates cohort-level hydraulic arrays
-- Called when new cohorts are created
-
-
-`InitPlantHydStates`  [biogeophys/FatesPlantHydraulicsMod.F90 521-674](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L521-L674)
-
-- Initializes water potentials in plant compartments
-- Sets water content based on WRF curves
-- Attempts to match soil-root equilibrium
-
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 249-264](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L249-L264)
-
-### Size-Dependent Updates
-
-`UpdateSizeDepPlantHydProps`  [biogeophys/FatesPlantHydraulicsMod.F90 1521-1575](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L1521-L1575)
-
-- Master routine that calls all size-dependent updates
-- Triggered after growth, recruitment, or fusion events
-- `UpdatePlantHydrNodes``UpdatePlantHydrLenVol``UpdatePlantKmax`Calls: , ,
-
-
-`UpdatePlantHydrNodes`  [biogeophys/FatesPlantHydraulicsMod.F90 1581-1662](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L1581-L1662)
-
-- `z_node_*`Calculates node heights ( ) based on plant height and crown depth
-- Determines vertical positions of compartment boundaries
-
-
-`UpdatePlantHydrLenVol`  [biogeophys/FatesPlantHydraulicsMod.F90 1668-1796](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L1668-L1796)
-
-- Calculates compartment volumes from biomass pools
-- Calculates absorbing root lengths from fine root biomass and SRL
-
-
-`UpdatePlantKmax`  [biogeophys/FatesPlantHydraulicsMod.F90 1836-2274](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L1836-L2274)
-
-- Calculates all maximum conductances
-- Accounts for xylem taper in stem
-- Updates both plant and rhizosphere conductances
-
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 256-260](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L256-L260)
-
-### Restart and State Management
-
-`RestartHydrStates`  [biogeophys/FatesPlantHydraulicsMod.F90 312-517](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L312-L517)
-
-- Called during restart initialization
-- Re-initializes WRF and WKF objects
-- Updates size-dependent properties from saved biomass
-- Ensures consistency between saved state variables and derived quantities
-
-
-`SavePreviousCompartmentVolumes` and `SavePreviousRhizVolumes`
-
-- Store previous timestep's volumes
-- Used for mass balance checking and volume change adjustments
-
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 261-263](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L261-L263)
-
-## Diagnostic Variables
-
-The hydraulics module provides extensive diagnostic output through the history system:
-
-### Cohort-Level Diagnostics
-
-Available through `ed_cohort_hydr_type` :
-
-- `psi_ag``psi_troot``psi_aroot`Water potential in each compartment ( , , )
-- `th_ag``th_troot``th_aroot`Water content in each compartment ( , , )
-- `ftc_ag``ftc_troot``ftc_aroot`Fractional conductivity ( , , )
-- `btran`Leaf water stress ( )
-- `qtop`Transpiration rate ( )
-- `errh2o`Water balance error ( )
-- `iterh1``iterh2``supsub_flag`Numerical solution diagnostics ( , , )
-
-
-### Site-Level Diagnostics
-
-Available through `ed_site_hydr_type` :
-
-- `sapflow_scpf`Sapflow by size class and PFT ( )
-- `rootuptake_sl`Root uptake by soil layer ( )
-- `rootuptake0_scpf``rootuptake10_scpf`Root uptake by depth bins and size-PFT ( , , etc.)
-- `h2oveg`Total vegetation water storage ( )
-- `h2oveg_recruit`Water in recruits ( )
-- `h2oveg_dead`Water in dead vegetation ( )
-- `h2oveg_hydro_err``h2oveg_growturn_err`Water balance errors ( , )
-
-
-Sources: [main/FatesHydraulicsMemMod.F90 104-150](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHydraulicsMemMod.F90#L104-L150)
+`ccohort_hydr%btran` replaces the empirical `cpatch%btran_ft(ft)` when `hlm_use_planthydro == itrue`; `FatesPlantRespPhotosynthMod` multiplies it into the stomatal intercept exactly as in the non-hydraulic pathway. See [Photosynthesis and Respiration](../photosynthesis.md) for how this factor is consumed. A companion routine `BTranForHLMDiagnosticsFromCohortHydr` fills `bc_out%btran_pa` from the same cohort-level `btran` so the host land model always sees a patch-level scalar wetness diagnostic.
 
 ## Mass Balance and Error Tracking
 
-The hydraulics module maintains careful tracking of water mass balance:
+Per-plant, per-step water balance errors are checked against a compile-time threshold (`FatesPlantHydraulicsMod.F90:240-242`):
 
-### Error Pools
+```fortran
+real(r8), parameter :: max_wb_step_err = 2.e-6_r8   ! kg
+```
 
-Three error pools track water conservation:
+Three running error pools in `ed_site_hydr_type` accumulate the residuals:
 
-### Balance Checking
+- `errh2o_hyd` — total hydraulics water balance error [mm]
+- `h2oveg_growturn_err` — error from growth/turnover adjustments [kg m⁻²]
+- `h2oveg_hydro_err` — error from the hydrodynamic solves [kg m⁻²]
 
-`max_wb_step_err` = 2×10⁻⁶ kg (per plant per timestep)
+Each hydraulic solve, growth event, turnover event, recruitment, and mortality event updates these pools. `iterh1`, `iterh2`, and `supsub_flag` per cohort record solver iteration counts and any supersaturation/sub-residual events for diagnostics. See the "Numerical Considerations" section of [Hydraulic Solvers](solvers.md).
 
-- Maximum allowable water balance error
-- If exceeded, warning message generated
-- Used to flag numerical issues in the solver
+## Source References
 
-
-The mass balance is checked at multiple points:
-
-- After each hydraulic solve
-- During growth and turnover
-- At recruitment and mortality
-
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 240-242](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L240-L242)  [main/FatesHydraulicsMemMod.F90 104-123](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesHydraulicsMemMod.F90#L104-L123)
-
-## Numerical Considerations
-
-### Convergence and Iteration Limits
-
-The hydraulic solvers iterate to achieve convergence. Key controls:
-
-- **`error_thresh`**= 10⁻⁵ kg/m²: Site-level conservation error threshold
-- **`max_wb_step_err`**= 2×10⁻⁶ kg: Maximum per-plant per-step error
-- `iterh1``iterh2`Iteration counters: (outer), (inner), tracked per cohort
-
-
-### Supersaturation and Sub-Residual Handling
-
-The code handles cases where water content exceeds saturation or falls below residual:
-
-- **`trap_supersat_psi`****`trap_neg_wc`**and : Developer flags to detect unphysical states
-- **`supsub_flag`**: Tracks which compartment encountered super/sub-saturation
-- `psi_from_th``th_from_psi`Linear extrapolation used in and beyond normal range
-
-
-The parameter `thsat_buff` = 0.001 m³/m³ provides a buffer to prevent exceeding saturation when purging water back to soil (if `purge_supersaturation = .true.` , though this is typically disabled).
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 177-185](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L177-L185)  [biogeophys/FatesHydroWTFMod.F90 31-38](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesHydroWTFMod.F90#L31-L38)
-
-### Parallel Stem Mode
-
-The flag `do_parallel_stem` (default `.true.` ) affects how the conductance path is treated:
-
-When active:
-
-- The stem and leaf conductances are effectively in parallel with all root layers
-- Each root layer integrates over the full timestep
-- Conductances are reduced by the fraction of active root conductance
-
-
-This simplifies the 1D Taylor solver by avoiding tight coupling between sequential layers.
-
-Sources: [biogeophys/FatesPlantHydraulicsMod.F90 161-167](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantHydraulicsMod.F90#L161-L167)
+- `biogeophys/FatesPlantHydraulicsMod.F90:282-308` — `hydraulics_drive` entry point
+- `biogeophys/FatesPlantHydraulicsMod.F90:2567-2607` — solver dispatch
+- `biogeophys/FatesPlantHydraulicsMod.F90:6198-6320` — `InitHydroGlobals` (plant WTF allocation)
+- `biogeophys/FatesPlantHydraulicsMod.F90:208-215` — WTF type constants and `soil_wrf_type`/`soil_wkf_type` hard-coding
+- `biogeophys/FatesPlantHydraulicsMod.F90:240-242` — `max_wb_step_err`
+- `biogeophys/FatesPlantHydraulicsMod.F90:2649-2651` — update of cohort `btran`
+- `main/FatesHydraulicsMemMod.F90:17-19` — solver constants
+- `main/FatesHydraulicsMemMod.F90:30-45` — plant-media and compartment counts (`nshell=1`)
+- `main/FatesHydraulicsMemMod.F90:447-553` — `InitHydrSite` and node-count dispatch
+- `main/EDParamsMod.F90:158, 164` — `hydr_htftype_node` parameter registration
+- `main/EDParamsMod.F90:218-227` — `hydr_solver` parameter and (outdated) "Deprecated" comment on Newton
+- `elm/src/biogeophys/CanopyFluxesMod.F90:1279` — sub-daily call to `wrap_hydraulics_drive`
+- `parameter_files/fates_params_default.cdl:905` — default `hydr_htftype_node = 1, 1, 1, 1` (TFS)

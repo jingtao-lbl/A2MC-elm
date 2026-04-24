@@ -30,6 +30,95 @@ from reasoning.prompts import DIAGNOSTIC_TOOLS_INVENTORY, CUSTOM_SCRIPT_TEMPLATE
 logger = logging.getLogger(__name__)
 
 
+def _build_round_context_block() -> str:
+    """Build a Calibration Round Context block for Phase 3/4 prompts.
+
+    Explicitly tells the AI:
+      1. Which calibration round is currently active (scheme, size, overrides)
+      2. Which round's Y matrix backs any ensemble correlations cited
+         (same round for morris/sobol/lhs; source_round for subset_replay)
+      3. That hypotheses target the ACTIVE round's protocol + parameters,
+         but ensemble correlation evidence must cite the DATA round.
+
+    Reads active round from A2MC_CALIBRATION_ROUND env var (kept in sync by
+    orchestrator.py main loop). Returns empty string if the round config
+    cannot be loaded (e.g. running outside a sourced use_case), so the
+    prompt still builds without round context rather than crashing.
+    """
+    try:
+        from tools.round_paths import load_round_paths, resolve_ensemble_y_matrix_round
+        resolved = resolve_ensemble_y_matrix_round(round_num=None)
+    except Exception as e:
+        logger.debug(f"Round context unavailable: {e}")
+        return ""
+
+    active_round = resolved['active_round']
+    data_round = resolved['data_round']
+    data_paths = resolved['data_round_paths']
+
+    try:
+        active_paths = load_round_paths(active_round)
+    except Exception:
+        active_paths = {}
+
+    active_scheme = active_paths.get('sampling_scheme', 'unknown')
+    active_overrides = active_paths.get('overrides') or {}
+    source_round = active_paths.get('source_round')
+
+    # Summarize active round overrides concisely
+    overrides_line = ""
+    if active_overrides:
+        kvs = [f"`{k}={v}`" for k, v in active_overrides.items()]
+        overrides_line = f"- **Overrides active**: {', '.join(kvs)}\n"
+
+    # Distinct copy depending on whether data round == active round
+    if data_round == active_round:
+        provenance_block = (
+            f"Ensemble correlations (μ*, σ, cross-case stats) in the data "
+            f"below come from **round {active_round}'s own {active_scheme} "
+            f"ensemble**. You can cite case numbers and ensemble statistics "
+            f"directly without cross-round caveats."
+        )
+    else:
+        # Typically subset_replay fallback to source_round
+        src_scheme = data_paths.get('sampling_scheme', 'morris')
+        provenance_block = (
+            f"**IMPORTANT — cross-round provenance:** The active round "
+            f"({active_round}) uses `sampling_scheme={active_scheme}` and "
+            f"does NOT produce its own sensitivity Y matrix. Any ensemble "
+            f"correlations, μ* values, case-ID references (e.g. \"Case "
+            f"#4700\"), or \"across N cases\" claims in the data below "
+            f"come from **round {data_round}'s {src_scheme} ensemble** "
+            f"(the source round that round {active_round} was sampled "
+            f"from).\n\n"
+            f"When you cite such evidence in hypotheses or diagnoses, you "
+            f"MUST label it as round {data_round} data (e.g. \"Morris "
+            f"correlation from round {data_round} shows r=-0.26 between "
+            f"l2fr_ini_9 and PFT9 leaf\"). Do NOT write \"across R"
+            f"{active_round}\" or \"in the R{active_round} ensemble\" "
+            f"when the underlying statistic is from round {data_round}. "
+            f"Your EXPERIMENTS, however, target the ACTIVE round "
+            f"({active_round})'s parameters and protocol — including any "
+            f"overrides listed above."
+        )
+
+    src_line = (
+        f"- **Source round**: {source_round}\n" if source_round is not None else ""
+    )
+
+    return (
+        "## Calibration Round Context\n"
+        f"- **Active round**: {active_round} "
+        f"(sampling_scheme=`{active_scheme}`)\n"
+        f"{src_line}"
+        f"{overrides_line}"
+        f"- **Ensemble data round**: {data_round} "
+        f"(sampling_scheme=`{data_paths.get('sampling_scheme', '?')}`)\n"
+        "\n"
+        f"{provenance_block}\n\n"
+    )
+
+
 def _build_sensitivity_summary(sensitivity_rankings: Dict) -> str:
     """Build a concise human-readable summary of Morris sensitivity rankings.
 
@@ -247,9 +336,11 @@ When you reference "parameters at bounds" in your diagnosis, use ONLY the counts
 DO NOT fabricate numbers. If the tool reports 0 edge parameters, do not claim otherwise.
 """
 
+    _round_ctx = _build_round_context_block()
+
     prompt = f"""Analyze these ELM-FATES calibration results and diagnose why targets are not being met.
 
-{rag_context}{memory_context}{targeted_param_context}
+{_round_ctx}{rag_context}{memory_context}{targeted_param_context}
 
 {self._param_list_context}
 
@@ -901,8 +992,11 @@ Do NOT make generic statements without case attribution.
                     screening_data, base_case_params, include_set, bc_id
                 )
 
+    _round_ctx = _build_round_context_block()
+
     prompt = f"""Based on this diagnosis, generate a testable hypothesis for ELM-FATES calibration.
-{rag_context}{discovery_context}{failed_approaches_context}{targeted_param_context}
+
+{_round_ctx}{rag_context}{discovery_context}{failed_approaches_context}{targeted_param_context}
 
 {self._param_list_context}
 
@@ -1389,12 +1483,14 @@ def synthesize_experiment_design(
                     screening_data, base_case_params, synth_include, bc_id
                 )
 
+    _round_ctx = _build_round_context_block()
+
     prompt = f"""You are synthesizing {len(cumulative_insights)} skip-testing cycles into MULTIPLE experiment designs for HPC testing.
 
 Each supported hypothesis should become its OWN experiment — do NOT merge them into one.
 This allows independent testing of different mechanistic ideas in parallel on HPC.
 
-{rag_context}{discovery_context}{failed_approaches_context}
+{_round_ctx}{rag_context}{discovery_context}{failed_approaches_context}
 {_synth_base_params}
 
 ## Cumulative Skip-Testing Insights

@@ -1,297 +1,251 @@
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
+
 # FATES Model Overview
-
-<details>
-<summary>Relevant source files</summary>
-
-
-- [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90)
-- [biogeochem/EDLoggingMortalityMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90)
-- [biogeochem/EDMortalityFunctionsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMortalityFunctionsMod.F90)
-- [biogeochem/EDPhysiologyMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90)
-- [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)
-- [main/EDMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90)
-- [main/FatesInterfaceMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90)
-- [main/FatesInterfaceTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90)
-
-
-</details>
 
 ## Purpose and Scope
 
-This document provides an architectural overview of the Functionally Assembled Terrestrial Ecosystem Simulator (FATES) model. It introduces the model's core design principles, hierarchical data structures, execution flow, and major subsystems. This overview is intended for developers who need to understand how FATES components fit together before diving into specific modules.
+This document provides an architectural overview of the Functionally Assembled Terrestrial Ecosystem Simulator (FATES). It covers the core design principles, hierarchical data structures, execution flow, and major subsystems. It is intended for developers who need to understand how the components fit together before reading module-level source.
 
-For detailed information on specific subsystems, see:
+For more detail on individual subsystems see:
 
-- [Host Model Interface](getting-started/host_interface.md)Host model coupling:
-- [Initialization Modes](getting-started/initialization.md)Initialization procedures:
-- [Daily Dynamics Loop](core-dynamics/daily_loop.md)Daily dynamics execution:
-- [Data Structures: Sites, Patches, and Cohorts](core-dynamics/data_structures.md)Data structures:
-- [Plant Growth and Physiology](plant-physiology/index.md)Plant processes:
-- [Canopy Structure and Competition](canopy-structure/index.md)Canopy structure:
-
+- [Host Model Interface](../getting-started/host_interface.md)
+- [Initialization Modes](../getting-started/initialization.md)
+- [Daily Dynamics Loop](../core-dynamics/daily_loop.md)
+- [Data Structures: Sites, Patches, and Cohorts](../core-dynamics/data_structures.md)
+- [Plant Growth and Physiology](../plant-physiology/index.md)
+- [Canopy Structure and Competition](../canopy-structure/index.md)
 
 ## What is FATES?
 
-FATES is a cohort-based vegetation demographic model that simulates ecosystem dynamics through the coupled processes of plant growth, mortality, recruitment, and disturbance. The model represents vegetation as a hierarchy of sites containing age-structured patches, each containing size-structured cohorts of plants. FATES is designed as a module that couples to host land models (HLMs) such as E3SM Land Model (ELM) or Community Land Model (CLM).
+FATES is a cohort-based vegetation demographic model that simulates ecosystem dynamics through coupled plant growth, mortality, recruitment, and disturbance. Vegetation is represented as a hierarchy of sites containing age-structured patches, each containing size-structured cohorts. FATES is designed as a module that couples to host land models (HLMs) such as E3SM Land Model (ELM) or Community Land Model (CLM) through a single boundary-condition interface `(main/FatesInterfaceMod.F90:125)`.
 
 ## Core Design Principles
 
 ### 1. Hierarchical Vegetation Structure
 
-FATES organizes vegetation using a three-level hierarchy implemented through linked lists:
+FATES organizes vegetation using a three-level hierarchy implemented through linked lists `(main/FatesInterfaceMod.F90:125)`:
 
-![SVG image](../assets/images/1__FATES_Model_Overview__img-01.svg)
-
-Sources:  [main/FatesInterfaceMod.F90 126-159](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L126-L159)  [biogeochem/EDCohortDynamicsMod.F90 30-34](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L30-L34)
+```
+fates_interface_type
+  └── sites(:)                        (ed_site_type)
+       ├── youngest_patch  ─ older ─► oldest_patch    (doubly-linked list, age order)
+       │   └── tallest     ─ shorter ─► shortest      (doubly-linked list, height order)
+       │        └── prt (PARTEH allocation object with biomass pools)
+       ├── bc_in  (input boundary conditions from HLM)
+       └── bc_out (output boundary conditions to HLM)
+```
 
 ### 2. Cohort Representation
 
-Cohorts aggregate individual plants with similar characteristics (PFT, size, age, canopy position, damage class) to reduce computational cost while maintaining demographic detail. Each cohort tracks:
+Cohorts aggregate individual plants with similar characteristics (PFT, size, age, canopy layer, damage class) to reduce computational cost while keeping demographic detail. A cohort is created in `create_cohort()` `(biogeochem/EDCohortDynamicsMod.F90:160)`. Each cohort tracks:
 
-- `n`Number density ( )
-- `dbh`Diameter at breast height ( )
-- `height`Height ( )
-- `pft`Plant functional type ( )
-- `canopy_layer`Canopy layer ( )
-- Biomass pools via PARTEH (Plant Allocation and Reactive Transport Extensible Hypotheses)
-
-
-Sources:  [biogeochem/EDCohortDynamicsMod.F90 160-196](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L160-L196)
+- `n` — number density (plants per patch)
+- `dbh` — diameter at breast height (cm)
+- `height` — height (m)
+- `pft` — plant functional type
+- `canopy_layer` — canopy layer index
+- `prt` — biomass pools managed by PARTEH (leaf, fineroot, sapwood, structure, storage, reproduction)
 
 ### 3. Perfect Plasticity Approximation (PPA)
 
-FATES uses the PPA to efficiently simulate canopy structure and light competition. Cohorts are organized into discrete canopy layers, with upper canopy plants receiving full light and understory plants receiving reduced light. Layer assignment is based on cohort height and crown area.
-
-Sources: See [Canopy Layering and Perfect Plasticity](canopy-structure/ppa.md)
+Cohorts are organized into discrete canopy layers. Upper canopy cohorts receive full light, understory cohorts receive reduced light. Layer assignment is based on cohort height and crown area. See [Canopy Layering and PPA](../canopy-structure/ppa.md).
 
 ### 4. Extensible Allocation Framework (PARTEH)
 
-Plant carbon and nutrient allocation is handled through PARTEH, a polymorphic framework supporting multiple allocation hypotheses:
+Plant carbon and nutrient allocation is handled through PARTEH (Plant Allocation and Reactive Transport Extensible Hypotheses), a polymorphic framework. Two hypotheses are currently available, selected via `hlm_parteh_mode`:
 
-- `prt_carbon_allom_hyp`: Carbon-only allometric allocation
-- `prt_cnp_flex_allom_hyp`: Flexible CNP allocation with dynamic stoichiometry
+- `prt_carbon_allom_hyp` — carbon-only allometric allocation `(main/FatesInterfaceMod.F90:87)`
+- `prt_cnp_flex_allom_hyp` — flexible CNP allocation with dynamic stoichiometry `(main/FatesInterfaceMod.F90:88)`
 
-
-Sources:  [biogeochem/EDCohortDynamicsMod.F90 293-342](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L293-L342)  [main/FatesInterfaceMod.F90 87-98](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L87-L98)
-
-## Model Architecture: Natural Language to Code Mapping
-
-The following diagram maps conceptual model components to their primary code implementations:
-
-![SVG image](../assets/images/1__FATES_Model_Overview__img-02.svg)
-
-Sources:  [main/FatesInterfaceMod.F90 1-223](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L1-L223)  [main/EDMainMod.F90 1-137](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L1-L137)
+The PARTEH object is attached to each cohort as `currentCohort%prt` and allocated in `create_cohort()` `(biogeochem/EDCohortDynamicsMod.F90:160)`.
 
 ## Execution Flow: Daily Timestep
 
-FATES is called once per day by the host land model. The `ed_ecosystem_dynamics()` routine orchestrates all daily processes in a specific sequence:
+FATES is called once per day by the host land model. The daily sequence is orchestrated by `ed_ecosystem_dynamics()` `(main/EDMainMod.F90:141)`.
 
-![SVG image](../assets/images/1__FATES_Model_Overview__img-03.svg)
+Major steps inside `ed_ecosystem_dynamics`:
 
-Sources:  [main/EDMainMod.F90 141-317](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L141-L317)  [main/EDMainMod.F90 320-409](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L320-L409)
+```
+  TotalBalanceCheck(0)                                   EDMainMod.F90:196
+  phenology() / satellite_phenology()                    EDMainMod.F90:203, 205
+  fire_model()                                           EDMainMod.F90:218
+  disturbance_rates()                                    EDMainMod.F90:223
+  ed_integrate_state_variables()                         EDMainMod.F90:226
+  recruitment() (per patch)                              EDMainMod.F90:248
+  TotalBalanceCheck(1)                                   EDMainMod.F90:255
+  sort_cohorts / terminate_cohorts / fuse_cohorts        EDMainMod.F90:261-270
+  TotalBalanceCheck(2)                                   EDMainMod.F90:277
+  spawn_patches()                                        EDMainMod.F90:292
+  TotalBalanceCheck(3)                                   EDMainMod.F90:294
+  fuse_patches()                                         EDMainMod.F90:297
+  TotalBalanceCheck(4)                                   EDMainMod.F90:309
+  terminate_patches()                                    EDMainMod.F90:312
+  TotalBalanceCheck(5)                                   EDMainMod.F90:315
+```
 
 ### Detailed Integration Sequence
 
-Within `ed_integrate_state_variables()` , the following operations occur for each cohort:
+Inside `ed_integrate_state_variables()` `(main/EDMainMod.F90:320)`, the following operations occur once per cohort. Note that `LoggingMortality_frac()` is not invoked directly here; it is called from inside `Mortality_Derivative()` `(biogeochem/EDMortalityFunctionsMod.F90:284)` and also from `disturbance_rates()` (patch-level) in `EDPatchDynamicsMod`.
 
-| Step | Operation | Module | Purpose | 
-| --- | --- | --- | --- |
-| 1 | Mortality_Derivative() | EDMortalityFunctionsMod | Calculate mortality rates (background, hydraulic, carbon starvation, etc.) | 
-| 2 | LoggingMortality_frac() | EDLoggingMortalityMod | Calculate harvest mortality if logging event | 
-| 3 | PRTMaintTurnover() | PRTLossFluxesMod | Maintenance turnover of tissues | 
-| 4 | DailyPRT() (3 phases) | PARTEH modules | Carbon/nutrient allocation to growth | 
-| 5 | UpdateSizeDepPlantHydProps() | FatesPlantHydraulicsMod | Update hydraulic properties (if enabled) | 
-| 6 | Cohort management | EDCohortDynamicsMod | Sort, fuse, terminate cohorts | 
+| Step | Operation | Source | Purpose |
+|------|-----------|--------|---------|
+| 1 | `Mortality_Derivative()` | `biogeochem/EDMortalityFunctionsMod.F90:234` (call at `main/EDMainMod.F90:473`) | Compute background, hydraulic, C-starvation, freezing, senescence and damage mortality; internally also computes logging mortality via `LoggingMortality_frac()` |
+| 2 | `PRTMaintTurnover()` | `main/EDMainMod.F90:535` | Maintenance turnover of tissues |
+| 3 | `prt%AgeLeaves()` | `main/EDMainMod.F90:543` | Move leaf mass through age classes |
+| 4 | `prt%DailyPRT(phase=1)` | `main/EDMainMod.F90:582` | Phase-1 allocation (non-stature, priority pools) |
+| 5 | `prt%DailyPRT(phase=2)` | `main/EDMainMod.F90:585` | Phase-2 allocation (non-stature, iterative) |
+| 6 | `DamageRecovery()` (if tree damage on) | `main/EDMainMod.F90:595` | Recover damaged cohorts |
+| 7 | `prt%DailyPRT(phase=3)` | `main/EDMainMod.F90:601` | Phase-3 allocation (stature growth) |
+| 8 | `EffluxIntoLitterPools()` | `main/EDMainMod.F90:608` | Efflux of excess/turnover mass to litter |
+| 9 | `h_allom()` | `main/EDMainMod.F90:647` | Update plant height from new DBH |
 
-
-Sources:  [main/EDMainMod.F90 320-719](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L320-L719)
+Hydraulic property updates (`UpdateSizeDepPlantHydProps`) occur per cohort later in the same routine when `hlm_use_planthydro` is active. Cohort sort / fuse / terminate run in the enclosing `ed_ecosystem_dynamics()` after integration.
 
 ## Data Structure Details
 
 ### Site-Patch-Cohort Hierarchy
 
-![SVG image](../assets/images/1__FATES_Model_Overview__img-04.svg)
+Key implementation details:
 
-Key Implementation Details:
+- Patches form a doubly-linked list ordered by age (youngest to oldest). `ed_site_type` holds `youngest_patch` and `oldest_patch` pointers; each patch has `younger` / `older` pointers.
+- Cohorts form a doubly-linked list ordered by height (tallest to shortest). `fates_patch_type` holds `tallest` and `shortest` pointers; each cohort has `taller` / `shorter` pointers.
+- PARTEH objects (`prt`) store all biomass pools (leaf, fineroot, sapwood, structural, storage, reproduction) and handle allocation.
 
-- 
-Patches form a doubly-linked list ordered by age (youngest to oldest)
-
-- `youngest_patch``oldest_patch``ed_site_type`and pointers in
-- `younger``older`Each patch has and pointers
-
-
-- 
-Cohorts form a doubly-linked list ordered by height (tallest to shortest)
-
-- `tallest``shortest``fates_patch_type`and pointers in
-- `taller``shorter`Each cohort has and pointers
-
-
-- 
-PARTEH objects ( `prt` ) store all biomass pools (leaf, root, sapwood, structure, storage) and handle allocation
-
-
-
-Sources:  [biogeochem/EDCohortDynamicsMod.F90 206-289](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L206-L289)  [biogeochem/EDCohortDynamicsMod.F90 293-342](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L293-L342)
+Sources: `biogeochem/EDCohortDynamicsMod.F90:160` (`create_cohort`), `biogeochem/EDCohortDynamicsMod.F90:347` (`terminate_cohorts`), `biogeochem/EDCohortDynamicsMod.F90:694` (`fuse_cohorts`), `biogeochem/EDCohortDynamicsMod.F90:1271` (`sort_cohorts`).
 
 ## Key Process Modules
 
-### 1. Phenology and Recruitment
+Subroutine line numbers below point to the subroutine *body* (the `subroutine <name>(...)` line), not to public declaration lists.
 
-Module: `EDPhysiologyMod.F90`
+### 1. Phenology and Recruitment — `biogeochem/EDPhysiologyMod.F90`
 
-Key functions:
+- `trim_canopy()` — optimizes leaf area based on carbon balance `(biogeochem/EDPhysiologyMod.F90:597)`
+- `phenology()` — controls leaf flushing and abscission for deciduous PFTs `(biogeochem/EDPhysiologyMod.F90:909)`
+- `recruitment()` — creates new seedlings from germinated seeds `(biogeochem/EDPhysiologyMod.F90:2440)`
 
-- `phenology()`[line 148]: Controls leaf flushing and abscission for deciduous PFTs
-- `recruitment()`[line 152]: Creates new seedlings from germinated seeds
-- `trim_canopy()`[line 147]: Optimizes leaf area based on carbon balance
+### 2. Mortality — `biogeochem/EDMortalityFunctionsMod.F90`
 
+`Mortality_Derivative()` `(biogeochem/EDMortalityFunctionsMod.F90:234)` combines multiple mortality mechanisms into per-cohort rates:
 
-Sources:  [biogeochem/EDPhysiologyMod.F90 1-200](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1-L200)
+- `bmort` — background mortality
+- `cmort` — carbon starvation mortality
+- `hmort` — hydraulic failure mortality
+- `frmort` — freezing mortality
+- `smort` — size-dependent senescence
+- `asmort` — age-dependent senescence
+- `dgmort` — damage-dependent mortality
+- Logging mortality via internal call to `LoggingMortality_frac()` at `EDMortalityFunctionsMod.F90:284`
 
-### 2. Mortality
+### 3. Allometry — `biogeochem/FatesAllometryMod.F90`
 
-Module: `EDMortalityFunctionsMod.F90`
+All allometry routines are dispatched based on per-PFT mode switches (`fates_allom_hmode`, `fates_allom_lmode`, `fates_allom_smode`, `fates_allom_amode`). Subroutine-body line numbers:
 
-Calculates multiple mortality mechanisms:
+- `h_allom()` — DBH to height `(biogeochem/FatesAllometryMod.F90:333)`
+- `bagw_allom()` — aboveground woody biomass `(biogeochem/FatesAllometryMod.F90:372)`
+- `blmax_allom()` — maximum (target) leaf biomass `(biogeochem/FatesAllometryMod.F90:440)`
+- `carea_allom()` — crown area `(biogeochem/FatesAllometryMod.F90:476)`
+- `bleaf()` — current leaf biomass (accounts for crown damage and canopy trim) `(biogeochem/FatesAllometryMod.F90:554)`
+- `bsap_allom()` — sapwood biomass / sapwood area `(biogeochem/FatesAllometryMod.F90:922)`
+- `bbgw_allom()` — coarse (belowground) woody biomass `(biogeochem/FatesAllometryMod.F90:1025)`
 
-- `bmort`Background mortality ( )
-- `cmort`Carbon starvation mortality ( )
-- `hmort`Hydraulic failure mortality ( )
-- `frmort`Freezing mortality ( )
-- `smort`Size-dependent senescence ( )
-- `asmort`Age-dependent senescence ( )
-- `dgmort`Damage-dependent mortality ( )
+### 4. Cohort Dynamics — `biogeochem/EDCohortDynamicsMod.F90`
 
+- `create_cohort()` — initialize a new cohort and its PARTEH object `(biogeochem/EDCohortDynamicsMod.F90:160)`
+- `terminate_cohorts()` — remove cohorts below thresholds `(biogeochem/EDCohortDynamicsMod.F90:347)`
+- `fuse_cohorts()` — merge similar cohorts to bound per-patch cohort count `(biogeochem/EDCohortDynamicsMod.F90:694)`
+- `sort_cohorts()` — maintain the height-ordered list `(biogeochem/EDCohortDynamicsMod.F90:1271)`
 
-Combined via `Mortality_Derivative()` [line 234-323]
+### 5. Logging and Harvest — `biogeochem/EDLoggingMortalityMod.F90`
 
-Sources:  [biogeochem/EDMortalityFunctionsMod.F90 51-230](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMortalityFunctionsMod.F90#L51-L230)
-
-### 3. Allometry
-
-Module: `FatesAllometryMod.F90`
-
-Provides relationships between diameter and:
-
-- `h_allom()`Height: [line 333]
-- `blmax_allom()``bleaf()`Leaf biomass: , [lines 440, 110]
-- `bsap_allom()`Sapwood biomass: [line 114]
-- `bbgw_allom()`Coarse root biomass: [line 115]
-- `bagw_allom()`Aboveground woody biomass: [line 108]
-- `carea_allom()`Crown area: [line 118]
-
-
-Sources:  [biogeochem/FatesAllometryMod.F90 1-144](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L1-L144)
-
-### 4. Cohort Dynamics
-
-Module: `EDCohortDynamicsMod.F90`
-
-Key operations:
-
-- `create_cohort()`[line 160]: Initialize new cohort
-- `terminate_cohorts()`[line 347]: Remove cohorts below thresholds
-- `fuse_cohorts()`[line 134]: Merge similar cohorts to reduce computational cost
-- `sort_cohorts()`[line 136]: Maintain height-ordered list
-
-
-Sources:  [biogeochem/EDCohortDynamicsMod.F90 1-157](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L1-L157)
-
-### 5. Logging and Harvest
-
-Module: `EDLoggingMortalityMod.F90`
-
-Implements anthropogenic disturbances:
-
-- `LoggingMortality_frac()`
-- Direct logging mortality (harvestable trees)
-- Collateral damage mortality
-- Infrastructure mortality (roads, skid trails)
-
-[line 198]: Calculate harvest mortality fractions
-- `get_harvest_rate_area()`[line 351]: Area-based harvest rates
-- `get_harvest_rate_carbon()`: Carbon-based harvest rates
-
-
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 1-104](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L1-L104)
+- `LoggingMortality_frac()` — computes direct-logging, collateral and infrastructure mortality fractions `(biogeochem/EDLoggingMortalityMod.F90:198)`
+- `get_harvest_rate_area()` — area-based harvest rates `(biogeochem/EDLoggingMortalityMod.F90:351)`
+- `get_harvest_rate_carbon()` — carbon-based harvest rates `(biogeochem/EDLoggingMortalityMod.F90:540)`
 
 ## Boundary Conditions: Host Model Interface
 
-FATES exchanges information with the host land model through boundary condition structures:
+FATES exchanges information with the host land model through boundary-condition structures declared in `main/FatesInterfaceTypesMod.F90`.
 
-### Inputs from HLM (bc_in_type)
+### Inputs from HLM (`bc_in_type`)
 
-| Category | Key Variables | Purpose | 
-| --- | --- | --- |
-| Radiation | solad_parb, solai_parb | Direct/diffuse PAR and NIR | 
-| Hydrology | smp_sl, h2o_liqvol_sl, watsat_sl | Soil moisture state | 
-| Meteorology | tempk_sl, t_veg_pa | Temperature drivers | 
-| Fire | lightning24, pop_density | Ignition sources | 
-| BGC | plant_nh4_uptake_flux, plant_no3_uptake_flux | Nutrient uptake (CNP mode) | 
-| Land Use | hlm_harvest_rates, hlm_harvest_catnames | Harvest prescriptions | 
+| Category | Key Variables | Purpose |
+|----------|---------------|---------|
+| Radiation | `solad_parb`, `solai_parb` | Direct/diffuse PAR and NIR |
+| Hydrology | `smp_sl`, `h2o_liqvol_sl`, `watsat_sl` | Soil moisture state |
+| Temperature | `tempk_sl`, `t_veg_pa` | Soil and vegetation temperature drivers |
+| Fire weather | `lightning24`, `pop_density` | Ignition sources |
+| BGC | `plant_nh4_uptake_flux`, `plant_no3_uptake_flux`, `plant_p_uptake_flux` | Nutrient uptake in CNP coupled mode |
+| Land use | `hlm_harvest_rates`, `hlm_harvest_catnames` | Harvest prescriptions |
 
+Sources: `main/FatesInterfaceTypesMod.F90:348-562`.
 
-### Outputs to HLM (bc_out_type)
+### Outputs to HLM (`bc_out_type`)
 
-| Category | Key Variables | Purpose | 
-| --- | --- | --- |
-| Radiation | albd_parb, albi_parb, fsun_pa | Albedo, sunlit fraction | 
-| Hydrology | rootr_pasl, btran_pa | Root uptake profile, transpiration stress | 
-| Structure | elai_pa, htop_pa, z0m_pa | LAI, canopy height, roughness | 
-| BGC Fluxes | litt_flux_cel_c_si, litt_flux_lig_c_si | Litter fragmentation to soil | 
-| Nutrient Fluxes | source_nh4, source_p | Nutrient mineralization (CNP mode) | 
+| Category | Key Variables | Purpose |
+|----------|---------------|---------|
+| Radiation | `albd_parb`, `albi_parb`, `fsun_pa` | Albedo, sunlit fraction |
+| Hydrology | `rootr_pasl`, `btran_pa` | Root uptake profile, transpiration stress |
+| Structure | `elai_pa`, `esai_pa`, `htop_pa` | Exposed LAI/SAI, canopy height |
+| Litter fluxes | `litt_flux_cel_c_si`, `litt_flux_lig_c_si`, `litt_flux_lab_c_si` | Litter fragmentation to soil BGC |
+| Nutrient fluxes | `veg_rootc`, `cn_scalar`, `cp_scalar` | Competitor state for soil BGC |
 
+Sources: `main/FatesInterfaceTypesMod.F90:565-751`.
 
-Sources:  [main/FatesInterfaceTypesMod.F90 412-704](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L412-L704)
+### Parameter Constants (`bc_pconst_type`)
+
+Parameters set once during initialization and held constant throughout the simulation, mostly ECA uptake kinetics. Allocated in `allocate_bcpconst()` `(main/FatesInterfaceMod.F90:225)`:
+
+```
+vmax_nh4, vmax_no3, vmax_p          ! uptake rate constants per PFT
+eca_km_nh4, eca_km_no3, eca_km_p    ! half-saturation constants
+eca_km_ptase, eca_vmax_ptase
+eca_alpha_ptase, eca_lambda_ptase
+j_uptake                             ! per soil decomp layer
+```
 
 ## Mass Balance and Diagnostics
 
-FATES performs rigorous mass balance checking at multiple points during the daily timestep:
+FATES performs rigorous mass-balance checking at six checkpoints during the daily timestep. `TotalBalanceCheck(currentSite, N)` is called at:
 
-- `TotalBalanceCheck(0)`: Initial state before dynamics
-- `TotalBalanceCheck(1)`: After recruitment
-- `TotalBalanceCheck(2)`: After cohort dynamics
-- `TotalBalanceCheck(3)`: After patch spawning
-- `TotalBalanceCheck(4)`: After patch fusion
-- `TotalBalanceCheck(5)`: Final check
+- N=0: initial state before dynamics `(main/EDMainMod.F90:196)`
+- N=1: after recruitment `(main/EDMainMod.F90:255)`
+- N=2: after cohort dynamics `(main/EDMainMod.F90:277)`
+- N=3: after patch spawning `(main/EDMainMod.F90:294)`
+- N=4: after patch fusion `(main/EDMainMod.F90:309)`
+- N=5: final check `(main/EDMainMod.F90:315)`
 
-
-The function `SiteMassStock()` calculates total carbon (or nutrient) across all live vegetation, litter, and seed pools to verify conservation.
-
-Sources:  [main/EDMainMod.F90 196-315](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L196-L315)
+`SiteMassStock()` calculates total carbon (or nutrient) across all live vegetation, litter, and seed pools to verify conservation.
 
 ## Parameter System
 
-FATES uses a netCDF parameter file ( `fates_params.nc` ) generated from CDL format. Parameters include:
+FATES loads parameters from a NetCDF file (`fates_params.nc`), generated from a canonical CDL definition at `parameter_files/fates_params_default.cdl`. Parameters include:
 
-- PFT-specific traits (e.g., wood density, leaf lifespan, allometric coefficients)
-- Global parameters (e.g., mortality scalars, fire parameters)
-- Mode switches (e.g., allometry function choices)
+- PFT-specific traits (wood density, leaf lifespan, allometric coefficients, stoichiometry)
+- Global scalars (mortality disturbance fraction, canopy exclusion weight, phenology thresholds, fusion tolerances)
+- Mode switches (`fates_allom_hmode`, `fates_allom_lmode`, `fates_maintresp_leaf_model`, `fates_rad_model`, etc.)
 
+Parameter loading is two-phase, driven by `FatesReadParameters()` `(main/FatesInterfaceMod.F90:2399)`:
 
-Parameter loading occurs via:
+1. Register phase — each module declares parameters via `FatesRegisterParams`, `SpitFireRegisterParams`, `PRTRegisterParams`, `FatesSynchronizedParamsInst%RegisterParams` `(main/FatesInterfaceMod.F90:2413-2416)`
+2. Read phase — `param_reader%Read(fates_params)` `(main/FatesInterfaceMod.F90:2418)`
+3. Receive phase — `FatesReceiveParams`, `SpitFireReceiveParams`, `PRTReceiveParams`, `FatesSynchronizedParamsInst%ReceiveParams` `(main/FatesInterfaceMod.F90:2420-2423)`
 
-Sources:  [main/FatesInterfaceMod.F90 67-72](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L67-L72)
+See [Parameter System](../getting-started/parameter_system.md) for details.
 
 ## Operational Modes
 
-FATES supports several operational modes controlled by namelist flags:
+FATES supports several operational modes set by the HLM during initialization. All flags are declared in `main/FatesInterfaceTypesMod.F90`.
 
-| Mode | Flag | Description | 
-| --- | --- | --- |
-| Standard | Default | Full demographic dynamics | 
-| Satellite Phenology | hlm_use_sp | Prescribed LAI from observations | 
-| No Competition | hlm_use_nocomp | Single-cohort per PFT, no vertical structure | 
-| Fixed Biogeography | hlm_use_fixed_biogeog | Fixed PFT distribution | 
-| Static Stand Structure | hlm_use_ed_st3 | No growth, recruitment, or mortality | 
-
-
-Sources:  [main/FatesInterfaceTypesMod.F90 188-195](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L188-L195)
+| Mode | Flag | Source | Description |
+|------|------|--------|-------------|
+| Standard | (default) | — | Full demographic dynamics |
+| Satellite Phenology | `hlm_use_sp` | `main/FatesInterfaceTypesMod.F90:194` | Prescribed LAI from surface dataset |
+| No Competition | `hlm_use_nocomp` | `main/FatesInterfaceTypesMod.F90:191` | One patch per PFT, no inter-PFT competition (does not fix area) |
+| Fixed Biogeography | `hlm_use_fixed_biogeog` | `main/FatesInterfaceTypesMod.F90:188` | PFT area fractions from surface dataset |
+| Static Stand Structure | `hlm_use_ed_st3` | `main/FatesInterfaceTypesMod.F90:155` | No growth, recruitment, or mortality — experimental |
 
 ## Summary
 
-FATES implements ecosystem demography through:
-
-The model's modular design allows components to be extended or replaced while maintaining system integrity. For detailed information on specific subsystems, refer to the linked wiki pages at the beginning of this document.
+FATES implements ecosystem demography through a clean separation of site/patch/cohort data structures, a two-phase parameter system, and a daily execution pipeline that integrates mortality, allocation, disturbance and recruitment. The modular design (PARTEH, SPITFIRE, plant hydraulics, tree damage, logging) allows components to be swapped while the site-patch-cohort backbone is maintained. For subsystem details, follow the links at the top of this document.

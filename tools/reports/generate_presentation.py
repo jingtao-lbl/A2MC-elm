@@ -684,6 +684,11 @@ def main():
                         help="TTS voice (default: nova)")
     parser.add_argument("--tts-model", default="tts-1-hd",
                         help="TTS model (default: tts-1-hd)")
+    parser.add_argument("--skip-verify", action="store_true",
+                        help="Skip the post-PDF slide overflow check "
+                             "(not recommended; the verifier catches Marp "
+                             "silent-truncation that would otherwise be "
+                             "encoded into the video)")
 
     args = parser.parse_args()
 
@@ -815,6 +820,35 @@ def main():
             sys.exit(1)
         print("\n[Stage 5/6] Building PDF and PPTX...")
         pdf_path = build_pdf(slides_path, output_dir)
+
+        # Verifier: catch slide overflow before spending time on TTS/video.
+        # Marp silently clips content that doesn't fit the page; we render
+        # the PDF to PNGs and inspect each slide's bottom margin for clipped
+        # text. Failing here saves the long video build for a clean PDF.
+        try:
+            from tools.reports.verify_slides import verify_pdf, format_report
+        except ImportError:
+            # Allow running the script directly from tools/reports/ without
+            # the package being importable.
+            sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+            from tools.reports.verify_slides import verify_pdf, format_report
+
+        if pdf_path and pdf_path.exists():
+            print("\n[Stage 5.5/6] Verifying slide overflow...")
+            try:
+                verification = verify_pdf(pdf_path, annotate=False)
+                report_text = format_report(pdf_path, verification)
+                print(report_text)
+                if verification['n_overflow'] > 0 and not args.skip_verify:
+                    print(
+                        f"\nERROR: {verification['n_overflow']} slide(s) have content "
+                        f"clipped at the bottom edge. The video build will encode "
+                        f"these clipped slides as-is. Fix the slides and re-run, "
+                        f"or pass --skip-verify to proceed anyway.\n"
+                    )
+                    sys.exit(3)
+            except Exception as e:
+                logger.warning(f"Slide verification failed (non-fatal): {e}")
 
     if stop_idx <= 4:
         print(f"\nDone (stopped after PDF). Review:")

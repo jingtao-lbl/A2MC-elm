@@ -47,7 +47,8 @@ def test_hypothesis_with_existing_data(
     hypothesis: Dict,
     config: Any,
     screening_data: Dict,
-    diagnostic_runner: Optional[Any] = None
+    diagnostic_runner: Optional[Any] = None,
+    round_num: Optional[int] = None,
 ) -> Dict:
     """
     Test a hypothesis using existing Morris ensemble data.
@@ -57,6 +58,10 @@ def test_hypothesis_with_existing_data(
         config: Orchestrator Config object
         screening_data: Screening results from Phase 2
         diagnostic_runner: Optional callable for diagnostic tests
+        round_num: Active calibration round. Plumbed through to
+            load_morris_ensemble_data() so skip-testing uses the correct
+            round's Y matrix (with source_round fallback for subset_replay).
+            If None, falls back to A2MC_CALIBRATION_ROUND env var.
 
     Returns:
         Dict with hypothesis_supported, confidence, test_method,
@@ -70,9 +75,11 @@ def test_hypothesis_with_existing_data(
     logger.info(f"  Method: {method}")
     logger.info(f"  Description: {description}")
 
-    # Load Morris ensemble data
+    # Load Morris ensemble data (round-aware — resolves via calibration_rounds.yaml)
     try:
-        param_matrix, y_outputs, ensemble_ranges = load_morris_ensemble_data(config, screening_data)
+        param_matrix, y_outputs, ensemble_ranges = load_morris_ensemble_data(
+            config, screening_data, round_num=round_num
+        )
         logger.info(f"  Loaded {len(param_matrix)} parameter sets")
     except Exception as e:
         logger.error(f"Failed to load Morris data: {e}")
@@ -150,116 +157,168 @@ def test_hypothesis_with_existing_data(
     result['hypothesis_name'] = hypothesis.get('name', 'Unknown')
     result['untestable_params'] = untestable_params
 
+    # Tag provenance so downstream iterations (and the AI prompt layer) can
+    # cite the right round when they summarize this test's findings. If the
+    # active round is running subset_replay and this test used source_round's
+    # Y matrix, is_source_round_fallback=True tells callers to say "Morris
+    # correlation from round {data_round}" instead of conflating with the
+    # active round.
+    active_round = y_outputs.get('_active_round')
+    data_round = y_outputs.get('_data_round')
+    if active_round is not None:
+        result['active_round'] = active_round
+    if data_round is not None:
+        result['data_round'] = data_round
+    if active_round is not None and data_round is not None:
+        result['is_source_round_fallback'] = (active_round != data_round)
+
     return result
 
 
-def load_morris_ensemble_data(config: Any, screening_data: Dict = None) -> Tuple:
+def load_morris_ensemble_data(
+    config: Any,
+    screening_data: Dict = None,
+    round_num: Optional[int] = None,
+) -> Tuple:
     """
-    Load Morris parameter matrix and Y outputs.
+    Load round-aware Morris parameter matrix and Y outputs for skip-testing.
+
+    Resolves paths via ``tools.round_paths.resolve_ensemble_y_matrix_round()``
+    so the right round's data is loaded even when multiple rounds' artifacts
+    coexist on disk. For ``subset_replay`` rounds, the source_round's Morris
+    Y matrix is loaded (with an explicit log); hypotheses built on the
+    resulting correlations MUST cite the source round, not the active round.
+
+    Historical bug this replaces: the previous implementation used a
+    recursive glob ``use_case_dir.glob("**/Morris*[Bb]iomass*.txt")`` which
+    would silently pick up any round's leftover Y matrix files. Session
+    ``20260413_173425`` ran R4 (200 cases) but skip-testing loaded R3's
+    4890-row Y matrix, producing confidently wrong hypotheses. See Bug 5
+    in the session report.
 
     Args:
-        config: Config object with use_case_dir or output_dir
-        screening_data: Optional screening data to include
+        config: Config object. Only used as a last-resort fallback for
+            `use_case_dir` when env vars are not set.
+        screening_data: Optional screening data to include under
+            ``y_outputs['_screening']``.
+        round_num: Active calibration round. If None, falls back to the
+            ``A2MC_CALIBRATION_ROUND`` env var, then to 1.
 
     Returns:
-        (param_matrix, y_outputs, ensemble_ranges) tuple where ensemble_ranges
-        is a dict mapping parameter shorthand names to {'min': float, 'max': float}.
+        ``(param_matrix, y_outputs, ensemble_ranges)`` tuple.
+
+        ``y_outputs`` additionally carries two provenance keys so downstream
+        consumers (and the Phase 4 prompt) can cite the right round:
+            - ``y_outputs['_active_round']``: int, the round the orchestrator
+              is running.
+            - ``y_outputs['_data_round']``: int, the round whose Y matrix was
+              actually loaded (equals ``_active_round`` for Morris/Sobol/LHS,
+              equals ``source_round`` for subset_replay).
     """
     import numpy as np
+    from tools.round_paths import load_round_paths, resolve_ensemble_y_matrix_round
 
-    # Get use case directory from config or environment
-    use_case_dir = getattr(config, 'use_case_dir', None)
-    if not use_case_dir:
-        try:
-            from tools.config import config as a2mc_config
-            use_case_dir = a2mc_config.USE_CASE_DIR
-        except (ImportError, AttributeError):
-            use_case_dir = os.environ.get('A2MC_USE_CASE_DIR', '')
+    # Resolve which round's Y matrix to load. Honors subset_replay
+    # source_round fallback with an explicit log.
+    resolved = resolve_ensemble_y_matrix_round(round_num)
+    active_round = resolved['active_round']
+    data_round = resolved['data_round']
+    data_paths = resolved['data_round_paths']
 
-    if not use_case_dir:
-        raise FileNotFoundError("Cannot determine use case directory")
-
-    # Parameter matrix file - check config/env var first, then glob
-    param_file = None
-
-    # 1. Check A2MC_ENSEMBLE_MATRIX_FILE from config or env
-    ensemble_matrix = os.environ.get('A2MC_ENSEMBLE_MATRIX_FILE', '')
-    if not ensemble_matrix:
-        try:
-            from tools.config import config as a2mc_config
-            ensemble_matrix = getattr(a2mc_config, 'ENSEMBLE_MATRIX_FILE', '')
-        except (ImportError, AttributeError):
-            pass
-
-    if ensemble_matrix and Path(ensemble_matrix).exists():
-        param_file = Path(ensemble_matrix)
+    if resolved['is_source_round_fallback']:
+        # Fetch active round's own scheme for an accurate log (data_paths
+        # refers to the source round's scheme, which would be misleading).
+        active_scheme = load_round_paths(active_round).get('sampling_scheme', '?')
+        logger.warning(
+            f"Ensemble Y matrix fallback: active round is {active_round} "
+            f"(sampling_scheme={active_scheme}), but skip-testing will "
+            f"load source_round={data_round}'s Morris Y matrix."
+        )
+        logger.warning(f"  Rationale: {resolved['reason']}")
     else:
-        # 2. Glob in use_case_dir/parameters/
-        param_files = list(Path(use_case_dir).glob("parameters/*Morris*.txt"))
-        # 3. Glob in phases/phase0_design/
-        if not param_files:
-            a2mc_root = Path(use_case_dir).parent.parent
-            param_files = list((a2mc_root / "phases" / "phase0_design").glob("*Morris*.txt"))
-        # 4. Legacy: SALib_FATES/
-        if not param_files:
-            param_files = list(Path(use_case_dir).parent.parent.glob("SALib_FATES/*Morris*.txt"))
+        logger.info(
+            f"Loading Y matrix for round {active_round} "
+            f"(sampling_scheme={data_paths.get('sampling_scheme', '?')})"
+        )
 
-        if not param_files:
-            raise FileNotFoundError(
-                "No Morris parameter matrix file found. "
-                "Set A2MC_ENSEMBLE_MATRIX_FILE or place file in "
-                "use_cases/{site}/parameters/ or phases/phase0_design/"
-            )
-        param_file = param_files[0]
+    # Parameter matrix: prefer YAML-resolved path, fall back to env var.
+    param_file_str = data_paths.get('ensemble_matrix_file') or ''
+    env_override = os.environ.get('A2MC_ENSEMBLE_MATRIX_FILE', '')
+    if env_override and Path(env_override).exists():
+        param_file = Path(env_override)
+    elif param_file_str and Path(param_file_str).exists():
+        param_file = Path(param_file_str)
+    else:
+        raise FileNotFoundError(
+            f"No Morris parameter matrix file found for round {data_round}. "
+            f"Set paths.ensemble_matrix_file in calibration_rounds.yaml, or "
+            f"set A2MC_ENSEMBLE_MATRIX_FILE env var. "
+            f"YAML-resolved path: {param_file_str or '(none)'}"
+        )
 
     logger.info(f"  Loading parameters from: {param_file}")
     param_matrix = np.loadtxt(param_file)
 
-    # Y output files
-    y_outputs = {}
+    # Y output files: look ONLY in the resolved round's y_matrix_dir.
+    # No more recursive glob across use_case_dir — that was Bug 5.
+    y_matrix_dir = data_paths.get('y_matrix_dir') or ''
+    if not y_matrix_dir or not Path(y_matrix_dir).exists():
+        raise FileNotFoundError(
+            f"No y_matrix_dir resolvable for round {data_round}. "
+            f"Expected paths.y_matrix_dir in calibration_rounds.yaml or a "
+            f"legacy directory at "
+            f"use_cases/{{site}}/memory/phase_results/phase1_exploration/. "
+            f"Resolved: {y_matrix_dir or '(none)'}"
+        )
 
-    # Case-insensitive glob: files may use "Biomass" or "biomass"
-    y_files = list(Path(use_case_dir).glob("**/Morris*[Bb]iomass*.txt"))
-    if not y_files:
-        y_files = list(Path(use_case_dir).parent.glob("Morris*[Bb]iomass*.txt"))
+    y_outputs: Dict[str, Any] = {}
+    y_files = sorted(Path(y_matrix_dir).glob("Morris*[Bb]iomass*.txt"))
 
     for y_file in y_files:
         name = y_file.stem
-        if 'Leaf' in name:
+        if 'Leaf' in name or 'leaf' in name:
             var_name = 'leaf_biomass'
-        elif 'Fineroot' in name or 'FineRoot' in name:
+        elif 'Fineroot' in name or 'FineRoot' in name or 'fineroot' in name:
             var_name = 'froot_biomass'
-        elif 'AGB' in name or 'Aboveground' in name or 'Abg' in name:
+        elif 'AGB' in name or 'Aboveground' in name or 'Abg' in name or 'abg' in name:
             var_name = 'agb_biomass'
         else:
             var_name = name
 
-        # Skip duplicates (recursive glob may find same variable from multiple paths)
         if var_name in y_outputs:
             continue
 
         try:
             y_outputs[var_name] = np.loadtxt(y_file)
-            logger.info(f"  Loaded {var_name}: shape {y_outputs[var_name].shape}")
+            logger.info(f"  Loaded {var_name}: shape {y_outputs[var_name].shape} from {y_file.name}")
         except Exception as e:
             logger.warning(f"  Could not load {y_file}: {e}")
 
-    # Validate: at least one biomass variable must be loaded
     biomass_keys = [k for k in y_outputs if k in ('leaf_biomass', 'froot_biomass', 'agb_biomass')]
     if not biomass_keys:
-        searched = [str(Path(use_case_dir)), str(Path(use_case_dir).parent)]
-        logger.error(f"  No Y output (biomass) files loaded!")
-        logger.error(f"  Searched in: {searched}")
-        logger.error(f"  Glob pattern: Morris*[Bb]iomass*.txt")
         raise FileNotFoundError(
-            f"No Morris Y output files found. "
-            f"Expected files matching Morris*biomass*.txt in {use_case_dir}. "
-            f"Check that Phase 1 extraction outputs exist in "
-            f"use_cases/{{site}}/memory/phase_results/[{{session_id}}/]phase1_exploration/"
+            f"No Morris Y output files found in {y_matrix_dir}. "
+            f"Expected files matching Morris*[Bb]iomass*.txt. "
+            f"Phase 1 must have run for round {data_round} first."
         )
     logger.info(f"  Y outputs loaded: {biomass_keys}")
 
-    # Also include screening data if available
+    # Sanity check: shapes should agree between param_matrix and Y outputs.
+    n_param = param_matrix.shape[0] if param_matrix.ndim >= 1 else 0
+    for k in biomass_keys:
+        n_y = y_outputs[k].shape[0] if y_outputs[k].ndim >= 1 else 0
+        if n_y != n_param:
+            logger.warning(
+                f"  Row-count mismatch: param_matrix has {n_param} rows, "
+                f"{k} has {n_y}. This round's Morris matrix and Y matrix "
+                f"may be out of sync — skip-testing statistics may be wrong."
+            )
+
+    # Record which round this data actually represents, so downstream
+    # consumers can cite provenance correctly.
+    y_outputs['_active_round'] = active_round
+    y_outputs['_data_round'] = data_round
+
     if screening_data:
         y_outputs['_screening'] = screening_data
 

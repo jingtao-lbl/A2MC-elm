@@ -91,31 +91,19 @@ def _expand_vars(s: str) -> str:
 
 
 def _load_round_config(yaml_path: str, round_num: int) -> Dict:
-    """Load and resolve paths for a given round from calibration_rounds.yaml."""
-    import yaml
-    with open(yaml_path) as f:
-        data = yaml.safe_load(f)
+    """Load and resolve paths for a given round from calibration_rounds.yaml.
 
-    rounds = data.get('rounds', {})
-    rnd = rounds.get(round_num)
-    if rnd is None:
-        raise ValueError(f"Round {round_num} not found in {yaml_path}")
-
-    paths = rnd.get('paths', {})
-    if not paths:
+    Thin wrapper around tools.round_paths.load_round_paths() kept for
+    backward compatibility with existing call sites in this module. New code
+    should use load_round_paths() directly.
+    """
+    from tools.round_paths import load_round_paths
+    paths = load_round_paths(round_num, yaml_path=yaml_path)
+    # Paths block must exist (load_round_paths raises if round missing, but
+    # the older API expected a missing-paths sentinel ValueError too).
+    if not paths.get('extracted_data') and not paths.get('ensemble_output'):
         raise ValueError(f"Round {round_num} has no 'paths' block in {yaml_path}")
-
-    return {
-        'round': round_num,
-        'extracted_data': _expand_vars(paths.get('extracted_data', '')),
-        'ensemble_output': _expand_vars(paths.get('ensemble_output', '')),
-        'case_name_pattern': paths.get('case_name_pattern', ''),
-        'param_dir': _expand_vars(paths.get('param_dir', '')),
-        'param_pattern': paths.get('param_pattern', ''),
-        'sampling_scheme': rnd.get('sampling_scheme', ''),
-        'overrides': rnd.get('overrides', {}),
-        'source_round': rnd.get('source_round'),
-    }
+    return paths
 
 
 def _load_manifest(ensemble_output: str) -> List[Dict]:

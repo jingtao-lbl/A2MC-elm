@@ -2,16 +2,170 @@
 
 **Purpose:** Step-by-step guide for creating a narrated presentation from any A2MC calibration session.
 **Author:** Jing Tao with Claude
-**Last Updated:** March 11, 2026
+**Last Updated:** April 14, 2026
 
 ---
 
 ## Overview
 
 This workflow takes the raw logs from an A2MC calibration session and produces:
-1. A **Marp Markdown** slide deck (`.md`)
-2. A **PowerPoint** file (`.pptx`) for manual review/editing
-3. A **narrated MP4 video** with TTS audio
+1. A **Manuscript-style technical report** (`.md`)
+2. A **Marp Markdown** slide deck (`.md`)
+3. A **PDF** + **PowerPoint** (`.pptx`) export
+4. A **narrated MP4 video** with TTS audio
+
+```
+Session logs ──> Technical report ──> Marp slides ──> Narration JSON ──> PDF ──> PPTX
+  (phase1..6)         (Markdown)        (Marp .md)       (.json)        (.pdf)   (.pptx)
+                                                                            │
+                                                                            └──> PNG pages ──> + TTS audio ──> MP4 video
+```
+
+---
+
+## CRITICAL: Two Execution Modes
+
+The pipeline has **six stages**: `collect → report → slides → narration → pdf → video`. The first four (`collect`, `report`, `slides`, `narration`) are AI-content stages — they need a language model to author the technical report, slide deck, and per-slide narration. The last two (`pdf`, `video`) are deterministic build stages that just run `marp-cli` and `ffmpeg`.
+
+**Two execution modes exist:**
+
+### Mode A — API mode (HPC, batch, or no Claude in the loop)
+
+Used when running on Perlmutter, in CI, or any context where there's no human-in-the-loop Claude session. **All six stages are run by `tools/reports/generate_presentation.py`**, which calls an AI provider (Anthropic, OpenAI, or CBORG) for the content stages. Set `A2MC_AI_PROVIDER` and the corresponding API key env var.
+
+```bash
+# On Perlmutter (or any non-Claude context):
+export A2MC_AI_PROVIDER=anthropic   # or openai, cborg
+export ANTHROPIC_API_KEY=sk-...
+python tools/reports/generate_presentation.py --session-id 20260330_135435 \
+    --author "Dr. Jing Tao (Lawrence Berkeley National Laboratory)"
+```
+
+### Mode B — Claude-in-the-loop mode (interactive Claude Code session)
+
+Used when you're already in a Claude Code session like this one. **Claude (the model running this conversation) authors the content stages directly** by reading the session artifacts and writing the files — no API call needed. Then you run only the deterministic build stages (`pdf`, `video`) via `--start-from pdf`.
+
+```bash
+# After Claude has authored the technical report, slides, and narration:
+python tools/reports/generate_presentation.py --session-id 20260330_135435 \
+    --start-from pdf
+```
+
+In Claude-in-the-loop mode the AI-content stages are skipped entirely — the script only invokes `marp-cli` and `generate_video.py`. No API tokens charged for content generation, only OpenAI TTS for the narrated audio (`tts-1-hd` voice `nova` by default).
+
+### Which mode should I use?
+
+| Context | Mode | Why |
+|---|---|---|
+| Running on Perlmutter | **A (API)** | No interactive Claude available |
+| Running in cron / CI | **A (API)** | No interactive Claude available |
+| Running on a colleague's machine without Claude Code | **A (API)** | Same |
+| You opened a Claude Code session and asked it to make a presentation | **B (Claude-in-loop)** | The Claude in your session is already a better author than the API call would be — and it has full conversation context (what's broken, what's interesting, what's been discussed) |
+| You want a draft that Claude can iterate on after you review | **B (Claude-in-loop)** | Claude can edit the files directly between iterations |
+
+**Rule of thumb:** if you typed the request in a Claude Code prompt, use Mode B. If a script or scheduler is invoking the workflow, use Mode A.
+
+### What Claude does in Mode B
+
+When Claude is in the loop, it produces the same artifacts as the API stages would:
+
+| Stage | Output file | Mode A authors it via | Mode B authors it via |
+|---|---|---|---|
+| 1. Collect | (in-memory `artifacts` dict) | `collect_artifacts()` | Claude reads logs/figures using `Read`/`Bash` tools |
+| 2. Report | `A2MC_Session_{id}_Technical_Report.md` | AI API call | Claude writes file using `Write` tool |
+| 3. Slides | `A2MC_Session_{id}.md` (Marp markdown) | AI API call | Claude writes file using `Write` tool |
+| 4. Narration | `slide_scripts.json` | AI API call | Claude writes file using `Write` tool |
+| 5. PDF | `A2MC_Session_{id}.pdf` + `.pptx` | `marp-cli` | `marp-cli` (same — no AI involved) |
+| 5.5. **Verify** | (overflow report) | `verify_slides.py` | `verify_slides.py` (same — required pre-flight check) |
+| 6. Video | `video_output/A2MC_Session_{id}.mp4` | `generate_video.py` (TTS via OpenAI) | `generate_video.py` (same — TTS only) |
+
+The Marp slides authored by Claude must follow the front matter and figure-reference conventions documented in Step 3 below — `marp-cli` will fail otherwise.
+
+---
+
+## CRITICAL: Slide Overflow Verification (Stage 5.5)
+
+**Marp does not auto-shrink slide content to fit the page.** When a slide has more bullet points, code lines, or table rows than the configured layout can hold, Marp silently clips whatever runs past the bottom edge. The clipped slides look fine in the source markdown and pass `marp-cli` without warning, but the rendered PDF has bullets ending mid-sentence and code blocks sliced. The narrated video then encodes these truncated slides as-is, wasting the entire video build.
+
+**The verifier (`tools/reports/verify_slides.py`) catches this BEFORE the video build.** It renders the PDF to PNG with `pdftoppm`, inspects the bottom 4% of each slide image, and classifies the content:
+
+| Status | Reason | Meaning |
+|---|---|---|
+| ok | `clean` | No content in the bottom margin band |
+| ok | `normal_padding` | Content sits in the upper part of the margin (>5px from the literal bottom edge) — natural Marp padding behavior |
+| ok | `bg_figure` | Content distributed uniformly across the entire margin band, left half clean — a `![bg right:55% fit](figures/x.png)` figure intentionally extending to the page edge |
+| **OVERFLOW** | `clipped_text` | Content concentrated in the bottommost few rows — clipped text/code/bullets |
+| **OVERFLOW** | `text_clipped_on_figure` | Figure-like uniform pattern PLUS extra dark pixels in the left half — text clipped on top of a bg right figure |
+
+### Running the verifier standalone
+
+```bash
+~/a2mc_env/bin/python3 tools/reports/verify_slides.py \
+    --pdf use_cases/Kougarok/reports/{session_id}/A2MC_Session_{session_id}.pdf
+```
+
+Optional flags:
+- `--annotate` — saves annotated PNGs alongside the PDF (red box on overflow slides, green on clean) to `{pdf_stem}_overflow_annotations/`
+- `--margin-frac 0.04` — fraction of slide height to inspect (default 4%, increase for stricter check)
+- `--output report.txt` — write the report to a file
+
+Exit codes: `0` clean, `1` one or more slides overflow, `2` setup error (missing `pdftoppm`, file not found, etc.).
+
+### Wired into the pipeline
+
+In **Mode A** (`generate_presentation.py`), the verifier runs automatically as Stage 5.5 after PDF build. If it detects overflow, the script exits with code `3` BEFORE invoking the expensive video build. To proceed anyway (e.g., you've reviewed the overflow and decided it's acceptable), pass `--skip-verify`.
+
+In **Mode B**, Claude must run the verifier explicitly via `Bash` after building the PDF:
+
+```bash
+~/a2mc_env/bin/python3 tools/reports/verify_slides.py --pdf path/to/slides.pdf
+```
+
+Then iterate on the slide markdown until the verifier reports PASS, **before** invoking the video build. The video build takes ~10-20 minutes per session and consumes OpenAI TTS credits — running it on a clipped PDF is a waste.
+
+### Common fixes for overflow
+
+1. **Too many bullets** → split into two slides
+2. **Bullet text too long** → trim to one line each
+3. **Code block too tall** → reduce to ≤10 lines or split into two slides
+4. **Table too tall** → drop rows, use `<style scoped>` to shrink font, or split
+5. **Two-column layout where one column overflows** → balance columns by moving content
+6. **`bg right:55% fit` figure with too much left-side text** → reduce text or use `bg right:65%` to give figure more room
+
+### Calibration
+
+The default margin-frac of 4% catches typical 22px-font overflow at 16:9 720p. For decks using a smaller font or denser content, lower it to 0.025-0.03. For decks with intentionally tight layouts, raise to 0.05-0.06.
+
+---
+
+## Output Layout
+
+Both modes write to:
+
+```
+use_cases/{site}/reports/{session_id}/
+├── A2MC_Session_{session_id}_Technical_Report.md   # Manuscript-style narrative
+├── A2MC_Session_{session_id}.md                    # Marp slide deck source
+├── A2MC_Session_{session_id}.pdf                   # PDF export
+├── A2MC_Session_{session_id}.pptx                  # PowerPoint export
+├── slide_scripts.json                              # Per-slide narration text
+├── figures/                                        # Copies of relevant phase figures
+│   ├── morris_*sensitivity*.png
+│   ├── ensemble_biomass_top_cases.png
+│   ├── *_pft7_diagnosis.png
+│   ├── *_p_mass_balance.png
+│   ├── ...
+│   └── experiment_comparison_*.png
+└── video_output/
+    ├── pdf_slides/                                 # PNG pages from PDF
+    ├── slides/                                     # 1920×1080 scaled PNGs
+    ├── audio/                                      # TTS MP3 files
+    ├── slide_NN.mp4                                # Per-slide videos
+    ├── video_list.txt                              # ffmpeg concat list
+    └── A2MC_Session_{session_id}.mp4               # Final narrated video
+```
+
+The `figures/` subdirectory must contain copies (not symlinks) of all PNGs referenced by the Marp deck so Marp can resolve them with `--allow-local-files`.
 
 ```
 Session logs ──> Marp Markdown ──> PDF ──> PPTX

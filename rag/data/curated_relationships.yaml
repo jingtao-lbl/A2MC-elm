@@ -1329,17 +1329,18 @@ parameters:
       Typical range: 0.3 to 0.7
 
   # N Fixation Parameter
-  fates_cnp_nfix:
+  fates_cnp_nfix1:
     category: cnp
     controls:
       - Nutrient_Uptake
     affects:
       - FATES_NFIX_SYM
     calibration_notes: |
-      Symbiotic N fixation fraction (0-1).
-      Set > 0 to make a PFT an N-fixer.
-      Start with 0.1 (10%) if system needs more N.
-      Common for legumes and some shrubs.
+      Fractional surcharge added to maintenance respiration that drives
+      symbiotic N fixation. PFT-specific. Set > 0 to enable N fixation
+      for that PFT (respiration cost is the metabolic investment).
+      Start with 0.1 (10% surcharge) if system needs more N.
+      Common non-zero values for legumes and some N-fixing shrubs.
 
   # KM Parameters
   fates_cnp_km_nh4:

@@ -1,359 +1,186 @@
 # Canopy Structure and Competition
 
 <details>
-<summary>Relevant source files</summary>
+<summary>Relevant source files (FATES commit e85d997)</summary>
 
-
-- [biogeochem/EDCanopyStructureMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90)
-- [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90)
-- [biogeochem/EDPhysiologyMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90)
-- [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)
-
+- `biogeochem/EDCanopyStructureMod.F90`
+- `biogeochem/FatesAllometryMod.F90`
+- `biogeochem/FatesCohortMod.F90`
+- `biogeochem/FatesPatchMod.F90`
+- `main/EDParamsMod.F90`
+- `main/FatesConstantsMod.F90`
 
 </details>
 
 ## Purpose and Scope
 
-This page describes how FATES organizes vegetation cohorts vertically into discrete canopy layers and manages competition for light among cohorts. The core mechanism is the Perfect Plasticity Approximation (PPA) , which assumes that plants can plastically arrange their crowns to fill available canopy space. This system determines which cohorts occupy the upper canopy (full light) versus the understory (reduced light), fundamentally shaping carbon gain, growth, and mortality patterns.
+This page describes how FATES organises vegetation cohorts vertically into discrete canopy layers and manages competition for light among cohorts. The core mechanism is the Perfect Plasticity Approximation (PPA), which assumes that plants can plastically rearrange their crowns to fill available horizontal canopy space. This assignment determines which cohorts occupy the upper canopy (full light) and which are relegated to the understory, and therefore fundamentally shapes carbon gain, growth, and mortality.
 
-For information about the photosynthesis and radiation transfer calculations that use this canopy structure, see [Radiation Transfer and Albedo](biophysics/radiation.md) . For details on how canopy position affects carbon allocation and growth, see [PARTEH: Plant Allocation System](plant-physiology/parteh/index.md) .
+For the mechanics of layer assignment (demotion and promotion), see [Canopy Layering and Perfect Plasticity](ppa.md). For how leaf and stem area are distributed within those layers, see [LAI and SAI Profiles](lai_sai.md). For radiation transfer through the canopy, see `biophysics/radiation.md`.
 
-## Overview of Canopy Layer System
+The driver subroutine is `canopy_structure` (`EDCanopyStructureMod.F90:90`). It is called once per day per site.
 
-FATES uses a discrete layer system where cohorts are assigned to one of several vertical canopy layers based on their height and the available canopy area:
+## Canopy Layer System
 
-- **Layer 1**: Upper canopy (overstorey) - receives direct sunlight
-- **Layer 2**: Understorey - receives reduced light through the upper canopy
-- **Layers 3+**`nclmax`: Deeper understorey layers (limited to parameter)
+FATES uses a small, fixed number of discrete vertical canopy layers:
 
+- **Layer 1**: Upper canopy (overstory). Receives direct + diffuse sunlight.
+- **Layer 2**: Understory. Receives only light transmitted through layer 1.
 
-The key insight from the PPA is that when canopy area exceeds the patch area, some cohorts must be "demoted" to lower layers. Similarly, when upper layers have unfilled space (e.g., after disturbance), cohorts can be "promoted" from below.
+The maximum number of layers is set by the Fortran compile-time constant `nclmax` (`EDParamsMod.F90:98`):
 
-Sources: [biogeochem/EDCanopyStructureMod.F90 90-115](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L90-L115)
+```fortran
+integer, parameter, public :: nclmax = 2
+```
 
-### Canopy Structure Workflow
+Because `nclmax` is a Fortran `parameter`, its value (2) is baked in at compile time and cannot be changed through the parameter file or namelist. Cohorts whose assignment would exceed `nclmax` after demotion are terminated (`EDCanopyStructureMod.F90:736-744`).
 
-![SVG image](../assets/images/5__Canopy_Structure_and_Competition__img-01.svg)
+The PPA's key assertion is that when the summed crown area of cohorts in a given layer exceeds `currentPatch%area`, some cohorts must be "demoted" to the layer below. Symmetrically, after disturbance or mortality opens gaps, cohorts can be "promoted" from below to fill unused space in the upper layer.
 
-Diagram: Canopy structure algorithm flow showing iterative balancing of canopy layers
+## Control Flow
 
-Sources: [biogeochem/EDCanopyStructureMod.F90 90-332](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L90-L332)
+`canopy_structure` iterates the following loop per patch until every layer is balanced within tolerance or `max_patch_iterations = 10` iterations are reached (`EDCanopyStructureMod.F90:155`, `EDCanopyStructureMod.F90:255-298`):
 
-## Perfect Plasticity Approximation (PPA)
+1. For each active layer `i_lyr` from 1 upward, call `CanopyLayerArea` to get its current crown area sum.
+2. If `arealayer(i_lyr) > currentPatch%area + area_target_precision`, call `DemoteFromLayer(currentSite, currentPatch, i_lyr, bc_in)`.
+3. If `arealayer(i_lyr) < currentPatch%area - area_target_precision` and a lower layer exists, call `PromoteIntoLayer(currentSite, currentPatch, i_lyr)`.
+4. Recheck with `CanopyLayerArea`. If balance has not been achieved within `area_check_precision` (absolute) and `area_check_rel_precision` (relative), iterate.
 
-The PPA concept, originally from Purves et al. (2009) and extended in Fisher et al. (2010), assumes that plants have sufficient plasticity in canopy position, size, shape, and depth to perfectly fill available horizontal space. When total crown area exceeds patch area, the excess must exist in a lower layer.
+After the loop converges, `currentPatch%NCL_p` is set to `min(nclmax, z)`. Under strict PPA (`ED_val_comp_excln < 0`), `currentPatch%zstar` is updated to the height of the shortest cohort that is still in layer 1 and whose next-shorter neighbour is in layer 2 (`EDCanopyStructureMod.F90:313-326`). In stochastic PPA mode (`ED_val_comp_excln >= 0`), `zstar` is not updated by `canopy_structure` and should not be interpreted as a dynamic threshold.
 
-### Key Concepts
+Tolerance constants (`EDCanopyStructureMod.F90:70-79`):
 
-| Concept | Description | Code Symbol | 
+| Constant | Value | Purpose |
 | --- | --- | --- |
-| Z* | Height threshold separating canopy from understorey | currentPatch%zstar | 
-| Competitive Exclusion | Controls whether demotion is stochastic or deterministic | ED_val_comp_excln | 
-| Crown Area | Horizontal space occupied by a cohort's crown | currentCohort%c_area | 
-| Site Spread | Crowdedness factor affecting crown expansion | currentSite%spread | 
-
-
-The competitive exclusion parameter ( `ED_val_comp_excln` ) determines the mode of competition:
-
-- **Negative values**: Strict PPA - deterministic rank-ordering by height
-- **Zero or positive values**: Stochastic PPA - all cohorts have some probability of demotion, weighted by height
-
-
-Sources: [biogeochem/EDCanopyStructureMod.F90 101-115](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L101-L115)  [biogeochem/EDCanopyStructureMod.F90 313-326](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L313-L326)
+| `area_target_precision` | `1.0E-11` | Target for iterative area balancing |
+| `area_check_precision` | `1.0E-7` | Absolute tolerance for layer-area checks |
+| `area_check_rel_precision` | `1.0E-4` | Relative tolerance for layer-area checks |
+| `similar_height_tol` | `1.0E-3` m | Heights within 1 mm are treated as tied |
+| `max_patch_iterations` | `10` | Maximum outer iterations before abort |
 
 ## Cohort Demotion
 
-When a canopy layer contains more crown area than the patch area allows, excess cohorts must be moved to the layer below. The `DemoteFromLayer` subroutine handles this process.
+When `arealayer(i_lyr) > currentPatch%area`, `DemoteFromLayer` (`EDCanopyStructureMod.F90:338-783`) selects cohorts or cohort fractions to move down:
 
-### Demotion Algorithm
+- **Stochastic mode** (`ED_val_comp_excln >= 0`, `EDCanopyStructureMod.F90:410-411`): each cohort in layer `i_lyr` is assigned `excl_weight = 1 / height**ED_val_comp_excln`. Shorter cohorts receive larger weights, but all cohorts in the layer retain a non-zero probability of being pushed down. Weights are normalised and scaled so the total demoted area matches the excess.
+- **Deterministic mode** (`ED_val_comp_excln < 0`, from `EDCanopyStructureMod.F90:413` onward): the loop runs from shortest to tallest and demotes in strict rank order until `demote_area` is exhausted. Cohorts whose heights agree within `similar_height_tol` are grouped and demoted in proportion to their crown areas.
 
-![SVG image](../assets/images/5__Canopy_Structure_and_Competition__img-02.svg)
+### Partial Cohort Demotion (Cohort Splitting)
 
-Diagram: Cohort demotion algorithm showing how excess canopy area is moved to lower layers
+When the demotion weight `cc_loss` assigned to a cohort is strictly less than `currentCohort%c_area` (and greater than `area_target_precision`), the cohort must be split between layers. The code at `EDCanopyStructureMod.F90:654-717` does this as follows:
 
-### Demotion Weight Calculation
+```fortran
+newarea = currentCohort%c_area - cc_loss          ! area kept in upper layer
+copyc%n = currentCohort%n * newarea / currentCohort%c_area
+currentCohort%n = currentCohort%n - copyc%n       ! = n * cc_loss / c_area
+copyc%canopy_layer       = i_lyr                  ! copy stays in upper layer
+currentCohort%canopy_layer = i_lyr + 1            ! original is demoted
+```
 
-The demotion weight determines how much of a cohort's crown area should be demoted. Two modes exist:
-
-Stochastic Mode ( `ED_val_comp_excln >= 0` ):
-
-This gives shorter cohorts higher probability of demotion, but even tall cohorts have some chance.
-
-Deterministic Mode ( `ED_val_comp_excln < 0` ):
-
-This demotes cohorts in strict height order, shortest first.
-
-Sources: [biogeochem/EDCanopyStructureMod.F90 338-783](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L338-L783)  [biogeochem/EDCanopyStructureMod.F90 400-485](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L400-L485)
-
-### Partial Cohort Demotion
-
-When only part of a cohort's crown area needs to be demoted, FATES splits the cohort:
-
-| Property | Original Cohort | Copy Cohort | 
+| Property | Original cohort (demoted) | Copy (remains in upper) |
 | --- | --- | --- |
-| Layer | i_lyr + 1 (demoted) | i_lyr (remains in upper) | 
-| Number Density | n * (c_area - cc_loss) / c_area | n * cc_loss / c_area | 
-| Crown Area | Reduced by cc_loss | cc_loss | 
-| Other Properties | Copied from original | Copied from original | 
+| `canopy_layer` | `i_lyr + 1` | `i_lyr` |
+| `n` (number density) | `n * cc_loss / c_area` | `n * (c_area - cc_loss) / c_area` |
+| `c_area` | Recomputed via `carea_allom` after density drop | Recomputed via `carea_allom` |
+| PARTEH / hydraulics | Existing state | Freshly allocated and copied from original |
 
-
-The splitting conserves total plant number and biomass while allowing partial demotion.
-
-Sources: [biogeochem/EDCanopyStructureMod.F90 656-718](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L656-L718)
+Total plant number is conserved. The copy is linked into the height-sorted cohort list adjacent to the original (`EDCanopyStructureMod.F90:708-717`). After splitting, `DemoteFromLayer` calls `CanopyLayerArea` and aborts the run if the balance check still fails beyond `area_check_precision` / `area_check_rel_precision` (`EDCanopyStructureMod.F90:767-777`).
 
 ## Cohort Promotion
 
-When upper canopy layers have unfilled space (e.g., after fire, logging, or mortality), cohorts from lower layers can be promoted upward. The `PromoteIntoLayer` subroutine handles this process.
+When `arealayer(i_lyr) < currentPatch%area`, `PromoteIntoLayer` (`EDCanopyStructureMod.F90:787-1236`) fills the gap from layer `i_lyr+1`. The mechanism mirrors demotion with two important asymmetries, both documented in detail on the [PPA page](ppa.md):
 
-### Promotion Algorithm
-
-The promotion algorithm mirrors demotion but operates in reverse:
-
-The promotion weight calculation inverts the demotion logic - taller cohorts get higher promotion probability.
-
-Sources: [biogeochem/EDCanopyStructureMod.F90 787-1236](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L787-L1236)  [biogeochem/EDCanopyStructureMod.F90 888-967](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L888-L967)
-
-### Promotion vs Demotion Symmetry
-
-![SVG image](../assets/images/5__Canopy_Structure_and_Competition__img-03.svg)
-
-Diagram: Symmetry between demotion and promotion probability calculations
-
-Sources: [biogeochem/EDCanopyStructureMod.F90 894-895](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L894-L895)  [biogeochem/EDCanopyStructureMod.F90 410-411](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L410-L411)
+1. **Promote-all short-circuit**. If the entire lower layer's area fits into the gap (`arealayer_below <= promote_area`), every cohort in layer `i_lyr+1` is promoted unconditionally, regardless of height or of `ED_val_comp_excln` (`EDCanopyStructureMod.F90:839-868`).
+2. **Weighted promotion** (only when the lower layer is larger than the gap). Stochastic mode uses `prom_weight = height**ED_val_comp_excln`, so taller cohorts are favoured. Deterministic mode promotes in rank order from tallest downward, with tied-height cohorts grouped by `similar_height_tol`.
 
 ## Crown Area Allometry
 
-Crown area is the horizontal space occupied by a cohort's canopy and is fundamental to the PPA. It's calculated using allometric relationships with diameter.
+Crown area is the horizontal ground footprint of a cohort and is the quantity compared to `patch%area` during canopy structure. It is computed by `carea_allom` (`FatesAllometryMod.F90:476-550`) and, for the standard FATES allometry modes, by the helper subroutine `carea_2pwr` (`FatesAllometryMod.F90:2118-2175`).
 
-### Crown Area Calculation
+`carea_2pwr` is a `subroutine`, not a function: per-plant crown area is written back through the `intent(inout)` argument `c_area`. The per-plant value is multiplied by `nplant` inside `carea_allom` at `FatesAllometryMod.F90:546` to yield cohort-level crown area (m²).
 
-The `carea_allom` subroutine calculates crown area based on:
+The per-plant calculation is:
 
-Where `carea_per_individual` comes from the `carea_2pwr` function:
+```fortran
+crown_area_to_dbh_exponent = d2bl_p2 + d2bl_ediff
+spreadterm                 = spread * d2ca_max + (1._r8 - spread) * d2ca_min
+c_area (per plant)         = spreadterm * dbh ** crown_area_to_dbh_exponent
+```
 
-Parameters:
+where the symbols correspond to PFT parameters in `prt_params`:
 
-- `d2ca_coeff`: Crown area coefficient (varies between min and max based on spread)
-- `d2bl_p2`: Leaf biomass allometry exponent (reused for crown area)
-- `d2bl_ediff`: Difference between crown area and leaf biomass exponents
-- `site_spread`: Site-level crowdedness factor
-- `dbh`: Diameter at breast height [cm]
-
-
-The spread factor modulates crown expansion:
-
-- `spread = 1.0`: Crowns fill space perfectly
-- `spread < 1.0`: Crowns are more compact (crowded conditions)
-- `spread > 1.0`: Crowns expand more (open conditions)
-
-
-Sources: [biogeochem/FatesAllometryMod.F90 476-550](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L476-L550)
-
-### Crown Area and Damage
-
-Crown damage (from fire, wind, etc.) reduces effective crown area through the `crown_reduction` factor:
-
-This affects a cohort's ability to occupy canopy space and influences demotion/promotion dynamics.
-
-Sources: [biogeochem/EDCanopyStructureMod.F90 336-339](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L336-L339)
-
-## LAI and SAI Profiles
-
-Leaf Area Index (LAI) and Stem Area Index (SAI) quantify the amount of leaf and stem material per unit ground area. FATES calculates these at both the cohort level (tree-level) and aggregates them to patch/site levels.
-
-### Tree-Level LAI Calculation
-
-The `tree_lai` function computes LAI for an individual cohort:
-
-![SVG image](../assets/images/5__Canopy_Structure_and_Competition__img-04.svg)
-
-Diagram: Tree-level LAI calculation showing exponential SLA profile and linear extension
-
-Sources: [biogeochem/FatesAllometryMod.F90 636-761](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L636-L761)
-
-### SLA Profile with Depth
-
-Specific Leaf Area (SLA) decreases exponentially with cumulative LAI from the top of the canopy:
-
-Where:
-
-- `slatop`: SLA at canopy top [m²/kgC]
-- `kn``vcmax25top`: Nitrogen decay coefficient (function of )
-- `cumulative_lai`: LAI from canopy top to current depth
-
-
-However, SLA is constrained to not exceed `slamax` :
-
-When SLA hits `sla_max` , the LAI calculation switches from exponential to linear:
-
-| Phase | Condition | LAI Calculation | 
+| Code symbol | `prt_params` name | Role |
 | --- | --- | --- |
-| Exponential | leafc < leafc_slamax | Integrate exponential SLA profile | 
-| Linear | leafc > leafc_slamax | Add (leafc - leafc_slamax) * sla_max | 
+| `d2bl_p2` | `allom_d2bl2(pft)` | Exponent in the diameter-to-leaf-biomass allometry, reused for crown area |
+| `d2bl_ediff` | `allom_blca_expnt_diff(pft)` | Difference between crown-area and leaf-biomass exponents (default 0) |
+| `d2ca_min` | `allom_d2ca_coefficient_min(pft)` | Minimum crown-area coefficient (crowded canopies) |
+| `d2ca_max` | `allom_d2ca_coefficient_max(pft)` | Maximum crown-area coefficient (open canopies) |
+| `spread` | `currentSite%spread` | Site-level spread factor, in [0, 1] |
 
+The site-level `spread` factor is a dynamic interpolation weight on `d2ca_max`. When `spread = 1`, `spreadterm = d2ca_max` (crowns expand to their maximum coefficient). When `spread = 0`, `spreadterm = d2ca_min` (crowns are at their minimum). The daily update in `canopy_spread` (`EDCanopyStructureMod.F90:1233-1287`) drives `spread` toward smaller values (more compact crowns) as site-level canopy area approaches `ED_val_canopy_closure_thresh * AREA`. See the [PPA page](ppa.md) for details.
 
-Sources: [biogeochem/FatesAllometryMod.F90 689-755](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L689-L755)
+### Crown Damage
 
-### Tree-Level SAI Calculation
+If `crowndamage > 1`, `carea_2pwr` retrieves a `crown_reduction` factor via `GetCrownReduction` and multiplies per-plant crown area by `(1 - crown_reduction)` (`FatesAllometryMod.F90:2162-2165`). Damaged crowns therefore occupy less horizontal space and are correspondingly less likely to hold a layer-1 slot.
 
-The `tree_sai` function calculates Stem Area Index as a scaled fraction of target LAI:
+## LAI and SAI
 
-Where:
+Leaf area index (LAI) and stem area index (SAI) are computed at the cohort level by `tree_lai` (`FatesAllometryMod.F90:636-761`) and `tree_sai` (`FatesAllometryMod.F90:765-827`). Both functions return values in `m² leaf (or stem) area per m² of the cohort's own crown area`. The full vertical profiles (`tlai_profile`, `elai_profile`, `tsai_profile`, `esai_profile`) are built in `leaf_area_profile` (`EDCanopyStructureMod.F90:1467-1794`). Aggregation back to patch-level totals is performed by `calc_areaindex` (`EDCanopyStructureMod.F90:2024-2086`), which weights the profile values by `canopy_area_profile` to convert from per-crown-area to per-ground-area. See the dedicated [LAI and SAI Profiles](lai_sai.md) page for details.
 
-- `elongf_stem`: Stem elongation factor (phenology) [0-1]
-- `allom_sai_scaler`: PFT-specific SAI:LAI ratio parameter
-- `target_lai`: LAI assuming fully flushed leaves
+## Canopy Layer Area
 
-
-Note that SAI uses target LAI (with `elongf_leaf = 1.0` ), making SAI independent of leaf phenology but responsive to stem phenology (typically for grasses).
-
-Sources: [biogeochem/FatesAllometryMod.F90 765-827](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L765-L827)  [biogeochem/FatesAllometryMod.F90 791-797](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L791-L797)
-
-## Canopy Layer Area Calculation
-
-The `CanopyLayerArea` function sums crown area of all cohorts in a specific layer:
-
-This area is compared against `patch%area` to determine if demotion or promotion is needed.
-
-Sources: Implementation not shown in provided excerpts but called throughout [biogeochem/EDCanopyStructureMod.F90 258](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L258-L258)  [biogeochem/EDCanopyStructureMod.F90 373](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L373-L373)
-
-## Data Flow: Cohort to Patch Aggregation
-
-![SVG image](../assets/images/5__Canopy_Structure_and_Competition__img-05.svg)
-
-Diagram: Data flow from cohort-level properties through allometry to patch-level aggregated canopy metrics
-
-Sources: [biogeochem/EDCanopyStructureMod.F90 258-263](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L258-L263)
+`CanopyLayerArea` (`EDCanopyStructureMod.F90:2090-2118`) sums the current `c_area` of all cohorts whose `canopy_layer` matches the requested index, after refreshing `c_area` via `carea_allom`. The result is in the same units as `currentPatch%area` (m²). `canopy_structure`, `DemoteFromLayer`, and `PromoteIntoLayer` all use it to check whether each layer is balanced against the patch area.
 
 ## Key Data Structures
 
-### Cohort-Level Canopy Properties
+### Cohort Fields (`FatesCohortMod.F90`)
 
-| Property | Type | Units | Description | 
+| Field | Type | Units | Description |
 | --- | --- | --- | --- |
-| canopy_layer | integer | - | Current canopy layer [1=canopy, 2+=understory] | 
-| canopy_layer_yesterday | real(r8) | - | Previous day's canopy layer (weighted) | 
-| c_area | real(r8) | m² | Crown area of entire cohort | 
-| treelai | real(r8) | m²/m² | Cohort LAI per unit ground area | 
-| treesai | real(r8) | m²/m² | Cohort SAI per unit ground area | 
-| height | real(r8) | m | Plant height | 
-| crowndamage | integer | - | Crown damage class [1=undamaged] | 
-| excl_weight | real(r8) | m² | Calculated demotion weight | 
-| prom_weight | real(r8) | m² | Calculated promotion weight | 
+| `canopy_layer` | integer | - | Current layer (1 = overstory, 2 = understory) |
+| `canopy_layer_yesterday` | real(r8) | - | Previous day's layer index (weighted, for transition tracking) |
+| `c_area` | real(r8) | m² | Crown area of entire cohort |
+| `treelai` | real(r8) | m² leaf / m² crown area | Cohort LAI, per unit crown area |
+| `treesai` | real(r8) | m² stem / m² crown area | Cohort SAI, per unit crown area |
+| `height` | real(r8) | m | Height |
+| `crowndamage` | integer | - | Crown damage class (1 = undamaged) |
+| `excl_weight` | real(r8) | - | Temporary workspace for demotion weight |
+| `prom_weight` | real(r8) | - | Temporary workspace for promotion weight |
 
+### Patch Fields (`FatesPatchMod.F90`)
 
-Sources: Defined in [main/FatesCohortMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesCohortMod.F90) (not shown but referenced)
-
-### Patch-Level Canopy Properties
-
-| Property | Type | Units | Description | 
+| Field | Type | Units | Description |
 | --- | --- | --- | --- |
-| NCL_p | integer | - | Number of occupied canopy layers | 
-| canopy_layer_tlai | real(r8)(nclmax) | m²/m² | Total LAI in each canopy layer | 
-| zstar | real(r8) | m | Height of shortest cohort in layer 1 (strict PPA) | 
-| area | real(r8) | m² | Total patch area | 
+| `NCL_p` | integer | - | Number of currently occupied canopy layers |
+| `canopy_layer_tlai(nclmax)` | real(r8) | m² leaf / m² canopy area | Total LAI in each canopy layer (per canopy area, not ground area) |
+| `zstar` | real(r8) | m | Height separating layer 1 from layer 2. Only updated under strict PPA (`ED_val_comp_excln < 0`) |
+| `area` | real(r8) | m² | Total patch area |
 
+### Site Fields (`EDTypesMod.F90`)
 
-Sources: Defined in [main/FatesPatchMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesPatchMod.F90) (not shown but referenced)
-
-### Site-Level Tracking
-
-| Property | Type | Units | Description | 
+| Field | Type | Units | Description |
 | --- | --- | --- | --- |
-| spread | real(r8) | - | Crown spread factor (crowdedness) | 
-| demotion_rate | real(r8)(nlevsclass) | plants/day | Plants demoted by size class | 
-| promotion_rate | real(r8)(nlevsclass) | plants/day | Plants promoted by size class | 
-| demotion_carbonflux | real(r8) | kgC/day | Carbon flux from demotion | 
-| promotion_carbonflux | real(r8) | kgC/day | Carbon flux from promotion | 
-
-
-Sources: [biogeochem/EDCanopyStructureMod.F90 161-165](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L161-L165) Defined in [main/EDTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90)
-
-## Area Conservation and Numerical Precision
-
-The canopy structure algorithm includes multiple checks to ensure area conservation:
-
-![SVG image](../assets/images/5__Canopy_Structure_and_Competition__img-06.svg)
-
-Diagram: Area conservation checks throughout the canopy structure algorithm
-
-Tolerances:
-
-- `area_target_precision = 1.0E-11`: Target for area balancing
-- `area_check_precision = 1.0E-7`: Absolute tolerance for checks
-- `area_check_rel_precision = 1.0E-4`: Relative tolerance for checks
-- `max_patch_iterations = 10`: Maximum balancing iterations
-
-
-Sources: [biogeochem/EDCanopyStructureMod.F90 70-77](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L70-L77)  [biogeochem/EDCanopyStructureMod.F90 255-298](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L255-L298)
-
-## Integration with Other Systems
-
-### Photosynthesis and Radiation
-
-Canopy layer assignment directly affects light availability:
-
-- **Layer 1 cohorts**: Receive full sunlight (direct + diffuse)
-- **Layer 2+ cohorts**: Receive only transmitted light through upper layers
-
-
-The Norman radiation transfer model uses `canopy_layer_tlai` to calculate light transmission.
-
-See [Radiation Transfer and Albedo](biophysics/radiation.md) for details.
-
-### Growth and Allocation
-
-Canopy position affects carbon gain and drives allocation decisions:
-
-- **Upper canopy**: High GPP → promotes diameter and height growth
-- **Understory**: Low GPP → may trigger carbon starvation mortality
-
-
-PARTEH allocation (see [PARTEH: Plant Allocation System](plant-physiology/parteh/index.md) ) responds to the net carbon balance which is strongly influenced by canopy layer.
-
-### Mortality and Recruitment
-
-Canopy structure influences:
-
-- **Light-limitation mortality**: Understory cohorts with prolonged negative carbon balance
-- **Recruitment success**: New recruits enter lower layers and must grow to reach canopy
-
-
-See [Mortality Processes](plant-physiology/mortality.md) for mortality mechanisms.
-
-Sources: Context from overall system understanding
+| `spread` | real(r8) | - | Dynamic crown spread, [0, 1] (interpolation weight on `d2ca_max`) |
+| `demotion_rate(nlevsclass)` | real(r8) | plants/day | Individuals demoted, by size class |
+| `promotion_rate(nlevsclass)` | real(r8) | plants/day | Individuals promoted, by size class |
+| `demotion_carbonflux` | real(r8) | kgC/day | Biomass flux from demotion |
+| `promotion_carbonflux` | real(r8) | kgC/day | Biomass flux from promotion |
 
 ## Parameter Controls
 
-| Parameter | Module | Description | Typical Value | 
+| Name | Origin | Description | Notes |
 | --- | --- | --- | --- |
-| ED_val_comp_excln | EDParamsMod | Competitive exclusion exponent | 0.0 to 1.0 | 
-| nclmax | EDParamsMod | Maximum number of canopy layers | 2 | 
-| allom_d2ca_coefficient_min | prt_params | Minimum crown area coefficient | PFT-specific | 
-| allom_d2ca_coefficient_max | prt_params | Maximum crown area coefficient | PFT-specific | 
-| allom_blca_expnt_diff | prt_params | Crown area exponent difference | PFT-specific | 
-| allom_sai_scaler | prt_params | SAI to LAI ratio | PFT-specific | 
-| slatop | prt_params | SLA at canopy top [m²/gC] | PFT-specific | 
-| slamax | prt_params | Maximum SLA [m²/gC] | PFT-specific | 
+| `nclmax` | `EDParamsMod.F90:98` | Max number of canopy layers | **Compile-time Fortran `parameter` = 2.** Not runtime-adjustable. |
+| `ED_val_comp_excln` | FATES parameter file | Competitive exclusion exponent | `>= 0` stochastic; `< 0` strict PPA |
+| `ED_val_canopy_closure_thresh` | FATES parameter file | Canopy closure threshold for spread update | Used in `canopy_spread` |
+| `allom_d2ca_coefficient_min` | PFT | Min crown-area coefficient | `d2ca_min` in code |
+| `allom_d2ca_coefficient_max` | PFT | Max crown-area coefficient | `d2ca_max` in code |
+| `allom_d2bl2` | PFT | Leaf-biomass allometry exponent | `d2bl_p2` in code (reused for crown area) |
+| `allom_blca_expnt_diff` | PFT | Crown-area-vs-leaf-biomass exponent offset | `d2bl_ediff` in code (default 0) |
+| `allom_sai_scaler` | PFT | SAI:LAI ratio | Used in `tree_sai` |
 
+## Integration with Other Systems
 
-Sources: [biogeochem/EDCanopyStructureMod.F90 130](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L130-L130)  [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)
-
-## Computational Considerations
-
-### Performance
-
-The canopy structure routine is called once per day per site and involves:
-
-- Nested loops over patches and cohorts
-- Iterative balancing (typically 1-3 iterations)
-- Potential cohort splitting (allocation/deallocation)
-
-
-The algorithm complexity is O(n_cohorts² × n_iterations) in worst case.
-
-### Numerical Stability
-
-Several mechanisms ensure stability:
-
-Sources: [biogeochem/EDCanopyStructureMod.F90 191-301](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCanopyStructureMod.F90#L191-L301)
+- **Radiation**: Layer assignment controls which cohorts are in the direct-beam path. The two-stream radiation solver walks layer-wise through `elai_profile` / `esai_profile`. See `biophysics/radiation.md`.
+- **Photosynthesis and allocation**: Upper-canopy cohorts experience high light and favourable growth; understory cohorts may exhibit prolonged negative carbon balance and trigger carbon-starvation mortality. See `plant-physiology/parteh/index.md` and `plant-physiology/mortality.md`.
+- **Disturbance and recruitment**: New recruits enter the lowest available layer. Disturbance (fire, mortality, logging) can open gaps in layer 1 that are filled by promotion on the next daily call. See `core-dynamics/patches.md`.

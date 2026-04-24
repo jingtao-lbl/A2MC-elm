@@ -1,198 +1,209 @@
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
+
 # Code Architecture and Design Patterns
-
-<details>
-<summary>Relevant source files</summary>
-
-
-- [biogeochem/FatesSoilBGCFluxMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90)
-- [main/FatesInterfaceMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90)
-- [main/FatesInterfaceTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90)
-- [parteh/PRTAllometricCNPMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90)
-- [parteh/PRTAllometricCarbonMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90)
-- [parteh/PRTGenericMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90)
-- [parteh/PRTLossFluxesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTLossFluxesMod.F90)
-
-
-</details>
 
 ## Purpose and Scope
 
-This page documents the software architecture, design patterns, and coding conventions used throughout the FATES codebase. It provides developers with a technical understanding of how the code is organized, how major subsystems interact, and what patterns are used to achieve modularity and extensibility.
+This page documents the software architecture, design patterns, and coding conventions used in the FATES codebase at commit `e85d997`. It provides developers with a technical understanding of how the code is organized, how major subsystems interact, and what patterns are used to achieve modularity and extensibility.
 
 For information about specific subsystems:
 
-- [Module Organization](architecture/modules.md)Module organization and directory structure: see
-- [Linked List Data Structures](architecture/linked_lists.md)Linked list implementation details: see
-- [PARTEH Extensibility Framework](architecture/parteh_framework.md)PARTEH allocation framework: see
+- [Module Organization](modules.md) — directory structure, naming conventions, key modules
+- [Linked List Data Structures](linked_lists.md) — doubly-linked patch and cohort lists
+- [PARTEH Extensibility Framework](parteh_framework.md) — pluggable allocation hypotheses
 
+## Top-Level Object Model
 
-For usage-oriented documentation:
+### Fates Interface Type
 
-- [Host Model Interface](getting-started/host_interface.md)Host model coupling: see
-- [Initialization Modes](getting-started/initialization.md)Model initialization: see
-- [Parameter System](getting-started/parameter_system.md)Parameter management: see
+The top-level object that connects FATES to host land models (HLMs) is `fates_interface_type`, declared in `main/FatesInterfaceMod.F90:125-159`. It holds:
 
+| Field | Type | Purpose |
+| --- | --- | --- |
+| `nsites` | `integer` | Number of FATES sites managed by this interface instance |
+| `sites(:)` | `type(ed_site_type), pointer` | Array of site state (root of the linked-list hierarchy) |
+| `bc_in(:)` | `type(bc_in_type), allocatable` | Inputs from HLM to FATES (per site) |
+| `bc_out(:)` | `type(bc_out_type), allocatable` | Outputs from FATES to HLM (per site) |
+| `bc_pconst` | `type(bc_pconst_type)` | Parameter constants shared with HLM (single instance) |
 
-## Architectural Principles
+`fates_interface_type` therefore owns the complete vegetation state tree and the host-model boundary-condition arrays (`main/FatesInterfaceMod.F90:131-156`).
 
-FATES employs several key architectural principles:
+### Vegetation Data Structure Hierarchy
 
-## Core Type Hierarchy
+FATES organizes vegetation into a three-level hierarchy:
 
-### FATES Interface Type
+```
+fates_interface_type
+   └── sites(:)  : ed_site_type                  (main/EDTypesMod.F90:231)
+          └── oldest_patch -> ... -> youngest_patch : fates_patch_type  (biogeochem/FatesPatchMod.F90:35)
+                 └── tallest -> ... -> shortest : fates_cohort_type     (biogeochem/FatesCohortMod.F90:60)
+```
 
-The top-level object that connects FATES to host land models:
+Patches within a site are held in a doubly-linked list ordered by patch age; cohorts within a patch are held in a doubly-linked list ordered by height. This design enables dynamic creation and deletion without array reallocation, efficient insertion at arbitrary positions, and natural ordering for age-based and height-based operations. See [Linked List Data Structures](linked_lists.md) for pointer field details.
 
-![SVG image](../assets/images/11__Code_Architecture_and_Design_Patterns__img-01.svg)
+Source files:
 
-Sources:  [main/FatesInterfaceMod.F90 125-159](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L125-L159)  [main/EDTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90)  [main/FatesInterfaceTypesMod.F90 348-577](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L348-L577)
-
-### Vegetation Data Structure Pattern
-
-FATES uses doubly-linked lists to organize patches and cohorts. This design enables:
-
-- Dynamic creation/deletion without array reallocation
-- Efficient insertion at arbitrary positions
-- Preservation of ordering (by age for patches, by height for cohorts)
-
-
-![SVG image](../assets/images/11__Code_Architecture_and_Design_Patterns__img-02.svg)
-
-Sources:  [main/EDTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90)  [main/FatesPatchMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesPatchMod.F90)  [main/FatesCohortMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesCohortMod.F90)
+- `main/EDTypesMod.F90:231-235` (`ed_site_type` with `oldest_patch` and `youngest_patch`)
+- `biogeochem/FatesPatchMod.F90:35-41` (`fates_patch_type` with `tallest`, `shortest`, `older`, `younger`)
+- `biogeochem/FatesCohortMod.F90:60-64` (`fates_cohort_type` with `taller`, `shorter`)
 
 ## Boundary Condition Architecture
 
-FATES communicates with host land models through three boundary condition types:
+FATES communicates with host land models through three boundary condition types declared in `main/FatesInterfaceTypesMod.F90`:
 
-| BC Type | Direction | Purpose | Example Variables | 
-| --- | --- | --- | --- |
-| bc_in_type | HLM → FATES | Environmental forcing, soil state | solad_parb, smp_sl, tempk_sl, lightning24 | 
-| bc_out_type | FATES → HLM | Vegetation state, fluxes to soil | elai_pa, htop_pa, litt_flux_cel_c_si, rootr_pasl | 
-| bc_pconst_type | FATES → HLM | Parameter constants (one-time) | vmax_nh4, eca_km_p | 
+| BC Type | Direction | Purpose |
+| --- | --- | --- |
+| `bc_in_type` | HLM → FATES | Environmental forcing and soil state (e.g., radiation, soil moisture, soil temperature, lightning) |
+| `bc_out_type` | FATES → HLM | Vegetation state and fluxes to soil (e.g., LAI, canopy height, litter fluxes, root fractions) |
+| `bc_pconst_type` | FATES → HLM | Parameter constants the HLM needs at startup (one-time transfer) |
 
+The interface module allocates per-site arrays of `bc_in_type` and `bc_out_type` through `allocate_bcin` (`main/FatesInterfaceMod.F90:412`) and `allocate_bcout` (`main/FatesInterfaceMod.F90:569`). A single `bc_pconst` instance is held directly on the interface type (`main/FatesInterfaceMod.F90:156`), since parameter constants do not vary by site.
 
-### Boundary Condition Workflow
-
-![SVG image](../assets/images/11__Code_Architecture_and_Design_Patterns__img-03.svg)
-
-Key Implementation Details:
-
-Sources:  [main/FatesInterfaceMod.F90 225-408](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L225-L408)  [main/FatesInterfaceTypesMod.F90 348-577](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L348-L577)
+This three-channel pattern keeps host-model coupling explicit, makes FATES portable across HLMs (ELM and CTSM at present), and separates the read-only forcing stream from the output stream.
 
 ## PARTEH: Extensible Allocation Framework
 
-PARTEH (Plant Allocation and Reactive Transport Extensible Hypotheses) demonstrates the Strategy Pattern for swappable allocation algorithms.
+PARTEH (Plant Allocation and Reactive Transport Extensible Hypotheses) uses a Fortran 2003 class hierarchy to allow multiple allocation hypotheses to coexist in a single build.
 
 ### Class Hierarchy
 
-![SVG image](../assets/images/11__Code_Architecture_and_Design_Patterns__img-04.svg)
+The base class is `prt_vartypes` in `parteh/PRTGenericMod.F90:233-277`. Although it is not declared with the Fortran `abstract` keyword, it functions as abstract in intent: its base implementations of `DailyPRT`, `FastPRT`, and `DamageRecovery` call `endrun` with messages such as "Daily PRT Allocation must be extended" (`parteh/PRTGenericMod.F90:1185-1216`). Any hypothesis that fails to override these procedures aborts the run.
 
-Key Pattern : Each cohort has a `prt` member of type `prt_vartypes` . The actual type is determined at initialization by `hlm_parteh_mode` :
+Each hypothesis extends `prt_vartypes`:
 
-- `prt_carbon_allom_hyp``callom_prt_vartypes`(1) →
-- `prt_cnp_flex_allom_hyp``cnp_allom_prt_vartypes`(2) →
+- Carbon-only hypothesis: `callom_prt_vartypes` (`parteh/PRTAllometricCarbonMod.F90:136-143`) overrides `DailyPRT` and `FastPRT`.
+- CNP hypothesis: `cnp_allom_prt_vartypes` (`parteh/PRTAllometricCNPMod.F90:250-266`) additionally overrides `GetNutrientTarget` and adds CNP-specific procedures (`CNPPrioritizedReplacement`, `CNPStatureGrowth`, `EstimateGrowthNC`, `CNPAdjustFRootTargets`, `CNPAllocateRemainder`, `GetDeficit`, `TrimFineRoot`).
 
+Each cohort holds a polymorphic pointer to a `prt_vartypes` object:
 
-Sources:  [parteh/PRTGenericMod.F90 232-277](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90#L232-L277)  [parteh/PRTAllometricCarbonMod.F90 136-143](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L136-L143)  [parteh/PRTAllometricCNPMod.F90 250-266](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L250-L266)
+```fortran
+class(prt_vartypes), pointer :: prt
+```
 
-### Variable Registration Pattern
+declared in `biogeochem/FatesCohortMod.F90:70`. The concrete type is chosen at cohort creation by `InitPRTObject` (`biogeochem/EDCohortDynamicsMod.F90:293`), driven by the `hlm_parteh_mode` configuration flag.
 
-PARTEH uses a two-phase initialization :
+### Hypothesis Selection Constants
 
-![SVG image](../assets/images/11__Code_Architecture_and_Design_Patterns__img-05.svg)
+The selection constants are declared in `parteh/PRTGenericMod.F90:69-70`:
 
-Variable Mapping : The `sp_organ_map` table maps `(organ_id, element_id)` tuples to variable indices:
+```fortran
+integer, parameter, public :: prt_carbon_allom_hyp   = 1
+integer, parameter, public :: prt_cnp_flex_allom_hyp = 2
+```
 
-Sources:  [parteh/PRTGenericMod.F90 447-483](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90#L447-L483)  [parteh/PRTAllometricCarbonMod.F90 169-255](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L169-L255)  [parteh/PRTAllometricCNPMod.F90 289-364](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L289-L364)
+Each hypothesis module allocates its own singleton mapping object and points the module-level `prt_global` pointer at it. For example, `PRTAllometricCarbonMod.F90:160` declares `class(prt_global_type), public, target, allocatable :: prt_global_ac` and line 251 sets `prt_global => prt_global_ac`. The CNP equivalent is in `PRTAllometricCNPMod.F90:278` (`prt_global_acnp`) and `:361`.
+
+See [PARTEH Extensibility Framework](parteh_framework.md) for the variable-registration pattern, the `sp_organ_map` lookup, and how to add a new hypothesis.
 
 ## Module Organization Patterns
 
-### Functional Separation
+### Functional Separation and Layering
 
-FATES modules follow a functional layering:
+FATES source files are organized by functional responsibility under directories `main/`, `biogeochem/`, `biogeophys/`, `fire/`, and `parteh/` (see [Module Organization](modules.md) for the full directory inventory and the role of each). The layering runs roughly:
 
-![SVG image](../assets/images/11__Code_Architecture_and_Design_Patterns__img-06.svg)
-
-Sources:  [main/FatesInterfaceMod.F90 1-20](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L1-L20)  [main/EDMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90)  [main/EDPhysiologyMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPhysiologyMod.F90)
+```
+FatesInterfaceMod (main/)          ← HLM coupling, daily/sub-daily entry points
+    │
+    ├── EDMainMod (main/)           ← daily dynamics orchestration
+    │      └── ed_ecosystem_dynamics (main/EDMainMod.F90:141)
+    │
+    ├── EDPhysiologyMod (biogeochem/)   ← phenology, recruitment, trim, litter
+    │
+    ├── EDPatchDynamicsMod (biogeochem/)  ← disturbance, patch create/fuse/terminate
+    │
+    ├── EDCohortDynamicsMod (biogeochem/) ← cohort create, terminate, fuse
+    │
+    └── PARTEH (parteh/)            ← allocation and reactive transport
+```
 
 ### Naming Conventions
 
-| Pattern | Purpose | Example | 
+| Pattern | Purpose | Examples |
 | --- | --- | --- |
-| ED*Mod.F90 | Ecosystem Demography core logic | EDMainMod.F90, EDPhysiologyMod.F90 | 
-| Fates*Mod.F90 | FATES-specific extensions | FatesAllometryMod.F90, FatesHistoryInterfaceMod.F90 | 
-| PRT*Mod.F90 | PARTEH allocation system | PRTGenericMod.F90, PRTAllometricCNPMod.F90 | 
-| SF*Mod.F90 | SPITFIRE fire model | SFMainMod.F90, SFParamsMod.F90 | 
-| *TypesMod.F90 | Type definitions only | EDTypesMod.F90, FatesInterfaceTypesMod.F90 | 
-
-
-Sources: File directory structure
+| `ED*Mod.F90` | Ecosystem-demography core logic (historical naming) | `EDMainMod.F90`, `EDPhysiologyMod.F90`, `EDCohortDynamicsMod.F90` |
+| `Fates*Mod.F90` | FATES-specific modules (newer naming) | `FatesInterfaceMod.F90`, `FatesAllometryMod.F90`, `FatesCohortMod.F90`, `FatesPatchMod.F90` |
+| `PRT*Mod.F90` | PARTEH allocation system | `PRTGenericMod.F90`, `PRTAllometricCarbonMod.F90`, `PRTAllometricCNPMod.F90` |
+| `SF*Mod.F90` | SPITFIRE fire model | `SFMainMod.F90`, `SFParamsMod.F90` |
+| `*TypesMod.F90` | Type definitions only | `EDTypesMod.F90`, `FatesInterfaceTypesMod.F90` |
+| `*ParamsMod.F90` | Parameter definition/storage | `EDParamsMod.F90`, `SFParamsMod.F90`, `PRTParametersMod.F90` |
 
 ## Parameter System Architecture
 
 ### Two-Phase Parameter Loading
 
-![SVG image](../assets/images/11__Code_Architecture_and_Design_Patterns__img-07.svg)
+Parameter reading is driven by `FatesReadParameters` in `main/FatesInterfaceMod.F90:2399-2428`, which is called from `SetFatesGlobalElements1` (`main/FatesInterfaceMod.F90:737-804`). After parameters are read, `FatesReportParameters` (`main/FatesInterfaceMod.F90:1964`) logs the active values.
 
-Key Classes:
+Parameters are stored in singleton instances:
 
-Sources:  [main/FatesInterfaceMod.F90 737-804](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceMod.F90#L737-L804)  [main/EDParamsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90)  [parteh/PRTInitParamsFATESMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTInitParamsFATESMod.F90)
+- PFT parameters: `EDPftvarcon_inst` of type `EDPftvarcon_type`, declared in `main/EDPftvarcon.F90:290`.
+- PARTEH parameters: `prt_params` of type `prt_param_type`, declared in `parteh/PRTParametersMod.F90:188`.
+- Global scalars: `EDParamsMod.F90` (e.g., `nclmax`, `nlevleaf`, `maxpft`, `maxSWb`).
+- Fire parameters: singleton in `fire/SFParamsMod.F90`.
+
+All are read-only after initialization and accessed from any module via `use` statements.
 
 ## Type-Bound Procedure Pattern
 
-FATES extensively uses Fortran 2003+ type-bound procedures for encapsulation:
+FATES uses Fortran 2003 type-bound procedures (TBPs) to attach methods to derived types.
 
-Usage:
+The type-bound procedures declared on `fates_cohort_type` (`biogeochem/FatesCohortMod.F90:275-284`) are:
 
-Advantages:
+```fortran
+contains
+    procedure :: Init
+    procedure :: NanValues
+    procedure :: ZeroValues
+    procedure :: Create
+    procedure :: Copy
+    procedure :: FreeMemory
+    procedure :: CanUpperUnder
+    procedure :: InitPRTBoundaryConditions
+    procedure :: UpdateCohortBioPhysRates
+    procedure :: Dump
+```
 
-- Encapsulation: Methods live with the data they operate on
-- `cohort%FuseCohorts`Namespace management: Methods prefixed by type (e.g., )
-- Polymorphism: Base class methods can be overridden (as in PARTEH)
+Usage examples from inside the codebase include `call currentCohort%Dump()` for diagnostic printing and `call newCohort%Copy(donor)` during patch spawning. Note that cohort fusion and termination are not type-bound procedures: `fuse_cohorts`, `create_cohort`, `terminate_cohorts`, and `terminate_cohort` are all module-level public subroutines in `biogeochem/EDCohortDynamicsMod.F90` (at lines 694, 160, 347, and 464 respectively).
 
+Similarly, `fates_patch_type` declares its TBPs in `biogeochem/FatesPatchMod.F90:222-230` (`Init`, `NanValues`, `ZeroValues`, `InitRunningMeans`, `InitLitter`, `Create`, `FreeMemory`, `Dump`, `CheckVars`).
 
-Sources:  [main/FatesCohortMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesCohortMod.F90)  [main/FatesPatchMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesPatchMod.F90)  [parteh/PRTGenericMod.F90 232-277](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90#L232-L277)
+Advantages of the TBP pattern:
+
+- Methods live with the data they operate on (encapsulation).
+- Namespace is managed by the type (`cohort%Dump` vs. a free-floating `Dump`).
+- Polymorphism is supported: base-class methods can be overridden by extended types, as in PARTEH (`DailyPRT => DailyPRTAllometricCarbon` in `parteh/PRTAllometricCarbonMod.F90:140`).
 
 ## Pointer vs Allocatable Arrays
 
-FATES uses pointers for linked lists and allocatables for fixed arrays :
+FATES uses Fortran pointers for self-referential linked-list types and allocatable arrays for fixed-size contiguous buffers. Patch and cohort linked-list fields are declared `type(...), pointer` (for example `taller`, `shorter` in `biogeochem/FatesCohortMod.F90:63-64`, and `older`, `younger`, `tallest`, `shortest` in `biogeochem/FatesPatchMod.F90:38-41`). Boundary-condition arrays on the interface type are declared `type(...), allocatable` (e.g., `bc_in(:)` at `main/FatesInterfaceMod.F90:143`).
 
 Rationale:
 
-- Pointers: Required for self-referential types (linked lists), allow null state
-- Allocatables: Better performance for contiguous arrays, automatic deallocation
-
-
-Sources:  [main/FatesPatchMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesPatchMod.F90)  [main/FatesInterfaceTypesMod.F90 348-577](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInterfaceTypesMod.F90#L348-L577)
+- Pointers are required for self-referential types and support a null state via `null()` and `associated()`.
+- Allocatables offer better performance for contiguous arrays and give automatic deallocation on scope exit.
 
 ## Mass Balance Checking Pattern
 
-FATES implements defensive programming through ubiquitous mass balance checks:
+FATES uses ubiquitous mass-balance checks as a defensive-programming discipline. On the PARTEH side, the base-class routine `CheckMassConservation` is declared `non_overridable` on `prt_vartypes` (`parteh/PRTGenericMod.F90:266`) and implemented at `parteh/PRTGenericMod.F90:946-1011`. It verifies, per variable and per position, that
 
-![SVG image](../assets/images/11__Code_Architecture_and_Design_Patterns__img-08.svg)
+```
+val - val0  ==  net_alloc + turnover + burned + damaged  (within tolerance)
+```
 
-Implementation Example:
-
-Key Files:
-
-- [main/EDMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#LNaN-LNaN)
-- [parteh/PRTGenericMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90#LNaN-LNaN)
-
-
-Sources:  [main/EDMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90)  [parteh/PRTGenericMod.F90 1270-1368](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90#L1270-L1368)
+using the state-and-flux fields described in [PARTEH Extensibility Framework](parteh_framework.md). Because the routine is `non_overridable`, every hypothesis inherits it automatically, and new hypotheses cannot accidentally weaken the mass-balance contract.
 
 ## Summary of Design Patterns
 
-| Pattern | Implementation | Purpose | 
+| Pattern | Implementation | Purpose |
 | --- | --- | --- |
-| Strategy | PARTEH base class + extensions | Swappable allocation algorithms | 
-| Singleton | prt_global, EDPftvarcon_inst, prt_params | Global read-only parameter storage | 
-| Linked List | Patches (age), Cohorts (height) | Dynamic vegetation structure | 
-| Two-Phase Init | Register → Receive | Flexible parameter loading | 
-| Boundary Condition | bc_in, bc_out, bc_pconst | Clean host model separation | 
-| Template Method | DailyPRT() virtual function | Algorithm skeleton with customizable steps | 
-| Data Transfer Object | BC types with allocatable arrays | Structured data exchange | 
-| Observer | Mass balance checking | Defensive programming | 
+| Strategy | `prt_vartypes` base + `callom_prt_vartypes` / `cnp_allom_prt_vartypes` extensions | Swappable allocation algorithms |
+| Singleton | `prt_global` (PRTGenericMod.F90:395), `EDPftvarcon_inst`, `prt_params` | Shared read-only parameter and mapping state |
+| Linked List | Patches (age-ordered), cohorts (height-ordered) | Dynamic vegetation structure |
+| Two-Phase Init | Register variables → receive parameters | Flexible parameter loading |
+| Boundary Condition | `bc_in`, `bc_out`, `bc_pconst` | Clean separation of HLM coupling channels |
+| Template Method | `DailyPRT` / `FastPRT` base-to-override | Algorithm skeleton with hypothesis-specific steps |
+| Defensive Mass Balance | `CheckMassConservation` (non_overridable TBP) | Runtime conservation enforcement |
 
-
-Sources: Multiple files across [main/](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/)  [parteh/](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/)  [biogeochem/](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/)
+Sources: files listed in each section, and the directory inventory under `main/`, `biogeochem/`, `biogeophys/`, `fire/`, and `parteh/`.

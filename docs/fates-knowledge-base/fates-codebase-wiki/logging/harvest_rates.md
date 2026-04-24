@@ -1,210 +1,161 @@
 # Harvest Rate Calculations
 
-<details>
-<summary>Relevant source files</summary>
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-
-- [biogeochem/EDLoggingMortalityMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90)
-- [biogeochem/EDMortalityFunctionsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMortalityFunctionsMod.F90)
-- [biogeochem/EDPatchDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90)
-- [main/EDMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90)
-- [main/EDTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90)
-
-
-</details>
+**Relevant source files:**
+- `biogeochem/EDLoggingMortalityMod.F90`
+- `biogeochem/EDPatchDynamicsMod.F90`
+- `main/EDMainMod.F90`
+- `main/EDParamsMod.F90`
+- `main/FatesConstantsMod.F90`
 
 ## Purpose and Scope
 
-This page documents how FATES calculates harvest rates that determine the fraction of forest area or biomass to be logged during a timestep. Harvest rates bridge external land use change data (from the host land model) or FATES parameter specifications into cohort-level mortality fractions. The calculations handle two distinct modes: area-based harvest (where a fraction of patch area is harvested) and carbon-based harvest (where a target biomass is harvested).
+This page documents how FATES converts external land-use change inputs (from the host land model) or FATES-internal parameters into per-cohort harvest rates used by `LoggingMortality_frac`. Two modes are supported: area-based, where the host supplies fractions of vegetated area to be harvested, and carbon-based, where the host supplies carbon mass targets that FATES must convert to an area rate.
 
-For information about how harvest rates are applied to individual cohorts and converted to mortality, see [Logging Mortality](logging/mortality.md) . For the broader context of how harvest disturbances create new patches, see [Patch Dynamics and Disturbances](core-dynamics/patch_dynamics.md) .
+Related topics:
 
-## Harvest Rate Modes
+- [Logging and Land Use](index.md) — overall logging workflow
+- [Logging Mortality](mortality.md) — cohort-level mortality application
+- [Mass Balance Checking](../output/mass_balance.md) — conservation verification around harvest events
 
-FATES supports two primary approaches for specifying harvest intensity, controlled by the `hlm_use_lu_harvest` flag and `hlm_harvest_units` variable.
+## Mode Selection
 
-### Mode Selection Logic
+Mode selection is controlled by two host flags: `hlm_use_lu_harvest` and `hlm_harvest_units`.
 
-![SVG image](../assets/images/8.2__Harvest_Rate_Calculations__img-01.svg)
+```
+if (hlm_use_lu_harvest == ifalse) then
+   harvest_rate = 1.0   ! standalone FATES mode; harvest the entire cohort area
+else if (hlm_use_lu_harvest == itrue .and. hlm_harvest_units == hlm_harvest_area_fraction) then
+   call get_harvest_rate_area(...)
+else if (hlm_use_lu_harvest == itrue .and. hlm_harvest_units == hlm_harvest_carbon) then
+   call get_harvest_rate_carbon(...)
+end if
+```
 
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 198-346](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L198-L346)
+Sources: `(biogeochem/EDLoggingMortalityMod.F90:243-291)`
 
-### Harvest Categories
+## LUH2 Harvest Categories
 
-FATES processes harvest rates across five land use history (LUH2) categories that map to three internal forest types:
+The host supplies harvest rates across five LUH2 land-use categories. These map to FATES patches via the `anthro_disturbance_label` and patch age. **FATES applies `secondary_age_threshold = 94` years** (declared as a Fortran `parameter` in `FatesConstantsMod.F90:126`, based on Hurtt et al. (2011) average global secondary-land age). The threshold is not user-tunable via the parameter file.
 
-| HLM Category | Description | FATES Forest Type | Age Threshold | 
-| --- | --- | --- | --- |
-| HARVEST_VH1 | Primary forest harvest | Primary | N/A | 
-| HARVEST_VH2 | Primary non-forest | Primary | N/A | 
-| HARVEST_SH1 | Secondary mature forest | Secondary | ≥ 30 years | 
-| HARVEST_SH2 | Secondary young forest | Secondary | < 30 years | 
-| HARVEST_SH3 | Secondary non-forest | Secondary | < 30 years | 
+| Category | Description | Target patch label | Age criterion |
+|---|---|---|---|
+| `HARVEST_VH1` | Primary forest harvest | `primaryforest` | n/a |
+| `HARVEST_VH2` | Primary non-forest harvest | `primaryforest` | n/a |
+| `HARVEST_SH1` | Secondary mature forest harvest | `secondaryforest` | `age_since_anthro_disturbance >= 94 yr` |
+| `HARVEST_SH2` | Secondary young forest harvest | `secondaryforest` | `age_since_anthro_disturbance < 94 yr` |
+| `HARVEST_SH3` | Secondary non-forest harvest | `secondaryforest` | treated as young (`< 94 yr`) |
 
+Sources: `(biogeochem/EDLoggingMortalityMod.F90:258-266)`, `(main/FatesConstantsMod.F90:126-128)`
 
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 258-266](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L258-L266)  [biogeochem/EDLoggingMortalityMod.F90 376-394](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L376-L394)
+## Area-Based Harvest (`get_harvest_rate_area`)
 
-## Area-Based Harvest Rate Calculation
+In area-based mode, the HLM supplies annual harvest rates per LUH2 category. `get_harvest_rate_area` selects the rate(s) matching the patch's `anthro_disturbance_label` (and age for SH1/SH2), and normalizes by the site primary or secondary fraction so that a gridcell-scale target becomes a patch-scale rate.
 
-In area-based mode ( `hlm_harvest_units == hlm_harvest_area_fraction` ), harvest rates are specified as the fraction of vegetated area to be harvested annually. The function `get_harvest_rate_area` processes these rates.
+Conceptual normalization:
 
-### Calculation Steps
+```
+primary patches:   harvest_rate = sum(VH1, VH2) / max(frac_site_primary,    nearzero)
+secondary patches: harvest_rate = sum(SH1 or SH2, SH3) / max(1 - frac_site_primary, nearzero)
+```
 
-![SVG image](../assets/images/8.2__Harvest_Rate_Calculations__img-02.svg)
-
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 351-432](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L351-L432)
-
-### Normalization by Forest Type
-
-Harvest rates from the HLM are specified as fractions of the entire gridcell, but FATES applies them to specific patches. The normalization accounts for the fraction of the site that is primary versus secondary forest:
-
-For primary forest patches:
-
-For secondary forest patches:
-
-This ensures that if only 20% of a site is primary forest, requesting 10% harvest of the gridcell translates to 50% harvest of the primary forest patches.
-
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 396-412](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L396-L412)
+(If only 20% of a site is primary forest, a 10% gridcell-scale request on primary land becomes a 50% patch-scale rate.)
 
 ### Temporal Scaling
 
-Annual harvest rates must be converted to the appropriate timestep based on `logging_event_code` :
+Annual LUH2 rates must be scaled to the dynamics step based on `logging_event_code`:
 
-| Event Code | Frequency | Temporal Scaling | 
-| --- | --- | --- |
-| 1 | Off | harvest_rate = 0.0 | 
-| 2 | First day only | No scaling (apply once) | 
-| 3 | Every day | harvest_rate / hlm_days_per_year | 
-| 4 | Monthly (1st day) | harvest_rate / months_per_year | 
-| < 0 | Annual (specific DOY) | No scaling (apply once) | 
-| > 10000 | Specific date (YYYYMMDD) | No scaling (apply once) | 
+| Event code | Frequency | Scaling applied to annual rate |
+|---|---|---|
+| `1` | Off | `harvest_rate = 0` |
+| `2` | First day only | Applied once, no scaling |
+| `3` | Every day | Divide by `hlm_days_per_year` |
+| `4` | First day of each month | Divide by `months_per_year` |
+| `-1` to `-365` | Annual, specific DOY | Applied once per year, no scaling |
+| `> 10000` | One-time event (`YYYYMMDD`) | Applied once, no scaling |
 
+When in area-based mode, `harvest_tag(:) = 2` (not applicable) for all categories, because debt tracking only makes sense in carbon-based mode.
 
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 418-430](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L418-L430)
+Sources: `(biogeochem/EDLoggingMortalityMod.F90:351-432)`
 
-## Carbon-Based Harvest Rate Calculation
+## Carbon-Based Harvest
 
-In carbon-based mode ( `hlm_harvest_units == hlm_harvest_carbon` ), harvest targets are specified as biomass amounts (kgC) to be removed. The system must convert this to an area-based harvest rate by comparing available biomass to the target.
+### Harvestable Carbon (`get_harvestable_carbon`)
 
-### Harvestable Carbon Assessment
+Called at the site level before the cohort loop, `get_harvestable_carbon` sums merchantable bole carbon available for harvest across all patches and all LUH2 categories. Harvestable cohort carbon is computed as:
 
-The function `get_harvestable_carbon` calculates how much biomass is available for harvest across all patches:
+```
+harvestable_cohort_c = (sapw_m + struct_m) * allom_agb_frac * SF_val_CWD_frac(ncwd) * n
+```
 
-![SVG image](../assets/images/8.2__Harvest_Rate_Calculations__img-03.svg)
+where `sapw_m` and `struct_m` are the cohort's sapwood and structural carbon per plant, `allom_agb_frac` is the above-ground fraction, `SF_val_CWD_frac(ncwd)` restricts to the largest CWD size class (merchantable wood), and `n` is plant density. Cohorts that fail the DBH size criteria for direct harvest contribute zero.
 
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 437-536](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L437-L536)
+Sources: `(biogeochem/EDLoggingMortalityMod.F90:437-536)`
 
-### Carbon to Area Conversion
+### Area Rate Conversion (`get_harvest_rate_carbon`)
 
-The function `get_harvest_rate_carbon` converts biomass targets to area fractions:
+`get_harvest_rate_carbon` converts the carbon target to an area-based `harvest_rate` by dividing the target by the harvestable carbon for the relevant LUH2 category. It also sets per-category `harvest_tag` values:
 
-![SVG image](../assets/images/8.2__Harvest_Rate_Calculations__img-04.svg)
+| `harvest_tag` | Meaning |
+|---|---|
+| `0` | Sufficient carbon; target fully met |
+| `1` | Insufficient carbon; shortfall accumulated into harvest debt (see below) |
+| `2` | Category does not apply to this cohort (e.g., VH categories on a secondary patch) |
 
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 540-680](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L540-L680)
+Sources: `(biogeochem/EDLoggingMortalityMod.F90:540-680)`
 
-### Key Equations
+## Harvest Debt (`get_harvest_debt`)
 
-Harvestable cohort carbon:
+When a carbon-based request cannot be fully satisfied, `get_harvest_debt` records the shortfall into `currentSite%resources_management%harvest_debt` (total across categories) and `harvest_debt_sec` (secondary-specific). This allows the debt to be tracked across timesteps and, in principle, paid down in future events.
 
-Area-based harvest rate from carbon:
+Sources: `(biogeochem/EDLoggingMortalityMod.F90:1137-1204)`, `(biogeochem/EDPatchDynamicsMod.F90)`
 
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 491-495](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L491-L495)  [biogeochem/EDLoggingMortalityMod.F90 647-654](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L647-L654)
+## From Harvest Rate to Disturbance
 
-## Harvest Debt Tracking
+The `harvest_rate` returned by the mode-specific functions feeds into `LoggingMortality_frac`, which sets the per-cohort fractions `lmort_direct`, `lmort_collateral`, `lmort_infra`, and `l_degrad`. These fractions are then consumed by `disturbance_rates` (in `EDPatchDynamicsMod.F90`) to compute patch-level disturbance rates, and by `Mortality_Derivative` (in `EDMortalityFunctionsMod.F90`) for understory treatment.
 
-When carbon-based harvest cannot be fully satisfied due to insufficient harvestable biomass, the system tracks "harvest debt" via the `harvest_tag` mechanism and the `get_harvest_debt` function.
+For canopy-layer cohorts:
 
-### Harvest Tag System
+```
+lmort_direct      = harvest_rate * logging_direct_frac     (if harvestable and woody)
+lmort_collateral  = harvest_rate * logging_collateral_frac (if woody)
+lmort_infra       = harvest_rate * logging_mechanical_frac (if dbh < logging_dbhmax_infra)
+l_degrad          = harvest_rate - (lmort_direct + lmort_infra + lmort_collateral)
+```
 
-Each harvest category is assigned a tag during the harvest rate calculation:
+For understory cohorts, only `lmort_infra` (for sufficiently small trees) and, for non-woody plants, infrastructure mortality are set by this routine; other understory effects flow through `logging_litter_fluxes` during patch spawning.
 
-| Tag Value | Meaning | Action | 
-| --- | --- | --- |
-| 0 | Successful harvest | Full harvest rate applied | 
-| 1 | Insufficient carbon | Debt recorded, partial or no harvest | 
-| 2 | Not applicable | Category doesn't apply to this cohort | 
+Sources: `(biogeochem/EDLoggingMortalityMod.F90:295-344)`, `(biogeochem/EDPatchDynamicsMod.F90:204-538)`, `(biogeochem/EDMortalityFunctionsMod.F90:234-323)`
 
+## Non-Canopy Area Adjustment
 
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 606-639](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L606-L639)
+Because logging disturbs an area larger than the crown footprint alone, `disturbance_rates` adds an interstitial-area contribution in patches whose canopy is not closed. This ensures that the area transferred to a newly spawned secondary patch reflects the harvested ground area, not just the crown projection.
 
-### Debt Calculation
+Sources: `(biogeochem/EDPatchDynamicsMod.F90:204-538)`
 
-![SVG image](../assets/images/8.2__Harvest_Rate_Calculations__img-05.svg)
+## Parameters Controlling Harvest Rates
 
-The debt represents the amount of carbon (kgC/site) that was requested but could not be harvested due to insufficient harvestable biomass. This information can be used for diagnostics or to adjust future harvest targets.
+Parameters declared in `main/EDParamsMod.F90` (initial Fortran values are `nan`; real defaults come from the FATES parameter file):
 
-Sources: The `get_harvest_debt` function is referenced in [biogeochem/EDPatchDynamicsMod.F90 267](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L267-L267) but its implementation details would need to be found in the full file.
+| Parameter | Role |
+|---|---|
+| `logging_dbhmin` | Minimum DBH for direct harvest (cm) |
+| `logging_dbhmax` | Maximum DBH for direct harvest (cm); effectively disabled if `>= fates_check_param_set` |
+| `logging_direct_frac` | Fraction of the harvest rate applied as direct mortality |
+| `logging_collateral_frac` | Fraction applied as collateral damage |
+| `logging_mechanical_frac` | Fraction applied as infrastructure mortality |
+| `logging_dbhmax_infra` | DBH below which infrastructure mortality applies |
+| `logging_export_frac` | Fraction of directly harvested bole exported as wood product |
+| `logging_event_code` | Event-timing code (see timing table) |
 
-## Integration with Disturbance Rates
+Constant in `main/FatesConstantsMod.F90`:
 
-Harvest rates calculated by the functions above are integrated into the disturbance rate calculation in `EDPatchDynamicsMod` . The `disturbance_rates` subroutine orchestrates this process.
+| Constant | Value | Role |
+|---|---|---|
+| `secondary_age_threshold` | `94.0` years | Boundary between `HARVEST_SH1` (mature) and `HARVEST_SH2`/`SH3` (young) |
 
-### Disturbance Rate Calculation Flow
-
-![SVG image](../assets/images/8.2__Harvest_Rate_Calculations__img-06.svg)
-
-Sources:  [biogeochem/EDPatchDynamicsMod.F90 160-394](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L160-L394)
-
-### Cohort-Level Mortality Application
-
-The harvest rate is converted to cohort-level mortality fractions by `LoggingMortality_frac` :
-
-These fractions are stored on each cohort and used during patch dynamics to determine biomass transfer to litter and product pools.
-
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 295-337](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L295-L337)
-
-### Non-Canopy Area Adjustment
-
-For patches with non-closed canopies, additional area is disturbed to account for interstitial ground area:
-
-This ensures that the entire harvested area, not just the tree crown area, is transferred to secondary forest patches.
-
-Sources:  [biogeochem/EDPatchDynamicsMod.F90 334-353](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L334-L353)
-
-## Harvest Rate Processing Pipeline
-
-The complete pipeline from HLM input to cohort mortality:
-
-![SVG image](../assets/images/8.2__Harvest_Rate_Calculations__img-07.svg)
-
-Sources:  [biogeochem/EDPatchDynamicsMod.F90 160-394](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L160-L394)  [biogeochem/EDLoggingMortalityMod.F90 198-346](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L198-L346)  [biogeochem/EDLoggingMortalityMod.F90 351-680](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L351-L680)
-
-## Key Data Structures
-
-### Site-Level Tracking
-
-Harvest-related variables stored in `ed_site_type` :
-
-Sources:  [main/EDTypesMod.F90 134-146](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90#L134-L146)
-
-### Cohort-Level Mortality Fractions
-
-Harvest mortality fractions stored on `fates_cohort_type` :
-
-- `lmort_direct`: Direct logging mortality (harvestable trees)
-- `lmort_collateral`: Collateral damage to nearby trees
-- `lmort_infra`: Infrastructure mortality (roads, skid trails)
-- `l_degrad`: Degradation without mortality (transfer to secondary forest)
-
-
-These are calculated in `LoggingMortality_frac` and used in `Mortality_Derivative` to compute `dndt` (rate of change of number density).
-
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 198-346](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L198-L346)  [biogeochem/EDMortalityFunctionsMod.F90 284-319](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMortalityFunctionsMod.F90#L284-L319)
-
-## Configuration Parameters
-
-Key parameters controlling harvest rate calculations:
-
-| Parameter | Location | Purpose | 
-| --- | --- | --- |
-| logging_dbhmin | EDParamsMod | Minimum DBH for direct harvest | 
-| logging_dbhmax | EDParamsMod | Maximum DBH for direct harvest | 
-| logging_direct_frac | EDParamsMod | Fraction of trees directly logged | 
-| logging_collateral_frac | EDParamsMod | Fraction experiencing collateral damage | 
-| logging_mechanical_frac | EDParamsMod | Fraction killed by infrastructure | 
-| logging_export_frac | EDParamsMod | Fraction of biomass exported off-site | 
-| logging_event_code | EDParamsMod | Timing/frequency of logging events | 
-| secondary_age_threshold | FatesConstantsMod | Age threshold for mature secondary (30 years) | 
-
-
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 38-44](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L38-L44)  [biogeochem/EDLoggingMortalityMod.F90 67](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L67-L67)
+Sources: `(main/EDParamsMod.F90:268-378)`, `(main/FatesConstantsMod.F90:126-128)`

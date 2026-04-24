@@ -1,219 +1,272 @@
 # Soil-Plant Nutrient Interface
 
-<details>
-<summary>Relevant source files</summary>
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-
-- [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90)
-- [biogeochem/EDPhysiologyMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90)
-- [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)
-- [biogeochem/FatesSoilBGCFluxMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90)
-- [parteh/PRTAllometricCNPMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90)
-- [parteh/PRTAllometricCarbonMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90)
-- [parteh/PRTGenericMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTGenericMod.F90)
-- [parteh/PRTLossFluxesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTLossFluxesMod.F90)
-
-
-</details>
+**Relevant source files:**
+- `biogeochem/FatesSoilBGCFluxMod.F90`
+- `biogeochem/FatesCohortMod.F90`
+- `main/EDMainMod.F90`
+- `main/FatesConstantsMod.F90`
+- `main/EDPftvarcon.F90`
+- `biogeophys/FatesPlantRespPhotosynthMod.F90`
+- `parteh/PRTAllometricCNPMod.F90`
 
 ## Purpose and Scope
 
-This document describes how FATES plants acquire nitrogen (N) and phosphorus (P) from soil and how nutrients flow between the soil biogeochemistry model and plant tissues. The interface handles nutrient demand calculation, uptake from soil, competition among plants, and nutrient efflux back to soil. This system is active only when running with CNP allocation hypotheses (see [CNP Allocation and Nutrient Dynamics](../plant-physiology/parteh/cnp_allocation.md) ). For the broader context of plant allocation, see [PARTEH: Plant Allocation System](../plant-physiology/parteh/index.md) .
+This document describes how FATES plants exchange nitrogen and phosphorus with the host land model's soil biogeochemistry. The interface is active only under the CNP allocation hypothesis (`prt_cnp_flex_allom_hyp`). Under the carbon-only hypothesis, `UnPackNutrientAquisitionBCs` exits immediately after zeroing the host's plant-uptake flux arrays.
 
-The primary implementation resides in [biogeochem/FatesSoilBGCFluxMod.F90 1-1024](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L1-L1024)
+The interface covers:
 
-## Nutrient Uptake Pipeline
+- Computing per-cohort nutrient demand (from fine-root biomass and PFT `vmax_*` parameters)
+- Choosing competition/uptake mode (prescribed vs. coupled)
+- Packing vegetation state into boundary conditions for the host BGC (`PrepNutrientAquisitionBCs`)
+- Unpacking actual uptake fluxes back into cohort state (`UnPackNutrientAquisitionBCs`)
+- Returning plant efflux/exudation into the litter pool (`EffluxIntoLitterPools`)
 
-The soil-plant nutrient interface operates on a daily timestep, coordinating nutrient flows between the host land model's soil biogeochemistry and FATES plant cohorts. The process involves three main phases: preparation of uptake boundary conditions, soil BGC calculation of actual uptake, and distribution of acquired nutrients to cohorts.
+For the downstream allocation consumer see [CNP Allocation and Nutrient Dynamics](./cnp_allocation.md). For framework-level context see [PARTEH: Plant Allocation System](./index.md).
 
-Diagram: Nutrient Uptake Pipeline
+## Daily Pipeline
 
-![SVG image](../../assets/images/4.2.3__Soil-Plant_Nutrient_Interface__img-01.svg)
+Within the daily loop, the soil-plant exchange runs in this order:
 
-Sources: [biogeochem/FatesSoilBGCFluxMod.F90 101-235](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L101-L235)  [biogeochem/FatesSoilBGCFluxMod.F90 401-501](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L401-L501)
+```
+1. PrepNutrientAquisitionBCs(csite, bc_in, bc_out)      [FatesSoilBGCFluxMod.F90:401-518]
+     └── writes vegetation state (veg_rootc, decompmicc, num_plant_comps, ft_index) to bc_out
+2. Host BGC runs (e.g. CLM5/ELM CN) — reads bc_out, solves nutrient competition,
+   fills bc_in%plant_nh4_uptake_flux, bc_in%plant_no3_uptake_flux, bc_in%plant_p_uptake_flux
+3. UnPackNutrientAquisitionBCs(sites, bc_in)            [FatesSoilBGCFluxMod.F90:102-235]
+     └── reads bc_in, fills ccohort%daily_nh4_uptake, daily_no3_uptake, daily_p_gain
+     └── zeros the bc_in uptake arrays
+4. currentCohort%daily_n_gain = daily_nh4_uptake + daily_no3_uptake + sym_nfix_daily   [EDMainMod.F90:550-551]
+5. DailyPRT(phase=1) — CNP allocation reads daily_n_gain via bc_inout index 4 (netdn)
+```
 
-## Nutrient Demand Calculation
+The N fixation term `sym_nfix_daily` is populated earlier by `FatesPlantRespPhotosynthMod::RootLayerNFixation`, so by step 4 it has already accumulated from the photosynthesis/respiration timestep.
 
-Each cohort calculates its nutrient demand based on fine-root biomass and PFT-specific maximum uptake rates ( `vmax` ). The demand represents the maximum amount of nutrient the plant could acquire if soil supply were unlimited.
+Sources: `(main/EDMainMod.F90:530-615)`, `(biogeochem/FatesSoilBGCFluxMod.F90:102-518)`, `(biogeophys/FatesPlantRespPhotosynthMod.F90:800,965-1017)`
 
-Nitrogen Demand:
+## Demand Calculation
 
-Phosphorus Demand:
+Every cohort's nutrient demand is proportional to its fine-root carbon biomass:
 
-Where `fnrt_c` is fine-root carbon mass [kg/plant] and `vmax_*` parameters have units [kg_nutrient / kg_fineroot_C / second].
+```fortran
+! FatesSoilBGCFluxMod.F90:162-164, 182-184, 201
+fnrt_c = ccohort%prt%GetState(fnrt_organ, carbon12_element)
+daily_n_demand = fnrt_c * (vmax_nh4(pft) + vmax_no3(pft)) * sec_per_day       ! kgN/plant/day
+daily_p_demand = fnrt_c * vmax_p(pft) * sec_per_day                           ! kgP/plant/day
+```
 
-Diagram: Demand Calculation in Code
+`vmax_*` parameters have units of kg-nutrient / kg-fineroot-C / second. Computed demand represents the theoretical maximum uptake if the soil supply is unlimited. It is not directly used by the allocation routine; instead, it controls the cohort's share under prescribed mode and informs the ECA competition solver.
 
-![SVG image](../../assets/images/4.2.3__Soil-Plant_Nutrient_Interface__img-02.svg)
+## Uptake Modes (Prescribed vs Coupled)
 
-Sources: [biogeochem/FatesSoilBGCFluxMod.F90 162-166](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L162-L166)  [biogeochem/FatesSoilBGCFluxMod.F90 201-202](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L201-L202)  [biogeochem/FatesSoilBGCFluxMod.F90 218-219](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L218-L219)
+Two orthogonal flags live in `EDParamsMod`:
 
-## Uptake Modes: Prescribed vs Coupled
+- `n_uptake_mode ∈ {prescribed_n_uptake, coupled_n_uptake}`
+- `p_uptake_mode ∈ {prescribed_p_uptake, coupled_p_uptake}`
 
-FATES supports two modes for nutrient uptake, controlled by `n_uptake_mode` and `p_uptake_mode` parameters.
+The values are the integer constants from `FatesConstantsMod.F90:94-95`.
 
-### Prescribed Uptake Mode
+### Prescribed Uptake
 
-In prescribed mode ( `prescribed_n_uptake` or `prescribed_p_uptake` ), plants receive a fixed fraction of their demand, independent of soil nutrient availability. This mode is useful for simulations where soil BGC is not being modeled or for sensitivity experiments.
+Under prescribed mode, plants receive a fixed fraction of their demand independent of the host's soil BGC. FATES computes uptake itself inside `UnPackNutrientAquisitionBCs`:
 
-Implementation:
+```fortran
+! FatesSoilBGCFluxMod.F90:165-166 (N branch)
+daily_nh4_uptake = fnrt_c * vmax_nh4(pft) * prescribed_nuptake(pft) * sec_per_day
+daily_no3_uptake = fnrt_c * vmax_no3(pft) * prescribed_nuptake(pft) * sec_per_day
 
-The `prescribed_nuptake` parameter is a PFT-specific fraction [0-1] determining what fraction of maximum uptake rate is achieved.
+! FatesSoilBGCFluxMod.F90:201-202 (P branch)
+daily_p_demand = fnrt_c * vmax_p(pft) * sec_per_day
+daily_p_gain   = fnrt_c * vmax_p(pft) * sec_per_day * prescribed_nuptake(pft)
+```
 
-Sources: [biogeochem/FatesSoilBGCFluxMod.F90 155-171](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L155-L171)  [biogeochem/FatesSoilBGCFluxMod.F90 194-206](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L194-L206)
+Note the **source-level oddity**: the P prescribed-uptake branch multiplies by `EDPftvarcon_inst%prescribed_nuptake(pft)`, not `prescribed_puptake(pft)`. `prescribed_puptake` is declared in `EDPftvarcon` but is **not consumed** anywhere in `UnPackNutrientAquisitionBCs`. A calibrator adjusting P uptake under prescribed mode must touch `prescribed_nuptake` or modify source. This is likely an oversight in the source and not a documentation issue.
 
-### Coupled Uptake Mode
+Under prescribed mode, `DailyPRTAllometricCNP` also overrides `n_gain` and `p_gain` to 1e3 kg inside the routine (`PRTAllometricCNPMod.F90:470-475`), effectively treating nutrients as unlimited, then reports back "how much was used" by the difference `n_gain0 - n_gain` at `PRTAllometricCNPMod.F90:688-697`. This is the prescribed-mode accounting loop.
 
-In coupled mode ( `coupled_n_uptake` or `coupled_p_uptake` ), the host land model's soil BGC explicitly calculates nutrient uptake based on soil availability, root distribution, and competition among plants. FATES provides root biomass profiles and receives back the actual uptake fluxes.
+### Coupled Uptake
 
-Data Flow:
+Under coupled mode, the host soil BGC explicitly solves for nutrient uptake based on soil availability, root distribution, and competition with microbes. FATES hands over `bc_out%veg_rootc(icomp, layer)`, `bc_out%decompmicc(layer)` (ECA only), `bc_out%cn_scalar`, `bc_out%cp_scalar`, and `bc_out%num_plant_comps`, then reads back `bc_in%plant_nh4_uptake_flux`, `bc_in%plant_no3_uptake_flux`, `bc_in%plant_p_uptake_flux` (all in g/m²/day), and distributes them to cohorts:
 
-Sources: [biogeochem/FatesSoilBGCFluxMod.F90 172-191](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L172-L191)  [biogeochem/FatesSoilBGCFluxMod.F90 208-225](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L208-L225)
+```fortran
+! FatesSoilBGCFluxMod.F90:182-186 (N branch)
+ccohort%daily_nh4_uptake = bc_in%plant_nh4_uptake_flux(icomp, 1) * kg_per_g * AREA / ccohort%n
+ccohort%daily_no3_uptake = bc_in%plant_no3_uptake_flux(icomp, 1) * kg_per_g * AREA / ccohort%n
+```
 
-## Competition Mechanisms
+where `AREA = 10000 m²` is the FATES site area constant and `ccohort%n` is the cohort density (plants). The unit conversion `g/m²/day * kg/g * m²/plant → kg/plant/day` turns the host's areal flux into a per-plant daily mass.
 
-When coupling with soil BGC, FATES supports two competition methods ( `hlm_nu_com` ): Relative Demand (RD) and Equilibrium Chemistry Approximation (ECA). Additionally, there are two scaling approaches ( `fates_np_comp_scaling` ): trivial and coupled.
+Sources: `(biogeochem/FatesSoilBGCFluxMod.F90:102-235)`
 
-### Competition Method Comparison
+## Competition Mechanism: Two Independent Axes
 
-| Feature | RD (Relative Demand) | ECA (Equilibrium Chemistry Approximation) | 
-| --- | --- | --- |
-| Primary concept | Nutrients partitioned by relative demand | Nutrient uptake based on root-microbe equilibrium | 
-| Required inputs from FATES | veg_rootc only | veg_rootc, decompmicc, cn_scalar, cp_scalar | 
-| Computational complexity | Lower | Higher | 
-| Microbial competition | Implicit | Explicit via decompmicc | 
+Two orthogonal axes control how FATES cooperates with the host soil BGC. Conflating them is a common source of confusion.
 
+### Axis 1: Decomposer Math (`hlm_nu_com`)
 
-Sources: [biogeochem/FatesSoilBGCFluxMod.F90 434-438](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L434-L438)
+A string flag set by the host model to `"RD"` (Relative Demand) or `"ECA"` (Equilibrium Chemistry Approximation). This decides what **host-side math** consumes FATES' boundary condition output.
 
-### ECA Decomposer Biomass Calculation
+| Method | How it partitions nutrients | Required extra FATES BCs |
+|---|---|---|
+| `RD` | Nutrients divided among plants proportionally to demand | None beyond `veg_rootc`, `num_plant_comps`, `ft_index` |
+| `ECA` | Root-microbe equilibrium with explicit decomposer biomass | Also requires `decompmicc`, `cn_scalar`, `cp_scalar` (initialized to 1.0) |
 
-When using ECA, FATES must provide an estimate of decomposer microbial biomass ( `decompmicc` ) for each soil layer. This uses a depth-attenuation function:
+Under ECA, FATES estimates decomposer biomass per soil layer using a depth-attenuation function:
 
-Where:
+```fortran
+! FatesSoilBGCFluxMod.F90:482-492
+decompmicc_layer = EDPftvarcon_inst%decompmicc(pft) &
+                   * exp(-decompmicc_lambda * abs(z_soil(j) - decompmicc_zmax))
 
-- `decompmicc_pft_max`: PFT-specific maximum decomposer biomass parameter
-- `lambda = 2.5`: Depth attenuation exponent
-- `z_max = 0.07 m`: Depth of maximum decomposer biomass
+bc_out%decompmicc(id) = bc_out%decompmicc(id) + decompmicc_layer * veg_rootc
+! After the cohort loop:
+bc_out%decompmicc(id) = bc_out%decompmicc(id) / max(nearzero, sum(veg_rootc(:, id)))
+```
 
+with `decompmicc_lambda = 2.5` and `decompmicc_zmax = 0.07 m`. The final per-layer value is the root-biomass-weighted average of the PFT-specific `decompmicc(pft)` parameter.
 
-Diagram: ECA Decomposer Biomass Calculation
+Sources: `(biogeochem/FatesSoilBGCFluxMod.F90:434-509)`
 
-![SVG image](../../assets/images/4.2.3__Soil-Plant_Nutrient_Interface__img-03.svg)
+### Axis 2: Competitor Count (`fates_np_comp_scaling`)
 
-Sources: [biogeochem/FatesSoilBGCFluxMod.F90 482-492](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L482-L492)
+An integer flag defined in `FatesConstantsMod.F90:94-125`:
 
-### Competitor Scaling: Trivial vs Coupled
+```fortran
+integer, public, parameter :: coupled_np_comp_scaling = 1   ! one competitor per cohort
+integer, public, parameter :: trivial_np_comp_scaling = 2   ! one competitor total
+integer, public          :: fates_np_comp_scaling = fates_unset_int
+```
 
-The scaling approach determines whether the host land model sees individual cohorts or aggregated vegetation.
+This decides **how many rows FATES writes into `bc_out%veg_rootc`**, i.e. how many "plants" the host sees.
 
-Trivial Scaling (`trivial_np_comp_scaling`):
+| Value | What FATES writes |
+|---|---|
+| `trivial_np_comp_scaling` | `num_plant_comps = 1`, all cohorts pooled. Under RD this triggers a fast-path return at line 440-446 after just setting `num_plant_comps = 1` and `ft_index(1) = 1`. Under ECA, FATES still runs the full loop to build `veg_rootc` and `decompmicc` arrays because ECA needs them. |
+| `coupled_np_comp_scaling` | `num_plant_comps = cohort_count`, `icomp` is incremented per cohort. Host sees every cohort as a separate competitor. |
 
-- `icomp = 1`All cohorts aggregated into single competitor ( )
-- `bc_out%num_plant_comps = 1`
-- Uptake distributed back to cohorts proportionally
-- Simpler, fewer boundary condition arrays
-- Used when individual cohort competition not needed
+`hlm_nu_com` (Axis 1) and `fates_np_comp_scaling` (Axis 2) are **independent**. All four combinations are valid. The old wiki labeled RD as always being "1 competitor" and ECA as always being "1 per cohort"; this is incorrect.
 
+```fortran
+! FatesSoilBGCFluxMod.F90:440-446 (the RD+trivial shortcut)
+if (fates_np_comp_scaling == trivial_np_comp_scaling) then
+   if (trim(hlm_nu_com) == 'RD') then
+      bc_out%num_plant_comps = 1
+      bc_out%ft_index(1)     = 1
+      return
+   end if
+end if
 
-Coupled Scaling (`coupled_np_comp_scaling`):
+! FatesSoilBGCFluxMod.F90:459-463 (competitor increment)
+if (fates_np_comp_scaling == coupled_np_comp_scaling) then
+   icomp = icomp + 1
+else
+   icomp = 1
+end if
+```
 
-- `icomp`Each cohort is separate competitor ( increments for each cohort)
-- `bc_out%num_plant_comps = total_cohort_count`
-- Host model explicitly resolves cohort-level competition
-- More computationally expensive but more mechanistic
+Sources: `(biogeochem/FatesSoilBGCFluxMod.F90:440-515)`, `(main/FatesConstantsMod.F90:94-125)`
 
+## Root Distribution and `veg_rootc`
 
-Diagram: Competitor Indexing Logic
+Per-layer vegetation fine-root carbon, which both RD and ECA need:
 
-![SVG image](../../assets/images/4.2.3__Soil-Plant_Nutrient_Interface__img-04.svg)
+```fortran
+! FatesSoilBGCFluxMod.F90:468-480
+call set_root_fraction(csite%rootfrac_scr, pft, csite%zi_soil, bc_in%max_rooting_depth_index_col)
+fnrt_c = ccohort%prt%GetState(fnrt_organ, carbon12_element)
 
-Sources: [biogeochem/FatesSoilBGCFluxMod.F90 440-465](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L440-L465)  [biogeochem/FatesSoilBGCFluxMod.F90 453-496](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L453-L496)
+do j = 1, bc_in%nlevdecomp
+   id = bc_in%decomp_id(j)  ! map soil layer -> decomp layer
+   veg_rootc = fnrt_c * ccohort%n * rootfrac(j) * AREA_INV * g_per_kg / dz_soil(j)
+   bc_out%veg_rootc(icomp, id) = bc_out%veg_rootc(icomp, id) + veg_rootc
+end do
+```
 
-## Root Distribution and Vertical Profiles
+Units check: `fnrt_c [kgC/plant] * n [plants/ha] * rootfrac [-] * (1 ha / 10000 m²) * (1000 g/kg) / dz [m] = gC/m³`.
 
-Nutrient uptake depends on the vertical distribution of fine roots across soil layers. Each PFT has a characteristic rooting profile that determines what fraction of roots are in each layer.
+`set_root_fraction` (`FatesAllometryMod`) normalizes per-layer root fractions to the PFT's vertical rooting profile parameters and the host's max-rooting depth.
 
-Root Fraction Calculation:
+Sources: `(biogeochem/FatesSoilBGCFluxMod.F90:468-496)`
 
-The function `set_root_fraction` calculates normalized root fractions based on soil layer depths and PFT rooting parameters. This is called before calculating `veg_rootc` :
+## Unpack: `UnPackNutrientAquisitionBCs`
 
-Where:
+Called once per day before `DailyPRT`. Walks sites → patches → cohorts and performs four things for each cohort:
 
-- `fnrt_c`: Fine-root carbon per plant [kg C / plant]
-- `n_plants`: Number density [plants / ha]
-- `rootfrac(id)``id`: Fraction of roots in layer [dimensionless]
-- `AREA_INV = 1/10000`: Converts per-hectare to per-m²
-- `dz_soil(id)`: Soil layer thickness [m]
+1. **Early return if carbon-only.** `select case (hlm_parteh_mode); case (prt_carbon_allom_hyp) ... return; end select` at lines 136-145. Zeros the host uptake arrays first.
+2. **Compute per-cohort demand and uptake** under the N uptake mode. Dispatches on `n_uptake_mode` at lines 155-192 (prescribed branch vs. coupled branch). Repeats for P under `p_uptake_mode` at lines 194-226.
+3. **Zero the host-side flux arrays** at lines 229-231. The host integrates uptake over many short timesteps then daily arrays are zeroed here to start the next daily accumulation.
 
+```fortran
+! after step 3, the ed_integrate_state_variables loop will do:
+currentCohort%daily_n_gain = currentCohort%daily_nh4_uptake + &
+                             currentCohort%daily_no3_uptake + &
+                             currentCohort%sym_nfix_daily
+```
 
-Result has units [g C / m³].
+at `EDMainMod.F90:550-551` — note that `daily_n_gain` is a **sum** that explicitly includes symbiotic N fixation alongside NH4 and NO3 uptake. This is the value that arrives at the CNP allocation routine via `bc_inout(acnp_bc_inout_id_netdn)`.
 
-Sources: [biogeochem/FatesSoilBGCFluxMod.F90 468-480](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L468-L480)  [FatesAllometryMod.F90 125-127](https://github.com/jingtao-lbl/fates/blob/e85d9977/FatesAllometryMod.F90#L125-L127)
+Sources: `(biogeochem/FatesSoilBGCFluxMod.F90:102-235)`, `(main/EDMainMod.F90:550-551)`, `(biogeochem/FatesCohortMod.F90)` (BC registration)
 
-Diagram: Root Carbon Calculation Per Layer
+## Cohort-Level Nutrient State Variables
 
-![SVG image](../../assets/images/4.2.3__Soil-Plant_Nutrient_Interface__img-05.svg)
+| Field | Units | Populated by | Consumed by |
+|---|---|---|---|
+| `ccohort%daily_n_demand` | kgN/plant/day | `UnPackNutrientAquisitionBCs` | Diagnostic |
+| `ccohort%daily_nh4_uptake` | kgN/plant/day | `UnPackNutrientAquisitionBCs` | `daily_n_gain` sum |
+| `ccohort%daily_no3_uptake` | kgN/plant/day | `UnPackNutrientAquisitionBCs` | `daily_n_gain` sum |
+| `ccohort%sym_nfix_daily` | kgN/plant/day | `FatesPlantRespPhotosynthMod::RootLayerNFixation` | `daily_n_gain` sum |
+| `ccohort%daily_n_gain` | kgN/plant/day | `EDMainMod.F90:550-551` (sum of above three) | CNP `bc_inout(netdn)` |
+| `ccohort%daily_p_demand` | kgP/plant/day | `UnPackNutrientAquisitionBCs` | Diagnostic |
+| `ccohort%daily_p_gain` | kgP/plant/day | `UnPackNutrientAquisitionBCs` | CNP `bc_inout(netdp)` |
 
-Sources: [biogeochem/FatesSoilBGCFluxMod.F90 474-480](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L474-L480)
+Note carefully: `daily_n_gain` includes fixation; `daily_p_gain` does not have an analogous P-fixation term.
 
-## Nutrient Efflux and Exudation
+Sources: `(main/EDMainMod.F90:550-551,757)`, `(biogeochem/FatesCohortMod.F90)` (BC registration), `(biogeophys/FatesPlantRespPhotosynthMod.F90:965-1017)`
 
-Plants can exude nutrients back to soil when they cannot use all acquired nutrients. This occurs primarily in the CNP allocation hypothesis when nutrient uptake exceeds growth requirements. The efflux is calculated during the daily PARTEH allocation and returned via output boundary conditions.
+## Efflux Back to Soil
 
-Efflux Pathway:
+Excess nutrient or carbon that PARTEH cannot allocate is sent back to the soil as exudation, via `EffluxIntoLitterPools` (`FatesSoilBGCFluxMod.F90:522-582`). Per-cohort efflux pointers are:
 
-In `PRTAllometricCNPMod` , if a plant acquires more N or P than can be incorporated into new growth (given stoichiometric constraints), the excess can be:
+```fortran
+ccohort%daily_c_efflux  ! (element = carbon12)
+ccohort%daily_n_efflux  ! (element = nitrogen)
+ccohort%daily_p_efflux  ! (element = phosphorus)
+```
 
-The parameter `store_c_overflow` determines the fate of excess carbon (defined at [parteh/PRTAllometricCNPMod.F90 216-219](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L216-L219) ).
+The effluxed mass is added to the labile fraction of the patch's root-fine fragment pool, distributed vertically by `rootfrac_scr`:
 
-Output Boundary Conditions:
+```fortran
+litt%root_fines_frag(ilabile, j) += efflux_ptr * ccohort%n * AREA_INV * rootfrac_scr(j)   ! kg/m²/day
+```
 
-These are accumulated and sent to the litter pools via `EffluxIntoLitterPools` .
+Under prescribed uptake mode, N and P efflux are forced to zero at the end of `CNPAllocateRemainder` (see `PRTAllometricCNPMod.F90:1990-2005`) because in that mode the "remaining gain" is reinterpreted as "amount actually used", not as excess.
 
-Sources: [parteh/PRTAllometricCNPMod.F90 186-192](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L186-L192)  [biogeochem/FatesSoilBGCFluxMod.F90 84-90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L84-L90)
+The `store_c_overflow` compile-time flag in `PRTAllometricCNPMod` (hard-coded to `burn_c_store_overflow`) also determines whether excess carbon is sent to efflux (`exude_c_store_overflow`) or routed to respiration (`burn_c_store_overflow`, the default).
 
-## Integration with PARTEH CNP Allocation
+Sources: `(biogeochem/FatesSoilBGCFluxMod.F90:522-582)`, `(parteh/PRTAllometricCNPMod.F90:1920-2005)`
 
-The soil-plant nutrient interface provides the daily nutrient uptake that constrains the CNP allocation process. The uptake values are stored in cohort-level variables and accessed by PARTEH as boundary conditions.
+## Key Parameters
 
-Key Cohort Variables:
+| Parameter | Role | Fortran field |
+|---|---|---|
+| `fates_cnp_vmax_nh4` | Max NH4+ uptake per fine-root C [kgN/kgC/s] | `EDPftvarcon_inst%vmax_nh4(pft)` |
+| `fates_cnp_vmax_no3` | Max NO3- uptake per fine-root C [kgN/kgC/s] | `EDPftvarcon_inst%vmax_no3(pft)` |
+| `fates_cnp_vmax_p` | Max P uptake per fine-root C [kgP/kgC/s] | `EDPftvarcon_inst%vmax_p(pft)` |
+| `fates_cnp_prescribed_nuptake` | Fraction of max uptake realized under prescribed mode (also used for P, see source oddity above) | `EDPftvarcon_inst%prescribed_nuptake(pft)` |
+| `fates_cnp_prescribed_puptake` | **Declared but unused** in `UnPackNutrientAquisitionBCs` | `EDPftvarcon_inst%prescribed_puptake(pft)` |
+| `fates_cnp_decompmicc` (ECA only) | PFT-specific maximum decomposer biomass, input to depth-attenuation estimator | `EDPftvarcon_inst%decompmicc(pft)` |
+| `fates_cnp_nfix1` | Scale factor on fine-root maintenance respiration used to compute sym N fix | `prt_params%nfix_mresp_scfrac(ft)` |
 
-| Variable | Units | Description | 
-| --- | --- | --- |
-| ccohort%daily_n_demand | kg N / plant / day | Total potential N uptake | 
-| ccohort%daily_nh4_uptake | kg NH4-N / plant / day | Actual ammonium uptake | 
-| ccohort%daily_no3_uptake | kg NO3-N / plant / day | Actual nitrate uptake | 
-| ccohort%daily_p_demand | kg P / plant / day | Total potential P uptake | 
-| ccohort%daily_p_gain | kg P / plant / day | Actual phosphorus uptake | 
+Sources: `(main/EDPftvarcon.F90)`, `(biogeochem/FatesSoilBGCFluxMod.F90:155-225,482-492)`
 
+## Summary
 
-PARTEH CNP Access:
+The soil-plant nutrient interface is driven by two files: `FatesSoilBGCFluxMod.F90` (host-side boundary condition packing/unpacking) and `PRTAllometricCNPMod.F90` (consumer). Two independent switches control how the interface operates: `hlm_nu_com` selects the host-side nutrient partitioning math (RD vs ECA), and `fates_np_comp_scaling` selects whether FATES reports one pooled competitor or one competitor per cohort. These are orthogonal. Uptake itself is further split by `n_uptake_mode` and `p_uptake_mode` between prescribed (FATES computes `fnrt_c * vmax * prescribed_nuptake`) and coupled (FATES reads the host's `plant_*_uptake_flux` arrays).
 
-During `DailyPRTAllometricCNP` , nutrient gains are accessed via boundary conditions:
+When `DailyPRTAllometricCNP` reads `bc_inout(acnp_bc_inout_id_netdn)`, it is reading `ccohort%daily_n_gain`, which is `daily_nh4_uptake + daily_no3_uptake + sym_nfix_daily` — symbiotic fixation is included in the same pool as soil uptake. The CNP routine does not distinguish the sources.
 
-- `n_gain => this%bc_inout(acnp_bc_inout_id_netdn)%rval``daily_nh4_uptake + daily_no3_uptake`: Points to
-- `p_gain => this%bc_inout(acnp_bc_inout_id_netdp)%rval``daily_p_gain`: Points to
-
-
-These provide the nutrient supply for the three-phase CNP allocation (see [CNP Allocation and Nutrient Dynamics](../plant-physiology/parteh/cnp_allocation.md) ).
-
-Diagram: Boundary Condition Flow to PARTEH
-
-![SVG image](../../assets/images/4.2.3__Soil-Plant_Nutrient_Interface__img-06.svg)
-
-Sources: [parteh/PRTAllometricCNPMod.F90 388-390](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L388-L390)  [biogeochem/EDCohortDynamicsMod.F90 111-121](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90#L111-L121)
-
-## Summary Table: Module Components
-
-| Component | File | Key Routines | Purpose | 
-| --- | --- | --- | --- |
-| Nutrient demand calculation | FatesSoilBGCFluxMod.F90 | PrepNutrientAquisitionBCs | Calculate fine-root C profiles and nutrient demand | 
-| Uptake distribution | FatesSoilBGCFluxMod.F90 | UnPackNutrientAquisitionBCs | Parse uptake fluxes from soil to cohorts | 
-| Root profiles | FatesAllometryMod.F90 | set_root_fraction | Vertical distribution of fine roots | 
-| Prescribed uptake | EDPftvarcon | vmax_nh4, vmax_no3, vmax_p, prescribed_nuptake | PFT parameters controlling uptake rates | 
-| Efflux handling | FatesSoilBGCFluxMod.F90 | EffluxIntoLitterPools | Return excess nutrients to soil | 
-| PARTEH integration | PRTAllometricCNPMod.F90 | DailyPRTAllometricCNP | Use uptake in allocation decisions | 
-
-
-Sources: [biogeochem/FatesSoilBGCFluxMod.F90 1-1024](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesSoilBGCFluxMod.F90#L1-L1024)  [parteh/PRTAllometricCNPMod.F90 1-5000](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L1-L5000)
+Sources: `(biogeochem/FatesSoilBGCFluxMod.F90:1-600)`, `(parteh/PRTAllometricCNPMod.F90:430-707)`, `(main/EDMainMod.F90:530-615)`

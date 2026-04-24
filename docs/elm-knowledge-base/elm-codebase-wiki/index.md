@@ -1,162 +1,95 @@
-# E3SM/ELM Knowledge Base
-
-**Energy Exascale Earth System Model - Land Model (ELM)**
-
-A comprehensive technical documentation for E3SM and its land component ELM, covering model architecture, configuration, components, and HPC execution.
-
+---
+**Source pin:** ELM source at commit `60d9aad` (E3SM_FATES working tree, 2026-04-10)
+**Scope:** `components/elm/src/` excluding `external_models/` (FATES) and `.ipynb_checkpoints/`
+**Last verified:** 2026-04-10
 ---
 
-## Quick Navigation
+# ELM Codebase Wiki (commit `60d9aad`)
 
-### Overview
+This wiki is a purpose-built, source-grounded reference for the **E3SM Land Model (ELM)** as it exists in the `components/elm/src/` tree at commit `60d9aad` of the E3SM_FATES working tree. It is intentionally narrow: only the 239 Fortran modules that compose ELM itself. FATES, the atmosphere/ocean components, CIME, and the E3SM driver are **out of scope** and live in other wikis.
 
-| Section | Description |
-|---------|-------------|
-| [E3SM Overview](1__E3SM_Overview.md) | Introduction to E3SM |
-| [Repository Structure](1.1__Repository_Structure.md) | Source code organization |
-| [Key Concepts and Terminology](1.2__Key_Concepts_and_Terminology.md) | Essential definitions |
+Every file reference in this wiki is anchored by path and line number against the pinned source tree.
 
-### Configuration System
+## How to use this wiki
 
-| Section | Description |
-|---------|-------------|
-| [Configuration System](2__Configuration_System.md) | Configuration overview |
-| [Machine Configuration](2.1__Machine_Configuration.md) | HPC machine setup |
-| [Grid and Resolution Configuration](2.2__Grid_and_Resolution_Configuration.md) | Grid definitions |
-| [Component Sets and PE Layouts](2.3__Component_Sets_and_PE_Layouts.md) | COMPSET configuration |
-| [Build System](2.4__Build_System.md) | Compilation and build |
-| [Namelist System](2.5__Namelist_System.md) | Runtime configuration |
+- **Read the overview first** (`overview/index.md`) — it sets out what ELM is, the seven source subsystems, and the subgrid hierarchy (gridcell → topounit → landunit → column → patch).
+- **Use the directory map** (`overview/source_tree.md`) to locate files by subsystem and understand how the 239 `.F90` files partition across `biogeochem/`, `biogeophys/`, `main/`, `data_types/`, `dyn_subgrid/`, `utils/`, and `cpl/`.
+- **Consult the module inventory** (`reference/module_inventory.md`) for a one-line description of every module (used as a fast lookup when you just need to know what a file is for).
+- **Drill into a subsystem** via the subsystem indexes linked below once those pages exist. Subsystem pages give calling sequences, key types, and parameter lists.
 
----
+## Navigation
 
-## Model Components
+### Top-level sections
 
-### Component Overview
+| Section | Path | Purpose |
+|---|---|---|
+| Overview | [`overview/index.md`](overview/index.md) | What ELM is, its 7 subsystems, subgrid hierarchy, optional engines (FATES, PFLOTRAN, BeTR, FAN) |
+| Source tree | [`overview/source_tree.md`](overview/source_tree.md) | Directory layout of `components/elm/src/` with file counts and subsystem descriptions |
+| Module inventory | [`reference/module_inventory.md`](reference/module_inventory.md) | Full table of all 239 `.F90` modules with one-line descriptions |
 
-| Section | Description |
-|---------|-------------|
-| [Model Components](3__Model_Components.md) | All components overview |
-| [Other Components](3.5__Other_Components.md) | River, wave, glacier |
+### Subsystem indexes
 
-### Atmosphere Model (EAM)
+| Subsystem | Path | F90 files | Subject area |
+|---|---|---|---|
+| Core / main | [`core/index.md`](core/index.md) | 63 | Driver (`elm_drv`), initialization/finalization, control flags, subgrid accessors, history/restart I/O, coupling glue |
+| Biogeophysics | [`biogeophys/index.md`](biogeophys/index.md) | 54 | Energy balance, radiation, canopy/soil/snow/lake temperature and hydrology, aerosols |
+| Biogeochemistry | [`biogeochem/index.md`](biogeochem/index.md) | 74 | C/N/P cycles, allocation, phenology, decomposition, fire, crop, CH4, VOC, dust |
+| Dynamic subgrid | [`dyn_subgrid/index.md`](dyn_subgrid/index.md) | 17 | Transient land cover (pftdyn, harvest, crop), state conservation across weight changes |
+| Data types | `data_types/` | 12 | Gridcell/topounit/landunit/column/vegetation derived types (structure + instance containers) |
+| Utilities | `utils/` | 13 | Time manager, SPMD, domain, orbital, namelist helpers |
+| Coupler interface | `cpl/` | 6 | MCT and ESMF driver entry points, import/export of coupler fields |
 
-| Section | Description |
-|---------|-------------|
-| [Atmosphere Model (EAM)](3.1__Atmosphere_Model_(EAM).md) | EAM overview |
-| [Dynamics Cores](3.1.1__Dynamics_Cores.md) | SE and HOMME dynamical cores |
-| [Physics Parameterizations](3.1.2__Physics_Parameterizations.md) | Physical processes |
-| [Chemistry and Aerosols](3.1.3__Chemistry_and_Aerosols.md) | MAM aerosol model |
+## Entry points at a glance
 
-### Ocean Model (MPAS-Ocean)
+A short cheat sheet of the most useful file locations to bookmark when reading the source:
 
-| Section | Description |
-|---------|-------------|
-| [Ocean Model (MPAS-Ocean)](3.2__Ocean_Model_(MPAS-Ocean).md) | MPAS-Ocean overview |
-| [Time Integration Schemes](3.2.1__Time_Integration_Schemes.md) | Ocean time stepping |
-| [Ocean Physics](3.2.2__Ocean_Physics.md) | Ocean physical processes |
+| What | File | Key symbol / line |
+|---|---|---|
+| Coupler-facing init (MCT) | `cpl/lnd_comp_mct.F90` | `subroutine lnd_init_mct` (`cpl/lnd_comp_mct.F90:63`) |
+| Coupler-facing run (MCT) | `cpl/lnd_comp_mct.F90` | `subroutine lnd_run_mct` (`cpl/lnd_comp_mct.F90:415`) |
+| Phase-one init | `main/elm_initializeMod.F90` | `subroutine initialize1` (`main/elm_initializeMod.F90:54`) |
+| Phase-two init | `main/elm_initializeMod.F90` | `subroutine initialize2` (`main/elm_initializeMod.F90:452`) |
+| Per-timestep driver | `main/elm_driver.F90` | `subroutine elm_drv` (`main/elm_driver.F90:197`) |
+| Run-control flags | `main/elm_varctl.F90` | e.g. `use_fates` (`main/elm_varctl.F90:222`), `use_cn` (`:354`), `use_pflotran` (`:454`) |
+| Physical constants | `main/elm_varcon.F90` | `subroutine elm_varcon_init` |
+| Namelist reader | `main/controlMod.F90` | `subroutine control_init` |
+| Subgrid instantiation | `main/elm_initializeMod.F90:342-362` | `grc_pp%Init`, `top_pp%Init`, `lun_pp%Init`, `col_pp%Init`, `veg_pp%Init` |
+| FATES interface | `main/elmfates_interfaceMod.F90` | `ELMFatesGlobals1`, `ELMFatesGlobals2` |
+| PFLOTRAN interface | `main/elm_interface_pflotranMod.F90` | (state exchange glue) |
 
-### Sea Ice Model
+## Scope and conventions
 
-| Section | Description |
-|---------|-------------|
-| [Sea Ice Model (MPAS-Seaice)](3.3__Sea_Ice_Model_(MPAS-Seaice).md) | Sea ice component |
+- **Source pin.** All citations use paths relative to `components/elm/src/`, e.g. `(main/elm_driver.F90:197)` refers to the `subroutine elm_drv` declaration. If a line number is given, it is verified against commit `60d9aad`.
+- **No cross-component content.** If you are looking for the atmosphere model, the coupler/driver internals, CIME case machinery, MPAS, or FATES internals, this is the wrong wiki. ELM's interface *to* FATES is documented here (`main/elmfates_interfaceMod.F90`); FATES internals are not.
+- **Optional engines.** ELM supports several compile/run-time alternative engines whose glue code lives in this tree:
+  - **FATES** vegetation demography — enabled via `use_fates` (`main/elm_varctl.F90:222`); interface in `main/elmfates_interfaceMod.F90`.
+  - **PFLOTRAN** reactive transport — enabled via `use_pflotran` (`main/elm_varctl.F90:454`); glue in `main/elm_interface_pflotranMod.F90`.
+  - **BeTR** generic tracer transport — enabled via `use_betr` (`main/elm_varctl.F90:245`); BeTR-aware BGC variants live in `biogeochem/` with `BeTR` in the filename.
+  - **FAN** (Flow of Agricultural Nitrogen) — enabled via `use_fan` (`main/elm_varctl.F90:372`); modules in `biogeochem/FanMod.F90` and `biogeochem/FanUpdateMod.F90`.
+- **Subgrid hierarchy.** ELM adds a **topounit** level between gridcell and landunit that is not present in CLM5 (`data_types/TopounitType.F90:1`, initialized in `main/elm_initializeMod.F90:350`). The full hierarchy is: `gridcell → topounit → landunit → column → patch`.
 
-### Land Model (ELM)
+## File counts
 
-| Section | Description |
-|---------|-------------|
-| [Land Model (ELM)](3.4__Land_Model_(ELM).md) | **ELM component** - subgrid hierarchy, BGC modes, FATES coupling |
+| Subdirectory | `.F90` files |
+|---|---:|
+| `biogeochem/` | 74 |
+| `biogeophys/` | 54 |
+| `main/` | 63 |
+| `data_types/` | 12 |
+| `dyn_subgrid/` | 17 |
+| `utils/` | 13 |
+| `cpl/` | 6 |
+| **Total** | **239** |
 
----
+(See [`reference/module_inventory.md`](reference/module_inventory.md) for the full listing.)
 
-## Coupling Infrastructure
+## What this wiki is not
 
-| Section | Description |
-|---------|-------------|
-| [Coupling Infrastructure](4__Coupling_Infrastructure.md) | Component coupling overview |
-| [CIME Driver and MCT](4.1__CIME_Driver_and_MCT.md) | Driver and coupler |
-| [MOAB Integration](4.2__MOAB_Integration.md) | MOAB mesh framework |
-| [Mapping and Regridding](4.3__Mapping_and_Regridding.md) | Grid interpolation |
-| [Flux Calculations and Fractional Coverage](4.4__Flux_Calculations_and_Fractional_Coverage.md) | Surface fluxes |
+- **Not an E3SM wiki.** See the user's separate E3SM wiki for the full coupled system.
+- **Not a FATES wiki.** FATES has its own source tree under `external_models/` and its own wiki.
+- **Not a user manual.** Namelist variable descriptions, build instructions, and case configuration are documented in E3SM's `bld/namelist_files/` and CIME, not here.
+- **Not a research paper.** Citations are to code locations, not to the scientific literature.
 
----
+## Source of truth
 
-## Testing and Validation
-
-| Section | Description |
-|---------|-------------|
-| [Testing and Validation](5__Testing_and_Validation.md) | Testing overview |
-| [Test Infrastructure](5.1__Test_Infrastructure.md) | CIME test system |
-| [Test Types and Use Cases](5.2__Test_Types_and_Use_Cases.md) | Test categories |
-
----
-
-## HPC Execution and Performance
-
-| Section | Description |
-|---------|-------------|
-| [HPC Execution and Performance](6__HPC_Execution_and_Performance.md) | HPC overview |
-| [Supported Machines](6.1__Supported_Machines.md) | NERSC, OLCF, ALCF, etc. |
-| [Parallel Execution Model](6.2__Parallel_Execution_Model.md) | MPI, OpenMP parallelism |
-| [I/O System and PIO](6.3__I/O_System_and_PIO.md) | Parallel I/O |
-
----
-
-## MPAS Framework Deep Dive
-
-| Section | Description |
-|---------|-------------|
-| [MPAS Framework Deep Dive](7__MPAS_Framework_Deep_Dive.md) | MPAS overview |
-| [Unstructured Meshes](7.1__Unstructured_Meshes.md) | Voronoi mesh structure |
-| [Registry and Streams](7.2__Registry_and_Streams.md) | Variable management |
-| [Domain Decomposition](7.3__Domain_Decomposition.md) | Parallel partitioning |
-
----
-
-## Advanced Topics
-
-| Section | Description |
-|---------|-------------|
-| [Advanced Topics](8__Advanced_Topics.md) | Advanced usage overview |
-| [GPU Support and Performance Portability](8.1__GPU_Support_and_Performance_Portability.md) | GPU acceleration |
-| [Energy and Water Conservation](8.2__Energy_and_Water_Conservation.md) | Conservation properties |
-| [Provenance and Reproducibility](8.3__Provenance_and_Reproducibility.md) | Reproducible simulations |
-
----
-
-## Key Topics for ELM-FATES Calibration
-
-### Land Model Configuration
-- [Land Model (ELM)](3.4__Land_Model_(ELM).md) - ELM architecture, BGC modes, FATES interface
-
-### Configuration
-- [Namelist System](2.5__Namelist_System.md) - Runtime parameter configuration
-- [Component Sets and PE Layouts](2.3__Component_Sets_and_PE_Layouts.md) - COMPSET definitions
-
-### HPC Execution
-- [Supported Machines](6.1__Supported_Machines.md) - NERSC Perlmutter, etc.
-- [Parallel Execution Model](6.2__Parallel_Execution_Model.md) - MPI/OpenMP configuration
-
-### Testing
-- [Test Infrastructure](5.1__Test_Infrastructure.md) - Running validation tests
-
----
-
-## Source Code References
-
-All documentation includes links to the E3SM source code on GitHub:
-- Repository: [E3SM on GitHub](https://github.com/E3SM-Project/E3SM)
-- Source files are referenced with specific line numbers
-
----
-
-## About This Knowledge Base
-
-This knowledge base was generated from the E3SM DeepWiki documentation and organized for:
-- **A2MC Integration**: Supports AI-assisted calibration of ELM-FATES
-- **RAG/GraphRAG**: Structured for semantic search and retrieval
-- **Community Use**: Generic documentation for E3SM applications
-
-**Note:** For detailed FATES documentation, see the [FATES Knowledge Base](../../fates-knowledge-base/fates-codebase-wiki/index.md).
-
-**Last Updated:** January 2026
+When the wiki and the source disagree, **the source wins**. The source pin is the commit hash given in every document's front matter. If you update the wiki, update the source pin and re-verify the citations.

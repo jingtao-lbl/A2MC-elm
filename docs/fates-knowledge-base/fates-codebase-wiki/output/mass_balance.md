@@ -1,221 +1,150 @@
 # Mass Balance Checking
 
-<details>
-<summary>Relevant source files</summary>
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-
-- [biogeochem/EDLoggingMortalityMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90)
-- [biogeochem/EDMortalityFunctionsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMortalityFunctionsMod.F90)
-- [biogeochem/EDPatchDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90)
-- [main/EDMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90)
-- [main/EDTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90)
-
-
-</details>
+**Relevant source files:**
+- `main/EDMainMod.F90` (`TotalBalanceCheck`)
+- `main/ChecksBalancesMod.F90` (`SiteMassStock`, `PatchMassStock`)
+- `main/EDTypesMod.F90` (`site_massbal_type`)
+- `biogeochem/EDPatchDynamicsMod.F90`
+- `biogeochem/EDLoggingMortalityMod.F90`
 
 ## Purpose and Scope
 
-The mass balance checking system in FATES verifies conservation of mass for all simulated elements (carbon, nitrogen, phosphorus) at the site level. This system tracks all mass fluxes entering and leaving the FATES control volume, compares them against changes in total biomass and litter stocks, and reports any discrepancies that exceed acceptable numerical precision thresholds.
+FATES includes a runtime conservation-checking system that verifies mass closure for each active element (C, N, P) at every site. The check sums stocks (biomass + litter + seeds), compares the change since the previous check against the sum of all fluxes accumulated over the same interval, and aborts the run if the fractional error exceeds `10e-6`. The check runs at multiple points throughout `ed_ecosystem_dynamics` so that imbalances can be localized to a specific phase (recruitment, growth, patch spawning, fusion, termination, canopy structure).
 
-This page documents the mass balance verification framework. For information about the history output system that records these diagnostics, see [History Output System](output/history/index.md) . For restart file handling which persists mass balance state, see [Restart System](output/restart.md) .
+For context on where these fluxes are populated, see [History Update Pipeline](history/pipeline.md) and the logging/fire topics. For details on how stocks are saved across restarts, see [Restart System](restart.md).
 
-## Overview
+## Conservation Principle
 
-Mass balance checking operates on the fundamental principle:
+For each element the routine enforces:
 
-If this equation is not satisfied within numerical precision tolerances, FATES detects a conservation error and reports detailed diagnostics. The system performs checks at multiple points during each daily timestep to isolate the source of any imbalances.
+```
+(sum of stocks now)  -  (sum of stocks at previous check)
+   ==  (flux_in)  -  (flux_out)     (within 10e-6 fractional tolerance)
+```
 
-Sources:  [main/EDMainMod.F90 847-1092](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L847-L1092)
+If this does not hold, `TotalBalanceCheck` writes a detailed diagnostic block to `fates_log` and calls `endrun`. The check is skipped entirely in satellite-phenology mode (`hlm_use_sp .eq. itrue`), because SP mode prescribes vegetation state rather than simulating it prognostically.
 
-## Site Mass Balance Type Structure
+Sources: `(main/EDMainMod.F90:847-1024)`
 
-The mass balance accounting system is organized around the `site_massbal_type` data structure, which is allocated for each element type (C, N, P) at each site.
+## TotalBalanceCheck: Location and Invocation
 
-### Data Structure Definition
+**The routine is defined in `main/EDMainMod.F90`, lines 847–1024**, as `subroutine TotalBalanceCheck(currentSite, call_index)`. It is declared `private` to `EDMainMod` (line 124) and is not in `ChecksBalancesMod`. `ChecksBalancesMod.F90` contains only two public routines, `SiteMassStock` and `PatchMassStock`, which `TotalBalanceCheck` calls internally via `SiteMassStock` on line 905 to compute the current site-level total.
 
-![SVG image](../assets/images/9.3__Mass_Balance_Checking__img-01.svg)
+```fortran
+  subroutine TotalBalanceCheck (currentSite, call_index)
+     ...
+     call SiteMassStock(currentSite, el, total_stock, &
+                        biomass_stock, litter_stock, seed_stock)
+     ...
+  end subroutine TotalBalanceCheck
+```
 
-### Key Fields
+Sources: `(main/EDMainMod.F90:93, 124, 847-1024)`, `(main/ChecksBalancesMod.F90:32-125)`
 
-| Field | Description | Units | 
-| --- | --- | --- |
-| old_stock | Total mass at start of check interval | kg/site | 
-| err_fates | Accumulated mass balance error | kg/site | 
-| gpp_acc | Accumulated gross primary production | kg/site/day | 
-| aresp_acc | Accumulated autotrophic respiration | kg/site/day | 
-| net_root_uptake | Net nutrient uptake through roots (includes fixation and exudation) | kg/site/day | 
-| seed_in | Mass from external seed dispersal | kg/site/day | 
-| seed_out | Mass exported via seeds (placeholder) | kg/site/day | 
-| frag_out | Litter/CWD fragmentation to SOM | kg/site/day | 
-| wood_product | Mass exported as wood products (logging) | kg/site/day | 
-| burn_flux_to_atm | Mass lost to atmosphere via fire | kg/site/day | 
-| flux_generic_in | Generic input flux (initialization, prescribed) | kg/site/day | 
-| flux_generic_out | Generic output flux (prescribed physiology mode) | kg/site/day | 
-| patch_resize_err | Error from patch area precision loss | kg/site/day | 
+## Call Points in the Daily Dynamics Loop
 
+`TotalBalanceCheck` is called with a `call_index` that identifies the phase at which the check is being performed. `final_check_id = -1` is declared at `EDMainMod.F90:129` as a module-level parameter.
 
-Sources:  [main/EDTypesMod.F90 174-224](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90#L174-L224)  [main/EDTypesMod.F90 458-485](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90#L458-L485)
+| `call_index` | Location in `ed_ecosystem_dynamics` | Purpose |
+|---|---|---|
+| `0` | Start of `ed_ecosystem_dynamics`, line 196 | Zero accumulators; set baseline `old_stock = 0` |
+| `1` | After first cohort termination pass, line 255 | Verify cohort creation and mortality bookkeeping |
+| `2` | After second cohort termination pass, line 277 | Verify additional cohort cleanup |
+| `3` | After `spawn_patches`, line 294 | Verify mass transfer during disturbance-induced patch spawning |
+| `4` | After `fuse_patches`, line 309 | Verify area-weighted patch fusion conservation |
+| `5` | After `terminate_patches`, line 315 | Verify patch termination conservation |
+| `6` | After `canopy_spread` in `ed_update_site`, line 794 | Verify canopy structure adjustments |
+| `-1` | Final check, line 800 (`final_check_id`) | Final verification before timestep completion; updates `old_stock` for next day |
 
-## The TotalBalanceCheck Routine
+The `final_check_id = -1` call path is special: at this index the routine records `site_mass%old_stock = total_stock` and `site_mass%err_fates = net_flux - change_in_stock` so that the following day's baseline is the closing stock of today.
 
-The `TotalBalanceCheck` subroutine is the core verification routine called at strategic points during the daily dynamics loop. It calculates current stocks, compares against previous stocks plus net fluxes, and reports errors exceeding tolerance.
+Sources: `(main/EDMainMod.F90:129, 196-315, 794-800, 1015-1020)`
 
-### Routine Signature
+## site_massbal_type Data Structure
 
-### Mass Balance Calculation Flow
+Each site holds one `site_massbal_type` per active element (typically C, N, P). These are populated by the accumulator code throughout `ed_ecosystem_dynamics` and read by `TotalBalanceCheck`. Key fields (from `main/EDTypesMod.F90`):
 
-![SVG image](../assets/images/9.3__Mass_Balance_Checking__img-02.svg)
+| Field | Meaning | Units |
+|---|---|---|
+| `old_stock` | Total stock at the previous final check | `kg / site` |
+| `err_fates` | Accumulated error carried forward | `kg / site` |
+| `gpp_acc` | Accumulated GPP flux in | `kg / site / day` |
+| `aresp_acc` | Accumulated autotrophic respiration out | `kg / site / day` |
+| `net_root_uptake` | Net nutrient uptake (includes fixation; negative for efflux) | `kg / site / day` |
+| `seed_in` | Mass added via external seed dispersal | `kg / site / day` |
+| `seed_out` | Mass exported via seed rain (placeholder) | `kg / site / day` |
+| `frag_out` | Litter/CWD fragmentation handed to the host soil BGC | `kg / site / day` |
+| `wood_product` | Mass exported as wood products (logging) | `kg / site / day` |
+| `burn_flux_to_atm` | Mass lost to atmosphere via fire | `kg / site / day` |
+| `flux_generic_in` | Generic input flux (e.g., prescribed initialization) | `kg / site / day` |
+| `flux_generic_out` | Generic output flux (e.g., prescribed physiology mode) | `kg / site / day` |
+| `patch_resize_err` | Residual from patch area precision loss | `kg / site / day` |
 
-### Error Reporting
+`TotalBalanceCheck` forms `flux_in` and `flux_out` directly from these fields (lines 909–920):
 
-When an imbalance is detected, the routine reports:
+```fortran
+flux_in  = seed_in + net_root_uptake + gpp_acc + flux_generic_in + patch_resize_err
+flux_out = wood_product + burn_flux_to_atm + seed_out + flux_generic_out + frag_out + aresp_acc
+```
 
-Sources:  [main/EDMainMod.F90 847-1092](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L847-L1092)
+Note that `patch_resize_err` is treated as an input: numerical slop from patch resizing is absorbed into `flux_in` so that the check does not fail on expected floating-point residuals from very small patches.
 
-## Check Points in the Daily Dynamics Loop
+Sources: `(main/EDMainMod.F90:901-922)`, `(main/EDTypesMod.F90:174-224)`
 
-Mass balance checks are strategically placed throughout the daily ecosystem dynamics sequence to isolate where imbalances occur. Each check point is identified by a `call_index` .
+## Stock Calculation
 
-### Check Point Sequence
+Stocks at a given `call_index` are computed by `SiteMassStock` in `main/ChecksBalancesMod.F90:42-75`, which loops over every patch, calls `PatchMassStock(currentPatch, el, patch_biomass, patch_seed, patch_litter)`, and aggregates. `PatchMassStock` (lines 79–125) sums cohort biomass weighted by per-plant number density and patch area, plus per-patch litter and seed pools.
 
-![SVG image](../assets/images/9.3__Mass_Balance_Checking__img-03.svg)
+| Stock component | Calculation | Units |
+|---|---|---|
+| `biomass_stock` | Σ over cohorts: `organ_mass × n × patch_area / AREA`, for leaf/fnrt/sapw/struct/store/repro | `kg / site` |
+| `litter_stock` | Σ over patches: `(AG_CWD + BG_CWD + leaf_fines + root_fines) × patch_area / AREA` | `kg / site` |
+| `seed_stock` | Σ over patches and PFTs: `(seed_bank + germinated_seed) × patch_area / AREA` | `kg / site` |
+| `total_stock` | `biomass_stock + litter_stock + seed_stock` | `kg / site` |
 
-| Call Index | Location | Purpose | 
-| --- | --- | --- |
-| 0 | Start of ed_ecosystem_dynamics | Zero accumulators, set baseline old_stock = 0 | 
-| 1 | After recruitment and first cohort dynamics | Verify cohort creation and mortality | 
-| 2 | After second cohort termination pass | Verify additional cohort cleanup | 
-| 3 | After spawn_patches | Verify disturbance-induced patch creation | 
-| 4 | After fuse_patches | Verify patch fusion mass conservation | 
-| 5 | After terminate_patches | Verify patch termination mass conservation | 
-| 6 | After canopy_spread in ed_update_site | Verify canopy structure adjustments | 
-| -1 | After canopy_structure (final) | Final verification before timestep completion | 
+The `/ AREA` normalization expresses stocks per site of notional area `AREA = 10000 m²`.
 
+Sources: `(main/ChecksBalancesMod.F90:42-125)`
 
-Sources:  [main/EDMainMod.F90 141-317](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L141-L317)  [main/EDMainMod.F90 768-843](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L768-L843)
+## Error Tolerance and Reporting
 
-## Flux Components
+At each call index, after summing flux_in, flux_out, and change_in_stock, the routine computes:
 
-The mass balance system tracks all pathways for mass entering and leaving the FATES control volume.
+```fortran
+error      = abs(net_flux - change_in_stock)
+error_frac = error / abs(total_stock)   ! when change_in_stock > 0
+```
 
-### Input Fluxes
+If `error_frac > 10e-6` (or `error` is NaN), the routine dumps: element type, error fraction, absolute error, call index, all `flux_in`/`flux_out` components, biomass/litter/seed subtotals, previous `old_stock`, and site lat/lon. If `print_cohorts = .true.` (a module-private logical), it additionally walks every patch and cohort and prints per-organ biomass plus element-specific per-cohort fluxes (NH4/NO3/N efflux/N fixation for nitrogen, P gain/efflux for phosphorus, C efflux for carbon). It then calls `endrun`.
 
-![SVG image](../assets/images/9.3__Mass_Balance_Checking__img-04.svg)
+Sources: `(main/EDMainMod.F90:922-1010)`
 
-### Output Fluxes
+## Common Causes of Imbalances
 
-![SVG image](../assets/images/9.3__Mass_Balance_Checking__img-05.svg)
+When a mass-balance error surfaces, the `call_index` in the error block narrows the window:
 
-### Flux Accumulation Points
+| Failing `call_index` | Likely cause |
+|---|---|
+| Between 0 and 1 | Recruitment stoichiometry mismatch, or a PARTEH allocation step is not conserving mass |
+| 1 or 2 | Cohort termination fluxes not accounted for |
+| 3 | Patch spawning: biomass transfer into the new patch during `logging_litter_fluxes`, fire `fire_litter_fluxes`, or treefall does not match what left the donor |
+| 4 | Area-weighted averaging during `fuse_patches` introduces precision error beyond `patch_resize_err` |
+| 5 | `terminate_patches` didn't transfer all litter/CWD out of the dying patch |
+| 6 | `canopy_spread` or `ed_update_site` touched stocks outside the accumulator path |
 
-| Flux | Accumulation Location | Code Reference | 
-| --- | --- | --- |
-| gpp_acc | During photosynthesis timestep, summed in ed_integrate_state_variables | main/EDMainMod.F90629-630 | 
-| aresp_acc | During photosynthesis timestep, summed in ed_integrate_state_variables | main/EDMainMod.F90632-633 | 
-| net_root_uptake | After PARTEH allocation (C efflux, N/P uptake) | main/EDMainMod.F90610-626 | 
-| wood_product | During logging disturbance in logging_litter_fluxes | biogeochem/EDLoggingMortalityMod.F90684-1094 | 
-| burn_flux_to_atm | During fire in fire_litter_fluxes | biogeochem/EDPatchDynamicsMod.F901697-1990 | 
-| frag_out | During litter turnover (passed to HLM) | Various litter routines | 
-| seed_in | During SeedUpdate from external dispersal | biogeochem/EDPhysiologyMod.F90 | 
+Sources: `(main/EDMainMod.F90:196-800)`
 
+## Interaction with PARTEH
 
-Sources:  [main/EDMainMod.F90 847-1092](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L847-L1092)  [main/EDMainMod.F90 320-765](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L320-L765)
+PARTEH (Plant Allocation and Reactive Transport Extensible Hypotheses) has its own internal conservation checks via `CheckMassConservation`, called during daily allocation. Those checks are independent of `TotalBalanceCheck` — they verify within-plant conservation, while `TotalBalanceCheck` verifies site-scale conservation across all plants, litter, and seeds. A failure inside PARTEH typically produces its own error message before the next `TotalBalanceCheck` call index is reached.
 
-## Stock Calculations
+## Bypass Conditions
 
-The `SiteMassStock` routine calculates total mass across all pools at a site, broken down into biomass, litter, and seeds.
+`TotalBalanceCheck` skips the whole body when `hlm_use_sp .eq. itrue` (satellite phenology mode), since prescribed vegetation state does not track carbon prognostically. This is the only bypass — all other running modes (ED, with or without CNP, with or without hydraulics, with or without fire, with or without logging) run the check at every call index.
 
-### Stock Calculation Flow
-
-![SVG image](../assets/images/9.3__Mass_Balance_Checking__img-06.svg)
-
-### Stock Components
-
-| Component | Calculation | Code Location | 
-| --- | --- | --- |
-| Biomass Stock | Sum over all cohorts and patches: Σ(organ_mass × n × patch_area/AREA) for all organs | Called via SiteMassStock | 
-| Litter Stock | Sum over all patches: (AG_CWD + BG_CWD + leaf_litter + root_litter) × patch_area/AREA | Called via SiteMassStock | 
-| Seed Stock | Sum over all patches and PFTs: (seed + seed_germinated) × patch_area/AREA | Called via SiteMassStock | 
-| Total Stock | biomass_stock + litter_stock + seed_stock | main/EDMainMod.F90905 | 
-
-
-The stocks are calculated in units of kg/site, where "site" refers to the notional 1 hectare (10,000 m²) unit used in FATES.
-
-Sources: Reference to `ChecksBalancesMod::SiteMassStock` in [main/EDMainMod.F90 905](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L905-L905)
-
-## Mass Balance in Special Cases
-
-### Patch Dynamics Operations
-
-Patch creation, fusion, and termination involve complex area and mass transfers that must conserve mass precisely:
-
-![SVG image](../assets/images/9.3__Mass_Balance_Checking__img-07.svg)
-
-When patch areas are very small, floating-point precision limits can cause small mass gains or losses. The `patch_resize_err` field tracks these numerical artifacts.
-
-Sources:  [biogeochem/EDPatchDynamicsMod.F90 398-1156](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L398-L1156)
-
-### Logging and Disturbance
-
-Logging events involve multiple mass pathways requiring careful accounting:
-
-The `logging_litter_fluxes` routine tracks:
-
-- `trunk_product_site`: Mass exported as wood products
-- `delta_litter_stock`: Mass transferred to litter
-- `delta_biomass_stock`: Total mass leaving live pool
-- `delta_individual`: Change in plant numbers
-
-
-Sources:  [biogeochem/EDLoggingMortalityMod.F90 684-1094](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L684-L1094)
-
-## Debugging Mass Balance Errors
-
-### Error Tolerance
-
-The mass balance check uses a fractional error tolerance:
-
-Where `error_frac = error / abs(total_stock)` if `total_stock > 0` .
-
-### Diagnostic Output Structure
-
-When an error is detected, the output follows this structure:
-
-### Common Causes of Imbalances
-
-| Issue | Typical Call Index | Likely Cause | 
-| --- | --- | --- |
-| Recruitment imbalance | 1 | New cohort initialization not matching stoichiometry | 
-| Patch spawning imbalance | 3 | Litter transfer calculation error during disturbance | 
-| Patch fusion imbalance | 4 | Area-weighted averaging introduces precision error | 
-| Growth imbalance | Between 0 and 1 | PARTEH allocation not conserving mass | 
-| Logging imbalance | 3 | Wood product calculation inconsistent with litter | 
-
-
-Sources:  [main/EDMainMod.F90 932-1092](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L932-L1092)
-
-## Integration with Other Systems
-
-### Relationship to History Output
-
-The mass balance accumulators ( `gpp_acc` , `aresp_acc` , etc.) are also used to populate history output variables. The history system reads these accumulated values and outputs them to diagnostic files.
-
-See:  [History Output System](output/history/index.md) for details on how mass balance fluxes are reported.
-
-### Relationship to PARTEH
-
-The PARTEH (Plant Allocation and Reactive Transport Extensible Hypotheses) system is responsible for allocating carbon and nutrients within plants. PARTEH has its own internal mass conservation checks via `CheckMassConservation` , which are called at key points during allocation.
-
-See:  [PARTEH: Plant Allocation System](plant-physiology/parteh/index.md) for details on internal PARTEH mass balance.
-
-### Bypassing Mass Balance in Special Modes
-
-In satellite phenology (SP) mode and ST3 mode, some mass balance checks are bypassed because these modes prescribe vegetation state rather than prognostically simulating it:
-
-Sources:  [main/EDMainMod.F90 894](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L894-L894)
-
-## Code Architecture Summary
-
-![SVG image](../assets/images/9.3__Mass_Balance_Checking__img-08.svg)
-
-Sources:  [main/EDMainMod.F90 1-1109](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L1-L1109)  [main/EDTypesMod.F90 174-485](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90#L174-L485)  [biogeochem/EDPatchDynamicsMod.F90 1-2891](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L1-L2891)
+Sources: `(main/EDMainMod.F90:894)`

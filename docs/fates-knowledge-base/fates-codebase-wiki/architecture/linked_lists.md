@@ -1,226 +1,220 @@
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
+
 # Linked List Data Structures
-
-<details>
-<summary>Relevant source files</summary>
-
-
-- [biogeochem/EDPatchDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90)
-- [main/EDInitMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDInitMod.F90)
-- [main/EDTypesMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90)
-- [main/FatesInventoryInitMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInventoryInitMod.F90)
-- [main/FatesRestartInterfaceMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90)
-
-
-</details>
 
 ## Purpose and Scope
 
-This page documents the linked list data structures used to organize vegetation in FATES. The model uses doubly-linked lists to maintain hierarchical collections of patches and cohorts, enabling efficient insertion, deletion, and ordered traversal operations. For information about the data types themselves and their attributes, see [Data Structures: Sites, Patches, and Cohorts](core-dynamics/data_structures.md) . For information about how these structures are manipulated during disturbance events, see [Patch Dynamics and Disturbances](core-dynamics/patch_dynamics.md) .
+This page documents the doubly-linked lists used to organize vegetation in FATES. The model uses two levels of linked lists: a per-site age-ordered list of patches, and a per-patch height-ordered list of cohorts. The lists are manipulated during disturbance, demographic turnover, and restart/inventory initialization.
+
+For the full cohort and patch field inventories, see `biogeochem/FatesCohortMod.F90` and `biogeochem/FatesPatchMod.F90`. For the higher-level role of these structures in the design, see [Code Architecture and Design Patterns](index.md).
 
 ## Hierarchical Organization
 
-FATES organizes vegetation into a three-level hierarchy where each site contains patches, and each patch contains cohorts. This structure is implemented using doubly-linked lists at both the patch and cohort levels.
+FATES organizes vegetation into a three-level hierarchy: each `ed_site_type` contains patches, and each `fates_patch_type` contains cohorts. Both levels use doubly-linked pointer lists:
 
-![SVG image](../assets/images/11.2__Linked_List_Data_Structures__img-01.svg)
+```
+ed_site_type
+   ├── oldest_patch  ---> fates_patch_type --- older/younger ---> fates_patch_type ---> ...
+   └── youngest_patch --> (list tail)
 
-Sources:  [main/EDTypesMod.F90 231-235](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90#L231-L235)  [main/FatesPatchMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesPatchMod.F90)  [main/FatesCohortMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesCohortMod.F90)
+fates_patch_type
+   ├── tallest  ---> fates_cohort_type --- taller/shorter ---> fates_cohort_type ---> ...
+   └── shortest --> (list tail)
+```
+
+Source files for the three types:
+
+- `main/EDTypesMod.F90:231-235` (`ed_site_type` with `oldest_patch` and `youngest_patch`)
+- `biogeochem/FatesPatchMod.F90:35-41` (`fates_patch_type`)
+- `biogeochem/FatesCohortMod.F90:60-64` (`fates_cohort_type`)
 
 ## Patch Linked List Structure
 
-Patches within a site are organized in a doubly-linked list ordered by patch age, from oldest to youngest. This ordering facilitates age-based operations and ensures consistent iteration order during succession modeling.
+Patches within a site are held in a doubly-linked list ordered by patch age, from oldest to youngest. Age-based ordering facilitates succession bookkeeping and ensures consistent iteration order across routines that depend on patch age history.
 
 ### Patch Type Definition
 
-The `fates_patch_type` contains pointers for list traversal:
+The `fates_patch_type` is declared at `biogeochem/FatesPatchMod.F90:35-41`, and holds four pointer fields directly relevant to list traversal:
 
-| Pointer Field | Type | Purpose | 
+| Pointer field | Type | Purpose | Source |
+| --- | --- | --- | --- |
+| `older` | `type(fates_patch_type), pointer` | Next older patch in the site list | `biogeochem/FatesPatchMod.F90:40` |
+| `younger` | `type(fates_patch_type), pointer` | Next younger patch in the site list | `biogeochem/FatesPatchMod.F90:41` |
+| `tallest` | `type(fates_cohort_type), pointer` | Head of the patch's cohort list | `biogeochem/FatesPatchMod.F90:38` |
+| `shortest` | `type(fates_cohort_type), pointer` | Tail of the patch's cohort list | `biogeochem/FatesPatchMod.F90:39` |
+
+All four fields are initialized with `=> null()` in the type declaration.
+
+Because the cohort list head and tail live on the patch, cohorts are rooted at the patch, not the site. Moving cohorts between patches therefore requires pointer updates on both the source and destination patches.
+
+The site type maintains endpoint pointers for the patch list at `main/EDTypesMod.F90:234-235`:
+
+| Site field | Type | Purpose |
 | --- | --- | --- |
-| older | fates_patch_type pointer | Points to the next older patch in the list | 
-| younger | fates_patch_type pointer | Points to the next younger patch in the list | 
-| tallest | fates_cohort_type pointer | Head of cohort list (tallest cohort) | 
-| shortest | fates_cohort_type pointer | Tail of cohort list (shortest cohort) | 
-
-
-The site type `ed_site_type` maintains pointers to the list endpoints:
-
-| Site Field | Type | Purpose | 
-| --- | --- | --- |
-| oldest_patch | fates_patch_type pointer | Points to the oldest (head) patch | 
-| youngest_patch | fates_patch_type pointer | Points to the youngest (tail) patch | 
-
-
-Sources:  [main/EDTypesMod.F90 231-235](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90#L231-L235)  [main/FatesPatchMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesPatchMod.F90)
+| `oldest_patch` | `type(fates_patch_type), pointer` | Head of the age-ordered patch list |
+| `youngest_patch` | `type(fates_patch_type), pointer` | Tail of the age-ordered patch list |
 
 ### Patch Traversal Patterns
 
-The most common traversal patterns iterate from oldest to youngest or youngest to oldest:
+The two standard patch traversals walk the list from oldest to youngest or from youngest to oldest. Both patterns use `associated()` to detect list termination.
 
-![SVG image](../assets/images/11.2__Linked_List_Data_Structures__img-02.svg)
+Forward (oldest → youngest), from `biogeochem/EDPatchDynamicsMod.F90:222-265`:
 
-Example from code:
+```fortran
+currentPatch => site_in%oldest_patch
+do while (associated(currentPatch))
+   ! ... work ...
+   currentPatch => currentPatch%younger
+end do
+```
 
-Forward traversal (oldest to youngest): [biogeochem/EDPatchDynamicsMod.F90 277-288](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L277-L288)
+Backward (youngest → oldest), exemplified at `biogeochem/EDPatchDynamicsMod.F90:483` and `:537`:
 
-Backward traversal (youngest to oldest): [biogeochem/EDPatchDynamicsMod.F90 483-538](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L483-L538)
+```fortran
+currentPatch => currentSite%youngest_patch
+do while (associated(currentPatch))
+   ! ... work ...
+   currentPatch => currentPatch%older
+end do
+```
 
-Sources:  [biogeochem/EDPatchDynamicsMod.F90 222-265](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L222-L265)  [biogeochem/EDPatchDynamicsMod.F90 277-288](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L277-L288)
+Additional forward-traversal sites in `EDPatchDynamicsMod.F90` include lines 264, 287, 390, 1174, 1264, 1307, 1364, 1379, 2803, and 2890 (partial list; use `grep "currentPatch%younger\|currentPatch%older"` for a complete inventory).
 
-### Patch Insertion Logic
+### Patch Insertion
 
-When a new patch is created (e.g., from disturbance), it must be inserted into the age-ordered list. The insertion logic handles three cases:
-
-![SVG image](../assets/images/11.2__Linked_List_Data_Structures__img-03.svg)
-
-The insertion algorithm for middle positions requires finding the correct position by traversing the list and comparing ages.
-
-Sources:  [main/FatesInventoryInitMod.F90 302-346](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInventoryInitMod.F90#L302-L346)  [main/EDInitMod.F90 658-678](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDInitMod.F90#L658-L678)
+When a disturbance event creates a new patch (for example in `spawn_patches` at `biogeochem/EDPatchDynamicsMod.F90:398`), the new patch must be inserted into the age-ordered list. Near-bare-ground initialization also builds the list from scratch in `init_patches` at `main/EDInitMod.F90:534`. Insertion handles three cases — insertion at the head (new youngest), insertion at the tail (new oldest), and middle insertion found by traversing the list until the correct age slot is located.
 
 ## Cohort Linked List Structure
 
-Cohorts within a patch are organized in a doubly-linked list ordered by height, from tallest to shortest. This ordering enables efficient light competition calculations and canopy structure operations.
+Cohorts within a patch are held in a doubly-linked list ordered by height, from tallest to shortest. Height ordering lets the light-interception calculation proceed naturally top-down, and makes height-dependent operations such as crown damage and fire scorch trivial to walk.
 
 ### Cohort Type Definition
 
-The `fates_cohort_type` contains pointers for list traversal:
+The `fates_cohort_type` is declared at `biogeochem/FatesCohortMod.F90:60-64`, and holds two linked-list pointer fields:
 
-| Pointer Field | Type | Purpose | 
-| --- | --- | --- |
-| taller | fates_cohort_type pointer | Points to the next taller cohort | 
-| shorter | fates_cohort_type pointer | Points to the next shorter cohort | 
+| Pointer field | Type | Purpose | Source |
+| --- | --- | --- | --- |
+| `taller` | `type(fates_cohort_type), pointer` | Next taller cohort | `biogeochem/FatesCohortMod.F90:63` |
+| `shorter` | `type(fates_cohort_type), pointer` | Next shorter cohort | `biogeochem/FatesCohortMod.F90:64` |
 
+Both are initialized with `=> null()`.
 
-Sources:  [main/FatesCohortMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesCohortMod.F90)
+Note that unlike patches, which carry both endpoints of the cohort list, cohorts do not themselves know which patch they belong to through a back-pointer field on `fates_cohort_type`; routines that need patch context pass it explicitly as an argument (for example `patchptr` in `create_cohort` at `biogeochem/EDCohortDynamicsMod.F90:160`).
 
 ### Cohort Traversal Patterns
 
-Cohorts are typically traversed from tallest to shortest (for light interception) or shortest to tallest (for demographic operations):
+Tallest → shortest walk (used for disturbance and mortality processing), from `biogeochem/EDPatchDynamicsMod.F90:225-262`:
 
-![SVG image](../assets/images/11.2__Linked_List_Data_Structures__img-04.svg)
+```fortran
+currentCohort => currentPatch%shortest
+do while (associated(currentCohort))
+   ! ... work ...
+   currentCohort => currentCohort%taller
+end do
+```
 
-Example from code:
+Note that the example above iterates from `%shortest` upward through `%taller`, demonstrating that the two patterns (head/tail, taller/shorter) can be combined in either direction depending on the algorithm. For light-interception work that really needs to go top-down, the equivalent starts at `currentPatch%tallest` and follows `currentCohort%shorter`.
 
-Tallest to shortest traversal: [biogeochem/EDPatchDynamicsMod.F90 225-262](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L225-L262)
+## Nested Site–Patch–Cohort Iteration
 
-Shortest to tallest traversal: [biogeochem/EDPatchDynamicsMod.F90 299-330](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L299-L330)
+The most common loop structure in FATES is a nested three-level walk:
 
-Sources:  [biogeochem/EDPatchDynamicsMod.F90 225-262](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L225-L262)  [biogeochem/EDPatchDynamicsMod.F90 299-330](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L299-L330)
+```fortran
+currentPatch => site_in%oldest_patch
+do while (associated(currentPatch))
+   currentCohort => currentPatch%shortest
+   do while (associated(currentCohort))
+      ! ... per-cohort work ...
+      currentCohort => currentCohort%taller
+   end do
+   currentPatch => currentPatch%younger
+end do
+```
 
-## Common Traversal Operations
+This pattern appears throughout the codebase; representative examples in `biogeochem/EDPatchDynamicsMod.F90` are disturbance-rate calculations at lines 222-265, and cohort mortality processing with the same loop structure across several routines (see the `currentPatch%younger` and `currentPatch%older` occurrences enumerated above).
 
-### Nested Site-Patch-Cohort Iteration
+## Safe Iteration During Modification
 
-The most common pattern in FATES is nested iteration through all three levels of the hierarchy:
+When the loop body may deallocate the current node (for example during `terminate_cohort` or `terminate_cohorts` at `biogeochem/EDCohortDynamicsMod.F90:464` and `:347`), the code must capture the next pointer before processing, to avoid dereferencing a freed pointer:
 
-![SVG image](../assets/images/11.2__Linked_List_Data_Structures__img-05.svg)
+```fortran
+currentCohort => currentPatch%shortest
+do while (associated(currentCohort))
+   nextCohort => currentCohort%taller   ! capture first
+   call terminate_cohort(...)            ! may deallocate currentCohort
+   currentCohort => nextCohort
+end do
+```
 
-This pattern appears throughout the codebase, particularly in:
-
-- [biogeochem/EDPatchDynamicsMod.F90222-265](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L222-L265)Disturbance rate calculations:
-- [biogeochem/EDPatchDynamicsMod.F90690-761](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L690-L761)Mortality processing:
-- [biogeochem/EDPatchDynamicsMod.F90597-698](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L597-L698)Cohort spawning during disturbance:
-
-
-Sources:  [biogeochem/EDPatchDynamicsMod.F90 222-265](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L222-L265)  [biogeochem/EDPatchDynamicsMod.F90 690-761](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L690-L761)
-
-### Safe Iteration During Modification
-
-When modifying the list during iteration (e.g., removing cohorts), the code must store a reference to the next element before processing:
-
-![SVG image](../assets/images/11.2__Linked_List_Data_Structures__img-06.svg)
-
-This pattern prevents dereferencing a cohort pointer after the cohort has been deallocated.
-
-Sources:  [biogeochem/EDPatchDynamicsMod.F90 690-761](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L690-L761)
+The same pattern applies to patch termination during list cleanup.
 
 ## Pointer Management in Key Operations
 
 ### Patch Creation During Disturbance
 
-When disturbances create new patches in `spawn_patches` , the following pointer operations occur:
-
-Sources:  [biogeochem/EDPatchDynamicsMod.F90 546-590](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L546-L590)
+`spawn_patches` (`biogeochem/EDPatchDynamicsMod.F90:398`) creates one or more new patches after a disturbance event. Its pointer bookkeeping allocates the new patches, initializes their internal state, splices them into the site's age-ordered list, and updates the site endpoint pointers `oldest_patch` / `youngest_patch` as needed.
 
 ### Cohort Transfer During Disturbance
 
-When cohorts are transferred from a donor patch to a newly created patch:
+When disturbance pushes part of the existing cohort population into a newly spawned patch, the cohorts in the donor patch have their density reduced and copies are inserted into the new patch. Cohort copy is performed by the type-bound procedure `cohort%Copy` (declared at `biogeochem/FatesCohortMod.F90:279`).
 
-The cohort remains in the donor patch with reduced density, while a copy is created in the new patch.
-
-Sources:  [biogeochem/EDPatchDynamicsMod.F90 690-761](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L690-L761)
+Inside the cohort-transfer loop, pointer fields on the new cohort clone are explicitly nulled before insertion so the clone joins the destination list cleanly. For example, `biogeochem/EDPatchDynamicsMod.F90:1118` sets `nc%taller => null()` and `:1126` sets `nc%shorter => null()` to prepare a fresh cohort node for insertion.
 
 ### Cohort Fusion
 
-The `fuse_cohorts` subroutine merges similar cohorts to reduce computational cost. The pointer manipulation involves:
+Cohort fusion merges similar cohorts to keep list length bounded, trading a small accuracy loss for a significant runtime gain. Fusion is a module-level public subroutine, not a type-bound procedure, and has the signature
 
-Sources:  [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90) (referenced from context)
+```fortran
+subroutine fuse_cohorts(currentSite, currentPatch, bc_in)
+```
+
+declared in `biogeochem/EDCohortDynamicsMod.F90:694`. Similar routines `insert_cohort` (`:1322`), `sort_cohorts` (`:1271`), and `count_cohorts` (`:1433`) also operate on the linked list at module scope.
 
 ## Initialization Patterns
 
 ### Near-Bare-Ground Initialization
 
-When initializing from near-bare-ground conditions in `init_patches` :
-
-![SVG image](../assets/images/11.2__Linked_List_Data_Structures__img-07.svg)
-
-Sources:  [main/EDInitMod.F90 656-706](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDInitMod.F90#L656-L706)  [main/EDInitMod.F90 807-1049](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDInitMod.F90#L807-L1049)
+When starting from near-bare-ground conditions, `init_patches` (`main/EDInitMod.F90:534`) creates the initial patches, then calls `create_cohort` (`biogeochem/EDCohortDynamicsMod.F90:160`) to seed cohorts into each patch. Both routines perform the pointer splicing needed to attach new patches to the site's linked list and to attach new cohorts to their patches' cohort lists.
 
 ### Inventory Initialization
 
-When initializing from inventory files, patches and cohorts are read from PSS/CSS files and inserted into the linked lists:
-
-Sources:  [main/FatesInventoryInitMod.F90 113-562](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesInventoryInitMod.F90#L113-L562)
+When starting from an inventory file, `initialize_sites_by_inventory` (invoked from `init_patches`, declared in `main/FatesInventoryInitMod.F90`) reads patches and cohorts from PSS/CSS files and inserts them into the linked lists, rebuilding the same hierarchy as near-bare-ground initialization but with prescribed age and structure.
 
 ## Memory Management Considerations
 
 ### Pointer Nullification
 
-After deallocating a patch or cohort, all pointers referencing it must be updated to avoid dangling references. The typical pattern:
-
-Sources: Referenced pattern from [biogeochem/EDPatchDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90)
+After deallocating a patch or cohort, any pointers that referenced it must be updated to avoid dangling references. The patterns observed in the code are: explicit `=> null()` assignment on freshly allocated clones (e.g., `biogeochem/EDPatchDynamicsMod.F90:1118,1126`), and reliance on the endpoint pointers (`oldest_patch`, `youngest_patch`, `tallest`, `shortest`) to correctly reflect the list state after removal.
 
 ### Null Pointer Checks
 
-All traversal code uses `associated()` to check pointer validity before dereferencing:
+All traversal code uses `associated()` to check pointer validity before dereferencing. Common checks:
 
-| Check | Purpose | 
+| Check | Purpose |
 | --- | --- |
-| associated(currentPatch) | Verify patch pointer is valid before access | 
-| associated(currentCohort) | Verify cohort pointer is valid before access | 
-| associated(patch%older) | Check if there is a next patch | 
-| associated(cohort%shorter) | Check if there is a next cohort | 
-
-
-Sources:  [biogeochem/EDPatchDynamicsMod.F90 222-265](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90#L222-L265)
+| `associated(currentPatch)` | Patch pointer is valid before access |
+| `associated(currentCohort)` | Cohort pointer is valid before access |
+| `associated(patch%older)` / `associated(patch%younger)` | Detect end-of-list in patch walk |
+| `associated(cohort%taller)` / `associated(cohort%shorter)` | Detect end-of-list in cohort walk |
 
 ## Restart and I/O Implications
 
-### Serialization
-
-Linked lists must be serialized to flat arrays for restart files. The restart interface performs this by:
-
-Sources:  [main/FatesRestartInterfaceMod.F90 1-100](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L1-L100)
-
-### Deserialization
-
-When reading restart files, the inverse process rebuilds linked lists:
-
-Sources:  [main/FatesRestartInterfaceMod.F90 2500-3000](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/FatesRestartInterfaceMod.F90#L2500-L3000)
+Linked lists must be serialized to flat arrays when written to restart files, and rebuilt on read. The serialization and deserialization routines live in `main/FatesRestartInterfaceMod.F90`; they walk the patch and cohort lists on write, and re-splice patches and cohorts into the correct linked-list positions on read.
 
 ## Performance Considerations
 
 ### List Ordering Benefits
 
-The age-based patch ordering and height-based cohort ordering provide several performance advantages:
-
-| Ordering | Benefit | 
+| Ordering | Benefit |
 | --- | --- |
-| Age-based patches | Enables early termination when searching for similar-age patches during fusion | 
-| Height-based cohorts | Light interception calculations proceed top-down naturally | 
-| Height-based cohorts | Crown damage and fire scorch calculations are height-dependent | 
-
+| Age-based patches | Enables early termination when searching for similar-age patches during fusion, and simplifies successional bookkeeping |
+| Height-based cohorts | Light interception proceeds top-down naturally; crown damage and fire scorch are height-dependent |
 
 ### Fusion Operations
 
-Both patch and cohort fusion reduce list length by merging similar elements, trading slight accuracy loss for significant performance gain. The linked list structure allows efficient removal of merged elements.
+Both patch and cohort fusion reduce the list length by merging sufficiently similar elements. Fusion is cheap on a doubly-linked list — the merged node's neighbours get their pointers rewired, and the merged node is freed — whereas an array-backed implementation would force a compaction pass.
 
-Sources:  [biogeochem/EDPatchDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPatchDynamicsMod.F90)  [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90) (referenced from context)
+Sources: `biogeochem/EDPatchDynamicsMod.F90` (list traversal, patch creation, and cohort transfer), `biogeochem/EDCohortDynamicsMod.F90` (cohort creation, termination, fusion, insertion, sorting, counting), `biogeochem/FatesPatchMod.F90` and `biogeochem/FatesCohortMod.F90` (type definitions), `main/EDTypesMod.F90` (site-level endpoints), `main/EDInitMod.F90` and `main/FatesInventoryInitMod.F90` (initialization), and `main/FatesRestartInterfaceMod.F90` (restart I/O).

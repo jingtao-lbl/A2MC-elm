@@ -84,7 +84,7 @@ rounds:
     ensembles: 4890
     trajectories: 30
     sampling_scheme: "morris"
-    config_file: "use_cases/Kougarok/config/kougarok_config.sh"
+    config_file: "use_cases/Kougarok/config/kougarok_config_r3.sh"
     paths:
       ensemble_name: "Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP"
       ensemble_output: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP"

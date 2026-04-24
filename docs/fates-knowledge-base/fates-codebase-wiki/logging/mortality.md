@@ -1,190 +1,125 @@
 # Logging Mortality
 
-<details>
-<summary>Relevant source files</summary>
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-
-- [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90)
-- [biogeochem/EDLoggingMortalityMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90)
-- [biogeochem/EDMortalityFunctionsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMortalityFunctionsMod.F90)
-- [biogeochem/EDPhysiologyMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90)
-- [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)
-- [main/EDMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90)
-
-
-</details>
+**Relevant source files:**
+- `biogeochem/EDLoggingMortalityMod.F90`
+- `biogeochem/EDMortalityFunctionsMod.F90`
+- `biogeochem/EDCohortDynamicsMod.F90`
+- `main/EDMainMod.F90`
+- `main/EDParamsMod.F90`
 
 ## Purpose and Scope
 
-This page documents the logging mortality system in FATES, which simulates anthropogenic tree harvest and associated mortality. Logging mortality encompasses four distinct types of mortality: direct harvest of target trees, collateral damage to surrounding vegetation, infrastructure mortality from roads and skid trails, and forest degradation effects on surviving trees. This module interfaces with both FATES-driven logging parameters and Host Land Model (HLM) harvest inputs.
+This page documents the cohort-level application of logging mortality in FATES. It describes the four logging fractions set on each cohort by `LoggingMortality_frac`, how those fractions are applied to canopy versus understory cohorts, and how logging-driven biomass is routed to litter, CWD, and wood-product pools during patch spawning.
 
-For information about harvest rate calculations and carbon debt tracking, see [Harvest Rate Calculations](logging/harvest_rates.md) . For general mortality processes including background, hydraulic, and starvation mortality, see [Mortality Processes](plant-physiology/mortality.md) .
+For the harvest-rate conversion step that precedes these fractions, see [Harvest Rate Calculations](harvest_rates.md). For the overall logging workflow, see [Logging and Land Use](index.md).
 
-## Logging Mortality Types
+## Logging Fractions
 
-FATES distinguishes four types of logging-associated mortality, each applied to different portions of the vegetation based on canopy position and size criteria:
+The subroutine `LoggingMortality_frac` is called per cohort once `logging_time` has been set to `.true.` by `IsItLoggingTime`. It sets four fields on the cohort:
 
-| Mortality Type | Variable | Applied To | Controlled By | 
-| --- | --- | --- | --- |
-| Direct Logging | lmort_direct | Canopy trees within DBH range | logging_direct_frac | 
-| Collateral Damage | lmort_collateral | Canopy trees (all sizes) | logging_collateral_frac | 
-| Infrastructure | lmort_infra | All plants below DBH threshold | logging_mechanical_frac | 
-| Degradation | l_degrad | Surviving canopy trees | Residual after other mortality | 
+| Fraction | Type | Cohorts affected | Formula |
+|---|---|---|---|
+| `lmort_direct` | Killing | Canopy-layer woody cohorts with `dbh >= logging_dbhmin` and (`logging_dbhmax` disabled or `dbh < logging_dbhmax`) and `harvest_tag == 0` | `harvest_rate * logging_direct_frac` |
+| `lmort_collateral` | Killing | Canopy-layer woody cohorts | `harvest_rate * logging_collateral_frac` |
+| `lmort_infra` | Killing | All plants with `dbh < logging_dbhmax_infra` (canopy and understory) | `harvest_rate * logging_mechanical_frac` |
+| `l_degrad` | Non-killing transfer | Canopy layer only | `harvest_rate - (lmort_direct + lmort_infra + lmort_collateral)` |
 
+Direct, collateral, and infrastructure fractions sum to the portion of the canopy-area harvest rate that actually kills trees. `l_degrad` is the residual — the fraction of disturbed area whose trees survive but are moved to a newly spawned secondary patch during `spawn_patches`. Understory cohorts have `l_degrad = 0` by construction.
 
-Direct logging mortality targets harvestable trees meeting diameter criteria ( `logging_dbhmin` ≤ DBH < `logging_dbhmax` ). These trees are killed and their merchantable bole wood is exported from the site as wood products, with a transportation loss fraction removed via `logging_export_frac` .
+Non-woody plants can only be affected through `lmort_infra`; they have `lmort_direct = lmort_collateral = 0`.
 
-Collateral mortality represents damage to adjacent canopy trees caused by the felling and extraction of target trees. This mortality applies to canopy layer trees regardless of size.
+Sources: `(biogeochem/EDLoggingMortalityMod.F90:198-346)`
 
-Infrastructure mortality accounts for vegetation killed during road construction and skid trail development. This applies to all plants below `logging_dbhmax_infra` , affecting both woody and non-woody vegetation.
+## Event Gating
 
-Degradation fraction represents the portion of canopy area disturbed but not killed, transitioning surviving trees to newly-disturbed secondary forest patches. This is calculated as the residual fraction: `harvest_rate - (lmort_direct + lmort_infra + lmort_collateral)` .
+`LoggingMortality_frac` short-circuits to all-zero fractions when `logging_time .eqv. .false.`. The flag is set by `IsItLoggingTime` at the start of `ed_ecosystem_dynamics` based on the scalar parameter `logging_event_code` (see [Logging and Land Use](index.md) for the full event-code table). Site-level diagnostic accumulators (`delta_litter_stock`, `delta_biomass_stock`, `delta_individual`) are reset inside `IsItLoggingTime` whenever an event fires, so these variables report per-event changes rather than cumulative totals.
 
-Sources: [biogeochem/EDLoggingMortalityMod.F90 198-346](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L198-L346)
+Sources: `(biogeochem/EDLoggingMortalityMod.F90:106-193)`, `(main/EDMainMod.F90:141-317)`
 
-### Mortality Application Logic
+## Canopy vs. Understory Application
 
-![SVG image](../assets/images/8.1__Logging_Mortality__img-01.svg)
+Canopy and understory logging mortality take different paths through the model, because only canopy mortality creates new patches.
 
-Sources: [biogeochem/EDLoggingMortalityMod.F90 295-344](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L295-L344)
+**Canopy (`canopy_layer == 1`):** `lmort_direct + lmort_collateral + lmort_infra` is combined with other disturbance sources in `disturbance_rates`, weighted by crown area, to produce the patch-level logging contribution to the disturbance rate. This rate drives `spawn_patches`, which creates a newly disturbed secondary patch and transfers donor biomass through `logging_litter_fluxes`. The survivors on the `l_degrad` fraction are also moved to the new patch, without mortality.
 
-## Logging Event Timing
+**Understory:** Because understory disturbance does not create new patches, the understory logging fractions (currently just `lmort_infra` for small plants) are applied directly as a daily mortality rate via `Mortality_Derivative` in `EDMortalityFunctionsMod.F90`. The relevant path in `Mortality_Derivative` converts the annual fraction to a daily rate and adds it to the cohort's total `dndt` alongside background, hydraulic, carbon-starvation, senescence, and fire mortality.
 
-Logging events are controlled by the `logging_event_code` parameter and evaluated by the `IsItLoggingTime` subroutine. When `logging_time` is true, mortality fractions are calculated and applied to cohorts.
+Sources: `(biogeochem/EDPatchDynamicsMod.F90:204-538)`, `(biogeochem/EDMortalityFunctionsMod.F90:234-323)`
 
-### Event Code Definitions
+## Litter, CWD, and Wood Products
 
-![SVG image](../assets/images/8.1__Logging_Mortality__img-02.svg)
+When a new patch is spawned because of logging, `logging_litter_fluxes` (called from `spawn_patches`) partitions the biomass of killed cohorts:
 
-The `IsItLoggingTime` function is called once per dynamics step in `ed_ecosystem_dynamics` before any mortality calculations occur. Site-level diagnostic accumulators are initialized when a logging event is detected:
+- **Fine pools (leaves, fine roots, storage, reproductive tissue):** Moved into leaf and root fine litter, distributed between donor and new patches by `harvest_litter_localization` (default `0.0` for uniform per-area split).
+- **Stem wood (sapwood + structural):** Split into above- and below-ground fractions by `allom_agb_frac`, then distributed across CWD size classes via `SF_val_CWD_frac` adjusted for the cohort's DBH by `adjust_SF_CWD_frac`. Below-ground CWD is further distributed across soil layers by the cohort root profile.
+- **Above-ground bole from directly logged cohorts only:** A fraction `logging_export_frac` is exported to `site_mass%wood_product` (for mass-balance tracking) and `currentSite%resources_management%trunk_product_site` (for diagnostics). The remainder `(1 - logging_export_frac)` enters the largest CWD size class in the new patch.
 
-- `delta_litter_stock`: Change in litter mass [kgC]
-- `delta_biomass_stock`: Change in live biomass [kgC]
-- `delta_individual`: Change in tree count
+Collateral and infrastructure victims do not contribute to wood product — only direct harvests are exported.
 
+Sources: `(biogeochem/EDLoggingMortalityMod.F90:684-1092)`
 
-Sources: [biogeochem/EDLoggingMortalityMod.F90 106-193](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L106-L193)  [main/EDMainMod.F90 177](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L177-L177)
+## Integration with Other Mortality
 
-## Harvest Rate Calculation
+The logging fractions feed into `Mortality_Derivative`, which composes the daily `dndt` from:
 
-The `LoggingMortality_frac` subroutine calculates the fractional mortality rates for each cohort. The harvest rate applied to individual cohorts depends on whether FATES operates in standalone mode using internal parameters or receives harvest inputs from the Host Land Model.
+- background mortality
+- hydraulic failure
+- carbon starvation
+- freezing
+- senescence
+- fire
+- logging (understory contribution only; canopy logging goes through the disturbance path)
+- cambial burn / crown scorch / impact (for damaged cohorts)
 
-### Harvest Mode Selection
+The `fates_mortality_disturbance_fraction` parameter (from the FATES parameter file, typically `1.0`) sets what fraction of canopy mortality feeds disturbance rather than remaining as direct number-density loss. This parameter is not logging-specific — it applies to all canopy mortality sources.
 
-![SVG image](../assets/images/8.1__Logging_Mortality__img-03.svg)
-
-Sources: [biogeochem/EDLoggingMortalityMod.F90 243-291](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L243-L291)
-
-### Area-Based Harvest
-
-In area-based harvest mode ( `hlm_harvest_units == hlm_harvest_area_fraction` ), annual harvest rates are provided as fractions of vegetated area for different land categories:
-
-- `HARVEST_VH1`: Primary forest harvest
-- `HARVEST_VH2`: Primary non-forest harvest
-- `HARVEST_SH1``secondary_age_threshold`: Secondary mature forest (age ≥ )
-- `HARVEST_SH2``secondary_age_threshold`: Secondary young forest (age < )
-- `HARVEST_SH3`: Secondary non-forest harvest
-
-
-The `get_harvest_rate_area` function aggregates relevant categories based on patch disturbance history ( `patch_anthro_disturbance_label` ) and normalizes by site-level primary/secondary fractions. For annual rates applied at intervals other than once per year, the rate is divided by the appropriate time factor (days per year, months per year, etc.).
-
-Sources: [biogeochem/EDLoggingMortalityMod.F90 351-432](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L351-L432)
-
-### Carbon-Based Harvest
-
-In carbon-based harvest mode ( `hlm_harvest_units == hlm_harvest_carbon` ), target harvest amounts are specified in carbon mass [kgC site⁻¹]. The `get_harvestable_carbon` subroutine calculates available harvestable carbon for each land category:
-
-Where:
-
-- `sapw_m``struct_m`, : Sapwood and structural carbon per plant [kgC]
-- `allom_agb_frac`: Aboveground biomass fraction
-- `SF_val_CWD_frac(ncwd)`: Fraction in largest CWD class
-- `n`: Plant density [plants ha⁻¹]
-
-
-The `get_harvest_rate_carbon` function converts the carbon-based target to an area-based harvest rate by dividing target carbon by available carbon. If insufficient carbon exists to meet the target, the `harvest_tag` is set to indicate unsuccessful harvest (value = 1), enabling harvest debt tracking.
-
-Sources: [biogeochem/EDLoggingMortalityMod.F90 437-536](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L437-L536)  [biogeochem/EDLoggingMortalityMod.F90 540-680](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L540-L680)
-
-## Litter Fluxes and Wood Products
-
-The `logging_litter_fluxes` subroutine handles carbon transfers from living biomass to litter, coarse woody debris (CWD), and wood product pools when logging mortality occurs. This routine is only called when logging disturbance is the dominant disturbance type for a patch.
-
-### Flux Pathways
-
-![SVG image](../assets/images/8.1__Logging_Mortality__img-04.svg)
-
-### Wood Product Calculation
-
-For directly logged trees, merchantable bole carbon is calculated and partitioned between exported products and on-site losses:
-
-The trunk product flux is accumulated in `site_mass%wood_product` for mass balance tracking and history output. The remaining fraction `(1 - logging_export_frac)` represents transportation losses and enters the largest CWD size class.
-
-Sources: [biogeochem/EDLoggingMortalityMod.F90 684-1040](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L684-L1040)
-
-### CWD Size Class Partitioning
-
-Woody debris from logging is distributed across four CWD size classes using diameter-dependent fractions from `SF_val_CWD_frac` . The `adjust_SF_CWD_frac` function modifies these fractions based on cohort DBH to ensure realistic size distributions. Above- and belowground CWD are tracked separately, with belowground pools distributed across soil layers using the cohort's root fraction profile.
-
-Sources: [biogeochem/EDLoggingMortalityMod.F90 812-877](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L812-L877)
-
-## Integration with Mortality Dynamics
-
-Logging mortality integrates with FATES' broader mortality system through the `Mortality_Derivative` subroutine, which is called during the daily state integration loop in `ed_integrate_state_variables` .
-
-### Mortality Derivative Calculation Flow
-
-![SVG image](../assets/images/8.1__Logging_Mortality__img-05.svg)
-
-Key distinction : Canopy-layer logging mortality (direct, collateral, infrastructure) generates disturbances that spawn new patches, while understory logging mortality is applied directly as a change in number density without creating disturbed patches. The `fates_mortality_disturbance_fraction` parameter (typically 1.0) determines what fraction of canopy mortality triggers disturbance.
-
-Sources: [biogeochem/EDMortalityFunctionsMod.F90 234-323](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMortalityFunctionsMod.F90#L234-L323)
-
-### Understory vs. Canopy Treatment
-
-The treatment differs because canopy trees have larger crown areas that create significant gaps when they die, justifying new patch creation. The understory logging mortality rates are converted to daily rates and immediately applied:
-
-This daily rate is added to other mortality sources to compute `dndt` , the rate of change in number density [individuals day⁻¹].
-
-Sources: [biogeochem/EDMortalityFunctionsMod.F90 296-305](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMortalityFunctionsMod.F90#L296-L305)
+Sources: `(biogeochem/EDMortalityFunctionsMod.F90:234-323)`
 
 ## Parameter Summary
 
-| Parameter | Default | Units | Description | 
-| --- | --- | --- | --- |
-| logging_event_code | varies | - | Controls timing of logging events | 
-| logging_dbhmin | 50.0 | cm | Minimum DBH for direct harvest | 
-| logging_dbhmax | unset | cm | Maximum DBH for direct harvest (optional) | 
-| logging_dbhmax_infra | 35.0 | cm | DBH threshold below which infrastructure mortality applies | 
-| logging_direct_frac | 0.15 | fraction | Fraction of harvest rate applied as direct mortality | 
-| logging_collateral_frac | 0.05 | fraction | Fraction applied as collateral damage | 
-| logging_mechanical_frac | 0.05 | fraction | Fraction applied as infrastructure mortality | 
-| logging_export_frac | 0.8 | fraction | Fraction of harvested bole exported (rest = transport loss) | 
-| fates_mortality_disturbance_fraction | 1.0 | fraction | Fraction of canopy mortality that generates disturbance | 
+The following parameters are read from the FATES parameter file; initial Fortran values in `EDParamsMod.F90:371-378` are `nan`, so users must consult the parameter file in use for actual values. The typical CMIP-era defaults (illustrative, not code-level):
 
+| Parameter | Typical default (parameter file) | Units | Role |
+|---|---|---|---|
+| `logging_event_code` | varies | — | Timing of logging events |
+| `logging_dbhmin` | 50.0 | cm | Minimum DBH for direct harvest |
+| `logging_dbhmax` | unset | cm | Maximum DBH for direct harvest (optional) |
+| `logging_dbhmax_infra` | 35.0 | cm | DBH threshold below which `lmort_infra` is applied |
+| `logging_direct_frac` | 0.15 | fraction | Direct mortality fraction (`× harvest_rate`) |
+| `logging_collateral_frac` | 0.05 | fraction | Canopy collateral fraction (`× harvest_rate`) |
+| `logging_mechanical_frac` | 0.05 | fraction | Infrastructure mortality fraction (`× harvest_rate`) |
+| `logging_export_frac` | 0.8 | fraction | Fraction of directly harvested bole exported off-site |
+| `logging_coll_under_frac` | — | fraction | Understory collateral fraction (used in `logging_litter_fluxes`) |
+| `fates_mortality_disturbance_fraction` | 1.0 | fraction | Fraction of canopy mortality that spawns disturbance |
 
-Sources: [biogeochem/EDLoggingMortalityMod.F90 36-42](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L36-L42)  [biogeochem/EDParamsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDParamsMod.F90)
+Note: the defaults above are illustrative parameter-file values from CMIP-era runs. The actual code-level initializers in `EDParamsMod` are `nan` (the real defaults always come from the parameter file).
+
+Sources: `(main/EDParamsMod.F90:268-378)`, `(biogeochem/EDLoggingMortalityMod.F90:36-44)`
 
 ## Code Entity Reference
 
-### Primary Module: EDLoggingMortalityMod
+Primary subroutines in `biogeochem/EDLoggingMortalityMod.F90`:
 
-Key subroutines:
+| Subroutine | Lines | Role |
+|---|---|---|
+| `IsItLoggingTime` | 106–193 | Test whether current dynamics step is a logging event |
+| `LoggingMortality_frac` | 198–346 | Set `lmort_direct`, `lmort_collateral`, `lmort_infra`, `l_degrad` on a cohort |
+| `get_harvest_rate_area` | 351–432 | Area-based conversion from HLM harvest rates to per-patch `harvest_rate` |
+| `get_harvestable_carbon` | 437–536 | Sum merchantable bole carbon per LUH2 category |
+| `get_harvest_rate_carbon` | 540–680 | Carbon-based conversion to area rate; set `harvest_tag` |
+| `logging_litter_fluxes` | 684–1092 | Move biomass to litter/CWD/wood product during patch spawn |
+| `get_harvest_debt` | 1137–1204 | Accumulate shortfall when carbon target cannot be met |
 
-- `IsItLoggingTime`[biogeochem/EDLoggingMortalityMod.F90106-193](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L106-L193): Determines if current timestep is a logging event
-- `LoggingMortality_frac`[biogeochem/EDLoggingMortalityMod.F90198-346](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L198-L346): Calculates mortality fractions for a cohort
-- `get_harvest_rate_area`[biogeochem/EDLoggingMortalityMod.F90351-432](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L351-L432): Converts area-based harvest inputs to rates
-- `get_harvestable_carbon`[biogeochem/EDLoggingMortalityMod.F90437-536](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L437-L536): Calculates available carbon for harvest
-- `get_harvest_rate_carbon`[biogeochem/EDLoggingMortalityMod.F90540-680](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L540-L680): Converts carbon targets to area rates
-- `logging_litter_fluxes`[biogeochem/EDLoggingMortalityMod.F90684-1040](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L684-L1040): Handles carbon fluxes to litter/CWD/products
+Integration points:
 
+- `Mortality_Derivative` in `biogeochem/EDMortalityFunctionsMod.F90:234-323` — understory logging application
+- `ed_ecosystem_dynamics` in `main/EDMainMod.F90:141-317` — calls `IsItLoggingTime`
+- `disturbance_rates` in `biogeochem/EDPatchDynamicsMod.F90` — canopy disturbance contribution
+- `spawn_patches` in `biogeochem/EDPatchDynamicsMod.F90` — invokes `logging_litter_fluxes`
 
-### Integration Points
-
-- `Mortality_Derivative`[biogeochem/EDMortalityFunctionsMod.F90234-323](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMortalityFunctionsMod.F90#L234-L323)Called from in EDMortalityFunctionsMod
-- `ed_integrate_state_variables`[main/EDMainMod.F90320-685](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L320-L685)Invoked during in EDMainMod
-- `ed_ecosystem_dynamics`[main/EDMainMod.F90177](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L177-L177)Logging time check in
-- `disturbance_rates`Disturbance creation in (EDPatchDynamicsMod) when canopy logging occurs
-
-
-Sources: [biogeochem/EDLoggingMortalityMod.F90 1-1040](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90#L1-L1040)  [biogeochem/EDMortalityFunctionsMod.F90 1-353](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMortalityFunctionsMod.F90#L1-L353)  [main/EDMainMod.F90 141-317](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L141-L317)
+Sources: `(biogeochem/EDLoggingMortalityMod.F90:1-1206)`

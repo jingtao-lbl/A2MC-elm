@@ -21,8 +21,14 @@
 #      use_cases/Kougarok/config/calibration_rounds.yaml (Round 4 entry)
 # =============================================================================
 
-# Inherit ALL base R3 settings first
-source "$(dirname "${BASH_SOURCE[0]}")/kougarok_config.sh"
+# Inherit ALL base R3 settings first. Sourcing kougarok_config_r3.sh (rather
+# than the unsuffixed kougarok_config.sh) makes the round inheritance explicit
+# and insulates R4 from any future reinterpretation of kougarok_config.sh.
+source "$(dirname "${BASH_SOURCE[0]}")/kougarok_config_r3.sh"
+
+# Self-identification: overwrite A2MC_SITE_CONFIG (set by the sourced R3 file)
+# so downstream tools see R4 as the active round. "Last export wins" semantics.
+export A2MC_SITE_CONFIG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
 
 echo ""
 echo "=================================================================="

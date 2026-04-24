@@ -1,295 +1,299 @@
 # Phenology and Leaf Dynamics
 
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
+
 <details>
 <summary>Relevant source files</summary>
 
-
-- [biogeochem/EDCohortDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDCohortDynamicsMod.F90)
-- [biogeochem/EDPhysiologyMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90)
-- [biogeochem/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90)
-- [biogeophys/FatesPlantRespPhotosynthMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesPlantRespPhotosynthMod.F90)
-- [main/EDParamsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90)
-- [main/EDPftvarcon.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90)
-- [parameter_files/fates_params_default.cdl](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl)
-
+- `biogeochem/EDPhysiologyMod.F90` (main phenology)
+- `biogeochem/FatesAllometryMod.F90` (target biomass, tree_lai/sai)
+- `main/EDParamsMod.F90` (global phenology parameters)
+- `main/EDPftvarcon.F90` (PFT phenology parameters)
+- `main/EDTypesMod.F90` (status constants, memory windows)
+- `main/FatesConstantsMod.F90` (leaves_on / leaves_off / stress_decid flags)
+- `parameter_files/fates_params_default.cdl` (ground-truth defaults)
 
 </details>
 
 ## Purpose and Scope
 
-This page documents the phenology and leaf dynamics system in FATES, which controls the seasonal timing of leaf growth (flushing), maintenance, and shedding (abscission) for different plant functional types (PFTs). Phenology determines when plants have leaves, how much leaf biomass is active, and how leaves respond to environmental conditions such as temperature, moisture, and light availability.
+This document describes the phenology system in FATES that determines the seasonal timing of leaf flushing and abscission for different plant functional types (PFTs). The system operates in two stages each day. First, `phenology()` (`EDPhysiologyMod.F90:909-1525`) updates site-level cold-deciduous state and the PFT-level `elong_factor`. Second, `phenology_leafonoff()` (`EDPhysiologyMod.F90:1529-1760`) translates those states into actual leaf/fine-root/stem transfers from storage carbon at the cohort level.
 
-For information about leaf-level photosynthesis and gas exchange, see [Photosynthesis and Respiration](biophysics/photosynthesis.md) . For details on how leaf biomass is allocated through the PARTEH system, see [PARTEH: Plant Allocation System](plant-physiology/parteh/index.md) .
-
-Scope:
-
-- Phenological strategies (evergreen, cold deciduous, drought deciduous)
-- Leaf elongation factors and state transitions
-- Canopy trimming based on carbon balance
-- Leaf area index (LAI) and stem area index (SAI) calculations
-- Integration with growth and allocation
-
-
-Key Module:  [`biogeochem/EDPhysiologyMod.F90`](https://github.com/jingtao-lbl/fates/blob/e85d9977/`biogeochem/EDPhysiologyMod.F90`)
+For photosynthesis, see `../biophysics/photosynthesis.md`. For allocation, see `parteh/index.md`.
 
 ## Phenological Strategies
 
-FATES supports three primary phenological strategies, distinguished by PFT-level parameters:
+FATES supports three strategies, selected per PFT through two flag parameters (`fates_phen_season_decid`, `fates_phen_stress_decid`):
 
-| Strategy | Parameter Switch | Description | 
-| --- | --- | --- |
-| Evergreen | season_decid=0 and stress_decid=0 | Maintains leaves year-round, subject only to canopy trimming | 
-| Cold Deciduous | season_decid=1 | Drops leaves in response to cold temperatures and short day length, flushes based on growing degree days (GDD) | 
-| Drought Deciduous | stress_decid=1 (hard) or stress_decid=2 (semi) | Drops leaves in response to soil moisture stress, flushes when moisture returns | 
+| Strategy | Parameter switch | Semantics |
+|---|---|---|
+| Evergreen | `season_decid=0` and `stress_decid=0` | `elong_factor = 1` at all times |
+| Cold deciduous | `season_decid=1` | Shared site-level GDD/NCD state machine in `phenology()`; `elong_factor` is 0 or 1 |
+| Drought hard-deciduous | `stress_decid = ihard_stress_decid` | Per-PFT state machine; `elong_factor` is 0 or 1 |
+| Drought semi-deciduous | `stress_decid = isemi_stress_decid` | Per-PFT; `elong_factor` may take intermediate values in `[0, 1]` |
 
+The integer constants `ihard_stress_decid` and `isemi_stress_decid` are defined in `FatesConstantsMod.F90` and used in `EDPhysiologyMod.F90:1285-1495`.
 
-Sources:  [biogeochem/EDPhysiologyMod.F90 65-89](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L65-L89)  [main/EDPftvarcon.F90 1-300](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#L1-L300)
+Sources: `EDPhysiologyMod.F90:1110-1520`, `EDPftvarcon.F90`.
 
-## Phenology State Variables and Tracking
+## State Constants and Memory Windows
 
-### Cohort-Level State Variables
+Cold and drought status flags (`cstatus`, `dstatus`) are defined in `EDTypesMod.F90:93-102`:
 
-Each cohort tracks its phenological state through several variables:
+| Constant | Value | Meaning |
+|---|---|---|
+| `phen_cstat_nevercold` | 0 | Site has never experienced a cold day; cold-deciduous PFTs will not flush without at least one chilling day |
+| `phen_cstat_iscold` | 1 | Site is in cold state, leaves should be off |
+| `phen_cstat_notcold` | 2 | Site is in warm state, leaves allowed on |
+| `phen_dstat_timeoff` | 0 | Drought: leaves forced off by timing |
+| `phen_dstat_moistoff` | 1 | Drought: leaves off from moisture |
+| `phen_dstat_moiston` | 2 | Drought: leaves on from moisture |
+| `phen_dstat_timeon` | 3 | Drought: leaves forced on by timing |
+| `phen_dstat_pshed` | 4 | Drought: partial shedding (semi-deciduous) |
 
-Elongation factors control the fraction of maximum allometric biomass that is actually present. An `elongf_leaf` of 1.0 means leaves are fully flushed; 0.0 means completely abscised.
+Two fixed memory windows (`EDTypesMod.F90:79,88`) control how phenology reads the environment:
 
-### Site-Level Tracking Variables
+- `num_vegtemp_mem = 10` days (window over which cold days are counted against `phen_ncolddayslim`)
+- `numWaterMem = 10` days (window for the rolling soil-moisture average used by drought phenology)
 
-The site tracks environmental conditions for phenology decisions:
+The `leaves_on`, `leaves_off`, and `leaves_shedding` cohort status codes are defined in `FatesConstantsMod.F90` and set in `phenology_leafonoff()` below.
 
-Sources:  [biogeochem/EDPhysiologyMod.F90 81-90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L81-L90)  [biogeochem/FatesCohortMod.F90 1-500](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesCohortMod.F90#L1-L500)
+## Cold Deciduous Phenology
 
-## Cold Deciduous Phenology State Machine
+### GDD Threshold Equation (Botta et al. 2000)
 
-![SVG image](../assets/images/4.1__Phenology_and_Leaf_Dynamics__img-01.svg)
+`phenology()` at `EDPhysiologyMod.F90:1037` computes the growing-degree-day threshold each day as:
 
-### Key Parameters for Cold Deciduous
+```
+gdd_threshold = phen_a + phen_b * exp(phen_c * nchilldays)
+```
 
-| Parameter | Variable | Typical Value | Description | 
-| --- | --- | --- | --- |
-| Cold temperature threshold | phen_coldtemp | 7.5°C | Temperature below which cold days accumulate | 
-| Cold day limit | phen_ncolddayslim | 5 days | Days below threshold to trigger leaf drop | 
-| Min days leaves on | phen_mindayson | 30 days | Minimum duration leaves must remain on | 
-| GDD function intercept | phen_a | 100 | GDD threshold equation parameter | 
-| GDD function multiplier | phen_b | 100 | GDD threshold equation parameter | 
-| GDD function exponent | phen_c | 0.01 | GDD threshold equation parameter | 
+where `nchilldays` is the number of chilling days accumulated since the start of the counting window (day 270 in the Northern Hemisphere, day 120 in the Southern). Each day with mean vegetation temperature below `phen_chilltemp` (default 5 deg C) increments `nchilldays` (`EDPhysiologyMod.F90:1031-1033`). The equation is attributed to Botta et al. 2000 (Global Change Biology, 6:709-725) in the source comments at `EDPhysiologyMod.F90:999`.
 
+### Correct default parameter values (verified against CDL)
 
-GDD Threshold Equation:
+The following defaults come directly from `parameter_files/fates_params_default.cdl:1700-1712`:
 
-This adaptive threshold prevents premature leaf flushing after severe winters by requiring more accumulated warmth when the previous winter was colder (higher NCD).
+| CDL name | Internal name | Default | Units | Description |
+|---|---|---|---|---|
+| `fates_phen_gddthresh_a` | `ED_val_phen_a` | **-68** | unitless | GDD threshold intercept |
+| `fates_phen_gddthresh_b` | `ED_val_phen_b` | **638** | unitless | GDD threshold multiplier |
+| `fates_phen_gddthresh_c` | `ED_val_phen_c` | **-0.01** | unitless | GDD threshold exponent (NEGATIVE) |
+| `fates_phen_chilltemp` | `ED_val_phen_chiltemp` | 5.0 | deg C | Threshold below which a day counts as a chilling day |
+| `fates_phen_coldtemp` | `ED_val_phen_coldtemp` | 7.5 | deg C | Threshold below which a day counts as a cold day for leaf-drop |
+| `fates_phen_mindayson` | `ED_val_phen_mindayson` | **90** | days | Minimum duration leaves must remain on before drop is permitted |
+| `fates_phen_ncolddayslim` | `ED_val_phen_ncolddayslim` | 5 | days | Cold-day count within the 10-day `num_vegtemp_mem` window that triggers leaf drop |
 
-Sources:  [biogeochem/EDPhysiologyMod.F90 1093-1280](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1093-L1280)  [main/EDParamsMod.F90 62-68](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90#L62-L68)
+Sources: `EDParamsMod.F90:62-68`, `fates_params_default.cdl:1700-1712`.
 
-## Drought Deciduous Phenology State Machine
+### Mechanism: more chilling means LESS accumulated warmth is required
 
-![SVG image](../assets/images/4.1__Phenology_and_Leaf_Dynamics__img-02.svg)
+Because `phen_c = -0.01 < 0`, the exponential `exp(phen_c * nchilldays)` **decays** as `nchilldays` increases. With default values:
 
-### Key Concepts for Drought Deciduous
+| `nchilldays` | `gdd_threshold = -68 + 638 * exp(-0.01 * nchilldays)` |
+|---|---|
+| 0 | 570.0 |
+| 50 | 318.9 |
+| 100 | 166.7 |
+| 150 | 74.4 |
+| 200 | 18.5 |
+| 300 | -36.2 (effectively zero, flushing immediately once any GDD accumulates) |
 
-Soil Moisture Potential Thresholds:
+The correct mechanistic interpretation is: **more chilling days means the plant requires less accumulated warmth before flushing**. Arctic sites with 150+ chilling days will produce very small GDD thresholds under defaults, consistent with the observed too-early leaf-on behavior documented in `Program/phenology_fates/PHENOLOGY_CALIBRATION_RESULTS.md`.
 
-- `smpso`: Soil water potential at full stomatal opening (typically -66,000 Pa)
-- `smpsc`: Soil water potential at full stomatal closure (typically -255,000 Pa)
+This is the opposite of the direction implied by the previous wiki version, which asserted "more chilling requires more warmth".
 
+### Cold Leaf-On Trigger
 
-Weighted Soil Moisture (`smp_wgt`): The weighted average soil matric potential across all soil layers, weighted by root fraction:
+Cold leaf flushing occurs at `EDPhysiologyMod.F90:1110-1119` when all of the following hold:
 
-Partial Leaf Shedding (Semi-Deciduous): For `stress_decid=2` (semi), the elongation factor gradually decreases as soil dries:
+1. `cstatus` is either `phen_cstat_iscold` or `phen_cstat_nevercold`
+2. `grow_deg_days > gdd_threshold`
+3. `cndaysleafoff > phen_mindayson` (at least 90 days since last leaf drop under defaults)
+4. `nchilldays >= 1` (prevents warm-climate plants from ever flushing a cold-deciduous PFT)
 
-Sources:  [biogeochem/EDPhysiologyMod.F90 1282-1600](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1282-L1600)  [main/EDPftvarcon.F90 75-78](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#L75-L78)
+On success, `cstatus` is set to `phen_cstat_notcold`, the leaf-on date is recorded, and `grow_deg_days` is zeroed until the next counting season.
 
-## Elongation Factor Dynamics
+### Cold Leaf-Off Trigger
 
-The elongation factor ( `elongf_leaf` , `elongf_stem` , `elongf_fnrt` ) is the key variable controlling actual biomass relative to allometric maximum. It ranges from 0.0 (fully abscised) to 1.0 (fully flushed).
+Cold leaf shedding (`EDPhysiologyMod.F90:1132-1147`) requires:
 
-### Relationship to Actual Biomass
+1. `cstatus == phen_cstat_notcold`
+2. `model_day_int > num_vegtemp_mem` (at least 10 days into the simulation)
+3. `ncolddays > phen_ncolddayslim` where `ncolddays` counts days below `phen_coldtemp` within the 10-day `vegtemp_memory` buffer
+4. `cndaysleafon > phen_mindayson`
 
-![SVG image](../assets/images/4.1__Phenology_and_Leaf_Dynamics__img-03.svg)
+On trigger, `cstatus` is set to `phen_cstat_iscold` and `grow_deg_days` is reset.
 
-Function Call Chain:
+### 400-day Cold-Lifespan Cap
 
-Sources:  [biogeochem/FatesAllometryMod.F90 554-610](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L554-L610)  [biogeochem/FatesAllometryMod.F90 440-470](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L440-L470)
+A second leaf-off path at `EDPhysiologyMod.F90:1155-1167` forces `cstatus = phen_cstat_nevercold` when a cold-deciduous PFT has been flushed for more than 400 days. In warm climates where `nchilldays` never increments this effectively prevents re-emergence.
 
-## Leaf Flushing and Abscission Mechanisms
+## Drought Deciduous Phenology
 
-### Flushing Process
+`phenology()` iterates over PFTs at `EDPhysiologyMod.F90:1173-1520`. Three PFT parameters (via `prt_params`) govern drought phenology for each PFT:
 
-When conditions trigger leaf flushing (e.g., GDD threshold exceeded or moisture adequate), FATES uses the PARTEH system to generate new leaf biomass:
+| Parameter (CDL) | Internal | Units | Role |
+|---|---|---|---|
+| `fates_phen_drought_threshold` | `phen_drought_threshold(ipft)` | m3/m3 or mm | Abscission threshold. **Sign-dependent**: if positive, volumetric water content; if negative, soil matric potential (mm) |
+| `fates_phen_moist_threshold` | `phen_moist_threshold(ipft)` | m3/m3 or mm | Upper (re-flushing) threshold, only used by semi-deciduous PFTs |
+| `fates_phen_doff_time` | `phen_doff_time(ipft)` | days | Minimum leaves-off duration before forced re-flushing |
+| `fates_phen_fnrt_drop_fraction` | `phen_fnrt_drop_fraction(ipft)` | fraction | Fine-root drop fraction relative to leaves (used in `phenology_leafonoff`) |
+| `fates_phen_stem_drop_fraction` | `phen_stem_drop_fraction(ipft)` | fraction | Stem drop fraction relative to leaves (non-woody PFTs) |
 
-![SVG image](../assets/images/4.1__Phenology_and_Leaf_Dynamics__img-04.svg)
+**Important: `fates_nonhydro_smpso` and `fates_nonhydro_smpsc` are NOT drought-phenology parameters.** These are the stomatal-conductance (btran) thresholds and do not appear in `phenology()` (verified by grep against `EDPhysiologyMod.F90`).
 
-Key Parameter:  `phenflush_fraction` determines the maximum fraction of storage carbon used for leaf flushing (typically 0.5).
+### Soil Moisture Memory
 
-Sources:  [biogeochem/EDPhysiologyMod.F90 1093-1280](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1093-L1280)  [parteh/PRTLossFluxesMod.F90 1-500](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTLossFluxesMod.F90#L1-L500)
+Each PFT maintains a 10-day rolling average of soil liquid volume (`liqvol_memory`) and matric potential (`smp_memory`), weighted by the root fraction in each layer excluding the thin topmost layer (`EDPhysiologyMod.F90:1181-1232`). Both moisture quantities are stored so the threshold can be interpreted in either volumetric or matric-potential mode.
 
-### Abscission Process
+The threshold check at `EDPhysiologyMod.F90:1235-1241` chooses between the two memories based on the sign of `phen_drought_threshold`:
 
-When leaves drop (due to cold, drought, or day length), FATES transfers biomass to litter:
+```fortran
+if ( phen_drought_threshold >= 0. ) then
+   smoist_below_threshold = mean_10day_liqvol < phen_drought_threshold
+else
+   smoist_below_threshold = mean_10day_smp    < phen_drought_threshold
+end if
+```
 
-Retranslocation Parameters:
+### Hard Drought-Deciduous State Machine
 
-- `cnp_turnover_nitr_retrans(leaf_organ, ipft)`: Fraction of N reabsorbed (typically 0.5-0.7)
-- `cnp_turnover_phos_retrans(leaf_organ, ipft)`: Fraction of P reabsorbed (typically 0.5-0.7)
+`EDPhysiologyMod.F90:1285-1392`. For `stress_decid == ihard_stress_decid`, the state machine uses an `if/elseif` cascade that allows at most one transition per day:
 
+1. **Leaf-on, drought-wetness**: if soil was above threshold for a prolonged off-period -- flush
+2. **Leaf-on, timeout**: if leaves have been off for more than a year -- force flush
+3. **Leaf-on, exceed-min-off**: if leaves have been off long enough in a wet environment -- flush
+4. **Leaf-off, prolonged on**: leaves have exceeded `ndays_pft_leaf_lifespan` -- force drop
+5. **Leaf-off, moisture**: leaves on for at least `dleafon_drycheck = 100` days (`EDPhysiologyMod.F90:171`) AND soil now below threshold -- drop
 
-Sources:  [biogeochem/EDPhysiologyMod.F90 1282-1600](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1282-L1600)  [parteh/PRTLossFluxesMod.F90 200-400](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTLossFluxesMod.F90#L200-L400)
+`ndays_pft_leaf_lifespan` is `nint(ndays_per_year * min(decid_leaf_long_max, sum(leaf_long(ipft,:))))` with `decid_leaf_long_max = 1.0` year (`EDPhysiologyMod.F90:173,1266-1268`).
 
-## Canopy Trimming: Optimizing Leaf Area
+The minimum off-period for forced re-flush is `min_daysoff_dforcedflush = 30` (`EDPhysiologyMod.F90:176`). A 30-day tolerance `dd_offon_toler` (`:184`) is used for the "last flush was about one year ago" window.
 
-Canopy trimming is a mechanism that reduces leaf biomass below the allometric maximum when lower canopy layers have negative carbon balance (i.e., maintenance respiration exceeds photosynthesis). This is separate from phenology and applies to all PFT strategies.
+### Semi Drought-Deciduous Gradual Elongation
 
-### Trim Calculation Algorithm
+`EDPhysiologyMod.F90:1393-1492`. For `stress_decid == isemi_stress_decid`, the elongation factor is a linear interpolation between `phen_drought_threshold` and `phen_moist_threshold`, clamped to `[elongf_min, 1]`:
 
-![SVG image](../assets/images/4.1__Phenology_and_Leaf_Dynamics__img-05.svg)
+```
+elongf_1st = elongf_min + (1 - elongf_min) *
+             ( moisture - phen_drought_threshold ) /
+             ( phen_moist_threshold - phen_drought_threshold )
+```
 
-### Mathematical Details
+with `elongf_min = 0.05` (`EDPhysiologyMod.F90:188`). Guardrails prevent oscillation: when leaves have only recently come on (`dndaysleafon <= dleafon_drycheck`), `elong_factor` cannot decrease; when leaves have recently dropped, the first-guess moisture-based factor cannot immediately re-flush. Partial shedding sets `dstatus = phen_dstat_pshed` without resetting the clocks.
 
-The trimming optimization uses a linear least squares fit of net-net uptake vs. cumulative LAI for the bottom `nll` (typically 3) leaf layers:
+## phenology_leafonoff: Flush and Shed Mechanics
 
-Variables:
+`phenology_leafonoff()` (`EDPhysiologyMod.F90:1529-1760`) is called from `phenology()` and converts the site/PFT elongation factors into actual carbon transfers at the cohort level.
 
-- `x``year_net_uptake[z]``leaf_cost[z]`= - (net-net uptake)
-- `y``cumulative_lai_cohort[z]`=
+### Cohort-Level Elongation Factors
 
+Lines 1639-1648:
 
-Linear System:  `y = mx + b`
+```fortran
+currentCohort%efleaf_coh = currentSite%elong_factor(ipft)
+currentCohort%effnrt_coh = 1 - (1 - efleaf_coh) * fnrt_drop_fraction
+currentCohort%efstem_coh = 1 - (1 - efleaf_coh) * stem_drop_fraction
+```
 
-The optimum trim occurs where net-net uptake = 0, giving:
+Fine-root and stem effective elongation factors are blends, with `fnrt_drop_fraction = prt_params%phen_fnrt_drop_fraction(ipft)` and `stem_drop_fraction = prt_params%phen_stem_drop_fraction(ipft)`. If the drop fraction is 0, that tissue is not impacted by phenology at all. If it is 1, the tissue tracks leaf elongation exactly.
 
-Minimum Elongation: If `elongf_leaf < elongf_min` (0.05), complete abscission is assumed to avoid computational issues with residual tiny amounts.
+### Flush/Shed Decision
 
-Sources:  [biogeochem/EDPhysiologyMod.F90 597-1090](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L597-L1090)
+Lines 1608-1632. For cold-deciduous PFTs, flushing happens when the site has just moved from `iscold/nevercold` to `notcold` and the cohort still has `status_coh == leaves_off`. Shedding happens when `cstatus` is back to cold and `status_coh == leaves_on` and the plant is either woody or large enough (`dbh > phen_cold_size_threshold(ipft)`).
 
-## Leaf Area Index (LAI) and Stem Area Index (SAI)
+For drought hard-deciduous and semi-deciduous PFTs, flushing is triggered when `dstatus(ipft)` is `moiston` or `timeon`, and shedding when it is `moistoff`, `timeoff`, or `pshed`.
 
-### Tree-Level LAI Calculation
+### Storage-to-Tissue Transfer on Flush
 
-The `tree_lai()` function converts leaf carbon mass to leaf area index:
+Lines 1671-1710. Target biomass for each tissue is computed via `bleaf`, `bfineroot`, `bsap_allom`, `bagw_allom`, `bbgw_allom`, `bdead_allom` scaled by the effective elongation factors. Tissue deficits relative to targets are summed into `total_deficit_c`. The fraction of storage that will actually be drawn down is (`EDPhysiologyMod.F90:1684-1686`):
 
-Where:
+```fortran
+store_c_transfer_frac = min( phenflush_fraction * total_deficit_c / store_c,
+                             1.0 - carbon_store_buffer )
+```
 
-- `leaf_c``prt%GetState(leaf_organ, carbon12_element)`: Leaf carbon [kgC] from
-- `SLA_eff`: Effective specific leaf area [m²/kgC], adjusted for canopy depth
-- `crown_area`: Crown area of the cohort [m²]
+Two important semantic points that the previous wiki got wrong:
 
+1. **`phenflush_fraction` is a scalar on the deficit/store ratio, not directly the fraction of storage used.** When `total_deficit_c << store_c` (small deficit, abundant storage), only a tiny fraction `phenflush_fraction * deficit/store` is drawn down. When deficit is comparable to storage, the product approaches 1.
+2. **The hard cap comes from `carbon_store_buffer = 0.10`**, a file-local parameter at `EDPhysiologyMod.F90:1579`. This caps storage drawdown at `1 - 0.10 = 0.9`, regardless of `phenflush_fraction`. The previous wiki described `phenflush_fraction = 0.5` as "the maximum fraction"; in practice `store_c_transfer_frac` is never allowed to exceed 0.9.
 
-SLA Nitrogen Scaling: SLA varies with canopy depth following nitrogen distribution:
+The transfer is then applied per organ, proportional to each organ's share of the total deficit, via `PRTPhenologyFlush(currentCohort%prt, ipft, <organ>, store_c_transfer_frac * deficit/total_deficit_c)`. For non-woody PFTs, sapwood and structural wood are also flushed from storage; for woody PFTs only leaf and fineroot are.
 
-Where `kn` is the nitrogen decay coefficient (typically 0.3-0.5).
+### Shedding
 
-Sources:  [biogeochem/FatesAllometryMod.F90 636-754](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L636-L754)
+Lines 1715-1749. The effective drop fraction for each tissue is `1 - target_tissue_c / tissue_c`, clamped to `[0, 1]`. `PRTDeciduousTurnover` is called for leaves and fine roots; for non-woody PFTs, sapwood and structural wood are also dropped. Carbon is not retranslocated; nutrient retranslocation (N and P) is controlled by `prt_params%turnover_nitr_retrans(ipft, i_organ)` and `prt_params%turnover_phos_retrans(ipft, i_organ)` (note: PFT index is first, organ second).
 
-### Tree-Level SAI Calculation
+## Elongation Factor and Allometric Targets
 
-Stem Area Index (SAI) represents the area of woody stems and branches:
+`elong_factor` enters every allometric target through the `efleaf`, `effnrt`, `efstem` arguments to `bleaf`, `bfineroot`, `bagw_allom`, `bbgw_allom`, `bsap_allom`. Cold-deciduous PFTs use 0 or 1 only, so target biomass steps between zero and the full allometric value on flush/shed days, producing the abrupt LAI jumps documented in the Kougarok phenology calibration notes.
 
-The parameter `allom_sai_scaler` is typically in the range 0.05-0.15 (stems are 5-15% of leaf area).
-
-Sources:  [biogeochem/FatesAllometryMod.F90 756-850](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L756-L850)
-
-### Vertical LAI Profiles
-
-FATES distributes total cohort LAI across vertical leaf layers for radiative transfer:
-
-![SVG image](../assets/images/4.1__Phenology_and_Leaf_Dynamics__img-06.svg)
-
-The array `tlai_profile(cl, ft, iv)` is indexed by:
-
-- `cl``nclmax`: Canopy layer (1 to , typically 2)
-- `ft`: Functional type (PFT index)
-- `iv``nlevleaf`: Vertical leaf layer (1 to , typically 30)
-
-
-Sources:  [biogeochem/FatesAllometryMod.F90 636-850](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L636-L850)  [biogeophys/EDSurfaceAlbedoMod.F90 1-500](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/EDSurfaceAlbedoMod.F90#L1-L500)
-
-## Integration with PARTEH Allocation
-
-Phenology interacts with the PARTEH allocation system in several ways:
-
-### Daily Allocation Sequence
-
-![SVG image](../assets/images/4.1__Phenology_and_Leaf_Dynamics__img-07.svg)
-
-### Key Interactions
-
-Sources:  [biogeochem/EDPhysiologyMod.F90 1-200](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1-L200)  [parteh/PRTAllometricCarbonMod.F90 1-1000](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCarbonMod.F90#L1-L1000)  [parteh/PRTAllometricCNPMod.F90 1-2000](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTAllometricCNPMod.F90#L1-L2000)
-
-## Key Phenology-Related Functions
-
-| Function | Location | Purpose | 
-| --- | --- | --- |
-| phenology() | EDPhysiologyMod.F901093-1780 | Main phenology routine; updates status, elongation factors, GDD, NCD | 
-| satellite_phenology() | EDPhysiologyMod.F901782-2050 | Alternative phenology driven by prescribed LAI data | 
-| trim_canopy() | EDPhysiologyMod.F90597-1090 | Optimizes leaf area based on carbon balance | 
-| bleaf() | FatesAllometryMod.F90554-610 | Calculates actual leaf biomass with trimming, damage, elongation | 
-| blmax_allom() | FatesAllometryMod.F90440-470 | Calculates maximum allometric leaf biomass | 
-| tree_lai() | FatesAllometryMod.F90636-754 | Converts leaf carbon to LAI | 
-| tree_sai() | FatesAllometryMod.F90756-850 | Calculates stem area index | 
-| PRTPhenologyFlush() | parteh/PRTLossFluxesMod.F901-200 | Transfers storage carbon to leaves during flushing | 
-| PRTDeciduousTurnover() | parteh/PRTLossFluxesMod.F90200-400 | Transfers leaf biomass to litter during abscission | 
-
-
-## Important Phenology Parameters
-
-### Global Parameters (EDParamsMod)
-
-| Parameter | Name | Default | Description | 
-| --- | --- | --- | --- |
-| ED_val_phen_a | fates_phen_gddthresh_a | 100 | GDD threshold equation intercept | 
-| ED_val_phen_b | fates_phen_gddthresh_b | 100 | GDD threshold equation multiplier | 
-| ED_val_phen_c | fates_phen_gddthresh_c | 0.01 | GDD threshold equation exponent | 
-| ED_val_phen_coldtemp | fates_phen_coldtemp | 7.5°C | Cold temperature threshold | 
-| ED_val_phen_chiltemp | fates_phen_chilltemp | 5°C | Chilling requirement threshold | 
-| ED_val_phen_mindayson | fates_phen_mindayson | 30 days | Minimum days leaves must stay on | 
-| ED_val_phen_ncolddayslim | fates_phen_ncolddayslim | 5 days | Cold days threshold for leaf drop | 
-
-
-Sources:  [main/EDParamsMod.F90 62-68](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90#L62-L68)  [main/EDParamsMod.F90 174-180](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDParamsMod.F90#L174-L180)
-
-### PFT-Specific Parameters (EDPftvarcon)
-
-| Parameter | Name | Units | Description | 
-| --- | --- | --- | --- |
-| season_decid | fates_phen_season_decid | flag | 1=cold deciduous, 0=not | 
-| stress_decid | fates_phen_stress_decid | flag | 1=hard drought decid, 2=semi, 0=not | 
-| phenflush_fraction | fates_phen_flush_fraction | fraction | Max storage fraction for flushing | 
-| phen_cold_size_threshold | fates_phen_cold_size_threshold | cm | DBH threshold for non-woody cold decid | 
-| smpso | fates_nonhydro_smpso | mm H₂O | Soil moisture at full stomatal opening | 
-| smpsc | fates_nonhydro_smpsc | mm H₂O | Soil moisture at full stomatal closure | 
-
-
-Sources:  [main/EDPftvarcon.F90 1-300](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPftvarcon.F90#L1-L300)  [parameter_files/fates_params_default.cdl 1-1000](https://github.com/jingtao-lbl/fates/blob/e85d9977/parameter_files/fates_params_default.cdl#L1-L1000)
+Semi-deciduous PFTs produce intermediate targets by virtue of `elong_factor in (0, 1)`. For cold-deciduous PFTs, adding a gradual-elongation option would require modifying the cold branch of `phenology()` at `EDPhysiologyMod.F90:1510-1515` (which currently hard-codes 0 or 1).
 
 ## Satellite Phenology Mode
 
-FATES supports an alternative phenology mode ( `satellite_phenology()` ) that uses prescribed LAI time series instead of prognostic phenology:
+`satellite_phenology()` (`EDPhysiologyMod.F90:1764-1884`) is an alternative mode selected by the host-land-model flag `use_fates_sp`. It takes prescribed LAI time series from the driver and bypasses the prognostic GDD/NCD/moisture state machine entirely. Used for evaluation runs where phenology uncertainty should be removed.
 
-### Key Differences from Prognostic Phenology
+## Key Phenology Functions
 
-### When to Use
+| Function | Location | Purpose |
+|---|---|---|
+| `phenology()` | `EDPhysiologyMod.F90:909-1525` | Updates site-level cold state + PFT-level `elong_factor` |
+| `phenology_leafonoff()` | `EDPhysiologyMod.F90:1529-1760` | Applies flush/shed to cohort carbon pools |
+| `satellite_phenology()` | `EDPhysiologyMod.F90:1764-1884` | Prescribed-LAI alternative mode |
+| `trim_canopy()` | `EDPhysiologyMod.F90:597-906` | Linear-regression canopy trimming based on bottom-layer carbon balance |
+| `bleaf` | `FatesAllometryMod.F90:554-610` | Target leaf biomass given dbh, crown damage, canopy_trim, `elongf_leaf` |
+| `blmax_allom` | `FatesAllometryMod.F90:440-470` | Maximum allometric leaf biomass |
+| `bfineroot` | `FatesAllometryMod.F90:1057-1117` | Target fine-root biomass (uses `effnrt`) |
+| `tree_lai` | `FatesAllometryMod.F90:636-761` | Converts leaf carbon to LAI with nitrogen-scaling SLA |
+| `tree_sai` | `FatesAllometryMod.F90:765-827` | Converts target LAI to SAI via `allom_sai_scaler(pft) * elongf_stem * target_lai` |
+| `PRTPhenologyFlush` | `parteh/PRTLossFluxesMod.F90` | Transfers storage carbon to an organ during flush |
+| `PRTDeciduousTurnover` | `parteh/PRTLossFluxesMod.F90` | Abscises leaf/fineroot/stem material to litter |
 
-- **Evaluation Studies:**Comparing model output to observations while removing phenology uncertainty
-- **Historical Reconstructions:**Using satellite LAI products to constrain leaf area
-- **Sensitivity Studies:**Isolating effects of leaf area from phenological triggers
+## Phenology Parameters (Verified Against fates_params_default.cdl)
 
+### Global (non-PFT) parameters
 
-Activation: Set `use_fates_sp = .true.` in the host model configuration.
+| Internal | CDL name | Default | Line in CDL |
+|---|---|---|---|
+| `ED_val_phen_a` | `fates_phen_gddthresh_a` | -68 | 1704 |
+| `ED_val_phen_b` | `fates_phen_gddthresh_b` | 638 | 1706 |
+| `ED_val_phen_c` | `fates_phen_gddthresh_c` | -0.01 | 1708 |
+| `ED_val_phen_chiltemp` | `fates_phen_chilltemp` | 5.0 deg C | 1700 |
+| `ED_val_phen_coldtemp` | `fates_phen_coldtemp` | 7.5 deg C | 1702 |
+| `ED_val_phen_mindayson` | `fates_phen_mindayson` | 90 days | 1710 |
+| `ED_val_phen_ncolddayslim` | `fates_phen_ncolddayslim` | 5 days | 1712 |
 
-Sources:  [biogeochem/EDPhysiologyMod.F90 1782-2050](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1782-L2050)
+### PFT-specific phenology parameters
 
-## Phenology Constants and Type Definitions
+| CDL name | Internal | Units | Role |
+|---|---|---|---|
+| `fates_phen_season_decid` | `season_decid(ipft)` | flag | 1 if cold-deciduous |
+| `fates_phen_stress_decid` | `stress_decid(ipft)` | flag | 0 evergreen, `ihard_stress_decid`, or `isemi_stress_decid` |
+| `fates_phen_flush_fraction` | `phenflush_fraction(ipft)` | fraction | Scalar on `deficit/store` ratio in flush (see above for semantics) |
+| `fates_phen_cold_size_threshold` | `phen_cold_size_threshold(ipft)` | cm | Minimum dbh for non-woody PFTs to drop leaves on cold |
+| `fates_phen_drought_threshold` | `phen_drought_threshold(ipft)` | m3/m3 or mm (sign-dependent) | Drought abscission threshold |
+| `fates_phen_moist_threshold` | `phen_moist_threshold(ipft)` | m3/m3 or mm | Semi-deciduous upper threshold |
+| `fates_phen_doff_time` | `phen_doff_time(ipft)` | days | Minimum leaves-off duration for drought PFTs |
+| `fates_phen_fnrt_drop_fraction` | `phen_fnrt_drop_fraction(ipft)` | fraction | Fine-root drop relative to leaves |
+| `fates_phen_stem_drop_fraction` | `phen_stem_drop_fraction(ipft)` | fraction | Stem drop relative to leaves (non-woody) |
 
-### Leaf Status Constants
+Sources: `EDPftvarcon.F90` throughout; `fates_params_default.cdl:443-469,1354-1376`.
 
-### Cold Status Constants
+### Hardcoded constants worth knowing
 
-### Drought Status Constants
-
-Sources:  [biogeochem/FatesConstantsMod.F90 65-75](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesConstantsMod.F90#L65-L75)  [main/EDTypesMod.F90 81-90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDTypesMod.F90#L81-L90)
-
-## Summary Diagram: Phenology System Architecture
-
-![SVG image](../assets/images/4.1__Phenology_and_Leaf_Dynamics__img-08.svg)
-
-Sources:  [biogeochem/EDPhysiologyMod.F90 1-2050](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPhysiologyMod.F90#L1-L2050)  [biogeochem/FatesAllometryMod.F90 1-1000](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesAllometryMod.F90#L1-L1000)  [parteh/PRTLossFluxesMod.F90 1-500](https://github.com/jingtao-lbl/fates/blob/e85d9977/parteh/PRTLossFluxesMod.F90#L1-L500)
+| Constant | Value | Location | Meaning |
+|---|---|---|---|
+| `num_vegtemp_mem` | 10 days | `EDTypesMod.F90:88` | Window over which cold days are counted against `phen_ncolddayslim` |
+| `numWaterMem` | 10 days | `EDTypesMod.F90:79` | Window for soil moisture memory in drought phenology |
+| `carbon_store_buffer` | 0.10 | `EDPhysiologyMod.F90:1579` | 1 minus this is the maximum fraction of storage that may be drawn down in flush |
+| `dleafon_drycheck` | 100 days | `EDPhysiologyMod.F90:171` | Minimum leaves-on before a dryness re-check can drop leaves |
+| `min_daysoff_dforcedflush` | 30 days | `EDPhysiologyMod.F90:176` | Minimum leaves-off before a timing-based re-flush is allowed |
+| `dd_offon_toler` | 30 days | `EDPhysiologyMod.F90:184` | Tolerance for "one year since last flush" windows |
+| `elongf_min` | 0.05 | `EDPhysiologyMod.F90:188` | Minimum semi-deciduous elongation factor |
+| `decid_leaf_long_max` | 1.0 year | `EDPhysiologyMod.F90:173` | Maximum leaf lifespan for drought-deciduous PFTs |
+| 400-day cap | 400 days | `EDPhysiologyMod.F90:1156` | Cold-deciduous lifespan cap that promotes plant to `phen_cstat_nevercold` |

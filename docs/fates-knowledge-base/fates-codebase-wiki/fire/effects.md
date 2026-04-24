@@ -1,248 +1,166 @@
 # Fire Effects on Vegetation
 
-<details>
-<summary>Relevant source files</summary>
+---
+**Source pin:** FATES commit `e85d997` (2026-01-01)
+**Last verified:** 2026-04-10
+---
 
-
-- [biogeochem/EDLoggingMortalityMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDLoggingMortalityMod.F90)
-- [biogeochem/EDMortalityFunctionsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDMortalityFunctionsMod.F90)
-- [fire/SFMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90)
-- [main/EDMainMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90)
-
-
-</details>
+**Relevant source files:**
+- `fire/SFMainMod.F90`
+- `fire/SFParamsMod.F90`
+- `main/EDPftvarcon.F90`
+- `biogeophys/FatesAllometryMod.F90`
 
 ## Purpose and Scope
 
-This page documents how the SPITFIRE fire model calculates the impacts of fire on individual plant cohorts in FATES. It covers three sequential processes that translate fire behavior into vegetation mortality: (1) crown scorching - calculation of flame scorch height based on fire intensity, (2) crown damage - determination of the fraction of a cohort's crown consumed by flames, and (3) cambial damage - assessment of bark heating that kills the cambium and leads to mortality. These effects are computed for each cohort following fire spread calculations and ultimately determine the `fire_mort` mortality rate applied during patch dynamics.
+This document describes how the SPITFIRE fire model translates fire behavior into vegetation mortality for individual plant cohorts. It covers the three sequential processes executed inside `fire_model` after fire spread and intensity have been computed: (1) **crown scorching** — the vertical height reached by convective heat above the flame front, (2) **crown damage** — the fraction of each cohort's crown consumed by flames, and (3) **cambial damage** — heat penetration through bark to kill the cambium layer. The three are then combined into a single post-fire mortality rate (`currentCohort%fire_mort`) that feeds the disturbance framework.
 
-For information about fire danger, ignition, and spread processes that precede vegetation effects, see [Fire Danger and Ignition](fire/ignition.md) and [Fire Spread and Intensity](fire/spread.md) . For information about how fire mortality contributes to disturbance rates and patch creation, see [Patch Dynamics and Disturbances](core-dynamics/patch_dynamics.md) .
+For the upstream processes that precede vegetation effects, see `ignition.md` and `spread.md`. For how fire mortality feeds into patch creation, see `core-dynamics/patch_dynamics.md`.
 
-## Fire Effects Calculation Sequence
+## Execution Sequence
 
-The fire effects on vegetation are calculated as part of the daily `fire_model` subroutine in [fire/SFMainMod.F90 80-115](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L80-L115) This sequence occurs after fire spread and intensity calculations are complete. The effects are computed in a specific order because each step depends on results from the previous step:
+All four fire-effects subroutines are called once per day from `fire_model`, in strict order `(fire/SFMainMod.F90:109-112)`:
 
-![SVG image](../assets/images/7.3__Fire_Effects_on_Vegetation__img-01.svg)
+```
+crown_scorching       -> Scorch_ht(pft)            (patch level)
+crown_damage          -> fraction_crown_burned     (cohort level)
+cambial_damage_kill   -> cambial_mort              (cohort level)
+post_fire_mortality   -> crownfire_mort, fire_mort (cohort level)
+```
 
-Diagram: Fire Effects Calculation Pipeline
+A patch only enters the effects pipeline when `currentPatch%fire == 1` (fire intensity exceeded `SF_val_fire_threshold` in `area_burnt_intensity`). Otherwise all cohort fire-effect variables remain at zero. Inside each subroutine, bareground no-competition patches are also skipped (`nocomp_pft_label .ne. nocomp_bareground`), and calculations are performed only for woody cohorts (`prt_params%woody(pft) == itrue`).
 
-Sources: [fire/SFMainMod.F90 80-115](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L80-L115)
-
-Each patch in the site is evaluated independently. If a patch has `currentPatch%fire == 1` (indicating sufficient fire intensity was reached), the vegetation effect calculations proceed. Otherwise, all fire mortality values remain at zero.
+Sources: `(fire/SFMainMod.F90:80-115)`
 
 ## Crown Scorching
 
-Crown scorching calculates the height to which flames rise above the ground surface, potentially damaging plant canopies. This is based on Byram's (1959) relationship between fire intensity and flame length.
+The `crown_scorching` subroutine `(fire/SFMainMod.F90:890-951)` computes a per-PFT scorch height for each patch using Van Wagner (1973) / Byram (1959):
 
-### Scorch Height Calculation
-
-The `crown_scorching` subroutine [fire/SFMainMod.F90 890-951](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L890-L951) implements Van Wagner's (1973) crown scorch model:
-
-Scorch Height Formula:
+```
+Scorch_ht(pft) = fire_alpha_SH(pft) * FI^0.667
+```
 
 Where:
+- `Scorch_ht(pft)` — scorch height for cohorts of PFT `pft` on the patch (m)
+- `fire_alpha_SH(pft)` — PFT-specific scorch-height coefficient, parameter `fates_fire_alpha_SH` in the FATES parameter file, stored in `EDPftvarcon_inst%fire_alpha_SH`
+- `FI` — patch-level fire intensity (kW/m) from `area_burnt_intensity`
+- The `0.667` exponent (≈ 2/3) is the Byram (1959) flame-height relation
 
-- `Scorch_ht(pft)`= scorch height for each PFT (meters)
-- `α_SH``fire_alpha_SH`= PFT-specific scorch height parameter ( in parameter file)
-- `FI`= fire intensity from Rothermel model (kW/m)
+The routine first sums aboveground tree biomass on the patch by iterating the cohort list `(fire/SFMainMod.F90:915-929)` using `leaf_c + allom_agb_frac*(sapw_c + struct_c)` as the per-cohort contribution. If `tree_ag_biomass > 0` and the PFT is woody, `Scorch_ht(pft)` is set by the formula above; otherwise it is zero `(fire/SFMainMod.F90:931-943)`. `Scorch_ht` is indexed by PFT rather than cohort because all cohorts of the same PFT share the same allometric scorch response.
 
+Sources: `(fire/SFMainMod.F90:890-951)`
 
-The scorch height is calculated once per patch per PFT if there is tree biomass present and fire occurred. It represents the maximum height reached by convective heat from the fire.
+## Crown Damage
 
-![SVG image](../assets/images/7.3__Fire_Effects_on_Vegetation__img-02.svg)
+The `crown_damage` subroutine `(fire/SFMainMod.F90:954-1018)` converts `Scorch_ht(pft)` into a per-cohort `fraction_crown_burned` using Thonicke et al. 2010 Eq. 17. Crown depth is obtained from the allometry routine `CrownDepth(height, pft, crown_depth)` `(fire/SFMainMod.F90:981)`, and canopy bottom is `height - crown_depth`.
 
-Diagram: Crown Scorch Height Inputs and Outputs
+Three scenarios `(fire/SFMainMod.F90:983-1003)`:
 
-Sources: [fire/SFMainMod.F90 890-951](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L890-L951)
+| Scenario | Condition | `fraction_crown_burned` |
+|---|---|---|
+| No damage | `Scorch_ht < height - crown_depth` | `0.0` |
+| Partial damage | `height - crown_depth ≤ Scorch_ht < height` | `(Scorch_ht - (height - crown_depth)) / crown_depth` |
+| Total damage | `Scorch_ht ≥ height` | `1.0` |
 
-### Implementation Details
+The result is clipped to `[0, 1]` `(fire/SFMainMod.F90:1003)`. Non-woody cohorts (grasses) are skipped and keep `fraction_crown_burned = 0`; their fire response is handled separately via litter/aboveground biomass consumption rather than crown damage.
 
-The code structure for crown scorching:
+Sources: `(fire/SFMainMod.F90:954-1018)`, `(biogeophys/FatesAllometryMod.F90)`
 
-![SVG image](../assets/images/7.3__Fire_Effects_on_Vegetation__img-03.svg)
+## Cambial Damage
 
-Diagram: Crown Scorching Algorithm Flow
+The `cambial_damage_kill` subroutine `(fire/SFMainMod.F90:1021-1071)` implements the Peterson and Ryan (1986) cambial heating model (Thonicke 2010 Eqs. 19–21). For each woody cohort:
 
-The algorithm only calculates scorch height for woody PFTs when tree biomass exists on the patch [fire/SFMainMod.F90 932-936](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L932-L936)
+**Bark thickness** (Thonicke 2010 Eq. 21) `(fire/SFMainMod.F90:1046)`:
 
-Sources: [fire/SFMainMod.F90 890-951](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L890-L951)
+```
+bt = bark_scaler(pft) * dbh                 [cm]
+```
 
-## Crown Damage Assessment
+where `bark_scaler` is PFT-specific (parameter `fates_fire_bark_scaler`, `EDPftvarcon_inst%bark_scaler`) and `dbh` is cohort diameter at breast height.
 
-Crown damage determines what fraction of each cohort's crown is consumed by flames based on the relationship between scorch height and cohort structure.
+**Critical time to kill cambium** (Thonicke 2010 Eq. 20) `(fire/SFMainMod.F90:1048)`:
 
-### Fraction Crown Burned Calculation
+```
+tau_c = 2.9 * bt^2                          [min]
+```
 
-The `crown_damage` subroutine [fire/SFMainMod.F90 954-1018](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L954-L1018) implements Equation 17 from Thonicke et al. (2010):
+**Cambial mortality probability** (Thonicke 2010 Eq. 19) as a piecewise function of the ratio `tau_l / tau_c`, where `tau_l` is the fire residence time (min) computed in `ground_fuel_consumption` `(fire/SFMainMod.F90:1050-1058)`:
 
-![SVG image](../assets/images/7.3__Fire_Effects_on_Vegetation__img-04.svg)
+```
+if  tau_l/tau_c >= 2.0                   ->  cambial_mort = 1.0
+else if  tau_l/tau_c >  0.22             ->  cambial_mort = 0.563 * (tau_l/tau_c) - 0.125
+else                                     ->  cambial_mort = 0.0
+```
 
-Diagram: Crown Damage Decision Tree
+At the `0.22` cutoff the linear branch evaluates to zero (`0.563 * 0.22 - 0.125 ≈ -0.001`), and at `tau_l/tau_c = 2.0` it reaches exactly `1.001`, giving a continuous 0-to-1 ramp that saturates at 1. The calculation is applied only to woody cohorts; grasses retain `cambial_mort = 0`.
 
-### Crown Depth Determination
+Sources: `(fire/SFMainMod.F90:1021-1071)`
 
-Crown depth is calculated using the `CrownDepth` allometry function, which determines the vertical extent of the crown based on height and PFT-specific parameters. The canopy bottom is `cohort%height - crown_depth` .
+## Post-Fire Mortality
 
-Three Damage Scenarios:
+The `post_fire_mortality` subroutine `(fire/SFMainMod.F90:1074-1119)` combines crown and cambial damage into a single per-cohort mortality fraction assuming the two mortality mechanisms act as **independent events**. For each woody cohort `(fire/SFMainMod.F90:1097-1104)`:
 
-| Scenario | Condition | fraction_crown_burned | 
-| --- | --- | --- |
-| No damage | Scorch_ht < (height - crown_depth) | 0.0 | 
-| Partial damage | (height - crown_depth) ≤ Scorch_ht < height | (Scorch_ht - (height - crown_depth)) / crown_depth | 
-| Total damage | Scorch_ht ≥ height | 1.0 | 
+**Crown-fire mortality** (Thonicke 2010 Eq. 22):
 
+```
+crownfire_mort = crown_kill(pft) * fraction_crown_burned^3
+```
 
-The calculation is only performed for woody cohorts ( `prt_params%woody(pft) == itrue` ) [fire/SFMainMod.F90 977](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L977-L977)
+Note the **cube** on `fraction_crown_burned`. `crown_kill(pft)` is a PFT-specific scaler on fire death from crown scorch, parameter `fates_fire_crown_kill` in the FATES parameter file (`EDPftvarcon_inst%crown_kill`). This parameter replaces what the earlier wiki incorrectly referred to as `crown_damage_mort`.
 
-Sources: [fire/SFMainMod.F90 954-1018](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L954-L1018)  [biogeophys/FatesAllometryMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeophys/FatesAllometryMod.F90)
+**Joint-probability combination** (Thonicke 2010 Eq. 18):
 
-## Cambial Damage and Mortality
+```
+fire_mort = max(0, min(1,
+              crownfire_mort + cambial_mort - crownfire_mort * cambial_mort))
+```
 
-Cambial damage assesses whether heat from the fire penetrates through the bark to kill the cambium layer. This is a critical determinant of post-fire tree survival.
+This is the standard independent-events union probability `P(A ∪ B) = P(A) + P(B) - P(A) P(B)`, **not** a linear sum. The subtraction term prevents double-counting cohorts killed by both mechanisms. The result is the fraction of individuals in the cohort killed by fire on that day, stored in `currentCohort%fire_mort`.
 
-### Bark Protection and Critical Heating Time
+For non-woody cohorts (grasses) `fire_mort` is set explicitly to zero `(fire/SFMainMod.F90:1106)` — grass mode of death is removal of leaves, which is handled upstream through litter consumption in `ground_fuel_consumption`, not through this mortality channel.
 
-The `cambial_damage_kill` subroutine [fire/SFMainMod.F90 1021-1053](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L1021-L1053) implements the Peterson and Ryan (1986) cambial damage model:
-
-Critical Time Calculation:
-
-Where:
-
-- `τ_c`= critical time to kill cambium (minutes)
-- `bt``bark_scaler × dbh`= bark thickness (cm) =
-
-
-Cambial Mortality Probability:
-
-Where:
-
-- `τ_l``ground_fuel_consumption`= fire residence time (minutes), calculated in
-- `τ_l / τ_c ≥ 2.0`When , cambial mortality = 1.0
-
-
-![SVG image](../assets/images/7.3__Fire_Effects_on_Vegetation__img-05.svg)
-
-Diagram: Cambial Damage Calculation
-
-### PFT-Specific Bark Characteristics
-
-Different PFTs have different bark protection levels specified by the `bark_scaler` parameter [fire/SFMainMod.F90 1046](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L1046-L1046) Thicker-barked species are more fire-resistant. The calculation only applies to woody cohorts.
-
-Sources: [fire/SFMainMod.F90 1021-1053](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L1021-L1053)  [fire/SFParamsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFParamsMod.F90)
-
-## Post-Fire Mortality Rate
-
-The `post_fire_mortality` subroutine [fire/SFMainMod.F90 1054-1136](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L1054-L1136) combines crown damage and cambial damage to calculate the overall fire mortality rate for each cohort.
-
-### Combined Mortality Calculation
-
-Total Fire Mortality:
-
-Where:
-
-- `fire_mort`= fraction of cohort killed per day
-- `cambial_mort`= probability of cambial kill (0-1)
-- `fraction_crown_burned`= fraction of crown consumed (0-1)
-- `r_PM`= PFT-specific crown damage mortality parameter
-
-
-This formulation means that:
-
-- `cambial_mort = 1.0`Complete cambial kill ( ) results in complete mortality regardless of crown damage
-- Trees can survive crown damage if cambium is not killed
-- `r_PM`The parameter scales the crown damage effect
-
-
-![SVG image](../assets/images/7.3__Fire_Effects_on_Vegetation__img-06.svg)
-
-Diagram: Post-Fire Mortality Calculation
-
-### Mortality Rate Scaling
-
-The calculated `fire_mort` represents the fraction of individuals in a cohort that die per day. This is stored in `currentCohort%fire_mort` and used in subsequent disturbance calculations [fire/SFMainMod.F90 1125-1128](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L1125-L1128)
-
-For non-woody plants (grasses), fire mortality is calculated differently because they don't experience cambial damage in the same way. Their mortality depends primarily on the fraction of aboveground biomass consumed.
-
-Sources: [fire/SFMainMod.F90 1054-1136](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L1054-L1136)
-
-## Integration with Disturbance Dynamics
-
-Fire mortality rates calculated for cohorts feed into the broader disturbance framework in FATES. The `fire_mort` values are used to compute patch-level disturbance rates.
-
-### Cohort-to-Patch Aggregation
-
-![SVG image](../assets/images/7.3__Fire_Effects_on_Vegetation__img-07.svg)
-
-Diagram: Fire Effects to Patch Dynamics Connection
-
-The fire mortality is combined with other mortality sources in the disturbance rate calculation [main/EDPatchDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPatchDynamicsMod.F90) Specifically:
-
-- `dtype_ifire`Fire mortality contributes to disturbance type
-- Weighted by crown area to represent area disturbed
-- Only canopy layer cohorts contribute to disturbance-generating mortality
-- `spawn_patches()`[main/EDMainMod.F90292](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L292-L292)Fire creates new patches via
-
-
-Sources: [main/EDMainMod.F90 218-223](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L218-L223)  [main/EDPatchDynamicsMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDPatchDynamicsMod.F90)
-
-## Key Data Structures
-
-The fire effects calculations interact with several cohort and patch-level data structures:
-
-### Cohort-Level Fire Variables
-
-| Variable | Type | Description | Set In | 
-| --- | --- | --- | --- |
-| fire_mort | real(r8) | Fire mortality rate (fraction/day) | post_fire_mortality | 
-| fraction_crown_burned | real(r8) | Fraction of crown consumed (0-1) | crown_damage | 
-| cambial_mort | real(r8) | Cambial kill probability (0-1) | cambial_damage_kill | 
-| lmort_direct | real(r8) | Direct logging mortality | LoggingMortality_frac | 
-
-
-### Patch-Level Fire Variables
-
-| Variable | Type | Description | Set In | 
-| --- | --- | --- | --- |
-| Scorch_ht(pft) | real(r8) | Scorch height per PFT (m) | crown_scorching | 
-| FI | real(r8) | Fire intensity (kW/m) | area_burnt_intensity | 
-| tau_l | real(r8) | Fire residence time (min) | ground_fuel_consumption | 
-| fire | integer | Fire occurrence flag (0/1) | area_burnt_intensity | 
-| frac_burnt | real(r8) | Fraction of patch burned | area_burnt_intensity | 
-
-
-Sources: [biogeochem/FatesCohortMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesCohortMod.F90)  [biogeochem/FatesPatchMod.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/FatesPatchMod.F90)
+Sources: `(fire/SFMainMod.F90:1074-1119)`
 
 ## PFT Parameters Controlling Fire Effects
 
-Several PFT-specific parameters control vegetation vulnerability to fire:
+| Parameter file name | Fortran field | Description | Used in |
+|---|---|---|---|
+| `fates_fire_alpha_SH` | `EDPftvarcon_inst%fire_alpha_SH` | Scorch-height coefficient `α_SH` (Byram/Van Wagner) | `crown_scorching` |
+| `fates_fire_bark_scaler` | `EDPftvarcon_inst%bark_scaler` | DBH-to-bark-thickness scaler (cm/cm) | `cambial_damage_kill` |
+| `fates_fire_crown_kill` | `EDPftvarcon_inst%crown_kill` | Scaler on crown-scorch mortality (`crown_kill` in Thonicke Eq. 22) | `post_fire_mortality` |
 
-| Parameter | Symbol | Description | Units | Used In | 
-| --- | --- | --- | --- | --- |
-| fire_alpha_SH | α_SH | Scorch height coefficient | - | crown_scorching | 
-| bark_scaler | - | Bark thickness allometry | cm/cm | cambial_damage_kill | 
-| crown_damage_mort | r_PM | Crown damage mortality rate | - | post_fire_mortality | 
+Registration: `(main/EDPftvarcon.F90:380-386)` (Register), `(main/EDPftvarcon.F90:821-827)` (Retrieve). There is no `crown_damage_mort` parameter in EDPftvarcon or the CDL file at commit `e85d997`.
 
+## Cohort- and Patch-Level State Variables Written by This Pipeline
 
-These parameters are loaded from the FATES parameter file and stored in `EDPftvarcon_inst`  [biogeochem/EDPftvarcon.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPftvarcon.F90)
+| Variable | Level | Set in | Description |
+|---|---|---|---|
+| `Scorch_ht(pft)` | patch | `crown_scorching` | Per-PFT scorch height (m) |
+| `fraction_crown_burned` | cohort | `crown_damage` | Fraction of crown consumed (0–1) |
+| `cambial_mort` | cohort | `cambial_damage_kill` | Cambial kill probability (0–1) |
+| `crownfire_mort` | cohort | `post_fire_mortality` | Crown-scorch kill probability (0–1) |
+| `fire_mort` | cohort | `post_fire_mortality` | Total fire mortality fraction per day (0–1) |
 
-Sources: [fire/SFMainMod.F90 935-1128](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L935-L1128)  [biogeochem/EDPftvarcon.F90](https://github.com/jingtao-lbl/fates/blob/e85d9977/biogeochem/EDPftvarcon.F90)
+`fire_mort` is subsequently consumed by the disturbance-rate calculation in `EDPatchDynamicsMod` to determine the area and composition of fire-generated patches. Only canopy-layer cohorts contribute to disturbance-generating mortality at that downstream step; the effects pipeline itself has no canopy-layer check.
 
-## Execution Context and Frequency
-
-Fire effects are calculated daily within the `ed_ecosystem_dynamics` routine when fire occurs:
-
-![SVG image](../assets/images/7.3__Fire_Effects_on_Vegetation__img-08.svg)
-
-Diagram: Fire Effects in Daily Dynamics Sequence
-
-The fire model is called after phenology but before disturbance rate calculations [main/EDMainMod.F90 218](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L218-L218) ensuring that fire mortality is available for patch creation in the same timestep.
-
-Sources: [main/EDMainMod.F90 141-317](https://github.com/jingtao-lbl/fates/blob/e85d9977/main/EDMainMod.F90#L141-L317)
+Sources: `(fire/SFMainMod.F90:890-1119)`, `(biogeochem/FatesCohortMod.F90)`, `(biogeochem/FatesPatchMod.F90)`
 
 ## Mathematical Summary
 
-The complete chain of fire effects calculations:
+```
+Scorch_ht(pft)        = fire_alpha_SH(pft) * FI^0.667
 
-This mortality rate is then used in disturbance calculations to determine the area and composition of newly created burned patches.
+fraction_crown_burned = piecewise in (Scorch_ht, height, crown_depth)
 
-Sources: [fire/SFMainMod.F90 890-1136](https://github.com/jingtao-lbl/fates/blob/e85d9977/fire/SFMainMod.F90#L890-L1136)
+bt                    = bark_scaler(pft) * dbh
+tau_c                 = 2.9 * bt^2
+cambial_mort          = 0                             if tau_l/tau_c <= 0.22
+                      = 0.563*(tau_l/tau_c) - 0.125   if 0.22 < tau_l/tau_c < 2
+                      = 1                             if tau_l/tau_c >= 2
+
+crownfire_mort        = crown_kill(pft) * fraction_crown_burned^3
+fire_mort             = crownfire_mort + cambial_mort
+                        - crownfire_mort * cambial_mort
+```
+
+Sources: `(fire/SFMainMod.F90:890-1119)`
