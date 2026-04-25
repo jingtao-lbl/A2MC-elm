@@ -99,33 +99,50 @@ def run_diagnostic_scripts(
             except Exception as e:
                 logger.warning(f"Could not load screening targets: {e}")
 
-        # Get NC file path for best case (if available)
-        nc_file = None
+        # Get NC file path for best case (if available).
+        # Build the glob from the active round's CASE_NAME_PATTERN so the
+        # match works for any round-specific naming (R3: PtCNPEn{N}_TRANS,
+        # R4: PtCNPEn{N}PrescP_TRANS, R5: PtCNPEn{N}SupN_TRANS, ...).
+        # Mirrors the fix bffba22 made in dispatch.py — duplicate-code-path
+        # closed here as part of v2.87.
+        def _resolve_case_nc(case_id, label: str):
+            if not case_id:
+                return None
+            extracted_dir = a2mc_config.EXTRACTED_DATA
+            if not extracted_dir or not Path(extracted_dir).exists():
+                return None
+            case_pattern = getattr(a2mc_config, 'CASE_NAME_PATTERN', '') or ''
+            if case_pattern and '{N}' in case_pattern:
+                # Substitute case number, leave PHASE as wildcard so any
+                # phase suffix (TRANS/RGSP/...) is matched.
+                case_name_glob = case_pattern.format(N=case_id, PHASE='*')
+                pattern = f"{case_name_glob}_all_variables*.nc"
+            else:
+                # Fallback if CASE_NAME_PATTERN isn't configured. The lone
+                # `*En{N}_*` glob misses round-suffixed cases (R4 PrescP,
+                # R5 SupN), so we use a looser substring match here.
+                pattern = f"*En{case_id}*_all_variables*.nc"
+            matches = list(Path(extracted_dir).glob(pattern))
+            if matches:
+                resolved = str(matches[0])
+                logger.info(f"Found NC file for {label} case {case_id}: {resolved}")
+                return resolved
+            logger.warning(
+                f"No NC file matched glob '{pattern}' in {extracted_dir} "
+                f"for {label} case {case_id}; per-case diagnostic plots will be skipped."
+            )
+            return None
+
         best_case = screening_data.get('best_case', {})
-        if best_case:
-            case_id = best_case.get('case_id', best_case.get('case_num'))
-            if case_id:
-                extracted_dir = a2mc_config.EXTRACTED_DATA
-                if extracted_dir and Path(extracted_dir).exists():
-                    pattern = f"*En{case_id}_*all_variables*.nc"
-                    nc_files = list(Path(extracted_dir).glob(pattern))
-                    if nc_files:
-                        nc_file = str(nc_files[0])
-                        logger.info(f"Found NC file for case {case_id}: {nc_file}")
+        best_case_id = best_case.get('case_id', best_case.get('case_num')) if best_case else None
+        nc_file = _resolve_case_nc(best_case_id, "best")
 
         # Also resolve NC file for lowest_cost_case (if different from best_case)
         nc_file_lowest = None
         lowest_cost = screening_data.get('lowest_cost_case', {})
         lowest_cost_id = lowest_cost.get('case_id', lowest_cost.get('case_num'))
-        best_case_id = best_case.get('case_id', best_case.get('case_num')) if best_case else None
         if lowest_cost_id and lowest_cost_id != best_case_id:
-            extracted_dir = a2mc_config.EXTRACTED_DATA
-            if extracted_dir and Path(extracted_dir).exists():
-                pattern = f"*En{lowest_cost_id}_*all_variables*.nc"
-                nc_files_lc = list(Path(extracted_dir).glob(pattern))
-                if nc_files_lc:
-                    nc_file_lowest = str(nc_files_lc[0])
-                    logger.info(f"Found NC file for lowest_cost case {lowest_cost_id}: {nc_file_lowest}")
+            nc_file_lowest = _resolve_case_nc(lowest_cost_id, "lowest_cost")
 
         # Compute plot output directory (phase_results, not logs)
         plot_output_dir = None

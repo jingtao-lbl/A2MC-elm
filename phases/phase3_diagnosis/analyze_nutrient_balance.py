@@ -87,6 +87,11 @@ P_POOLS = [
     ('PRIMP',      'Primary P',       'ELM'),
     ('FATES_STOREP', 'Plant storage P', 'FATES'),
     ('FATES_VEGP',   'Vegetation P',    'FATES'),
+    # Litter-trap diagnostic (added v2.87): when drought slows decomposition,
+    # P accumulates here instead of cycling back to LABILEP. See discoveries
+    # litter_p_accumulation_not_loss and drought_decomposition_coupling.
+    ('TOTLITP',    'Litter P',        'ELM'),
+    ('TOTSOMP',    'SOM P',           'ELM'),
 ]
 
 P_SZPF_VARS = [
@@ -117,6 +122,20 @@ N_POOLS = [
     ('SMIN_NO3',     'Nitrate',          'ELM'),
     ('FATES_STOREN', 'Plant storage N',  'FATES'),
     ('FATES_VEGN',   'Vegetation N',     'FATES'),
+    # Litter-trap diagnostic (added v2.87): same mechanism as P, mirrored
+    # for N to support full nutrient-cycle trap analysis.
+    ('TOTLITN',      'Litter N',         'ELM'),
+    ('TOTSOMN',      'SOM N',            'ELM'),
+]
+
+# C litter / SOM pools (added v2.87): not a full carbon balance — the
+# plant-side C balance (GPP vs MR) lives in `analyze_carbon_balance.py`.
+# This list tracks ONLY the soil litter / SOM pools needed for the
+# litter-trap diagnostic, so it can be read by `extract_nutrient_budget()`
+# alongside P_POOLS / N_POOLS for cross-element trap analysis.
+C_LITTER_SOM_POOLS = [
+    ('TOTLITC',      'Litter C',         'ELM'),
+    ('TOTSOMC',      'SOM C',            'ELM'),
 ]
 
 N_SZPF_VARS = [

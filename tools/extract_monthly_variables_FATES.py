@@ -201,6 +201,19 @@ SITE_LEVEL_VARS = [
     'FATES_NH4UPTAKE',    # Plant NH4 uptake (FATES)
     'FATES_NO3UPTAKE',    # Plant NO3 uptake (FATES)
     'FATES_NEFFLUX',      # Plant N efflux (FATES)
+
+    # === LITTER + SOM POOLS (site-level, ELM) ===
+    # Needed for the litter-trap diagnostic: when drought-driven mortality
+    # creates a litter pulse that decomposes too slowly (low w_scalar in
+    # decomp_k), nutrients get trapped in TOTLIT* and don't replenish
+    # LABILEP/SMINN. See discoveries litter_p_accumulation_not_loss and
+    # drought_decomposition_coupling, and dev log 20260424d (R5 plan).
+    'TOTLITC',            # Total litter C (g C/m²)
+    'TOTLITN',            # Total litter N (g N/m²)
+    'TOTLITP',            # Total litter P (g P/m²)
+    'TOTSOMC',            # Total soil organic matter C (g C/m²)
+    'TOTSOMN',            # Total soil organic matter N (g N/m²)
+    'TOTSOMP',            # Total soil organic matter P (g P/m²)
 ]
 
 # ======= SOIL LAYER VARIABLES (time, levgrnd=15, lndgrid) =======
