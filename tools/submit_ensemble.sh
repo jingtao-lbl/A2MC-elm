@@ -32,6 +32,9 @@
 #   --phases PHASES       Which phases to run (default: "ADSP RGSP TRANS")
 #   --submit              Actually submit (default: just build)
 #   --skip-build          Skip building (use existing builds)
+#   --reuse-build NUM     Reuse compiled build from case number NUM (e.g., "1").
+#                         Forwarded to create_case.sh; sets EXEROOT and
+#                         BUILD_COMPLETE=TRUE for each case in the loop.
 #   --log-dir DIR         Directory for log files (default: ./logs)
 #   --dry-run             Show what would be done
 #   -h, --help            Show this help
@@ -66,6 +69,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Load configuration (a2mc_config.sh is at the project root, one level up from tools/)
 source "${SCRIPT_DIR}/../a2mc_config.sh"
 
+# v2.88: layer the active round-specific config on top of a2mc_config.sh
+# defaults if A2MC_SITE_CONFIG was set in the parent shell (e.g., by sourcing
+# kougarok_config_r4.sh). The unconditional `source a2mc_config.sh` above
+# clobbers any round-specific overrides (A2MC_ADSP_SUPLNITRO,
+# A2MC_RGSP_SUPLPHOS, A2MC_ENSEMBLE_NAME, etc.) the user established in their
+# parent shell, silently producing ensemble submissions that use the wrong
+# protocol or the wrong output paths. Re-sourcing the round config here
+# restores them.
+if [ -n "${A2MC_SITE_CONFIG:-}" ] && [ -f "$A2MC_SITE_CONFIG" ] && \
+   [ "$A2MC_SITE_CONFIG" != "${SCRIPT_DIR}/../a2mc_config.sh" ]; then
+    source "$A2MC_SITE_CONFIG"
+fi
+
 # ========================
 # ARGUMENT PARSING
 # ========================
@@ -87,6 +103,7 @@ DELAY=5
 RUN_PHASES="ADSP RGSP TRANS"
 DO_SUBMIT=false
 SKIP_BUILD=false
+REUSE_BUILD=""             # Forward to create_case.sh's --reuse-build NUM
 LOG_DIR="./logs"
 DRY_RUN=false
 
@@ -147,6 +164,10 @@ while [[ $# -gt 0 ]]; do
         --skip-build)
             SKIP_BUILD=true
             shift
+            ;;
+        --reuse-build)
+            REUSE_BUILD="$2"
+            shift 2
             ;;
         --log-dir)
             LOG_DIR="$2"
@@ -298,6 +319,13 @@ submit_case() {
     cmd="$cmd --case-prefix ${CASE_PREFIX}"
     cmd="$cmd --phases \"${RUN_PHASES}\""
 
+    # v2.88: forward the active round config to create_case.sh via --config so
+    # the round-specific protocol overrides reach the per-case namelist.
+    # Without this, create_case.sh would only see a2mc_config.sh defaults.
+    if [ -n "${A2MC_SITE_CONFIG:-}" ] && [ -f "$A2MC_SITE_CONFIG" ]; then
+        cmd="$cmd --config ${A2MC_SITE_CONFIG}"
+    fi
+
     if [ -n "$CASE_SUFFIX" ]; then
         cmd="$cmd --case-suffix ${CASE_SUFFIX}"
     fi
@@ -308,6 +336,10 @@ submit_case() {
 
     if [ "$SKIP_BUILD" = true ]; then
         cmd="$cmd --skip-build"
+    fi
+
+    if [ -n "$REUSE_BUILD" ]; then
+        cmd="$cmd --reuse-build ${REUSE_BUILD}"
     fi
 
     # Run in background with logging

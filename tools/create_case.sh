@@ -56,6 +56,19 @@ else
     exit 1
 fi
 
+# v2.88: layer the active round-specific config on top of a2mc_config.sh
+# defaults if A2MC_SITE_CONFIG was set in the parent shell (e.g., by sourcing
+# kougarok_config_r4.sh). Without this, sourcing a2mc_config.sh above clobbers
+# any round-specific overrides (A2MC_ADSP_SUPLNITRO, A2MC_RGSP_SUPLPHOS, etc.)
+# the user established in their parent shell, silently producing simulations
+# with the wrong protocol. The --config CLI flag still takes precedence (it
+# is processed in the arg loop below); this only fires when --config is NOT
+# given AND a round config is identifiable via A2MC_SITE_CONFIG.
+if [ -n "${A2MC_SITE_CONFIG:-}" ] && [ -f "$A2MC_SITE_CONFIG" ] && \
+   [ "$A2MC_SITE_CONFIG" != "$CONFIG_FILE" ]; then
+    source "$A2MC_SITE_CONFIG"
+fi
+
 # ========================
 # ARGUMENT PARSING
 # ========================
