@@ -248,6 +248,222 @@ python scripts/verify_phase4.py
 
 ---
 
+## How a bump actually works (validator iteration flowchart)
+
+A T3 bump (new api epoch) runs through three sequential validator gates. Each gate must land Green before advancing — the lower layer's correctness is a prerequisite for the upper layer's verdict to be meaningful (a YAML check against a fabricated wiki is meaningless; a RAG diff against a broken graph is meaningless).
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    USER STARTS A T3 BUMP                                 │
+│   `python scripts/rag_bump.py --target-milestone api-NN-M --mode <X>`    │
+└──────────────────────────────┬───────────────────────────────────────────┘
+                               │
+                               ▼
+                ┌──────────────────────────────┐
+                │  Phase 1: Source prep        │
+                │  - Clone E3SM at target SHA  │
+                │  - Init FATES submodule      │
+                │  - Stage param file (JSON or │
+                │    CDL extracted from .nc)   │
+                │  - Synthesize output CDL     │
+                │    from FatesHistoryInter-   │
+                │    faceMod.F90               │
+                └──────────────┬───────────────┘
+                               │
+                               ▼
+                ┌──────────────────────────────┐
+                │  Phase 2: Wiki regeneration  │
+                │  - 10 FATES topic prompts    │
+                │  - 6 ELM topic prompts       │
+                │  - Mode A: user runs prompts │
+                │  - Mode B: API parallel calls│
+                │  - Mode C: API + auto-deploy │
+                └──────────────┬───────────────┘
+                               │
+                               ▼
+       ┌───────────────────────────────────────────────────────┐
+       │  GATE 1 — codebase_wiki_validator                     │
+       │  (Wiki ↔ source code, 5 dimensions)                   │
+       │                                                       │
+       │   1. (file:line) citations resolve                    │
+       │   2. Line numbers in-range                            │
+       │   3. Routine declarations exist in source             │
+       │   4. fates_*/elm_* parameter names valid              │
+       │   5. *Mod.F90 references exist                        │
+       └─────────────────────┬─────────────────────────────────┘
+                             │
+                             ▼
+                       ┌─────────────┐
+                       │   Verdict?  │
+                       └──┬────────┬─┘
+                          │        │
+                  Red/Yellow      Green
+                          │        │
+                          ▼        │
+       ┌──────────────────────────┐│
+       │  Patch wiki:             ││
+       │  - Fix dead citations    ││
+       │  - Replace fabricated    ││
+       │    routine/module names  ││
+       │  - Add missing param     ││
+       │    coverage              ││
+       │  - Update validator FP   ││
+       │    blacklists if regex   ││
+       │    needs tuning          ││
+       └──────────┬───────────────┘│
+                  │                 │
+                  └────loop─────────┤
+                                    │
+                                    ▼
+                ┌──────────────────────────────┐
+                │  Phase 3: Build RAG          │
+                │  - chroma_db (vector index)  │
+                │  - graph (NetworkX)          │
+                │  - metadata JSON             │
+                └──────────────┬───────────────┘
+                               │
+                               ▼
+                ┌──────────────────────────────┐
+                │  Phase 3.5: Curated YAML     │
+                │  - Freeze per-milestone copy │
+                │  - Update for renamed params │
+                │    (`fates_cnp_km_*` →       │
+                │    `fates_cnp_eca_km_*` etc.)│
+                │  - Add new mechanisms        │
+                └──────────────┬───────────────┘
+                               │
+                               ▼
+       ┌───────────────────────────────────────────────────────┐
+       │  GATE 2 — yaml_wiki_validator                         │
+       │  (Curated YAML ↔ wiki + param + output, 5 dimensions) │
+       │                                                       │
+       │   A. Param coverage in wiki                           │
+       │   B. Mechanism coverage in wiki (case-insensitive)    │
+       │   C. Output references valid (in CDL/JSON)            │
+       │   D. Code-reference resolution (file::routine)        │
+       │   E. Citation freshness sample                        │
+       └─────────────────────┬─────────────────────────────────┘
+                             │
+                             ▼
+                       ┌─────────────┐
+                       │   Verdict?  │
+                       └──┬────────┬─┘
+                          │        │
+                  Red/Yellow      Green
+                          │        │
+                          ▼        │
+       ┌──────────────────────────┐│
+       │  Patch YAML or wiki:     ││
+       │  - Rename phantom params ││
+       │  - Update code_reference ││
+       │    strings to real       ││
+       │    file::routine         ││
+       │  - Tag ELM-side outputs  ││
+       │    with host_model: elm  ││
+       │  - Add wiki coverage for ││
+       │    missing entries       ││
+       └──────────┬───────────────┘│
+                  │                 │
+                  └────loop─────────┤
+                                    │
+                                    ▼
+       ┌───────────────────────────────────────────────────────┐
+       │  GATE 3 (optional) — rag_diff                         │
+       │  (Built RAG ↔ reference milestone, 4 dimensions)      │
+       │                                                       │
+       │   1. Parameter inventory delta                        │
+       │   2. Graph structure (nodes/edges by type)            │
+       │   3. Wiki content (Jaccard similarity)                │
+       │   4. Parameter file structure                         │
+       │                                                       │
+       │  Thresholds version-bump-aware: cross-major-version   │
+       │  diffs scale `removed_y` / `renamed_y` bands.         │
+       └─────────────────────┬─────────────────────────────────┘
+                             │
+                             ▼
+                       ┌─────────────┐
+                       │   Verdict?  │
+                       └──┬────────┬─┘
+                          │        │
+                       Red/      Green or
+                       Unexp.   Yellow-by-
+                       Yellow    design
+                          │        │
+                          ▼        │
+       ┌──────────────────────────┐│
+       │  Investigate:            ││
+       │  - Unexpected node       ││
+       │    drops?                ││
+       │  - Wiki similarity too   ││
+       │    low?                  ││
+       │  - Re-check Gates 1-2    ││
+       └──────────┬───────────────┘│
+                  │                 │
+                  └────loop─────────┤
+                                    │
+                                    ▼
+                ┌──────────────────────────────┐
+                │  Register milestone in       │
+                │  rag/milestones.json         │
+                │  - Mark canonical / legacy   │
+                │  - Auto-populate covers_     │
+                │    sci_tags from FATES git   │
+                └──────────────┬───────────────┘
+                               │
+                               ▼
+                ┌──────────────────────────────┐
+                │  GATE 4 — verify_phase4.py   │
+                │  Content gates + smoke tests │
+                │                              │
+                │  ALL GREEN → done            │
+                └──────────────────────────────┘
+```
+
+**Why three gates, not one combined check?**
+
+Each gate has a different question and a different fix path:
+
+| Gate | Question | Fix happens in |
+|---|---|---|
+| 1. codebase_wiki | "Does the wiki cite real source code?" | Wiki `.md` files |
+| 2. yaml_wiki | "Does curated YAML match the wiki?" | `rag/data/curated_relationships*.yaml` |
+| 3. rag_diff | "Does the built RAG resemble the reference?" | Either gate above OR threshold tuning |
+
+If you collapsed them into one validator, a Red verdict couldn't tell you what to fix. The three-gate stack makes drift attributable to a specific layer.
+
+**Why does the iteration loop exist (rather than a one-shot validator)?**
+
+Wiki regeneration uses an LLM (subagent dispatch in Mode A/C, API call in Mode B). LLMs hallucinate. The Phase 2 → Gate 1 loop is the gauntlet that catches:
+
+- Fabricated module names (e.g., `PRTMyHypothesisMod.F90` from a tutorial template)
+- Dead `(file:line)` citations from outdated source pinning
+- Cross-component citations bleeding into the wrong wiki (FATES wiki citing ELM-side files)
+
+We saw all three classes of error during the api-31-0 → api-43-1 bump on this branch. The validator-iterate-fix loop turned the wiki from Red to Green over ~6 patch passes. See `memory/dev_logs_fatesversionassociation/20260427b/c/d_*.md` for the worked record.
+
+**Validator improvements during iteration**
+
+Sometimes Red is the validator's fault (false positives) rather than the wiki's fault. Examples we hit:
+
+- `codebase_wiki_validator` Dim 4 was matching `fates_*` against derived-type names (`fates_patch_type`), namelist flags (`fates_log`), and filenames (`fates_params_default`). Fix: hand-derived FP-pattern blacklist (~8 regex).
+- `yaml_wiki_validator` Dim B mechanism name match was case-sensitive; "ECA Competition" vs "ECA competition" was flagged. Fix: `wiki.contains(needle, case_insensitive=True)`.
+
+These improvements get committed to the validator scripts themselves. Future bumps benefit. The loop is therefore:
+
+```
+fix wiki → re-run validator → if still Red but signal looks like FP →
+fix validator → re-run → if real Red → fix wiki → re-run → ... → Green
+```
+
+**T1 and T2 short-circuit the flowchart**
+
+- T1 (same epoch, same commit, sha matches): no Phase 2, no validator iteration. Just `build_rag_index.py --record-metadata-only`. Done.
+- T2 (same epoch, param file changed): skip Phase 2 (wiki content valid). Run Phase 3 graph rebuild only. Re-run Gate 2 (yaml_wiki) since the parameter list moved. Skip Gate 3 (rag_diff) unless you want a sanity report.
+
+T3 is the only path that exercises every gate.
+
+---
+
 ## Common recipes
 
 Patterns that recur in version-association work.
