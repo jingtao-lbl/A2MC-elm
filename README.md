@@ -6,6 +6,10 @@
 **Version:** 2.73 <br>
 **Purpose:** Fully autonomous multi-target calibration of ELM using AI API + HPC + RAG/GraphRAG + Adaptive Memory
 
+> **Branches in this repository.** Two branches, with different lifecycles:
+> - **`main`** (default; this branch) — tracks the latest ELM-FATES release. Receives ongoing framework updates and version-association infrastructure.
+> - **`A2MC-elm-fates-demo`** — frozen reproducibility snapshot for the Kougarok manuscript, pinned at the **api-31-0 era** of ELM-FATES. No routine updates; only critical bug fixes are manually cherry-picked. Clone this branch to reproduce the published manuscript results: `git clone -b A2MC-elm-fates-demo https://github.com/jingtao-lbl/A2MC-elm.git`
+
 ---
 
 ## Motivation
