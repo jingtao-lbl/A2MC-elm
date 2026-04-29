@@ -282,6 +282,8 @@ If the build succeeded but the vector store is empty, the most likely cause is t
 
 ## Recipe 1: Bumping the wiki to a new commit-pinned tree
 
+> **SUPERSEDED 2026-04-28 by the milestone tier (v2.90).** When the milestone tier landed (Phases 1–4 of `docs/18_ELM_FATES_Version_Association_Plan.md`), symlinks `docs/{fates,elm}-knowledge-base/*-codebase-wiki` were removed and loaders now read the explicit `wiki_subdir` from `rag/milestones.json` per profile. The symlink-based wiki bump described below is obsolete. **For new wiki commits, use `scripts/rag_bump.py --target-milestone <name>` instead** — see `docs/a2mc_reference/version_association_workflow.md` Workflow 4 ("Bump to a new milestone"). The text below is preserved for historical reference (Apr–early-Apr 2026 era).
+
 **The situation:** We just regenerated FATES wiki at `docs/fates-knowledge-base/fates-codebase-wiki-e85d997/` and ELM wiki at `docs/elm-knowledge-base/elm-codebase-wiki-60d9aad/`. The original `fates-codebase-wiki/` and `elm-codebase-wiki/` are still in place. We want the RAG to use the new commit-pinned content.
 
 **Why naive `--rebuild` does not "just work":** The loader walks the KB root with a fixed list of subdirectory name probes (`loader.py:366-371`):

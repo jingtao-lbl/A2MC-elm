@@ -1,0 +1,40 @@
+{
+  "metadata_schema_version": 1,
+  "profile_name": "api-43-1",
+  "built_at": "2026-04-28T12:09:07+00:00",
+  "a2mc_version": "v2.89-dev",
+  "model_path": "/Users/jingtao/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES_api43-1",
+  "elm": {
+    "commit_sha": "d40b84318cd4e309ca66f014a7b6e9e5f43a3adc",
+    "commit_short": "d40b843",
+    "describe": "v3.1.0-beta.1-1536-gd40b84318c",
+    "wiki_subdir": "elm-codebase-wiki-d40b843",
+    "wiki_root": "docs/elm-knowledge-base"
+  },
+  "fates": {
+    "commit_sha": "e027a4030d2a0f09039fb337ad67ced7461dd4f0",
+    "commit_short": "e027a40",
+    "describe": "sci.1.91.1_api.43.1.0-0-ge027a403",
+    "nearest_tag": "sci.1.91.1_api.43.1.0",
+    "commits_past_tag": 0,
+    "api_epoch": "43.1",
+    "wiki_subdir": "fates-codebase-wiki-e027a40",
+    "wiki_root": "docs/fates-knowledge-base"
+  },
+  "param_files": {
+    "fates_param_file": "/Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Program/A2MC/docs/fates-knowledge-base/fates_params_info_e027a40.json",
+    "fates_param_file_format": "json",
+    "fates_param_file_sha": "8b199acaa1353b84e52389d8d69d1cad871b38be8292d96c4d8cbb879ba81c6f",
+    "output_var_file": "/Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Program/A2MC/docs/fates-knowledge-base/elm_fates_output_info_e027a40.cdl",
+    "output_var_file_sha": "20a451e062defdefa18681876a854e121f6b1bbe66246550078ca265541b8ace"
+  },
+  "curated_yaml": {
+    "path": "rag/data/curated_relationships_api-43-1.yaml",
+    "sha": "f5fe07c516a7150c34a2a4944aee0ddd19652b9f0f84e400dd8f7b8cf5fa240c"
+  },
+  "stats": {
+    "chunk_count": 3266,
+    "graph_nodes": 1538,
+    "graph_edges": 2620
+  }
+}

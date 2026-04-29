@@ -35,7 +35,7 @@ class FATESRetriever:
     def __init__(
         self,
         knowledge_base_path: Union[str, list[str]] = None,
-        persist_dir: str = "rag/chroma_db",
+        persist_dir: str = None,
         auto_build: bool = False
     ):
         """
@@ -45,7 +45,9 @@ class FATESRetriever:
             knowledge_base_path: Path(s) to knowledge base directory(ies).
                                  Can be a single path string or list of paths.
                                  If None, uses DEFAULT_KNOWLEDGE_BASES.
-            persist_dir: Directory for ChromaDB persistence
+            persist_dir: Directory for ChromaDB persistence. If None, derived
+                         from `$A2MC_RAG_DIR/chroma_db/$A2MC_RAG_ACTIVE` (env
+                         vars must be set; see version-association infra).
             auto_build: If True, automatically build index if empty
         """
         # Handle default and normalize to list
@@ -59,8 +61,9 @@ class FATESRetriever:
         # Keep single path for backward compatibility
         self.kb_path = self.kb_paths[0] if len(self.kb_paths) == 1 else self.kb_paths
 
-        self.persist_dir = persist_dir
+        # Vector store resolves persist_dir from env vars if not given.
         self.vector_store = FATESVectorStore(persist_dir=persist_dir)
+        self.persist_dir = self.vector_store.persist_dir
         self._indexed = self.vector_store.collection.count() > 0
 
         if auto_build and not self._indexed:
@@ -337,7 +340,7 @@ class FATESRetriever:
 
 def create_retriever(
     knowledge_base_path: str = "docs/fates-knowledge-base",
-    persist_dir: str = "rag/chroma_db",
+    persist_dir: str = None,
     rebuild: bool = False
 ) -> FATESRetriever:
     """
@@ -345,13 +348,14 @@ def create_retriever(
 
     Args:
         knowledge_base_path: Path to knowledge base
-        persist_dir: ChromaDB persistence directory
+        persist_dir: ChromaDB persistence directory. If None, derived from
+                     $A2MC_RAG_DIR/chroma_db/$A2MC_RAG_ACTIVE.
         rebuild: If True, delete existing index and rebuild
 
     Returns:
         Configured FATESRetriever instance
     """
-    if rebuild:
+    if rebuild and persist_dir is not None:
         import shutil
         persist_path = Path(persist_dir)
         if persist_path.exists():

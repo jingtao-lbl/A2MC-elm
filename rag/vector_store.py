@@ -10,6 +10,28 @@ from pathlib import Path
 from typing import Optional
 
 
+def _resolve_chroma_dir_from_env() -> str:
+    """Build a per-profile ChromaDB persist dir from A2MC env vars.
+
+    Layout: `$A2MC_RAG_DIR/chroma_db/$A2MC_RAG_ACTIVE`. `A2MC_RAG_DIR` defaults
+    to `<repo>/rag` if unset. `A2MC_RAG_ACTIVE` is required (per the version-
+    association infrastructure); raises EnvironmentError if missing.
+    """
+    rag_dir = os.environ.get("A2MC_RAG_DIR")
+    if not rag_dir:
+        # Fall back to repo-relative `rag/`. Resolved against repo root.
+        repo_root = Path(__file__).resolve().parent.parent
+        rag_dir = str(repo_root / "rag")
+    active = os.environ.get("A2MC_RAG_ACTIVE")
+    if not active:
+        raise EnvironmentError(
+            "A2MC_RAG_ACTIVE is not set and no explicit persist_dir was supplied. "
+            "Set A2MC_RAG_ACTIVE to a registered milestone profile name "
+            "(e.g., 'api-43-1' or 'api-31-0'), or pass `persist_dir=` explicitly."
+        )
+    return str(Path(rag_dir) / "chroma_db" / active)
+
+
 class FATESVectorStore:
     """
     ChromaDB-based vector store for FATES documentation.
@@ -20,7 +42,7 @@ class FATESVectorStore:
 
     def __init__(
         self,
-        persist_dir: str = "rag/chroma_db",
+        persist_dir: Optional[str] = None,
         collection_name: str = "fates_knowledge",
         embedding_model: str = "all-MiniLM-L6-v2"
     ):
@@ -28,7 +50,10 @@ class FATESVectorStore:
         Initialize the vector store.
 
         Args:
-            persist_dir: Directory to persist the ChromaDB database
+            persist_dir: Directory to persist the ChromaDB database. If None,
+                derives from `$A2MC_RAG_DIR/chroma_db/$A2MC_RAG_ACTIVE`. The
+                env vars must be set when `persist_dir` is unset (per the
+                version-association infrastructure; see CLAUDE.md).
             collection_name: Name of the collection in ChromaDB
             embedding_model: Sentence-transformer model for embeddings
         """
@@ -39,6 +64,9 @@ class FATESVectorStore:
             raise ImportError(
                 "chromadb is required. Install with: pip install chromadb sentence-transformers"
             )
+
+        if persist_dir is None:
+            persist_dir = _resolve_chroma_dir_from_env()
 
         self.persist_dir = persist_dir
         self.collection_name = collection_name

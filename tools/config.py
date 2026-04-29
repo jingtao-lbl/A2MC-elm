@@ -100,6 +100,57 @@ class A2MCConfig:
         return os.environ.get('A2MC_SALIB_PROBLEM_FILE', '')
 
     # ========================
+    # RAG / VERSION ASSOCIATION
+    # ========================
+
+    @property
+    def MODEL_PATH(self) -> str:
+        """Absolute path to the user's E3SM/ELM-FATES checkout root.
+
+        Required (not optional). Used by `tools/model_version.py` to detect
+        ELM + FATES commits, which the RAG infrastructure uses to select the
+        correct milestone profile. See docs/18 §4.1.
+        """
+        v = os.environ.get('A2MC_MODEL_PATH', '')
+        if not v:
+            raise EnvironmentError(
+                "A2MC_MODEL_PATH is required but not set. Set it in your "
+                "site config (e.g., use_cases/Kougarok/config/kougarok_config.sh) "
+                "to your E3SM checkout root."
+            )
+        return v
+
+    @property
+    def RAG_DIR(self) -> str:
+        """Root of the RAG storage tree. Defaults to <A2MC_ROOT>/rag."""
+        return os.environ.get('A2MC_RAG_DIR', f'{self.A2MC_ROOT}/rag')
+
+    @property
+    def RAG_ACTIVE(self) -> str:
+        """Active RAG profile name (e.g., 'api-43-1', 'api-31-0').
+
+        Selected by the version-association infrastructure based on the
+        user's MODEL_PATH. Required when reading or writing RAG artifacts.
+        """
+        v = os.environ.get('A2MC_RAG_ACTIVE', '')
+        if not v:
+            raise EnvironmentError(
+                "A2MC_RAG_ACTIVE is required but not set. The orchestrator "
+                "should set it via the alignment check at startup; if you "
+                "are running RAG tools outside the orchestrator, set it "
+                "explicitly to a registered milestone profile name."
+            )
+        return v
+
+    @property
+    def RAG_AUTO_REBUILD(self) -> bool:
+        """If true, the orchestrator rebuilds the RAG silently when drift is
+        detected. Default: false (drift causes WARN+abort)."""
+        return os.environ.get('A2MC_RAG_AUTO_REBUILD', 'false').lower() in (
+            'true', '1', 'yes', 'on'
+        )
+
+    # ========================
     # ENSEMBLE PATHS
     # ========================
 

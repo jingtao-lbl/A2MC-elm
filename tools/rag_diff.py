@@ -429,8 +429,48 @@ def diff_param_files(profile_a: Profile, profile_b: Profile) -> dict:
 # Sanity verdict
 # =============================================================================
 
-def sanity_verdict(param_inv: dict, wiki: dict) -> Tuple[str, List[str]]:
-    """Return (verdict, notes) per plan thresholds."""
+_API_VERSION_RE = re.compile(r"api[-_.]?(\d+)[-_.]?(\d+)?", re.IGNORECASE)
+
+
+def parse_api_version(name: str) -> Optional[Tuple[int, int]]:
+    """Extract (major, minor) from a profile name like 'api-43-1' or 'api.31.0'."""
+    m = _API_VERSION_RE.search(name)
+    if not m:
+        return None
+    major = int(m.group(1))
+    minor = int(m.group(2)) if m.group(2) else 0
+    return (major, minor)
+
+
+def scale_thresholds(name_a: str, name_b: str) -> Tuple[Dict[str, int], int]:
+    """Scale Yellow/Red thresholds based on API version distance.
+
+    Returns ({added_y, added_r, removed_y, removed_r, renamed_y}, api_distance).
+    Default thresholds (api_distance <= 1) match the original plan §4.9.
+    Multi-major bumps relax 'removed' and 'renamed' bands proportionally.
+    """
+    base = {"added_y": 50, "added_r": 100, "removed_y": 5,
+            "removed_r": 100, "renamed_y": 5}
+    va = parse_api_version(name_a)
+    vb = parse_api_version(name_b)
+    if not (va and vb):
+        return base, 0
+    api_distance = abs(va[0] - vb[0])
+    if api_distance <= 1:
+        return base, api_distance
+    # Scale: each major bump roughly +5 'removed' and +5 'renamed' headroom.
+    # Reflects empirical observation that api.31->api.43 (12 majors) drops
+    # ~14 params from real source-side renames, with no quality concern.
+    scaled = dict(base)
+    scaled["removed_y"] = base["removed_y"] + 5 * api_distance
+    scaled["renamed_y"] = base["renamed_y"] + 5 * api_distance
+    return scaled, api_distance
+
+
+def sanity_verdict(param_inv: dict, wiki: dict,
+                   profile_a_name: str = "",
+                   profile_b_name: str = "") -> Tuple[str, List[str]]:
+    """Return (verdict, notes) per plan thresholds, scaled by API distance."""
     added = len(param_inv["added"])
     removed = len(param_inv["removed"])
     renamed = len(param_inv["renamed"])
@@ -440,20 +480,28 @@ def sanity_verdict(param_inv: dict, wiki: dict) -> Tuple[str, List[str]]:
     near_zero = sum(1 for f in wiki["in_both"] if f["jaccard"] < 0.1)
     near_zero_frac = near_zero / len(wiki["in_both"]) if wiki["in_both"] else 0.0
 
+    th, api_distance = scale_thresholds(profile_a_name, profile_b_name)
     verdict = "Green"
     notes = []
 
-    if added > 100 or removed > 100 or near_zero_frac > 0.5:
+    if added > th["added_r"] or removed > th["removed_r"] or near_zero_frac > 0.5:
         verdict = "Red"
-    elif added > 50 or removed > 5 or renamed > 5 or avg_j <= 0.5:
+    elif added > th["added_y"] or removed > th["removed_y"] \
+            or renamed > th["renamed_y"] or avg_j <= 0.5:
         verdict = "Yellow"
 
-    if added > 50:
-        notes.append(f"{added} parameters added (threshold 50 for Yellow, 100 for Red).")
-    if removed > 5:
-        notes.append(f"{removed} parameters removed (threshold 5 for Yellow, 100 for Red).")
-    if renamed > 5:
-        notes.append(f"{renamed} likely renames (threshold 5 for Yellow).")
+    if api_distance >= 2:
+        notes.append(
+            f"Profile names indicate {api_distance}-major API distance; "
+            f"thresholds scaled (Yellow at >{th['removed_y']} removed, "
+            f">{th['renamed_y']} renamed)."
+        )
+    if added > th["added_y"]:
+        notes.append(f"{added} parameters added (threshold {th['added_y']} for Yellow, {th['added_r']} for Red).")
+    if removed > th["removed_y"]:
+        notes.append(f"{removed} parameters removed (threshold {th['removed_y']} for Yellow, {th['removed_r']} for Red).")
+    if renamed > th["renamed_y"]:
+        notes.append(f"{renamed} likely renames (threshold {th['renamed_y']} for Yellow).")
     if avg_j <= 0.5:
         notes.append(f"Wiki avg Jaccard {avg_j:.2f} is at or below 0.5 (Yellow threshold).")
     if near_zero_frac > 0.5:
@@ -756,7 +804,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     param_files = diff_param_files(profile_a, profile_b)
 
     print(f"[rag_diff] Computing verdict...", file=sys.stderr)
-    verdict, notes = sanity_verdict(param_inv, wiki)
+    verdict, notes = sanity_verdict(param_inv, wiki,
+                                    profile_a.name, profile_b.name)
 
     print(f"[rag_diff] Rendering report...", file=sys.stderr)
     report = render_report(profile_a, profile_b, param_inv, graph_struct,

@@ -1,0 +1,4994 @@
+// FATES output-variable registry (FATES-only, no ELM core variables)
+// Source pin: FATES commit e027a40 (sci.1.91.1_api.43.1.0)
+//             extracted from main/FatesHistoryInterfaceMod.F90
+// Generated: 2026-04-25
+// Replaces:  elm_fates_output_info.cdl (case-specific ncdump-h snapshot, api-25.5.0 era)
+//
+// Each variable's attributes include the standard CDL attributes
+// (long_name, units, cell_methods) plus three FATES-specific attributes
+// captured from the set_history_var() registration in source:
+//   :use_default   = 'active' | 'inactive'
+//   :upfreq_group  = update-frequency group token (e.g. group_dyna_complx)
+//   :hlms_compat   = host land-model compatibility list (e.g. 'CLM:ALM')
+//   :vtype         = source-side IO kind token (e.g. site_size_pft_r8)
+//   :src_line      = line number in FatesHistoryInterfaceMod.F90 (audit aid)
+
+netcdf fates_output_e027a40 {
+  dimensions:
+    lndgrid = 1;
+    fates_levpft = 12;
+    fates_levscls = 13;
+    fates_levscpf = 156;
+    fates_levage = 7;
+    fates_levagepft = 84;
+    fates_levagefuel = 42;
+    fates_levfuel = 6;
+    fates_levcwdsc = 4;
+    fates_levcacls = 2;
+    fates_levcapf = 24;
+    fates_levcan = 2;
+    fates_levcnlf = 60;
+    fates_levcnlfpf = 720;
+    fates_levcdpf = 312;
+    fates_levscag = 91;
+    fates_levscagpf = 1092;
+    fates_levheight = 6;
+    fates_levelem = 3;
+    fates_levelcwd = 12;
+    fates_levlanduse = 5;
+    fates_levlulu = 25;
+    fates_levlupft = 60;
+    levsoi = 10;
+    time = UNLIMITED;
+  variables:
+    double FATES_NPATCHES(time, lndgrid=1);
+      :long_name = "total number of patches per site";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6565";
+
+    double FATES_NCOHORTS(time, lndgrid=1);
+      :long_name = "total number of cohorts per site";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6571";
+
+    double FATES_TRIMMING(time, lndgrid=1);
+      :long_name = "degree to which canopy expansion is limited by leaf economics (0-1)";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6578";
+
+    double FATES_AREA_PLANTS(time, lndgrid=1);
+      :long_name = "area occupied by all plants per m2 land area";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6584";
+
+    double FATES_AREA_TREES(time, lndgrid=1);
+      :long_name = "area occupied by woody plants per m2 land area";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6589";
+
+    double FATES_FRACTION(time, lndgrid=1);
+      :long_name = "total gridcell fraction which FATES is running over";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6595";
+
+    double FATES_BA_WEIGHTED_HEIGHT(time, lndgrid=1);
+      :long_name = "basal area-weighted mean height of woody plants";
+      :units = "m";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6601";
+
+    double FATES_CA_WEIGHTED_HEIGHT(time, lndgrid=1);
+      :long_name = "crown area-weighted mean height of canopy plants";
+      :units = "m";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6607";
+
+    double FATES_MEAN_95PCTILE_HEIGHT(time, lndgrid=1);
+      :long_name = "The patch-area-weighted mean of 95th percentile height of canopy plants within a given patch";
+      :units = "m";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6613";
+
+    double FATES_COLD_STATUS(time, lndgrid=1);
+      :long_name = "site-level cold status, 0=not cold-dec, 1=too cold for leaves, 2=not too cold";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6619";
+
+    double FATES_GDD(time, lndgrid=1);
+      :long_name = "site-level growing degree days";
+      :units = "degree_Celsius";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6625";
+
+    double FATES_NCHILLDAYS(time, lndgrid=1);
+      :long_name = "site-level number of chill days";
+      :units = "days";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6630";
+
+    double FATES_NCOLDDAYS(time, lndgrid=1);
+      :long_name = "site-level number of cold days";
+      :units = "days";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6636";
+
+    double FATES_DAYSINCE_COLDLEAFOFF(time, lndgrid=1);
+      :long_name = "site-level days elapsed since cold leaf drop";
+      :units = "days";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6642";
+
+    double FATES_DAYSINCE_COLDLEAFON(time, lndgrid=1);
+      :long_name = "site-level days elapsed since cold leaf flush";
+      :units = "days";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6648";
+
+    double FATES_CANOPY_SPREAD(time, lndgrid=1);
+      :long_name = "scaling factor (0-1) between tree basal area and canopy area";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6654";
+
+    double FATES_LAI(time, lndgrid=1);
+      :long_name = "total leaf area index per m2 land area";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6660";
+
+    double FATES_ELAI(time, lndgrid=1);
+      :long_name = "exposed (non snow-occluded) leaf area index per m2 land area";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6666";
+
+    double FATES_NESTEROV_INDEX(time, lndgrid=1);
+      :long_name = "nesterov fire danger index";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6674";
+
+    double FATES_RX_BURN_WINDOW(time, lndgrid=1);
+      :long_name = "fraction of time when prescribed fire burn window presents";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6680";
+
+    double FATES_IGNITIONS(time, lndgrid=1);
+      :long_name = "number of successful fire ignitions per m2 land area per second";
+      :units = "m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6686";
+
+    double FATES_FDI(time, lndgrid=1);
+      :long_name = "Fire Danger Index (probability that an ignition will lead to a fire)";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6693";
+
+    double FATES_ROS(time, lndgrid=1);
+      :long_name = "fire rate of spread in meters per second";
+      :units = "m s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6699";
+
+    double FATES_EFFECT_WSPEED(time, lndgrid=1);
+      :long_name = "effective wind speed for fire spread in meters per second";
+      :units = "m s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6705";
+
+    double FATES_FUELCONSUMED(time, lndgrid=1);
+      :long_name = "total fuel consumed in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6711";
+
+    double FATES_FIRE_INTENSITY(time, lndgrid=1);
+      :long_name = "spitfire surface fireline intensity in J per m per second, sum of rx and wildfire";
+      :units = "J m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6717";
+
+    double FATES_FIRE_INTENSITY_BURNFRAC(time, lndgrid=1);
+      :long_name = "product of surface fire intensity and burned area fraction, sum of rx and wildfire-- divide by FATES_BURNFRAC to get area-weighted mean intensity";
+      :units = "J m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6724";
+
+    double FATES_WILDFIRE_INTENSITY(time, lndgrid=1);
+      :long_name = "spitfire surface fireline intensity of wildfire in J per m per second";
+      :units = "J m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6731";
+
+    double FATES_WILDFIRE_INTENSITY_BURNFRAC(time, lndgrid=1);
+      :long_name = "product of wildfire intensity and burned fraction -- divide by FATES_WILDFIRE_BURNFRAC to get area-weighted mean intensity";
+      :units = "J m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6738";
+
+    double FATES_RXFIRE_INTENSITY(time, lndgrid=1);
+      :long_name = "spitfire surface fireline intensity of prescribed fire in J per m per second";
+      :units = "J m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6745";
+
+    double FATES_RXFIRE_INTENSITY_BURNFRAC(time, lndgrid=1);
+      :long_name = "product of prescribed fire intensity and burned fraction -- to be devided by FATES_RXFIRE_BURNFRAC to get area-weighted mean intensity";
+      :units = "J m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6752";
+
+    double FATES_BURNFRAC(time, lndgrid=1);
+      :long_name = "totaL burned area fraction per second -- sum of rxfire and wildfire burnt frac";
+      :units = "s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6759";
+
+    double FATES_WILDFIRE_BURNFRAC(time, lndgrid=1);
+      :long_name = "burned area fraction per second by wildfire";
+      :units = "s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6765";
+
+    double FATES_RXFIRE_BURNFRAC(time, lndgrid=1);
+      :long_name = "burned area fraction per second by prescribed fire";
+      :units = "s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6771";
+
+    double FATES_RXFIRE_BURNABLE_FUEL(time, lndgrid=1);
+      :long_name = "burnable area fraction by Rx fire when fuel cond. met";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6777";
+
+    double FATES_RXFIRE_BURNABLE_FI(time, lndgrid=1);
+      :long_name = "burnable area fraction by Rx fire when fuel and FI cond. met";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6783";
+
+    double FATES_RXFIRE_BURNABLE_FINAL(time, lndgrid=1);
+      :long_name = "burnable area fraction by Rx fire when all cond. met";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6789";
+
+    double FATES_FUEL_MEF(time, lndgrid=1);
+      :long_name = "fuel moisture of extinction (volumetric)";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6795";
+
+    double FATES_FUEL_BULKD(time, lndgrid=1);
+      :long_name = "fuel bulk density in kg per m3";
+      :units = "kg m-3";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6801";
+
+    double FATES_FUEL_EFF_MOIST(time, lndgrid=1);
+      :long_name = "spitfire fuel moisture (volumetric)";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6807";
+
+    double FATES_FUEL_SAV(time, lndgrid=1);
+      :long_name = "spitfire fuel surface area to volume ratio";
+      :units = "m-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6812";
+
+    double FATES_FUEL_AMOUNT(time, lndgrid=1);
+      :long_name = "total ground fuel related to FATES_ROS (omits 1000hr fuels) in kg C per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6818";
+
+    double FATES_LITTER_IN(time, lndgrid=1);
+      :long_name = "litter flux in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6825";
+
+    double FATES_LITTER_OUT(time, lndgrid=1);
+      :long_name = "litter flux out in kg carbon (exudation, fragmentation, seed decay)";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6831";
+
+    double FATES_SEED_BANK(time, lndgrid=1);
+      :long_name = "total seed mass of all PFTs in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6837";
+
+    double FATES_UNGERM_SEED_BANK(time, lndgrid=1);
+      :long_name = "ungerminated seed mass of all PFTs in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6843";
+
+    double FATES_SEEDLING_POOL(time, lndgrid=1);
+      :long_name = "total seedling (ie germinated seeds) mass of all PFTs in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6849";
+
+    double FATES_SEEDS_IN(time, lndgrid=1);
+      :long_name = "seed production rate in kg carbon per m2 second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6855";
+
+    double FATES_SEEDS_IN_LOCAL(time, lndgrid=1);
+      :long_name = "local seed production rate in kg carbon per m2 second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6861";
+
+    double FATES_STOREC(time, lndgrid=1);
+      :long_name = "total biomass in live plant storage in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6867";
+
+    double FATES_STOREC_TF(time, lndgrid=1);
+      :long_name = "Storage C fraction of target";
+      :units = "kg kg-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6873";
+
+    double FATES_VEGC(time, lndgrid=1);
+      :long_name = "total biomass in live plants in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6878";
+
+    double FATES_SAPWOODC(time, lndgrid=1);
+      :long_name = "total biomass in live plant sapwood in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6884";
+
+    double FATES_LEAFC(time, lndgrid=1);
+      :long_name = "total biomass in live plant leaves in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6890";
+
+    double FATES_FROOTC(time, lndgrid=1);
+      :long_name = "total biomass in live plant fine roots in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6896";
+
+    double FATES_REPROC(time, lndgrid=1);
+      :long_name = "total biomass in live plant reproductive tissues in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6902";
+
+    double FATES_NPP(time, lndgrid=1);
+      :long_name = "net primary production in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6908";
+
+    double FATES_AUTORESP(time, lndgrid=1);
+      :long_name = "autotrophic respiration in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6913";
+
+    double FATES_GROWTH_RESP(time, lndgrid=1);
+      :long_name = "growth respiration in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6918";
+
+    double FATES_L2FR(time, lndgrid=1);
+      :long_name = "The leaf to fineroot biomass multiplier for target allometry";
+      :units = "kg kg-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6926";
+
+    double FATES_NH4UPTAKE(time, lndgrid=1);
+      :long_name = "ammonium uptake rate by plants in kg NH4 per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_nflx_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6934";
+
+    double FATES_NO3UPTAKE(time, lndgrid=1);
+      :long_name = "nitrate uptake rate by plants in kg NO3 per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_nflx_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6940";
+
+    double FATES_NEFFLUX(time, lndgrid=1);
+      :long_name = "nitrogen effluxed from plant in kg N per m2 per second (unused)";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_nflx_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6946";
+
+    double FATES_NDEMAND(time, lndgrid=1);
+      :long_name = "plant nitrogen need (algorithm dependent) in kg N per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_nflx_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6952";
+
+    double FATES_NFIX_SYM(time, lndgrid=1);
+      :long_name = "symbiotic dinitrogen fixation in kg N per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_nflx_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6958";
+
+    double FATES_STOREN(time, lndgrid=1);
+      :long_name = "total nitrogen in live plant storage";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6964";
+
+    double FATES_STOREN_TF(time, lndgrid=1);
+      :long_name = "storage N fraction of target";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6969";
+
+    double FATES_VEGN(time, lndgrid=1);
+      :long_name = "total nitrogen in live plants";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6974";
+
+    double FATES_SAPWOODN(time, lndgrid=1);
+      :long_name = "total nitrogen in live plant sapwood";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6979";
+
+    double FATES_LEAFN(time, lndgrid=1);
+      :long_name = "total nitrogen in live plant leaves";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6984";
+
+    double FATES_FROOTN(time, lndgrid=1);
+      :long_name = "total nitrogen in live plant fine-roots";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6989";
+
+    double FATES_REPRON(time, lndgrid=1);
+      :long_name = "total nitrogen in live plant reproductive tissues";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "6995";
+
+    double FATES_STOREP(time, lndgrid=1);
+      :long_name = "total phosphorus in live plant storage";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7003";
+
+    double FATES_STOREP_TF(time, lndgrid=1);
+      :long_name = "storage P fraction of target";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7009";
+
+    double FATES_VEGP(time, lndgrid=1);
+      :long_name = "total phosphorus in live plants";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7015";
+
+    double FATES_SAPWOODP(time, lndgrid=1);
+      :long_name = "Total phosphorus in live plant sapwood";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7020";
+
+    double FATES_LEAFP(time, lndgrid=1);
+      :long_name = "total phosphorus in live plant leaves";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7025";
+
+    double FATES_FROOTP(time, lndgrid=1);
+      :long_name = "total phosphorus in live plant fine roots";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7031";
+
+    double FATES_REPROP(time, lndgrid=1);
+      :long_name = "total phosphorus in live plant reproductive tissues";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7037";
+
+    double FATES_PUPTAKE(time, lndgrid=1);
+      :long_name = "mineralized phosphorus uptake rate of plants in kg P per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_nflx_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7043";
+
+    double FATES_PEFFLUX(time, lndgrid=1);
+      :long_name = "phosphorus effluxed from plant in kg P per m2 per second (unused)";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_nflx_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7049";
+
+    double FATES_PDEMAND(time, lndgrid=1);
+      :long_name = "plant phosphorus need (algorithm dependent) in kg P per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_nflx_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7055";
+
+    double FATES_STRUCTC(time, lndgrid=1);
+      :long_name = "structural biomass in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7063";
+
+    double FATES_NONSTRUCTC(time, lndgrid=1);
+      :long_name = "non-structural biomass (sapwood + leaf + fineroot) in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7069";
+
+    double FATES_VEGC_ABOVEGROUND(time, lndgrid=1);
+      :long_name = "aboveground biomass in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7075";
+
+    double FATES_CANOPY_VEGC(time, lndgrid=1);
+      :long_name = "biomass of canopy plants in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7081";
+
+    double FATES_USTORY_VEGC(time, lndgrid=1);
+      :long_name = "biomass of understory plants in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7087";
+
+    double FATES_PRIMARY_PATCHFUSION_ERR(time, lndgrid=1);
+      :long_name = "error in total primary lands associated with patch fusion";
+      :units = "m2 m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7095";
+
+    double FATES_DISTURBANCE_RATE_FIRE(time, lndgrid=1);
+      :long_name = "disturbance rate from fire";
+      :units = "m2 m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7102";
+
+    double FATES_DISTURBANCE_RATE_LOGGING(time, lndgrid=1);
+      :long_name = "disturbance rate from logging";
+      :units = "m2 m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7108";
+
+    double FATES_DISTURBANCE_RATE_TREEFALL(time, lndgrid=1);
+      :long_name = "disturbance rate from treefall";
+      :units = "m2 m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7114";
+
+    double FATES_HARVEST_WOODPROD_C_FLUX(time, lndgrid=1);
+      :long_name = "harvest-associated wood product carbon flux in kg C per m2 per year";
+      :units = "kg m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7120";
+
+    double FATES_LUCHANGE_WOODPROD_C_FLUX(time, lndgrid=1);
+      :long_name = "land-use-change-associated wood product carbon flux in kg C per m2 per year";
+      :units = "kg m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7127";
+
+    double FATES_TVEG24(time, lndgrid=1);
+      :long_name = "fates 24-hr running mean vegetation temperature by site";
+      :units = "degree_Celsius";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7134";
+
+    double FATES_TLONGTERM(time, lndgrid=1);
+      :long_name = "fates 30-year running mean vegetation temperature by site";
+      :units = "degree_Celsius";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7140";
+
+    double FATES_TGROWTH(time, lndgrid=1);
+      :long_name = "fates long-term running mean vegetation temperature by site";
+      :units = "degree_Celsius";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7146";
+
+    double FATES_HARVEST_DEBT(time, lndgrid=1);
+      :long_name = "Accumulated carbon failed to be harvested";
+      :units = "kg C";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7152";
+
+    double FATES_HARVEST_DEBT_SEC(time, lndgrid=1);
+      :long_name = "Accumulated carbon failed to be harvested from secondary patches";
+      :units = "kg C";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7157";
+
+    double FATES_EXCESS_RESP(time, lndgrid=1);
+      :long_name = "respiration of un-allocatable carbon gain";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_nflx_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7164";
+
+    double FATES_DEMOTION_CARBONFLUX(time, lndgrid=1);
+      :long_name = "demotion-associated biomass carbon flux from canopy to understory in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7173";
+
+    double FATES_PROMOTION_CARBONFLUX(time, lndgrid=1);
+      :long_name = "promotion-associated biomass carbon flux from understory to canopy in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7180";
+
+    double FATES_MORTALITY_CFLUX_CANOPY(time, lndgrid=1);
+      :long_name = "flux of biomass carbon from live to dead pools from mortality of canopy plants in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7187";
+
+    double FATES_MORTALITY_CFLUX_USTORY(time, lndgrid=1);
+      :long_name = "flux of biomass carbon from live to dead pools from mortality of understory plants in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7194";
+
+    double MORTALITY_CROWNAREA_CANOPY(time, lndgrid=1);
+      :long_name = "Crown area of canopy trees that died";
+      :units = "m2/ha/year";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7201";
+
+    double MORTALITY_CROWNAREA_UNDERSTORY(time, lndgrid=1);
+      :long_name = "Crown aera of understory trees that died";
+      :units = "m2/ha/year";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7208";
+
+    double FATES_FIRE_CLOSS(time, lndgrid=1);
+      :long_name = "carbon loss to atmosphere from fire in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7215";
+
+    double FATES_FIRE_CLOSS_LIVEFUELS(time, lndgrid=1);
+      :long_name = "carbon loss to atmosphere from live fuels only via fire in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7221";
+
+    double FATES_FIRE_CLOSS_LANDUSECHANGE(time, lndgrid=1);
+      :long_name = "carbon loss to atmosphere from fire in kg carbon per m2 per second from land use change only";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7227";
+
+    double FATES_CBALANCE_ERROR(time, lndgrid=1);
+      :long_name = "total carbon error in kg carbon per second";
+      :units = "kg s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7233";
+
+    double FATES_LEAF_ALLOC(time, lndgrid=1);
+      :long_name = "allocation to leaves in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7242";
+
+    double FATES_SEED_ALLOC(time, lndgrid=1);
+      :long_name = "allocation to seeds in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7248";
+
+    double FATES_STEM_ALLOC(time, lndgrid=1);
+      :long_name = "allocation to stem in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7254";
+
+    double FATES_FROOT_ALLOC(time, lndgrid=1);
+      :long_name = "allocation to fine roots in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7260";
+
+    double FATES_CROOT_ALLOC(time, lndgrid=1);
+      :long_name = "allocation to coarse roots in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7266";
+
+    double FATES_STORE_ALLOC(time, lndgrid=1);
+      :long_name = "allocation to storage tissues in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7272";
+
+    double FATES_GRAZING(time, lndgrid=1);
+      :long_name = "grazing by herbivores of leaves in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7278";
+
+    double FATES_VEGH2O_DEAD(time, lndgrid=1);
+      :long_name = "cumulative water stored in dead biomass due to mortality";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7285";
+
+    double FATES_VEGH2O_RECRUIT(time, lndgrid=1);
+      :long_name = "amount of water in new recruits";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7291";
+
+    double FATES_VEGH2O_GROWTURN_ERR(time, lndgrid=1);
+      :long_name = "cumulative net borrowed (+) or lost (-) from water storage due to combined growth & turnover";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7297";
+
+    double FATES_CROWNAREA_CANOPY_CD(time, lndgrid=1);
+      :long_name = "crownarea lost to damage each year";
+      :units = "m2 m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7307";
+
+    double FATES_CROWNAREA_USTORY_CD(time, lndgrid=1);
+      :long_name = "crownarea lost to damage each year";
+      :units = "m2 m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7312";
+
+    double FATES_NCL(time, lndgrid=1);
+      :long_name = "number of canopy levels";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7319";
+
+    double FATES_ZSTAR(time, lndgrid=1);
+      :long_name = "product of zstar and patch area";
+      :units = "m";
+      :cell_methods = "time: mean";
+      :use_default = "tempstring";
+      :upfreq_group = "group_dyna_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7331";
+
+    double FATES_NPP_LU(time, fates_levlanduse=5, lndgrid=1);
+      :long_name = "net primary productivity by land use type in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_landuse_r8";
+      :src_line = "7339";
+
+    double FATES_PATCHAREA_LU(time, fates_levlanduse=5, lndgrid=1);
+      :long_name = "patch area by land use type";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_landuse_r8";
+      :src_line = "7345";
+
+    double FATES_VEGC_LU(time, fates_levlanduse=5, lndgrid=1);
+      :long_name = "Vegetation Carbon by land use type";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_landuse_r8";
+      :src_line = "7350";
+
+    double FATES_VEGC_LUPF(time, fates_levlupft=60, lndgrid=1);
+      :long_name = "Vegetation Carbon by land use type and PFT";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_lupft_r8";
+      :src_line = "7355";
+
+    double FATES_BURNEDAREA_LU(time, fates_levlanduse=5, lndgrid=1);
+      :long_name = "burned area by land use type";
+      :units = "s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_landuse_r8";
+      :src_line = "7360";
+
+    double FATES_TRANSITION_MATRIX_LULU(time, fates_levlulu=25, lndgrid=1);
+      :long_name = "land use transition matrix";
+      :units = "m2 m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_lulu_r8";
+      :src_line = "7365";
+
+    double FATES_DISTURBANCE_RATE_MATRIX_LULU(time, fates_levlulu=25, lndgrid=1);
+      :long_name = "disturbance rates by land use type x land use type matrix";
+      :units = "m2 m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_lulu_r8";
+      :src_line = "7370";
+
+    double FATES_VEGC_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total PFT-level biomass in kg of carbon per land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7375";
+
+    double FATES_RECRUITMENT_CFLUX_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total PFT-level biomass of new recruits in kg of carbon per land area";
+      :units = "kg m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7381";
+
+    double FATES_LEAFC_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total PFT-level leaf biomass in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7387";
+
+    double FATES_STOREC_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total PFT-level stored biomass in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7393";
+
+    double FATES_CROWNAREA_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total PFT-level crown area per m2 land area";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7399";
+
+    double FATES_CANOPYCROWNAREA_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total PFT-level canopy-layer crown area per m2 land area";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7405";
+
+    double FATES_GPP_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total PFT-level GPP in kg carbon per m2 land area per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7411";
+
+    double FATES_NPP_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total PFT-level NPP in kg carbon per m2 land area per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7417";
+
+    double FATES_NPLANT_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total PFT-level number of individuals per m2 land area";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7423";
+
+    double FATES_RECRUITMENT_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level recruitment rate in number of individuals per m2 land area per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7429";
+
+    double FATES_SEEDS_IN_GRIDCELL_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "Site-level seed mass input from neighboring gridcells per pft";
+      :units = "kg";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7436";
+
+    double FATES_SEEDS_OUT_GRIDCELL_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "Site-level seed mass output to neighboring gridcells per pft";
+      :units = "kg";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7443";
+
+    double FATES_SEED_BANK_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total seed mass per PFT in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7450";
+
+    double FATES_UNGERM_SEED_BANK_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "ungerminated seed mass per PFT in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7456";
+
+    double FATES_SEEDLING_POOL_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total seedling (ie germinated seeds) mass per PFT in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7462";
+
+    double FATES_SEEDS_IN_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "seed production rate per PFT in kg carbon per m2 second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7468";
+
+    double FATES_SEEDS_IN_LOCAL_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "local seed production rate per PFT in kg carbon per m2 second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7474";
+
+    double FATES_MORTALITY_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level mortality rate in number of individuals per m2 land area per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7480";
+
+    double FATES_DROUGHT_STATUS_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level drought status, <2 too dry for leaves, >=2 not too dry";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7487";
+
+    double FATES_DAYSINCE_DROUGHTLEAFOFF_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level days elapsed since drought leaf drop";
+      :units = "days";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7494";
+
+    double FATES_DAYSINCE_DROUGHTLEAFON_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level days elapsed since drought leaf flush";
+      :units = "days";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7500";
+
+    double FATES_MEANLIQVOL_DROUGHTPHEN_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level mean liquid water volume for drought phenolgy";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7507";
+
+    double FATES_MEANSMP_DROUGHTPHEN_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level mean soil matric potential for drought phenology";
+      :units = "Pa";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7514";
+
+    double FATES_ELONG_FACTOR_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level mean elongation factor (partial flushing/abscission)";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7521";
+
+    double FATES_NOCOMP_NPATCHES_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "number of patches per PFT (nocomp-mode-only)";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7529";
+
+    double FATES_NOCOMP_PATCHAREA_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total patch area allowed per PFT (nocomp-mode-only)";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7535";
+
+    double FATES_NOCOMP_BURNEDAREA_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "total burned area of PFT-labeled patch area (nocomp-mode-only)";
+      :units = "s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7541";
+
+    double FATES_NOCOMP_PATCHAREA_LUPF(time, fates_levlupft=60, lndgrid=1);
+      :long_name = "total patch area allowed per PFT and land use type (nocomp-mode-only)";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_lupft_r8";
+      :src_line = "7547";
+
+    double FATES_CANOPYAREA(time, lndgrid=1);
+      :long_name = "canopy area per m2 land area";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7554";
+
+    double FATES_PATCHAREA(time, lndgrid=1);
+      :long_name = "patch area per m2 land area";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "7559";
+
+    double FATES_PATCHAREA_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "patch area by age bin per m2 land area";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7565";
+
+    double FATES_LAI_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "'total leaf area index by age bin per m2 land area'// this%per_ageclass_norm_info('FATES_CANOPYAREA/FATES_CANOPYAREA_AP')";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7571";
+
+    double FATES_CANOPYAREA_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "'canopy area by age bin per m2 land area'// this%per_ageclass_norm_info('FATES_PATCHAREA/FATES_PATCHAREA_AP')";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7578";
+
+    double FATES_NCL_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "'number of canopy levels by age bin' // this%per_ageclass_norm_info('FATES_PATCHAREA/FATES_PATCHAREA_AP')";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7585";
+
+    double FATES_NPATCH_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "number of patches by age bin";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7592";
+
+    double FATES_ZSTAR_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "product of zstar and patch area by age bin (divide by FATES_PATCHAREA_AP to get mean zstar)";
+      :units = "m";
+      :cell_methods = "time: mean";
+      :use_default = "trim(tempstring)";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7604";
+
+    double FATES_CANOPYAREA_HT(time, fates_levheight=6, lndgrid=1);
+      :long_name = "canopy area height distribution";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_height_r8";
+      :src_line = "7610";
+
+    double FATES_LEAFAREA_HT(time, fates_levheight=6, lndgrid=1);
+      :long_name = "leaf area height distribution";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_height_r8";
+      :src_line = "7616";
+
+    double FATES_VEGC_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "total biomass within a given patch age bin in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7622";
+
+    double FATES_SECONDARY_AREA_ANTHRO_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "secondary forest patch area age distribution since anthropogenic disturbance";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7628";
+
+    double FATES_SECONDARY_AREA_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "secondary forest patch area age distribution since any kind of disturbance";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7635";
+
+    double FATES_SECONDARY_AGB_ANTHROAGE_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "secondary forest patch agb as resolved by age since anthropogenic disturbance";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7642";
+
+    double FATES_PRIMARY_AREA_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "primary forest patch area age distribution since any kind of disturbance";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7649";
+
+    double FATES_FRAGMENTATION_SCALER_SL(time, levsoi=10, lndgrid=1);
+      :long_name = "factor (0-1) by which litter/cwd fragmentation proceeds relative to max rate by soil layer";
+      :units = "";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_soil_r8";
+      :src_line = "7656";
+
+    double FATES_FUEL_MOISTURE_FC(time, fates_levfuel=6, lndgrid=1);
+      :long_name = "spitfire fuel class-level fuel moisture (volumetric)";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_fuel_r8";
+      :src_line = "7662";
+
+    double FATES_FUEL_AMOUNT_FC(time, fates_levfuel=6, lndgrid=1);
+      :long_name = "spitfire fuel-class level fuel amount in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_fuel_r8";
+      :src_line = "7668";
+
+    double FATES_FUEL_AMOUNT_APFC(time, fates_levagefuel=42, lndgrid=1);
+      :long_name = "spitfire fuel quantity in each age x fuel class in kg carbon per m2 land area";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_agefuel_r8";
+      :src_line = "7674";
+
+    double FATES_BURNFRAC_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "spitfire fraction area burnt (per second) by patch age, sum of rx and wildfire";
+      :units = "s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7680";
+
+    double FATES_FIRE_INTENSITY_BURNFRAC_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "product of fire intensity and burned fraction, sum of rx and wildfire, resolved by patch age (so divide by FATES_BURNFRAC_AP to get area-weighted mean intensity)";
+      :units = "J m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7686";
+
+    double FATES_WILDFIRE_BURNFRAC_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "spitfire fraction area burnt due to wildfire by patch age";
+      :units = "s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7693";
+
+    double FATES_WILDFIRE_INTENSITY_BURNFRAC_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "product of wildfire intensity and burned fraction, resolved by patch age, divide by FATES_WILDFIRE_BURNFRAC_AP to get area-weighted mean intensity)";
+      :units = "J m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7699";
+
+    double FATES_RXFIRE_BURNFRAC_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "spitfire fraction area burnt due to prescribed fire by patch age";
+      :units = "s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7706";
+
+    double FATES_RXFIRE_INTENSITY_BURNFRAC_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "product of prescribed fire intensity and burned fraction by patch age, to be devided by FATES_RXFIRE_BURNFRAC_AP to get area-weighted mean intensity)";
+      :units = "J m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7712";
+
+    double FATES_FUEL_AMOUNT_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "spitfire ground fuel (kg carbon per m2) related to FATES_ROS (omits 1000hr fuels) within each patch age bin (divide by FATES_PATCHAREA_AP to get fuel per unit area of that-age patch)";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "7719";
+
+    double FATES_FUEL_BURNT_BURNFRAC_FC(time, fates_levfuel=6, lndgrid=1);
+      :long_name = "product of fraction (0-1) of fuel burnt and burnt fraction (divide by FATES_BURNFRAC to get burned-area-weighted mean fraction fuel burnt)";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_fuel_r8";
+      :src_line = "7725";
+
+    double FATES_LITTER_IN_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "litter flux in in kg element per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "7731";
+
+    double FATES_LITTER_OUT_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "litter flux out (exudation, fragmentation and seed decay) in kg element";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "7737";
+
+    double FATES_SEED_BANK_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "element-level total seed mass of all PFTs in kg element per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "7743";
+
+    double FATES_SEEDS_IN_LOCAL_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "within-site, element-level seed production rate in kg element per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "7749";
+
+    double FATES_SEEDS_IN_EXTERN_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "external seed influx rate in kg element per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "7756";
+
+    double FATES_SEED_GERM_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "element-level total germinated seed mass of all PFTs in kg element per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "7762";
+
+    double FATES_SEED_DECAY_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "seed mass decay (germinated and un-germinated) in kg element per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "7768";
+
+    double FATES_STOREC_TF_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "Storage C fraction of target by size x pft, in the understory";
+      :units = "kg kg-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7776";
+
+    double FATES_STOREC_TF_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "Storage C fraction of target by size x pft, in the canopy";
+      :units = "kg kg-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7782";
+
+    double FATES_FROOTC_SL(time, levsoi=10, lndgrid=1);
+      :long_name = "Total carbon in live plant fine-roots over depth";
+      :units = "kg m-3";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_soil_r8";
+      :src_line = "7788";
+
+    double FATES_L2FR_CANOPY_REC_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "The leaf to fineroot biomass multiplier for recruits (canopy)";
+      :units = "kg kg-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7795";
+
+    double FATES_L2FR_USTORY_REC_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "The leaf to fineroot biomass multiplier for recruits (understory)";
+      :units = "kg kg-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7801";
+
+    double FATES_NH4UPTAKE_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "ammonium uptake rate by plants by size-class x pft in kg NH4 per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_nflx_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7815";
+
+    double FATES_NO3UPTAKE_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "nitrate uptake rate by plants by size-class x pft in kg NO3 per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_nflx_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7822";
+
+    double FATES_NEFFLUX_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "nitrogen efflux, root to soil, by size-class x pft in kg N per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_nflx_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7829";
+
+    double FATES_NDEMAND_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "plant N need (algorithm dependent), by size-class x pft in kg N per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_nflx_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7835";
+
+    double FATES_NFIX_SYM_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "symbiotic dinitrogen fixation, by size-class x pft in kg N per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_nflx_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7841";
+
+    double FATES_VEGN_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "total (live) vegetation nitrogen mass by size-class x pft in kg N per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7847";
+
+    double FATES_LEAFN_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "leaf nitrogen mass by size-class x pft in kg N per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7853";
+
+    double FATES_FROOTN_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "fine-root nitrogen mass by size-class x pft in kg N per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7859";
+
+    double FATES_SAPWOODN_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "sapwood nitrogen mass by size-class x pft in kg N per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7865";
+
+    double FATES_STOREN_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "storage nitrogen mass by size-class x pft in kg N per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7871";
+
+    double FATES_STOREN_TF_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "storage nitrogen fraction (0-1) of target, in canopy, by size-class x pft";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7877";
+
+    double FATES_STOREN_TF_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "storage nitrogen fraction (0-1) of target, in understory, by size-class x pft";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7884";
+
+    double FATES_REPRON_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "reproductive nitrogen mass (on plant) by size-class x pft in kg N per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7892";
+
+    double FATES_VEGP_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "total (live) vegetation phosphorus mass by size-class x pft in kg P per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7902";
+
+    double FATES_LEAFP_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "leaf phosphorus mass by size-class x pft";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7908";
+
+    double FATES_FROOTP_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "fine-root phosphorus mass by size-class x pft in kg P per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7913";
+
+    double FATES_SAPWOODP_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "sapwood phosphorus mass by size-class x pft in kg P per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7919";
+
+    double FATES_STOREP_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "storage phosphorus mass by size-class x pft in kg P per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7925";
+
+    double FATES_STOREP_TF_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "storage phosphorus fraction (0-1) of target, in canopy, by size-class x pft";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7931";
+
+    double FATES_STOREP_TF_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "storage phosphorus fraction (0-1) of target, in understory, by size-class x pft";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7938";
+
+    double FATES_REPROP_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "reproductive phosphorus mass (on plant) by size-class x pft in kg P per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7946";
+
+    double FATES_PUPTAKE_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "phosphorus uptake rate by plants, by size-class x pft in kg P per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_nflx_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7952";
+
+    double FATES_PEFFLUX_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "phosphorus efflux, root to soil, by size-class x pft in kg P per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_nflx_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7959";
+
+    double FATES_PDEMAND_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "plant P need (algorithm dependent), by size-class x pft in kg P per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_nflx_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "7966";
+
+    double FATES_CROWNAREA_CLLL(time, fates_levcnlf=60, lndgrid=1);
+      :long_name = "area fraction of the total ground occupied by each canopy-leaf layer";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlf_r8";
+      :src_line = "7974";
+
+    double FATES_CROWNAREA_CL(time, fates_levcan=2, lndgrid=1);
+      :long_name = "area fraction of the canopy footprint occupied by each canopy-leaf layer";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_can_r8";
+      :src_line = "7980";
+
+    double FATES_MORTALITY_CFLUX_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level flux of biomass carbon from live to dead pool from mortality";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7986";
+
+    double FATES_MORTALITY_FIRE_CFLUX_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level flux of biomass carbon from live to dead pool from fire mortality";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7992";
+
+    double FATES_MORTALITY_HYDRO_CFLUX_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level flux of biomass carbon from live to dead pool from hydraulic failure mortality";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "7998";
+
+    double FATES_MORTALITY_CSTARV_CFLUX_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level flux of biomass carbon from live to dead pool from carbon starvation mortality (both continuous and termination)";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "8004";
+
+    double FATES_MORT_CSTARV_CONT_CFLUX_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "PFT-level flux of biomass carbon from live to dead pool from carbon starvation mortality (Continuous-only, without termination)";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "8010";
+
+    double FATES_ABOVEGROUND_MORT_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "Aboveground flux of carbon from AGB to necromass due to mortality";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8016";
+
+    double FATES_ABOVEGROUND_PROD_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "Aboveground carbon productivity";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8022";
+
+    double FATES_NPLANT_SZAP(time, fates_levscag=91, lndgrid=1);
+      :long_name = "'number of plants per m2, per size x age class'// this%per_ageclass_norm_info('FATES_PATCHAREA/FATES_PATCHAREA_AP')";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_scag_r8";
+      :src_line = "8029";
+
+    double FATES_NPLANT_CANOPY_SZAP(time, fates_levscag=91, lndgrid=1);
+      :long_name = "'number of canopy plants per m2, per size x age class'// this%per_ageclass_norm_info('FATES_PATCHAREA/FATES_PATCHAREA_AP')";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_scag_r8";
+      :src_line = "8036";
+
+    double FATES_NPLANT_USTORY_SZAP(time, fates_levscag=91, lndgrid=1);
+      :long_name = "'number of understory plants per m2 understory, per size x age class'// this%per_ageclass_norm_info('FATES_PATCHAREA/FATES_PATCHAREA_AP')";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_scag_r8";
+      :src_line = "8043";
+
+    double FATES_DDBH_CANOPY_SZAP(time, fates_levscag=91, lndgrid=1);
+      :long_name = "growth rate of canopy plants in meters DBH per m2 per year in canopy in each size x age class";
+      :units = "m m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_scag_r8";
+      :src_line = "8051";
+
+    double FATES_DDBH_USTORY_SZAP(time, fates_levscag=91, lndgrid=1);
+      :long_name = "growth rate of understory plants in meters DBH per m2 per year in each size x age class";
+      :units = "m m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_scag_r8";
+      :src_line = "8058";
+
+    double FATES_MORTALITY_CANOPY_SZAP(time, fates_levscag=91, lndgrid=1);
+      :long_name = "mortality rate of canopy plants in number of plants per m2 per year in each size x age class";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_scag_r8";
+      :src_line = "8065";
+
+    double FATES_MORTALITY_USTORY_SZAP(time, fates_levscag=91, lndgrid=1);
+      :long_name = "mortality rate of understory plants in number of plants per m2 per year in each size x age class";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_scag_r8";
+      :src_line = "8072";
+
+    double FATES_NPLANT_SZAPPF(time, fates_levscagpf=1092, lndgrid=1);
+      :long_name = "'number of plants per m2, per size x age x pft class'// this%per_ageclass_norm_info('FATES_PATCHAREA/FATES_PATCHAREA_AP')";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_scagpft_r8";
+      :src_line = "8081";
+
+    double FATES_NPP_APPF(time, fates_levagepft=84, lndgrid=1);
+      :long_name = "NPP per PFT in each age bin in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_agepft_r8";
+      :src_line = "8089";
+
+    double FATES_NPP_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "net primary productivity by age bin in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "8095";
+
+    double FATES_VEGC_APPF(time, fates_levagepft=84, lndgrid=1);
+      :long_name = "'biomass per PFT in each age bin in kg carbon per m2'// this%per_ageclass_norm_info('FATES_PATCHAREA/FATES_PATCHAREA_AP')";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_agepft_r8";
+      :src_line = "8101";
+
+    double FATES_SCORCH_HEIGHT_APPF(time, fates_levagepft=84, lndgrid=1);
+      :long_name = "'SPITFIRE flame Scorch Height (calculated per PFT in each patch age bin)'// this%per_ageclass_norm_info('FATES_PATCHAREA/FATES_PATCHAREA_AP')";
+      :units = "m";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_agepft_r8";
+      :src_line = "8108";
+
+    double FATES_SCORCH_HEIGHT_PF(time, fates_levpft=12, lndgrid=1);
+      :long_name = "SPITFIRE flame Scorch Height (calculated per PFT)";
+      :units = "m";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_pft_r8";
+      :src_line = "8115";
+
+    double FATES_GPP_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "gross primary production by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8126";
+
+    double FATES_GPP_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "gross primary production of canopy plants by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8132";
+
+    double FATES_AUTORESP_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "autotrophic respiration of canopy plants by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8139";
+
+    double FATES_GPP_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "gross primary production of understory plants by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8146";
+
+    double FATES_AUTORESP_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "autotrophic respiration of understory plants by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8153";
+
+    double FATES_NPP_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "total net primary production by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8160";
+
+    double FATES_LEAF_ALLOC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "allocation to leaves by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8166";
+
+    double FATES_SEED_ALLOC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "allocation to seeds by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8172";
+
+    double FATES_FROOT_ALLOC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "allocation to fine roots by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8178";
+
+    double FATES_BGSAPWOOD_ALLOC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "allocation to below-ground sapwood by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8185";
+
+    double FATES_BGSTRUCT_ALLOC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "allocation to below-ground structural (deadwood) by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8192";
+
+    double FATES_AGSAPWOOD_ALLOC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "allocation to above-ground sapwood by pft/size in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8198";
+
+    double FATES_DDBH_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "diameter growth increment by pft/size";
+      :units = "m m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8219";
+
+    double FATES_GROWTHFLUX_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "flux of individuals into a given size class bin via growth and recruitment";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8225";
+
+    double FATES_GROWTHFLUX_FUSION_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "flux of individuals into a given size class bin via fusion";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8232";
+
+    double FATES_DDBH_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "diameter growth increment by pft/size";
+      :units = "m m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8239";
+
+    double FATES_DDBH_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "diameter growth increment by pft/size";
+      :units = "m m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8246";
+
+    double FATES_BASALAREA_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "basal area by pft/size";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8253";
+
+    double FATES_SAPWOOD_AREA_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "sapwood area by pft/size";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8258";
+
+    double FATES_VEGC_ABOVEGROUND_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "aboveground biomass by pft/size in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8263";
+
+    double FATES_NPLANT_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "stem number density by pft/size";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8270";
+
+    double FATES_NPLANT_ACPF(time, fates_levcapf=24, lndgrid=1);
+      :long_name = "stem number density by pft and age class";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_coage_pft_r8";
+      :src_line = "8276";
+
+    double FATES_MORTALITY_BACKGROUND_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "background mortality by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8282";
+
+    double FATES_MORTALITY_HYDRAULIC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "hydraulic mortality by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8289";
+
+    double FATES_MORTALITY_CSTARV_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "carbon starvation mortality by pft/size in number of plants per m2 per year (both continous and termination)";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8296";
+
+    double FATES_MORTALITY_IMPACT_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "impact mortality by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8303";
+
+    double FATES_MORTALITY_WILDFIRE_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "wildfire mortality by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8310";
+
+    double FATES_MORTALITY_WILDFIRE_CROWN_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "wildfire mortality from crown scorch by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8317";
+
+    double FATES_MORTALITY_WILDFIRE_CAMBIAL_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "wildfire mortality from cambial burn by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8324";
+
+    double FATES_MORTALITY_RXFIRE_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "prescribed fire mortality by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8331";
+
+    double FATES_MORTALITY_RXCROWN_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "fire mortality from crown scorch due to prescribed fire by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8338";
+
+    double FATES_MORTALITY_RXCAMBIAL_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "fire mortality from cambial kill due to prescribed fire by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8345";
+
+    double FATES_MORTALITY_TERMINATION_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "termination mortality (excluding C-starvation) by pft/size in number pf plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8352";
+
+    double FATES_MORTALITY_LOGGING_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "logging mortality by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8359";
+
+    double FATES_MORTALITY_FREEZING_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "freezing mortality by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8366";
+
+    double FATES_MORTALITY_SENESCENCE_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "senescence mortality by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8373";
+
+    double FATES_MORTALITY_AGESCEN_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "age senescence mortality by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8380";
+
+    double FATES_MORTALITY_AGESCEN_ACPF(time, fates_levcapf=24, lndgrid=1);
+      :long_name = "age senescence mortality by pft/cohort age in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_coage_pft_r8";
+      :src_line = "8387";
+
+    double FATES_MORTALITY_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "total mortality of canopy plants by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8394";
+
+    double FATES_M3_MORTALITY_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "C starvation mortality of canopy plants by pft/size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8401";
+
+    double FATES_M3_MORTALITY_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "C starvation mortality of understory plants by pft/size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8408";
+
+    double FATES_C13DISC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "C13 discrimination by pft/size";
+      :units = "per mil";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8416";
+
+    double FATES_STOREC_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "biomass in storage pools of canopy plants by pft/size in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8422";
+
+    double FATES_LEAFC_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "biomass in leaves of canopy plants by pft/size in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8428";
+
+    double FATES_LAI_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "Leaf area index (LAI) of canopy plants by pft/size";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8436";
+
+    double FATES_CROWNAREA_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "Total crown area of canopy plants by pft/size";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8444";
+
+    double FATES_CROWNAREA_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "Total crown area of understory plants by pft/size";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8451";
+
+    double FATES_NPLANT_CANOPY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "number of canopy plants by size/pft per m2";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8458";
+
+    double FATES_MORTALITY_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "total mortality of understory plants by pft/size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8464";
+
+    double FATES_STOREC_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "biomass in storage pools of understory plants by pft/size in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8472";
+
+    double FATES_LEAFC_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "biomass in leaves of understory plants by pft/size in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8479";
+
+    double FATES_LAI_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "Leaf area index (LAI) of understory plants by pft/size";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8486";
+
+    double FATES_NPLANT_USTORY_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "density of understory plants by pft/size in number of plants per m2";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "8493";
+
+    double FATES_CWD_ABOVEGROUND_DC(time, fates_levcwdsc=4, lndgrid=1);
+      :long_name = "debris class-level aboveground coarse woody debris stocks in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cwdsc_r8";
+      :src_line = "8500";
+
+    double FATES_CWD_BELOWGROUND_DC(time, fates_levcwdsc=4, lndgrid=1);
+      :long_name = "debris class-level belowground coarse woody debris stocks in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cwdsc_r8";
+      :src_line = "8506";
+
+    double FATES_CWD_ABOVEGROUND_IN_DC(time, fates_levcwdsc=4, lndgrid=1);
+      :long_name = "debris class-level aboveground coarse woody debris input in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cwdsc_r8";
+      :src_line = "8512";
+
+    double FATES_CWD_BELOWGROUND_IN_DC(time, fates_levcwdsc=4, lndgrid=1);
+      :long_name = "debris class-level belowground coarse woody debris input in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cwdsc_r8";
+      :src_line = "8519";
+
+    double FATES_CWD_ABOVEGROUND_OUT_DC(time, fates_levcwdsc=4, lndgrid=1);
+      :long_name = "debris class-level aboveground coarse woody debris output in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cwdsc_r8";
+      :src_line = "8526";
+
+    double FATES_CWD_BELOWGROUND_OUT_DC(time, fates_levcwdsc=4, lndgrid=1);
+      :long_name = "debris class-level belowground coarse woody debris output in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cwdsc_r8";
+      :src_line = "8533";
+
+    double FATES_DDBH_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "diameter growth increment by size of canopy plants";
+      :units = "m m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8543";
+
+    double FATES_DDBH_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "diameter growth increment by size of understory plants";
+      :units = "m m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8549";
+
+    double FATES_YESTCANLEV_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "yesterdays canopy level for canopy plants by size class in number of plants per m2";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8555";
+
+    double FATES_YESTCANLEV_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "yesterdays canopy level for understory plants by size class in number of plants per m2";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8563";
+
+    double FATES_BASALAREA_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "basal area by size class";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8571";
+
+    double FATES_VEGC_ABOVEGROUND_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "aboveground biomass by size class in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8576";
+
+    double FATES_VEGC_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "total biomass by size class in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8583";
+
+    double FATES_DEMOTION_RATE_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "demotion rate from canopy to understory by size class in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8589";
+
+    double FATES_PROMOTION_RATE_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "promotion rate from understory to canopy by size class";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8596";
+
+    double FATES_NPLANT_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "number of canopy plants per m2 by size class";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8603";
+
+    double FATES_LAI_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "leaf area index (LAI) of canopy plants by size class";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8610";
+
+    double FATES_SAI_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "stem area index (SAI) of canopy plants by size class";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8616";
+
+    double FATES_MORTALITY_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "total mortality of canopy trees by size class in number of plants per m2";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8622";
+
+    double FATES_MORTALITY_CANOPY_SE_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "total mortality of canopy trees by size class in number of plants per m2, secondary patches";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8629";
+
+    double FATES_NPLANT_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "number of understory plants per m2 by size class";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8636";
+
+    double FATES_M3_MORTALITY_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "C starvation mortality of canopy plants by size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8643";
+
+    double FATES_M3_MORTALITY_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "C starvation mortality of understory plants by size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8650";
+
+    double FATES_LAI_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "leaf area index (LAI) of understory plants by size class";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8657";
+
+    double FATES_SAI_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "stem area index (SAI) of understory plants by size class";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8664";
+
+    double FATES_NPLANT_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "number of plants per m2 by size class";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8671";
+
+    double FATES_NPLANT_AC(time, fates_levcacls=2, lndgrid=1);
+      :long_name = "number of plants per m2 by cohort age class";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_coage_r8";
+      :src_line = "8676";
+
+    double FATES_MORTALITY_BACKGROUND_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "background mortality by size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8682";
+
+    double FATES_MORTALITY_HYDRAULIC_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "hydraulic mortality by size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8689";
+
+    double FATES_MORTALITY_CSTARV_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "carbon starvation mortality by size in number of plants per m2 per year (both continous and termination)";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8696";
+
+    double FATES_MORTALITY_IMPACT_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "impact mortality by size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8703";
+
+    double FATES_MORTALITY_FIRE_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "fire mortality by size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8710";
+
+    double FATES_MORTALITY_RXFIRE_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "prescribed fire mortality by size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "1";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8717";
+
+    double FATES_MORTALITY_TERMINATION_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "termination mortality (excluding C-starvation) by size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8724";
+
+    double FATES_MORTALITY_LOGGING_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "logging mortality by size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8731";
+
+    double FATES_MORTALITY_FREEZING_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "freezing mortality by size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8738";
+
+    double FATES_MORTALITY_SENESCENCE_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "senescence mortality by size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8745";
+
+    double FATES_MORTALITY_AGESCEN_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "age senescence mortality by size in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8752";
+
+    double FATES_MORTALITY_AGESCEN_AC(time, fates_levcacls=2, lndgrid=1);
+      :long_name = "age senescence mortality by cohort age in number of plants per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_coage_r8";
+      :src_line = "8759";
+
+    double FATES_NPP_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "NPP of canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8766";
+
+    double FATES_NPP_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "NPP of understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8773";
+
+    double FATES_MORTALITY_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "total mortality of understory trees by size class in individuals per m2 per year";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8780";
+
+    double FATES_TRIMMING_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "trimming term of canopy plants weighted by plant density, by size class";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8788";
+
+    double FATES_TRIMMING_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "trimming term of understory plants weighted by plant density, by size class";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8794";
+
+    double FATES_CROWNAREA_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "total crown area of canopy plants by size class";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8802";
+
+    double FATES_CROWNAREA_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "total crown area of understory plants by size class";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8808";
+
+    double FATES_LEAFCTURN_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "leaf turnover (non-mortal) for canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8814";
+
+    double FATES_FROOTCTURN_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "fine root turnover (non-mortal) for canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8821";
+
+    double FATES_STORECTURN_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "storage turnover (non-mortal) for canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8828";
+
+    double FATES_STRUCTCTURN_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "structural C turnover (non-mortal) for canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8835";
+
+    double FATES_SAPWOODCTURN_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "sapwood turnover (non-mortal) for canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8842";
+
+    double FATES_SEED_PROD_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "seed production of canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8849";
+
+    double FATES_LEAF_ALLOC_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to leaves for canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8856";
+
+    double FATES_FROOT_ALLOC_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to fine root C for canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8863";
+
+    double FATES_SAPWOOD_ALLOC_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to sapwood C for canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8870";
+
+    double FATES_STRUCT_ALLOC_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to structural C for canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8877";
+
+    double FATES_SEED_ALLOC_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to reproductive C for canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8884";
+
+    double FATES_STORE_ALLOC_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to storage C for canopy plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8891";
+
+    double FATES_LEAFCTURN_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "leaf turnover (non-mortal) for understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8898";
+
+    double FATES_FROOTCTURN_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "fine root turnover (non-mortal) for understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8906";
+
+    double FATES_STORECTURN_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "storage C turnover (non-mortal) for understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8914";
+
+    double FATES_STRUCTCTURN_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "structural C turnover (non-mortal) for understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8922";
+
+    double FATES_SAPWOODCTURN_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "sapwood C turnover (non-mortal) for understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8930";
+
+    double FATES_SEED_PROD_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "seed production of understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8937";
+
+    double FATES_LEAF_ALLOC_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to leaves for understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8945";
+
+    double FATES_FROOT_ALLOC_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to fine roots for understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8952";
+
+    double FATES_SAPWOOD_ALLOC_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to sapwood C for understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8959";
+
+    double FATES_STRUCT_ALLOC_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to structural C for understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8966";
+
+    double FATES_SEED_ALLOC_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to reproductive C for understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8973";
+
+    double FATES_STORE_ALLOC_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "allocation to storage C for understory plants by size class in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "8980";
+
+    double FATES_NPLANT_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "N. plants per damage x size x pft class";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "8990";
+
+    double FATES_NPLANT_CANOPY_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "N. plants per damage x size x pft class";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "8995";
+
+    double FATES_NPLANT_USTORY_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "N. plants in the understory per damage x size x pft class";
+      :units = "m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9000";
+
+    double FATES_M3_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "carbon starvation mortality by damaage/pft/size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9005";
+
+    double FATES_M11_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "damage mortality by pft/size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9010";
+
+    double FATES_M11_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "damage mortality by damaage/pft/size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9015";
+
+    double FATES_MORTALITY_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "mortality by damage class by size by pft";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9020";
+
+    double FATES_M3_MORTALITY_CANOPY_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "C starvation mortality of canopy plants by damage/pft/size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9025";
+
+    double FATES_M3_MORTALITY_USTORY_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "C starvation mortality of understory plants by pft/size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9030";
+
+    double FATES_M11_MORTALITY_CANOPY_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "damage mortality of canopy plants by damage/pft/size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9035";
+
+    double FATES_M11_MORTALITY_USTORY_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "damage mortality of understory plants by pft/size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9040";
+
+    double FATES_MORTALITY_CANOPY_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "mortality of canopy plants by damage/pft/size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9045";
+
+    double FATES_MORTALITY_USTORY_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "mortality of understory plants by pft/size";
+      :units = "m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9050";
+
+    double FATES_DDBH_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "ddbh annual increment growth by damage x size pft";
+      :units = "m m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9055";
+
+    double FATES_DDBH_CANOPY_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "ddbh annual canopy increment growth by damage x size pft";
+      :units = "m m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9060";
+
+    double FATES_DDBH_USTORY_CDPF(time, fates_levcdpf=312, lndgrid=1);
+      :long_name = "ddbh annual understory increment growth by damage x size pft";
+      :units = "m m-2 yr-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cdpf_r8";
+      :src_line = "9065";
+
+    double FATES_FIRE_FLUX_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "loss to atmosphere from fire by element in kg element per m2 per s";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "9073";
+
+    double FATES_ERROR_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "total mass-balance error in kg per second by element";
+      :units = "kg s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "9080";
+
+    double FATES_INTERR_LIVEVEG_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "Bias error between integrated flux and (minus) state in live vegetation ";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "9086";
+
+    double FATES_INTERR_LITTER_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "Bias error between integrated flux and (minus) state in litter ";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "9092";
+
+    double FATES_LITTER_AG_FINE_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "mass of aboveground litter in fines (leaves, nonviable seed) by element";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "9099";
+
+    double FATES_LITTER_BG_FINE_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "mass of belowground litter in fines (fineroots) by element";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "9105";
+
+    double FATES_LITTER_BG_CWD_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "mass of belowground litter in coarse woody debris (coarse roots) by element";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "9111";
+
+    double FATES_LITTER_AG_CWD_EL(time, fates_levelem=3, lndgrid=1);
+      :long_name = "mass of aboveground litter in coarse woody debris (trunks/branches/twigs) by element";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elem_r8";
+      :src_line = "9117";
+
+    double FATES_LITTER_CWD_ELDC(time, fates_levelcwd=12, lndgrid=1);
+      :long_name = "total mass of litter in coarse woody debris by element and coarse woody debris size";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_elcwd_r8";
+      :src_line = "9123";
+
+    double FATES_VEGC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "total vegetation biomass in live plants by size-class x pft in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9131";
+
+    double FATES_LEAFC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "leaf carbon mass by size-class x pft in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9137";
+
+    double FATES_FROOTC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "fine-root carbon mass by size-class x pft in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9143";
+
+    double FATES_SAPWOODC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "sapwood carbon mass by size-class x pft in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9149";
+
+    double FATES_STOREC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "storage carbon mass by size-class x pft in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9155";
+
+    double FATES_REPROC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "reproductive carbon mass (on plant) by size-class x pft in kg carbon per m2";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_dyna_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9161";
+
+    double FATES_STOMATAL_COND(time, lndgrid=1);
+      :long_name = "mean stomatal conductance";
+      :units = "mol m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9177";
+
+    double FATES_LBLAYER_COND(time, lndgrid=1);
+      :long_name = "mean leaf boundary layer conductance";
+      :units = "mol m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9183";
+
+    double FATES_TVEG(time, lndgrid=1);
+      :long_name = "fates instantaneous mean vegetation temperature by site";
+      :units = "degree_Celsius";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9190";
+
+    double FATES_TVEG_LU(time, fates_levlanduse=5, lndgrid=1);
+      :long_name = "fates instantaneous mean vegetation temperature by land use type";
+      :units = "degrees Kelvin";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_landuse_r8";
+      :src_line = "9198";
+
+    double FATES_TSA_LU(time, fates_levlanduse=5, lndgrid=1);
+      :long_name = "fates instantaneous mean near-surface (2m) air temperature by land use type";
+      :units = "degrees Kelvin";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_landuse_r8";
+      :src_line = "9204";
+
+    double FATES_SWABS_LU(time, fates_levlanduse=5, lndgrid=1);
+      :long_name = "fates absorbed shortwave radiation by land use type";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_landuse_r8";
+      :src_line = "9210";
+
+    double FATES_NETLW_LU(time, fates_levlanduse=5, lndgrid=1);
+      :long_name = "fates net longwave flux by land use type";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_landuse_r8";
+      :src_line = "9216";
+
+    double FATES_SHFLUX_LU(time, fates_levlanduse=5, lndgrid=1);
+      :long_name = "fates sensible heat flux by land use type";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_landuse_r8";
+      :src_line = "9222";
+
+    double FATES_LHFLUX_LU(time, fates_levlanduse=5, lndgrid=1);
+      :long_name = "fates latent heat flux by land use type";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_landuse_r8";
+      :src_line = "9228";
+
+    double FATES_GPP_LU(time, fates_levlanduse=5, lndgrid=1);
+      :long_name = "gross primary productivity by land use type in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_landuse_r8";
+      :src_line = "9234";
+
+    double FATES_VIS_RAD_ERROR(time, lndgrid=1);
+      :long_name = "mean two-stream solver error for VIS";
+      :units = "-";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9241";
+
+    double FATES_NIR_RAD_ERROR(time, lndgrid=1);
+      :long_name = "mean two-stream solver error for NIR";
+      :units = "-";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9246";
+
+    double FATES_GPP(time, lndgrid=1);
+      :long_name = "gross primary production in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9253";
+
+    double FATES_MAINT_RESP(time, lndgrid=1);
+      :long_name = "maintenance respiration in kg carbon per m2 land area per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9258";
+
+    double FATES_MAINT_RESP_UNREDUCED(time, lndgrid=1);
+      :long_name = "diagnostic maintenance respiration if the low-carbon-storage reduction is ignored";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "unactive";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9264";
+
+    double FATES_GPP_CANOPY(time, lndgrid=1);
+      :long_name = "gross primary production of canopy plants in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9271";
+
+    double FATES_AUTORESP_CANOPY(time, lndgrid=1);
+      :long_name = "autotrophic respiration of canopy plants in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9277";
+
+    double FATES_GPP_USTORY(time, lndgrid=1);
+      :long_name = "gross primary production of understory plants in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9284";
+
+    double FATES_AUTORESP_USTORY(time, lndgrid=1);
+      :long_name = "autotrophic respiration of understory plants in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9291";
+
+    double FATES_LEAFMAINTAR(time, lndgrid=1);
+      :long_name = "leaf maintenance autotrophic respiration in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9300";
+
+    double FATES_FROOTMAINTAR(time, lndgrid=1);
+      :long_name = "fine root maintenance autotrophic respiration in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9307";
+
+    double FATES_CROOTMAINTAR(time, lndgrid=1);
+      :long_name = "live coarse root maintenance autotrophic respiration in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9314";
+
+    double FATES_LSTEMMAINTAR(time, lndgrid=1);
+      :long_name = "live stem maintenance autotrophic respiration in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9321";
+
+    double FATES_NEP(time, lndgrid=1);
+      :long_name = "net ecosystem production in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9328";
+
+    double FATES_HET_RESP(time, lndgrid=1);
+      :long_name = "heterotrophic respiration in kg carbon per m2 per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hifr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9334";
+
+    double FATES_SAPFLOW(time, lndgrid=1);
+      :long_name = "areal sap flow rate in kg per m2 ground area per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hydr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9340";
+
+    double FATES_ROOTWGT_SOILVWC(time, lndgrid=1);
+      :long_name = "soil volumetric water content, weighted by root area";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hydr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9346";
+
+    double FATES_ROOTWGT_SOILVWCSAT(time, lndgrid=1);
+      :long_name = "soil saturated volumetric water content, weighted by root area";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hydr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9352";
+
+    double FATES_ROOTWGT_SOILMATPOT(time, lndgrid=1);
+      :long_name = "soil matric potential, weighted by root area";
+      :units = "Pa";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hydr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9359";
+
+    double FATES_ROOTUPTAKE(time, lndgrid=1);
+      :long_name = "root water uptake rate";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hydr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9365";
+
+    double FATES_VEGH2O(time, lndgrid=1);
+      :long_name = "water stored inside vegetation tissues (leaf, stem, roots)";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9371";
+
+    double FATES_VEGH2O_HYDRO_ERR(time, lndgrid=1);
+      :long_name = "cumulative net borrowed (+) from plant_stored_h2o due to plant hydrodynamics";
+      :units = "kg m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_simple";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_r8";
+      :src_line = "9377";
+
+    double FATES_GPP_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "'gross primary productivity by age bin in kg carbon per m2 per second'// this%per_ageclass_norm_info('FATES_PATCHAREA/FATES_PATCHAREA_AP')";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "9393";
+
+    double FATES_RDARK_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "dark respiration for understory plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9400";
+
+    double FATES_LSTEMMAINTAR_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "live stem maintenance autotrophic respiration for understory plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9407";
+
+    double FATES_CROOTMAINTAR_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "live coarse root maintenance autotrophic respiration for understory plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9415";
+
+    double FATES_FROOTMAINTAR_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "fine root maintenance autotrophic respiration for understory plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9423";
+
+    double FATES_GROWAR_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "growth autotrophic respiration of understory plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9431";
+
+    double FATES_MAINTAR_USTORY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "maintenance autotrophic respiration of understory plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9438";
+
+    double FATES_RDARK_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "dark respiration for canopy plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9446";
+
+    double FATES_CROOTMAINTAR_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "live coarse root maintenance autotrophic respiration for canopy plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9453";
+
+    double FATES_FROOTMAINTAR_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "live coarse root maintenance autotrophic respiration for canopy plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9461";
+
+    double FATES_GROWAR_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "growth autotrophic respiration of canopy plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9468";
+
+    double FATES_MAINTAR_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "maintenance autotrophic respiration of canopy plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9475";
+
+    double FATES_LSTEMMAINTAR_CANOPY_SZ(time, fates_levscls=13, lndgrid=1);
+      :long_name = "live stem maintenance autotrophic respiration for canopy plants in kg carbon per m2 per second by size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_r8";
+      :src_line = "9482";
+
+    double FATES_AUTORESP_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "total autotrophic respiration in kg carbon per m2 per second by pft/size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9490";
+
+    double FATES_GROWAR_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "growth autotrophic respiration in kg carbon per m2 per second by pft/size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9497";
+
+    double FATES_MAINTAR_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "maintenance autotrophic respiration in kg carbon per m2 per second by pft/size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9504";
+
+    double FATES_RDARK_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "dark portion of maintenance autotrophic respiration in kg carbon per m2 per second by pft/size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9511";
+
+    double FATES_AGSAPMAINTAR_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "above-ground sapwood maintenance autotrophic respiration in kg carbon per m2 per second by pft/size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9518";
+
+    double FATES_BGSAPMAINTAR_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "below-ground sapwood maintenance autotrophic respiration in kg carbon per m2 per second by pft/size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9525";
+
+    double FATES_FROOTMAINTAR_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "fine root maintenance autotrophic respiration in kg carbon per m2 per second by pft/size";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9532";
+
+    double FATES_PARSUN_CLLL(time, fates_levcnlf=60, lndgrid=1);
+      :long_name = "PAR absorbed in the sun by each canopy and leaf layer";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlf_r8";
+      :src_line = "9539";
+
+    double FATES_PARSHA_CLLL(time, fates_levcnlf=60, lndgrid=1);
+      :long_name = "PAR absorbed in the shade by each canopy and leaf layer";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlf_r8";
+      :src_line = "9545";
+
+    double FATES_PARSUN_CLLLPF(time, fates_levcnlfpf=720, lndgrid=1);
+      :long_name = "PAR absorbed in the sun by each canopy, leaf, and PFT";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlfpft_r8";
+      :src_line = "9551";
+
+    double FATES_PARSHA_CLLLPF(time, fates_levcnlfpf=720, lndgrid=1);
+      :long_name = "PAR absorbed in the shade by each canopy, leaf, and PFT";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlfpft_r8";
+      :src_line = "9557";
+
+    double FATES_PARSUN_CL(time, fates_levcan=2, lndgrid=1);
+      :long_name = "PAR absorbed by sunlit leaves in each canopy layer";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_can_r8";
+      :src_line = "9563";
+
+    double FATES_PARSHA_CL(time, fates_levcan=2, lndgrid=1);
+      :long_name = "PAR absorbed by shaded leaves in each canopy layer";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_can_r8";
+      :src_line = "9569";
+
+    double FATES_LAISUN_CLLL(time, fates_levcnlf=60, lndgrid=1);
+      :long_name = "LAI in the sun by each canopy and leaf layer";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlf_r8";
+      :src_line = "9575";
+
+    double FATES_LAISHA_CLLL(time, fates_levcnlf=60, lndgrid=1);
+      :long_name = "LAI in the shade by each canopy and leaf layer";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlf_r8";
+      :src_line = "9581";
+
+    double FATES_LAISUN_CLLLPF(time, fates_levcnlfpf=720, lndgrid=1);
+      :long_name = "Sunlit leaf area by each canopy, leaf, and PFT";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlfpft_r8";
+      :src_line = "9587";
+
+    double FATES_LAISHA_CLLLPF(time, fates_levcnlfpf=720, lndgrid=1);
+      :long_name = "Shaded leaf area by each canopy, leaf, and PFT";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlfpft_r8";
+      :src_line = "9593";
+
+    double FATES_PARPROF_DIR_CLLLPF(time, fates_levcnlfpf=720, lndgrid=1);
+      :long_name = "radiative profile of direct PAR through each canopy, leaf, and PFT";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlfpft_r8";
+      :src_line = "9599";
+
+    double FATES_PARPROF_DIF_CLLLPF(time, fates_levcnlfpf=720, lndgrid=1);
+      :long_name = "radiative profile of diffuse PAR through each canopy, leaf, and PFT";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlfpft_r8";
+      :src_line = "9605";
+
+    double FATES_LAISUN_CL(time, fates_levcan=2, lndgrid=1);
+      :long_name = "LAI of sunlit leaves by canopy layer";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_can_r8";
+      :src_line = "9611";
+
+    double FATES_LAISHA_CL(time, fates_levcan=2, lndgrid=1);
+      :long_name = "LAI of shaded leaves by canopy layer";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_can_r8";
+      :src_line = "9617";
+
+    double FATES_PARPROF_DIR_CLLL(time, fates_levcnlf=60, lndgrid=1);
+      :long_name = "radiative profile of direct PAR through each canopy and leaf layer (averaged across PFTs)";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlf_r8";
+      :src_line = "9623";
+
+    double FATES_PARPROF_DIF_CLLL(time, fates_levcnlf=60, lndgrid=1);
+      :long_name = "radiative profile of diffuse PAR through each canopy and leaf layer (averaged across PFTs)";
+      :units = "W m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlf_r8";
+      :src_line = "9629";
+
+    double FATES_NET_C_UPTAKE_CLLL(time, fates_levcnlf=60, lndgrid=1);
+      :long_name = "net carbon uptake in kg carbon per m2 per second by each canopy and leaf layer per unit ground area (i.e. divide by CROWNAREA_CLLL to make per leaf area)";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlf_r8";
+      :src_line = "9637";
+
+    double FATES_CROWNFRAC_CLLLPF(time, fates_levcnlfpf=720, lndgrid=1);
+      :long_name = "area fraction of the canopy footprint occupied by each canopy-leaf-pft layer";
+      :units = "m2 m-2";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_cnlfpft_r8";
+      :src_line = "9644";
+
+    double FATES_LBLAYER_COND_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "'mean leaf boundary layer conductance - by patch age'// this%per_ageclass_norm_info('FATES_CANOPYAREA/FATES_CANOPYAREA_AP')";
+      :units = "mol m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "9650";
+
+    double FATES_STOMATAL_COND_AP(time, fates_levage=7, lndgrid=1);
+      :long_name = "'mean stomatal conductance - by patch age'// this%per_ageclass_norm_info('FATES_CANOPYAREA/FATES_CANOPYAREA_AP')";
+      :units = "mol m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hifr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_age_r8";
+      :src_line = "9659";
+
+    double FATES_ERRH2O_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "mean individual water balance error in kg per individual per second";
+      :units = "kg s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9670";
+
+    double FATES_TRAN_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "mean individual transpiration rate in kg per individual per second";
+      :units = "kg s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9676";
+
+    double FATES_SAPFLOW_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "areal sap flow rate dimensioned by size x pft in kg per m2 ground area per second";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9682";
+
+    double FATES_ITERH1_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "water balance error iteration diagnostic 1";
+      :units = "count indiv-1 step-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9689";
+
+    double FATES_ITERH2_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "water balance error iteration diagnostic 2";
+      :units = "count indiv-1 step-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9695";
+
+    double FATES_ABSROOT_H2O_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "absorbing volumetric root water content by size class x pft";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9701";
+
+    double FATES_TRANSROOT_H2O_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "transporting volumetric root water content by size class x pft";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9708";
+
+    double FATES_STEM_H2O_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "stem volumetric water content by size class x pft";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9715";
+
+    double FATES_LEAF_H2O_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "leaf volumetric water content by size class x pft";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9721";
+
+    double FATES_ABSROOT_H2OPOT_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "absorbing root water potential by size class x pft";
+      :units = "Pa";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9727";
+
+    double FATES_TRANSROOT_H2OPOT_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "transporting root water potential by size class x pft";
+      :units = "Pa";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9733";
+
+    double FATES_STEM_H2OPOT_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "stem water potential by size class x pft";
+      :units = "Pa";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9739";
+
+    double FATES_LEAF_H2OPOT_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "leaf water potential by size class x pft";
+      :units = "Pa";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9745";
+
+    double FATES_ABSROOT_CONDFRAC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "absorbing root fraction (0-1) of condutivity by size class x pft";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9751";
+
+    double FATES_TRANSROOT_CONDFRAC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "transporting root fraction (0-1) of condutivity by size class x pft";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9757";
+
+    double FATES_STEM_CONDFRAC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "stem water fraction (0-1) of condutivity by size class x pft";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9763";
+
+    double FATES_LEAF_CONDFRAC_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "leaf water fraction (0-1) of condutivity by size class x pft";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "active";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9769";
+
+    double FATES_BTRAN_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "mean individual level BTRAN by size class x pft";
+      :units = "1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9775";
+
+    double FATES_SOILMATPOT_SL(time, levsoi=10, lndgrid=1);
+      :long_name = "soil water matric potenial by soil layer";
+      :units = "Pa";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_soil_r8";
+      :src_line = "9781";
+
+    double FATES_SOILVWC_SL(time, levsoi=10, lndgrid=1);
+      :long_name = "soil volumetric water content by soil layer";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_soil_r8";
+      :src_line = "9787";
+
+    double FATES_SOILVWCSAT_SL(time, levsoi=10, lndgrid=1);
+      :long_name = "soil saturated volumetric water content by soil layer";
+      :units = "m3 m-3";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_soil_r8";
+      :src_line = "9793";
+
+    double FATES_ROOTUPTAKE_SL(time, levsoi=10, lndgrid=1);
+      :long_name = "root water uptake rate by soil layer";
+      :units = "kg m-2 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_soil_r8";
+      :src_line = "9799";
+
+    double FATES_ROOTUPTAKE0_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "root water uptake from 0 to to 10 cm depth, by plant size x pft ";
+      :units = "kg m-2 m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9806";
+
+    double FATES_ROOTUPTAKE10_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "root water uptake from 10 to to 50 cm depth, by plant size x pft ";
+      :units = "kg m-2 m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9813";
+
+    double FATES_ROOTUPTAKE50_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "root water uptake from 50 to to 100 cm depth, by plant size x pft ";
+      :units = "kg m-2 m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9820";
+
+    double FATES_ROOTUPTAKE100_SZPF(time, fates_levscpf=156, lndgrid=1);
+      :long_name = "root water uptake below 100 cm depth, by plant size x pft ";
+      :units = "kg m-2 m-1 s-1";
+      :cell_methods = "time: mean";
+      :use_default = "inactive";
+      :upfreq_group = "group_hydr_complx";
+      :hlms_compat = "CLM:ALM";
+      :vtype = "site_size_pft_r8";
+      :src_line = "9827";
+
+}

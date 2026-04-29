@@ -329,7 +329,12 @@ def load_all_documents(knowledge_base_path: str) -> list[dict]:
     return all_docs
 
 
-def load_knowledge_base(knowledge_base_path: str, kb_name: str = None) -> list[dict]:
+def load_knowledge_base(
+    knowledge_base_path: str,
+    kb_name: str = None,
+    wiki_subdir: str = None,
+    docs_subdir: str = None,
+) -> list[dict]:
     """
     Load documents from a knowledge base with flexible structure.
 
@@ -362,53 +367,84 @@ def load_knowledge_base(knowledge_base_path: str, kb_name: str = None) -> list[d
 
     print(f"\nLoading {kb_name.upper()} knowledge base from: {knowledge_base_path}")
 
-    # Look for codebase wiki (various naming conventions)
-    wiki_patterns = [
-        f"{kb_name}-codebase-wiki",
-        f"{kb_name}_codebase_wiki",
-        "codebase-wiki",
-        "wiki"
-    ]
-    for pattern in wiki_patterns:
-        wiki_path = base / pattern
+    # Look for codebase wiki.
+    # If `wiki_subdir` is supplied, use it explicitly (no probe). Required by
+    # the version-association infrastructure: each milestone records which
+    # commit-pinned wiki dir to load (e.g., 'fates-codebase-wiki-e027a40').
+    # If unset, fall back to first-match-wins probe over canonical patterns.
+    if wiki_subdir is not None:
+        wiki_path = base / wiki_subdir
         if wiki_path.exists():
             wiki_docs = load_markdown_files(str(wiki_path))
-            # Tag documents with knowledge base source
             for doc in wiki_docs:
                 doc['kb_source'] = kb_name
-            print(f"  Loaded {len(wiki_docs)} documents from {pattern}/")
+            print(f"  Loaded {len(wiki_docs)} documents from {wiki_subdir}/ (explicit wiki_subdir)")
             all_docs.extend(wiki_docs)
-            break
+        else:
+            print(f"  WARNING: explicit wiki_subdir '{wiki_subdir}' not found under {base}")
+    else:
+        wiki_patterns = [
+            f"{kb_name}-codebase-wiki",
+            f"{kb_name}_codebase_wiki",
+            "codebase-wiki",
+            "wiki",
+        ]
+        for pattern in wiki_patterns:
+            wiki_path = base / pattern
+            if wiki_path.exists():
+                wiki_docs = load_markdown_files(str(wiki_path))
+                for doc in wiki_docs:
+                    doc['kb_source'] = kb_name
+                print(f"  Loaded {len(wiki_docs)} documents from {pattern}/")
+                all_docs.extend(wiki_docs)
+                break
 
-    # Look for official/technical docs (various naming conventions)
-    docs_patterns = [
-        f"{kb_name}-official-docs",
-        f"{kb_name}-technical-docs",
-        "official-docs",
-        "technical-docs",
-        "docs"
-    ]
-    for pattern in docs_patterns:
-        docs_path = base / pattern
+    # Look for official/technical docs. Same explicit-vs-probe pattern.
+    if docs_subdir is not None:
+        docs_path = base / docs_subdir
         if docs_path.exists():
-            # Load markdown files
             md_docs = load_markdown_files(str(docs_path))
             for doc in md_docs:
                 doc['kb_source'] = kb_name
             if md_docs:
-                print(f"  Loaded {len(md_docs)} markdown files from {pattern}/")
+                print(f"  Loaded {len(md_docs)} markdown files from {docs_subdir}/ (explicit docs_subdir)")
                 all_docs.extend(md_docs)
-
-            # Load RST files (check for docs/source subdirectory)
             rst_path = docs_path / "docs" / "source"
             if rst_path.exists():
                 rst_docs = load_rst_files(str(rst_path))
                 for doc in rst_docs:
                     doc['kb_source'] = kb_name
                 if rst_docs:
-                    print(f"  Loaded {len(rst_docs)} RST files from {pattern}/docs/source/")
+                    print(f"  Loaded {len(rst_docs)} RST files from {docs_subdir}/docs/source/")
                     all_docs.extend(rst_docs)
-            break
+        else:
+            print(f"  WARNING: explicit docs_subdir '{docs_subdir}' not found under {base}")
+    else:
+        docs_patterns = [
+            f"{kb_name}-official-docs",
+            f"{kb_name}-technical-docs",
+            "official-docs",
+            "technical-docs",
+            "docs",
+        ]
+        for pattern in docs_patterns:
+            docs_path = base / pattern
+            if docs_path.exists():
+                md_docs = load_markdown_files(str(docs_path))
+                for doc in md_docs:
+                    doc['kb_source'] = kb_name
+                if md_docs:
+                    print(f"  Loaded {len(md_docs)} markdown files from {pattern}/")
+                    all_docs.extend(md_docs)
+                rst_path = docs_path / "docs" / "source"
+                if rst_path.exists():
+                    rst_docs = load_rst_files(str(rst_path))
+                    for doc in rst_docs:
+                        doc['kb_source'] = kb_name
+                    if rst_docs:
+                        print(f"  Loaded {len(rst_docs)} RST files from {pattern}/docs/source/")
+                        all_docs.extend(rst_docs)
+                break
 
     # Load index.md from root if exists
     index_path = base / "index.md"
@@ -428,20 +464,45 @@ def load_knowledge_base(knowledge_base_path: str, kb_name: str = None) -> list[d
     return all_docs
 
 
-def load_multiple_knowledge_bases(knowledge_base_paths: list[str]) -> list[dict]:
+def load_multiple_knowledge_bases(
+    knowledge_base_paths: list[str],
+    wiki_subdirs: list[str] = None,
+    docs_subdirs: list[str] = None,
+) -> list[dict]:
     """
     Load documents from multiple knowledge bases.
 
     Args:
-        knowledge_base_paths: List of paths to knowledge base directories
+        knowledge_base_paths: List of paths to knowledge base directories.
+        wiki_subdirs: Optional list of explicit wiki subdir names, parallel to
+            `knowledge_base_paths`. Use `None` for an entry to fall back to
+            probe-based discovery for that KB. Length must match `knowledge_base_paths`
+            if supplied.
+        docs_subdirs: Same shape as `wiki_subdirs`, for official/technical docs.
 
     Returns:
-        Combined list of document dictionaries from all knowledge bases
+        Combined list of document dictionaries from all knowledge bases.
     """
     all_docs = []
+    n = len(knowledge_base_paths)
 
-    for kb_path in knowledge_base_paths:
-        docs = load_knowledge_base(kb_path)
+    if wiki_subdirs is not None and len(wiki_subdirs) != n:
+        raise ValueError(
+            f"wiki_subdirs length ({len(wiki_subdirs)}) must match "
+            f"knowledge_base_paths length ({n})"
+        )
+    if docs_subdirs is not None and len(docs_subdirs) != n:
+        raise ValueError(
+            f"docs_subdirs length ({len(docs_subdirs)}) must match "
+            f"knowledge_base_paths length ({n})"
+        )
+
+    for i, kb_path in enumerate(knowledge_base_paths):
+        wiki_sd = wiki_subdirs[i] if wiki_subdirs is not None else None
+        docs_sd = docs_subdirs[i] if docs_subdirs is not None else None
+        docs = load_knowledge_base(
+            kb_path, wiki_subdir=wiki_sd, docs_subdir=docs_sd
+        )
         all_docs.extend(docs)
 
     print(f"\n=== Total documents from all knowledge bases: {len(all_docs)} ===")

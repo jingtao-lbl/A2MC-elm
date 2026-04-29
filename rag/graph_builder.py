@@ -11,6 +11,7 @@ preserving the manually curated mechanistic relationships.
 Author: Jing Tao with Claude
 """
 
+import json
 import os
 import re
 import yaml
@@ -600,9 +601,31 @@ def extract_entities_from_docs(
     return kg
 
 
-def save_graph(kg: FATESKnowledgeGraph, output_path: str):
-    """Save knowledge graph to file."""
+def save_graph(
+    kg: FATESKnowledgeGraph,
+    output_path: str,
+    metadata: Optional[dict] = None,
+):
+    """Save knowledge graph to file.
+
+    Args:
+        kg: The knowledge graph to save.
+        output_path: Destination JSON path.
+        metadata: Optional profile metadata dict (per `tools/rag_metadata.py`
+            schema). If supplied, embedded at top-level `_metadata` key in the
+            saved JSON. Used by the version-association infrastructure for
+            drift detection and provenance.
+    """
     kg.save(output_path)
+    if metadata is not None:
+        # Reopen the saved JSON and inject the _metadata key without recomputing
+        # the node-link representation.
+        with open(output_path, 'r') as f:
+            data = json.load(f)
+        data["_metadata"] = metadata
+        with open(output_path, 'w') as f:
+            json.dump(data, f, indent=2, default=str)
+        print(f"Graph metadata block written: {metadata.get('profile_name', '<unnamed>')}")
 
 
 def load_graph(input_path: str) -> FATESKnowledgeGraph:
@@ -610,6 +633,15 @@ def load_graph(input_path: str) -> FATESKnowledgeGraph:
     kg = FATESKnowledgeGraph()
     kg.load(input_path)
     return kg
+
+
+def load_graph_metadata(input_path: str) -> Optional[dict]:
+    """Read just the `_metadata` block from a saved graph JSON. Returns None
+    if not present (legacy graphs).
+    """
+    with open(input_path, 'r') as f:
+        data = json.load(f)
+    return data.get("_metadata")
 
 
 if __name__ == "__main__":

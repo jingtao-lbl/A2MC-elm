@@ -478,6 +478,105 @@ class CalibrationOrchestrator:
         self._hpc = None
         self._params = None
 
+        # Phase 4 RAG version-association alignment check.
+        # Verifies that $A2MC_MODEL_PATH and the active RAG profile agree;
+        # if not, warns and (unless A2MC_RAG_AUTO_REBUILD=true) aborts.
+        self._check_rag_alignment()
+
+    def _check_rag_alignment(self):
+        """Verify the active RAG profile matches the user's A2MC_MODEL_PATH.
+
+        Behavior depends on what's available on disk:
+
+        - `rag/milestones.json` missing -> Phase 4 migration not done yet.
+          Warn and skip the check (transitional state).
+        - `A2MC_MODEL_PATH` unset -> hard error per Phase 4 design (decision
+          recorded in `memory/dev_logs_fatesversionassociation/20260428a_*.md`).
+        - milestones registered + selector returns a profile -> set
+          `A2MC_RAG_ACTIVE` to that profile so downstream RAG modules pick
+          it up. If selector says rebuild_needed and A2MC_RAG_AUTO_REBUILD
+          is not 'true', warn loudly but continue (so manual runs still
+          work; the user must explicitly rebuild).
+        - selector returns no_match -> warn that no milestone covers this
+          checkout; downstream RAG calls may fail.
+        """
+        manifest_path = Path(__file__).resolve().parent / "rag" / "milestones.json"
+        if not manifest_path.exists():
+            logger.warning(
+                "[RAG alignment] rag/milestones.json not found. Phase 4 "
+                "version-association migration not yet complete; skipping "
+                "alignment check. (This is expected during the migration "
+                "rollout itself.)"
+            )
+            return
+
+        model_path = os.environ.get("A2MC_MODEL_PATH")
+        if not model_path:
+            raise RuntimeError(
+                "A2MC_MODEL_PATH is required but not set. The RAG "
+                "infrastructure needs to know your E3SM/ELM-FATES checkout "
+                "root to select the right milestone profile. Set it in your "
+                "site config (e.g., use_cases/Kougarok/config/kougarok_config.sh)."
+            )
+
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent / "tools"))
+            from model_version import detect_model_version, ModelPathError
+            from rag_manifest import load_manifest
+            from rag_selector import select_rag
+        except ImportError as e:
+            logger.warning(f"[RAG alignment] Cannot import alignment helpers: {e}")
+            return
+
+        try:
+            version = detect_model_version(Path(model_path))
+        except ModelPathError as e:
+            raise RuntimeError(f"[RAG alignment] {e}")
+
+        manifest = load_manifest(manifest_path)
+        sel = select_rag(version, manifest)
+
+        # Drift signal: user's FATES commit differs from milestone's. Same commit
+        # implies same source-tree content, so the param surface and wiki
+        # match by construction. (See rag_match.py for the rationale on why we
+        # don't compare staged vs source-tree shas directly.)
+        if sel.milestone and sel.milestone.fates_commit_built:
+            if version.fates.commit_sha != sel.milestone.fates_commit_built:
+                sel.param_file_changed = True
+                if sel.mode in ("exact_epoch", "close_enough"):
+                    sel.rebuild_required = True
+
+        auto_rebuild = os.environ.get("A2MC_RAG_AUTO_REBUILD", "false").lower() in (
+            "true", "1", "yes", "on"
+        )
+
+        msg_header = (
+            f"[RAG alignment] FATES {version.fates.commit_short} "
+            f"(api {version.fates_api_epoch}); selected profile: "
+            f"{sel.profile_name or '(none)'} (mode: {sel.mode})"
+        )
+        logger.info(msg_header)
+        logger.info(f"[RAG alignment] {sel.reason}")
+
+        if sel.profile_name:
+            os.environ["A2MC_RAG_ACTIVE"] = sel.profile_name
+
+        if sel.mode == "no_match":
+            logger.error(
+                "[RAG alignment] No registered milestone covers this checkout. "
+                "Downstream RAG calls will likely fail. Run "
+                "`scripts/rag_match.py` for guidance."
+            )
+            return
+
+        if sel.rebuild_required and not auto_rebuild:
+            logger.warning(
+                "[RAG alignment] Drift detected (param-file sha mismatch or "
+                "epoch mismatch). Continuing anyway since A2MC_RAG_AUTO_REBUILD "
+                "is not set. Run `scripts/rag_match.py` for triage and "
+                "`scripts/rag_bump.py` to rebuild."
+            )
+
     @property
     def reasoning(self):
         """Lazy-load reasoning module with memory integration."""

@@ -6,6 +6,27 @@
 
 ---
 
+## Active-profile model (v2.90 onward)
+
+Each registered RAG profile is a self-contained set of artifacts on disk:
+
+```
+rag/chroma_db/<profile>/                       ChromaDB persist dir per profile
+rag/graphs/<profile>.json                      NetworkX graph (with embedded _metadata)
+rag/metadata/<profile>.json                    Profile metadata JSON
+rag/data/curated_relationships_<profile>.yaml  Frozen per-milestone curated YAML snapshot
+```
+
+Example: api-43-1 (canonical) and api-31-0 (legacy) each get their own four-tuple.
+
+**Selection at runtime.** The orchestrator startup hook reads `A2MC_MODEL_PATH` (the user's E3SM checkout root), detects ELM + FATES commits via `tools/model_version.detect_model_version()`, matches against `rag/milestones.json` via `tools/rag_selector.select_rag()`, and sets `A2MC_RAG_ACTIVE` to the matched profile name. From that point on, every RAG-aware module reads its persist dir, graph, metadata, and curated YAML from the paths derived from `A2MC_RAG_ACTIVE`.
+
+**Never bypass the alignment hook.** Calling RAG modules outside the orchestrator without setting `A2MC_RAG_ACTIVE` raises an `EnvironmentError`. For ad-hoc use (notebooks, testing): `export A2MC_RAG_ACTIVE=api-43-1` (or `api-31-0`) before importing.
+
+**Workflow doc:** `docs/a2mc_reference/version_association_workflow.md` covers the full milestone tier — first-time setup, diagnose-which-milestone, list registered, bump to new milestone, manually switch profile.
+
+---
+
 ## System Overview
 
 Hybrid retrieval system for FATES documentation and knowledge:

@@ -45,6 +45,26 @@ fi
 # E3SM/FATES source code
 export A2MC_E3SM_ROOT="/global/cfs/cdirs/m2467/jingtao/E3SM_FATES"
 
+# ========================
+# RAG / VERSION ASSOCIATION (Phase 4 — see docs/18)
+# ========================
+# A2MC_MODEL_PATH: absolute path to the user's E3SM/ELM-FATES checkout root.
+# Required by the RAG version-association infrastructure to detect ELM + FATES
+# commits and select the matching milestone profile. Set in your SITE config
+# (e.g., use_cases/<site>/config/<site>_config.sh), NOT here, because the
+# checkout location is per-user/per-site, not per-machine.
+#
+# A2MC_RAG_DIR: root of the RAG storage tree. Default: ${A2MC_ROOT}/rag.
+export A2MC_RAG_DIR="${A2MC_ROOT}/rag"
+#
+# A2MC_RAG_ACTIVE: active milestone profile name (e.g., 'api-43-1', 'api-31-0').
+# Set automatically by the orchestrator's alignment-check hook based on
+# A2MC_MODEL_PATH; do not set manually except for ad-hoc tooling.
+#
+# A2MC_RAG_AUTO_REBUILD: if 'true', orchestrator silently rebuilds the RAG
+# when drift is detected. Default 'false' (drift causes WARN+abort).
+export A2MC_RAG_AUTO_REBUILD="false"
+
 # Output root for simulation results
 export A2MC_OUTPUT_ROOT="/global/cfs/cdirs/m2467/jingtao"
 

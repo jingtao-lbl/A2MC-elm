@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "updated_at": "2026-04-28T12:09:41+00:00",
+  "milestones": {
+    "api-43-1": {
+      "description": "FATES api.43.1 epoch \u2014 built against E3SM-master-pinned sci.1.91.1 (canonical)",
+      "fates_api_epoch": "43.1",
+      "fates_tag_built": "sci.1.91.1_api.43.1.0",
+      "fates_commit_built": "e027a4030d2a0f09039fb337ad67ced7461dd4f0",
+      "fates_param_file_format": "json",
+      "elm_commit_built": "d40b84318cd4e309ca66f014a7b6e9e5f43a3adc",
+      "elm_wiki_subdir": "elm-codebase-wiki-d40b843",
+      "fates_wiki_subdir": "fates-codebase-wiki-e027a40",
+      "covers_sci_tags": [
+        "sci.1.90.0_api.43.1.0",
+        "sci.1.90.1_api.43.1.0",
+        "sci.1.90.2_api.43.1.0",
+        "sci.1.91.0_api.43.1.0",
+        "sci.1.91.1_api.43.1.0",
+        "sci.1.91.2_api.43.1.0",
+        "sci.1.91.3_api.43.1.0",
+        "sci.1.91.4_api.43.1.0"
+      ],
+      "canonical": true,
+      "legacy": false,
+      "available_locally": true,
+      "published_at": "2026-04-28",
+      "curated_yaml_path": "rag/data/curated_relationships_api-43-1.yaml",
+      "notes": ""
+    },
+    "api-31-0": {
+      "description": "FATES api.31.0 epoch \u2014 Kougarok manuscript reproducibility target (legacy)",
+      "fates_api_epoch": "31.0",
+      "fates_tag_built": "sci.1.68.2_api.31.0.0",
+      "fates_commit_built": "e85d997798368fff093ca55e52722fcf5d489314",
+      "fates_param_file_format": "cdl",
+      "elm_commit_built": "60d9aad0577967d963aeed60240614080a326d1b",
+      "elm_wiki_subdir": "elm-codebase-wiki-60d9aad",
+      "fates_wiki_subdir": "fates-codebase-wiki-e85d997",
+      "covers_sci_tags": [
+        "sci.1.68.2_api.31.0.0",
+        "sci.1.68.3_api.31.0.0",
+        "sci.1.68.4_api.31.0.0",
+        "sci.1.69.0_api.31.0.0"
+      ],
+      "canonical": false,
+      "legacy": true,
+      "available_locally": true,
+      "published_at": "2026-04-28",
+      "curated_yaml_path": "rag/data/curated_relationships_api-31-0.yaml",
+      "notes": "Kougarok manuscript RAG profile; YAML is frozen pre-Phase-3.5 snapshot matching api-31 source names (do not rebuild against canonical YAML)."
+    }
+  }
+}

@@ -12,6 +12,7 @@ The hybrid approach provides:
 - Parameter-mechanism-output pathways
 """
 
+import os
 from pathlib import Path
 from typing import Optional, Union
 
@@ -34,6 +35,31 @@ def _resolve_path(path: str, base: Path = _A2MC_ROOT) -> str:
     return str(base / p)
 
 
+def _resolve_rag_paths_from_env() -> tuple[str, str]:
+    """Build (vector_persist_dir, graph_path) from A2MC env vars.
+
+    Layout: `$A2MC_RAG_DIR/chroma_db/$A2MC_RAG_ACTIVE` and
+    `$A2MC_RAG_DIR/graphs/$A2MC_RAG_ACTIVE.json`. `A2MC_RAG_DIR` defaults
+    to `<repo>/rag`. `A2MC_RAG_ACTIVE` is required (per the version-association
+    infrastructure); raises EnvironmentError if missing.
+    """
+    rag_dir = os.environ.get("A2MC_RAG_DIR")
+    if not rag_dir:
+        rag_dir = str(_A2MC_ROOT / "rag")
+    active = os.environ.get("A2MC_RAG_ACTIVE")
+    if not active:
+        raise EnvironmentError(
+            "A2MC_RAG_ACTIVE is not set and no explicit vector_persist_dir/"
+            "graph_path was supplied. Set A2MC_RAG_ACTIVE to a registered "
+            "milestone profile name (e.g., 'api-43-1' or 'api-31-0'), "
+            "or pass the paths explicitly."
+        )
+    return (
+        str(Path(rag_dir) / "chroma_db" / active),
+        str(Path(rag_dir) / "graphs" / f"{active}.json"),
+    )
+
+
 class HybridRetriever:
     """
     Hybrid retriever combining vector search and knowledge graph.
@@ -44,8 +70,8 @@ class HybridRetriever:
     def __init__(
         self,
         knowledge_base_path: Union[str, list[str]] = None,
-        vector_persist_dir: str = "rag/chroma_db",
-        graph_path: Optional[str] = "rag/fates_knowledge_graph.json",
+        vector_persist_dir: Optional[str] = None,
+        graph_path: Optional[str] = None,
         auto_build: bool = True
     ):
         """
@@ -55,8 +81,10 @@ class HybridRetriever:
             knowledge_base_path: Path(s) to knowledge base directory(ies).
                                  Can be a single path string or list of paths.
                                  If None, uses DEFAULT_KNOWLEDGE_BASES (FATES + ELM).
-            vector_persist_dir: ChromaDB persistence directory
-            graph_path: Path to saved knowledge graph (JSON)
+            vector_persist_dir: ChromaDB persistence directory. If None,
+                                derived from `$A2MC_RAG_DIR/chroma_db/$A2MC_RAG_ACTIVE`.
+            graph_path: Path to saved knowledge graph (JSON). If None,
+                        derived from `$A2MC_RAG_DIR/graphs/$A2MC_RAG_ACTIVE.json`.
             auto_build: Auto-build indexes if missing
         """
         # Handle default and resolve paths
@@ -66,6 +94,15 @@ class HybridRetriever:
             kb_paths = [_resolve_path(knowledge_base_path)]
         else:
             kb_paths = [_resolve_path(p) for p in knowledge_base_path]
+
+        # Resolve env-driven paths if not given. Both must resolve from the
+        # same active profile to avoid mismatch.
+        if vector_persist_dir is None and graph_path is None:
+            vector_persist_dir, graph_path = _resolve_rag_paths_from_env()
+        elif vector_persist_dir is None:
+            vector_persist_dir, _ = _resolve_rag_paths_from_env()
+        elif graph_path is None:
+            _, graph_path = _resolve_rag_paths_from_env()
 
         vector_persist_dir = _resolve_path(vector_persist_dir)
         if graph_path:
@@ -738,8 +775,8 @@ class HybridRetriever:
 
 def create_hybrid_retriever(
     knowledge_base_path: str = "docs/fates-knowledge-base",
-    vector_persist_dir: str = "rag/chroma_db",
-    graph_path: str = "rag/fates_knowledge_graph.json",
+    vector_persist_dir: str = None,
+    graph_path: str = None,
     rebuild: bool = False
 ) -> HybridRetriever:
     """
@@ -747,14 +784,16 @@ def create_hybrid_retriever(
 
     Args:
         knowledge_base_path: Path to knowledge base
-        vector_persist_dir: ChromaDB directory
-        graph_path: Knowledge graph JSON path
+        vector_persist_dir: ChromaDB directory. If None, derived from
+                            $A2MC_RAG_DIR/chroma_db/$A2MC_RAG_ACTIVE.
+        graph_path: Knowledge graph JSON path. If None, derived from
+                    $A2MC_RAG_DIR/graphs/$A2MC_RAG_ACTIVE.json.
         rebuild: If True, rebuild both indexes
 
     Returns:
         Configured HybridRetriever
     """
-    if rebuild:
+    if rebuild and vector_persist_dir is not None:
         import shutil
 
         # Remove vector store

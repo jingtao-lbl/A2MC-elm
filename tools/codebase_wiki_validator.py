@@ -185,9 +185,60 @@ BACKTICK_ID_RE = re.compile(r"`([A-Za-z][A-Za-z0-9_]*)`")
 # the canonical FATES parameter prefix; reduces false positives drastically.
 PARAM_NAME_RE = re.compile(r"\b(fates_[a-z0-9_]+)\b")
 
+# Known false-positive classes for `fates_*` parameter-name detection. The wiki
+# uses the same prefix for derived-type names, namelist flags, dimension tokens,
+# filenames, and wildcard prefix strings — none of which appear in the parameter
+# JSON. These regexes pre-filter each PARAM_NAME_RE hit so that Dim 4 measures
+# only true candidate parameter names. Hand-derived from the api-43-1 audit.
+PARAM_NAME_FP_PATTERNS = [
+    re.compile(r"^fates_.*_type$"),                      # derived-type names
+    re.compile(r"^fates_lev[a-z]+$"),                    # dimension tokens
+    re.compile(r"^fates_params_(default|new|info|opt|"
+               r"arctic|swapped|3pft)[a-z0-9_]*$"),      # parameter filenames
+    re.compile(r"^fates_(log|tiny|r8|unset_int|"
+               r"string_length|errfates|cnplimiter|"
+               r"hist|hlm_pftno|cx_int|emadcxdt|"
+               r"oldstock|swapped|cnp_)$"),              # constants/handles
+    re.compile(r"^fates_history_[a-z]+$"),               # history-system internals
+    re.compile(r"^fates_(restart|hydro|landuse|"
+               r"history|leafage|litterclass|fuel|"
+               r"hdim|io_dimension|woodprod|np_comp_"
+               r"scaling|hydr_organs|plant_organs|"
+               r"phen_(season_decid|stress_decid|"
+               r"evergreen|doff_time|doff_temp)|"
+               r"check_param_set|"
+               r"daily_(n|p|nh4|no3)_(demand|uptake)|"
+               r"acc_nesterov_id|"
+               r"(agcwd|bgcwd|leaf|cwd)_litt|"
+               r"(termnindiv|imortrate)_[a-z]+|"
+               r"(my_new_param|patch_type|cohort_type|"
+               r"interface_type|3pft|arctic|swapped|"
+               r"radiation_model|stomatal_model|"
+               r"insufficient_for_harvest_debt|"
+               r"bypass_harvest_debt|no_harvest_debt|"
+               r"mortality_disturbance_fraction|"
+               r"frzleaftol|cold_(dec_status|leafondate)|"
+               r"area_pa|age_pa|nplant|dbh|height|"
+               r"(h|c|b)mort|gdd_site|leaf_(c|n|p|"
+               r"photo_tempsens_model|stomatal_model)|"
+               r"maintresp_leaf_model|"
+               r"rad_clumping|numpft|"
+               r"allom_zroot_|cnp_(km|prescribed|vmax|"
+               r"nfix|eca_km)_))[a-z0-9_]*$"),
+    re.compile(r"^fates_[a-z0-9_]*_$"),                  # wildcard prefix forms
+]
+
 # Subroutine / function declarations in Fortran source.
+# Handles plain `subroutine foo`, `function foo`, AND typed function returns
+# like `integer function foo`, `real(r8) function foo`, `logical function foo`,
+# `character(len=*) function foo`, etc. Also handles attribute prefixes
+# (recursive, pure, elemental, module).
 SUB_DECL_RE = re.compile(
-    r"^\s*(?:recursive\s+|pure\s+|elemental\s+)*"
+    r"^\s*"
+    r"(?:(?:recursive|pure|elemental|module)\s+)*"
+    r"(?:(?:integer|real|logical|character|double\s+precision|complex)"
+    r"\s*(?:\([^)]*\))?\s+)?"
+    r"(?:(?:recursive|pure|elemental|module)\s+)*"
     r"(?:subroutine|function)\s+([A-Za-z][A-Za-z0-9_]*)",
     re.IGNORECASE | re.MULTILINE,
 )
@@ -221,6 +272,13 @@ ROUTINE_BLACKLIST = {
     "will", "should", "would", "could", "may", "might", "must",
     "yes", "no", "true", "false", "none", "null", "nan",
     "src", "dst", "tmp", "var", "val", "key", "row", "col", "idx",
+    # More Fortran intrinsics
+    "associated", "allocated", "shape", "lbound", "ubound", "transfer",
+    "cshift", "merge", "pack", "unpack", "spread", "reshape",
+    # Domain predicates / type tags often appearing in backticks (not routines)
+    "crop", "iscft", "nfixer", "woody", "evergreen", "deciduous",
+    "perennial", "annual", "shrub", "grass", "tree", "needleleaf",
+    "broadleaf", "c3", "c4", "boreal", "temperate", "tropical",
 }
 
 
@@ -277,8 +335,18 @@ def find_first_origin(corpus: WikiCorpus, needle: str) -> str:
 
 
 def find_parameter_mentions(blob: str) -> Counter:
-    """Count fates_* parameter mentions in wiki body text."""
-    return Counter(PARAM_NAME_RE.findall(blob))
+    """Count fates_* parameter mentions in wiki body text.
+
+    Filters out hits matching `PARAM_NAME_FP_PATTERNS` (derived-type names,
+    dimension tokens, file aliases, namelist flags, wildcard prefixes) so that
+    Dim 4 measures only true candidate parameter names.
+    """
+    counter: Counter = Counter()
+    for name in PARAM_NAME_RE.findall(blob):
+        if any(p.match(name) for p in PARAM_NAME_FP_PATTERNS):
+            continue
+        counter[name] += 1
+    return counter
 
 
 def collect_routine_candidates(corpus: WikiCorpus,
@@ -396,8 +464,17 @@ def validate_routines(candidates: List[Tuple[str, int]],
                       source: SourceIndex, source_root: Path,
                       corpus: WikiCorpus) -> DimensionResult:
     """Dimension 3: routine candidates appear as subroutine/function decls
-    somewhere in the source tree."""
+    somewhere in the source tree.
+
+    Accepts subroutine, function (typed or plain), and `interface NAME`
+    blocks (Fortran generic interfaces — the wiki often references the
+    public interface name, not its underlying specific procedures).
+    """
     result = DimensionResult()
+    iface_re = re.compile(
+        r"^\s*(?:abstract\s+)?interface\s+([A-Za-z][A-Za-z0-9_]*)\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    )
 
     # Build (lazy) global declared-routine set by scanning every .F90 once.
     declared: Set[str] = set()
@@ -409,6 +486,8 @@ def validate_routines(candidates: List[Tuple[str, int]],
         except Exception:
             continue
         for m in SUB_DECL_RE.finditer(text):
+            declared.add(m.group(1).lower())
+        for m in iface_re.finditer(text):
             declared.add(m.group(1).lower())
 
     for name, count in candidates:

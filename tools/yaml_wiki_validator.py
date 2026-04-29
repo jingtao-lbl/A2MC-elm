@@ -69,12 +69,24 @@ class WikiCorpus:
     """In-memory wiki corpus: per-file content plus a concatenated blob."""
     files: Dict[str, str] = field(default_factory=dict)  # path_str -> content
     blob: str = ""
+    blob_lower: str = ""  # lazy lowercased blob for case-insensitive lookups
 
     def files_containing(self, needle: str) -> List[str]:
         return [p for p, c in self.files.items() if needle in c]
 
-    def contains(self, needle: str) -> bool:
+    def contains(self, needle: str, case_insensitive: bool = False) -> bool:
+        if case_insensitive:
+            if not self.blob_lower:
+                self.blob_lower = self.blob.lower()
+            return needle.lower() in self.blob_lower
         return needle in self.blob
+
+    def contains_file(self, path_or_name: str) -> bool:
+        """Match either the full path-as-given OR its basename."""
+        if path_or_name in self.blob:
+            return True
+        base = path_or_name.rsplit("/", 1)[-1]
+        return base != path_or_name and base in self.blob
 
 
 @dataclass
@@ -126,8 +138,27 @@ def load_yaml(path: Path) -> dict:
 # Helpers
 # =============================================================================
 
-def collect_yaml_outputs(curated: dict) -> Set[str]:
-    """Collect all output variable names referenced anywhere in the YAML."""
+def _host_model_skip_set(curated: dict) -> Set[str]:
+    """Return set of output names whose `outputs[name].host_model` is not 'fates'.
+
+    Outputs marked as ELM-side (or any non-FATES host) are cross-references
+    used by A2MC for diagnosis but legitimately absent from the FATES output
+    CDL. They are excluded from Dim C's coverage check.
+    """
+    skip: Set[str] = set()
+    for name, body in (curated.get("outputs") or {}).items():
+        host = (body or {}).get("host_model")
+        if host and host != "fates":
+            skip.add(name)
+    return skip
+
+
+def collect_yaml_outputs(curated: dict, exclude_external: bool = False) -> Set[str]:
+    """Collect all output variable names referenced anywhere in the YAML.
+
+    If `exclude_external=True`, drop outputs whose `host_model` field is not
+    'fates' (used by Dim C, which validates against the FATES output CDL).
+    """
     outs: Set[str] = set()
     for cat in (curated.get("categories") or {}).values():
         for o in (cat.get("key_outputs") or []):
@@ -140,6 +171,8 @@ def collect_yaml_outputs(curated: dict) -> Set[str]:
     for p in (curated.get("parameters") or {}).values():
         for o in (p.get("affects") or []):
             outs.add(o)
+    if exclude_external:
+        outs -= _host_model_skip_set(curated)
     return outs
 
 
@@ -225,18 +258,18 @@ def validate_mechanisms(curated: dict, wiki: WikiCorpus) -> DimensionResult:
     for mname in sorted(mechs.keys()):
         result.total += 1
         m = mechs[mname]
-        # Name match (flexible)
+        # Name match (flexible + case-insensitive)
         name_forms = normalize_mechanism_name(mname)
         name_matched_form = None
         for f in name_forms:
-            if wiki.contains(f):
+            if wiki.contains(f, case_insensitive=True):
                 name_matched_form = f
                 break
-        # Code reference match
+        # Code reference match (file: try basename fallback; routine: case-insensitive)
         code_ref = m.get("code_reference") or ""
         ref_file, ref_routine = parse_code_reference(code_ref)
-        file_match = bool(ref_file and wiki.contains(ref_file))
-        routine_match = bool(ref_routine and wiki.contains(ref_routine))
+        file_match = bool(ref_file and wiki.contains_file(ref_file))
+        routine_match = bool(ref_routine and wiki.contains(ref_routine, case_insensitive=True))
         ref_status = "n/a" if not code_ref else (
             "BOTH" if file_match and routine_match
             else "FILE_ONLY" if file_match
@@ -263,9 +296,14 @@ def validate_mechanisms(curated: dict, wiki: WikiCorpus) -> DimensionResult:
 
 def validate_outputs(curated: dict, wiki: WikiCorpus,
                      output_cdl: Path) -> DimensionResult:
-    """Dimension C: each YAML output exists in CDL and is mentioned in wiki."""
+    """Dimension C: each YAML output exists in CDL and is mentioned in wiki.
+
+    Outputs marked `host_model: <non-fates>` in the YAML's `outputs:` block
+    are skipped (they are cross-references to ELM-side variables that A2MC
+    uses for diagnosis but legitimately do not appear in the FATES CDL).
+    """
     result = DimensionResult()
-    outs = collect_yaml_outputs(curated)
+    outs = collect_yaml_outputs(curated, exclude_external=True)
 
     op = FATESOutputParser(str(output_cdl))
     cdl_vars = set(op.parse().keys())
@@ -304,10 +342,17 @@ def validate_code_refs(curated: dict, wiki: WikiCorpus) -> DimensionResult:
             continue
         result.total += 1
         ref_file, ref_routine = parse_code_reference(ref)
-        file_found = bool(ref_file and wiki.contains(ref_file))
-        rout_found = bool(ref_routine and wiki.contains(ref_routine))
+        file_found = bool(ref_file and wiki.contains_file(ref_file))
+        rout_found = bool(ref_routine and wiki.contains(ref_routine, case_insensitive=True))
+        # FILE_ONLY_BY_DESIGN: curator deliberately provided just a file path
+        # (no '::routine'), e.g. for mechanisms with no canonical entry point
+        # like ECA/RD competition. Counts as PASS when the file resolves.
+        no_routine_intended = (ref_routine is None)
         if file_found and rout_found:
             classification = "BOTH_FOUND"
+            result.pass_count += 1
+        elif file_found and no_routine_intended:
+            classification = "FILE_ONLY_BY_DESIGN"
             result.pass_count += 1
         elif file_found:
             classification = "FILE_ONLY"

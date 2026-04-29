@@ -21,6 +21,29 @@ export A2MC_USE_CASE_DIR="$(dirname "$SCRIPT_DIR")"
 export A2MC_SITE_CONFIG="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
 
 # -----------------------------------------------------------------------------
+# Model Source Path (Phase 4 RAG version association — required)
+# -----------------------------------------------------------------------------
+# Absolute path to the E3SM/ELM-FATES checkout used to RUN this case. The
+# RAG infrastructure detects ELM + FATES commits from this path and selects
+# the matching milestone profile (api-31-0 for the Kougarok manuscript;
+# api-43-1 for E3SM-master-pinned work).
+#
+# On Perlmutter:
+#   /global/cfs/cdirs/m2467/jingtao/E3SM_FATES   (api-31, Kougarok manuscript)
+# Locally (override per developer):
+#   $HOME/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES   (api-31)
+#
+# If you maintain multiple checkouts, switch between them by editing this line
+# OR by exporting A2MC_MODEL_PATH in your shell BEFORE sourcing this file.
+if [ -z "${A2MC_MODEL_PATH:-}" ]; then
+    if [ -d "$HOME/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES" ]; then
+        export A2MC_MODEL_PATH="$HOME/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES"
+    else
+        export A2MC_MODEL_PATH="${A2MC_E3SM_ROOT}"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
 # Site Information
 # -----------------------------------------------------------------------------
 export A2MC_SITE_NAME="Kougarok"
