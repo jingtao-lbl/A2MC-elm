@@ -203,7 +203,7 @@ class TestValidatorGateRedTriggersRollback(unittest.TestCase):
         sel = _make_selection("api-43-1", "exact_epoch")
         cls = BumpClassification(tier="T2", epoch_distance=0)
 
-        def fake_rebuild(profile, model_path, repo_root):
+        def fake_rebuild(profile, model_path, repo_root, rag_dir=None):
             # Simulate rebuild overwriting the chroma marker
             (self.tmp / "chroma_db" / profile / "marker.txt").write_text("BROKEN")
 

@@ -524,7 +524,11 @@ class CalibrationOrchestrator:
         - selector returns no_match -> warn that no milestone covers this
           checkout; downstream RAG calls may fail.
         """
-        manifest_path = Path(__file__).resolve().parent / "rag" / "milestones.json"
+        # Honor A2MC_RAG_DIR for the manifest lookup (same convention as the
+        # rest of the alignment hook + downstream tools).
+        repo_root = Path(__file__).resolve().parent
+        rag_dir = Path(os.environ.get("A2MC_RAG_DIR", str(repo_root / "rag")))
+        manifest_path = rag_dir / "milestones.json"
         if not manifest_path.exists():
             logger.warning(
                 "[RAG alignment] rag/milestones.json not found. Phase 4 "
@@ -600,11 +604,9 @@ class CalibrationOrchestrator:
             from rag_selector import classify_bump_tier
             from auto_rebuild import handle_drift, DriftHandlerError
             classification = classify_bump_tier(sel, user_param_sha_matches=False)
-            repo_root = Path(__file__).resolve().parent
-            # Honor A2MC_RAG_DIR so snapshot/rollback in handle_drift operate
-            # on the same tree the rebuild subprocess (rag_bump.py) writes to.
-            # The subprocess inherits the env var; we must too.
-            rag_dir = Path(os.environ.get("A2MC_RAG_DIR", str(repo_root / "rag")))
+            # repo_root and rag_dir resolved above (line ~527) — reuse them so
+            # snapshot/rollback in handle_drift operate on the same tree the
+            # subprocess (rag_bump.py) writes to.
             try:
                 handle_drift(
                     sel, classification,

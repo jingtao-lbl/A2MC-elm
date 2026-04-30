@@ -111,7 +111,8 @@ def handle_drift(
     # T3 distant — never auto, regardless of flag.
     if tier == "T3" and epoch_distance > threshold:
         return _emit_prompt_pack_and_abort(
-            profile, model_path, epoch_distance, threshold, repo_root
+            profile, model_path, epoch_distance, threshold, repo_root,
+            rag_dir=rag_dir,
         )
 
     # T2 or T3-near — flag-gated.
@@ -158,7 +159,8 @@ def _do_t1_refresh(profile: str, model_path: Path, rag_dir: Path,
 
 def _emit_prompt_pack_and_abort(profile: str, model_path: Path,
                                 epoch_distance: int, threshold: int,
-                                repo_root: Path) -> str:
+                                repo_root: Path,
+                                rag_dir: Optional[Path] = None) -> str:
     """T3 with epoch_distance > threshold: write prompt-pack, raise.
 
     Distant epoch jumps require human-supervised wiki regen (parameter file
@@ -172,6 +174,8 @@ def _emit_prompt_pack_and_abort(profile: str, model_path: Path,
         "--mode", "prompt-pack",
         "--model-path", str(model_path),
     ]
+    if rag_dir is not None:
+        cmd.extend(["--rag-dir", str(rag_dir)])
     logger.info(f"[RAG alignment] T3 (distance {epoch_distance} > {threshold}): "
                 f"writing prompt-pack via {' '.join(cmd)}")
     try:
@@ -206,7 +210,8 @@ def _auto_rebuild_with_gate(profile: str, model_path: Path, rag_dir: Path,
     with _bump_lock(rag_dir):
         snapshot_paths = _snapshot_profile(rag_dir, profile)
         try:
-            _run_rebuild_subprocess(profile, model_path, repo_root)
+            _run_rebuild_subprocess(profile, model_path, repo_root,
+                                    rag_dir=rag_dir)
             verdict = _run_validator_gate(profile, repo_root)
             if verdict["verdict"] != "Green":
                 _rollback_profile(rag_dir, profile, snapshot_paths,
@@ -247,7 +252,8 @@ def _auto_rebuild_with_gate(profile: str, model_path: Path, rag_dir: Path,
             return msg
 
 
-def _run_rebuild_subprocess(profile: str, model_path: Path, repo_root: Path):
+def _run_rebuild_subprocess(profile: str, model_path: Path, repo_root: Path,
+                            rag_dir: Optional[Path] = None):
     cmd = [
         sys.executable,
         str(repo_root / "scripts" / "rag_bump.py"),
@@ -255,6 +261,13 @@ def _run_rebuild_subprocess(profile: str, model_path: Path, repo_root: Path):
         "--mode", "auto",
         "--model-path", str(model_path),
     ]
+    # Pass --rag-dir explicitly so the subprocess uses the same tree the
+    # orchestrator snapshot/rollback operate on. rag_bump.py also reads
+    # A2MC_RAG_DIR from inherited env, but the explicit flag is robust to
+    # any future change in that default and to environments where the
+    # variable doesn't propagate cleanly.
+    if rag_dir is not None:
+        cmd.extend(["--rag-dir", str(rag_dir)])
     logger.info(f"[RAG alignment] Running auto-rebuild: {' '.join(cmd)}")
     subprocess.run(cmd, check=True, timeout=REBUILD_TIMEOUT_SECONDS,
                    cwd=str(repo_root))
