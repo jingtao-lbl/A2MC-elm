@@ -119,6 +119,27 @@ def _build_round_context_block() -> str:
     )
 
 
+def _build_active_mode_block() -> str:
+    """Build an Active Run Configuration block for Phase 3/4 prompts (Doc 20).
+
+    Reads simulation mode from environment via `ConfigMode.from_env()` and
+    renders a 3-5 line block declaring which features are ON / OFF for
+    this run. The LLM uses this to self-correct on retrieved content that
+    spans multiple modes.
+
+    Returns empty string if `tools.config` is not importable (e.g. running
+    outside a sourced site config), so prompts still build without the
+    block rather than crashing.
+    """
+    try:
+        from tools.config import ConfigMode
+        mode = ConfigMode.from_env()
+    except Exception as e:
+        logger.debug(f"Mode block unavailable: {e}")
+        return ""
+    return mode.to_prompt_block() + "\n\n"
+
+
 def _build_sensitivity_summary(sensitivity_rankings: Dict) -> str:
     """Build a concise human-readable summary of Morris sensitivity rankings.
 
@@ -337,10 +358,11 @@ DO NOT fabricate numbers. If the tool reports 0 edge parameters, do not claim ot
 """
 
     _round_ctx = _build_round_context_block()
+    _mode_ctx = _build_active_mode_block()
 
     prompt = f"""Analyze these ELM-FATES calibration results and diagnose why targets are not being met.
 
-{_round_ctx}{rag_context}{memory_context}{targeted_param_context}
+{_round_ctx}{_mode_ctx}{rag_context}{memory_context}{targeted_param_context}
 
 {self._param_list_context}
 
@@ -993,10 +1015,11 @@ Do NOT make generic statements without case attribution.
                 )
 
     _round_ctx = _build_round_context_block()
+    _mode_ctx = _build_active_mode_block()
 
     prompt = f"""Based on this diagnosis, generate a testable hypothesis for ELM-FATES calibration.
 
-{_round_ctx}{rag_context}{discovery_context}{failed_approaches_context}{targeted_param_context}
+{_round_ctx}{_mode_ctx}{rag_context}{discovery_context}{failed_approaches_context}{targeted_param_context}
 
 {self._param_list_context}
 
@@ -1484,13 +1507,14 @@ def synthesize_experiment_design(
                 )
 
     _round_ctx = _build_round_context_block()
+    _mode_ctx = _build_active_mode_block()
 
     prompt = f"""You are synthesizing {len(cumulative_insights)} skip-testing cycles into MULTIPLE experiment designs for HPC testing.
 
 Each supported hypothesis should become its OWN experiment — do NOT merge them into one.
 This allows independent testing of different mechanistic ideas in parallel on HPC.
 
-{_round_ctx}{rag_context}{discovery_context}{failed_approaches_context}
+{_round_ctx}{_mode_ctx}{rag_context}{discovery_context}{failed_approaches_context}
 {_synth_base_params}
 
 ## Cumulative Skip-Testing Insights

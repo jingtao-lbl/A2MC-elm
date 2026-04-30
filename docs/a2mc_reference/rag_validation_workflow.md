@@ -25,37 +25,57 @@ The chain `source → wiki → curated YAML → RAG → AI calibration` has four
 
 Without automated checks, drift accumulates with every model bump. The three validators close every edge in this chain.
 
-## The validation triangle
+## The validation suite (4 tiers + 3 verifiers)
+
+Phase B (v2.92, 2026-04-29) added Tier 4. v2.95 (2026-04-30) added three more validators that focus on different failure modes the 4 tiers don't catch: end-to-end integration (Validator #1), statistical coverage (Validator #2), and cross-milestone YAML drift (Validator #3). All three integrate into the unified `verify_mode_aware.py` harness, which runs everything in a single command with a unified GREEN/RED verdict.
 
 ```
                     ┌──────────────────────────┐
                     │  RAG Profile (build)     │
                     └────────────┬─────────────┘
                                  │
-                          tools/rag_diff.py
+                          tools/rag_diff.py            ◄── Tier 3
                                  │
                     ┌────────────▼─────────────┐
                     │  RAG Profile (reference) │
+                    └──────────────────────────┘
+
+                    ┌──────────────────────────┐
+                    │  Built profile metadata  │
+                    └────────────┬─────────────┘
+                                 │
+                  tools/mode_metadata_validator.py    ◄── Tier 4 (NEW)
+                                 │
+                    ┌────────────▼─────────────┐
+                    │  Curated YAML            │
+                    │  applies_in: blocks      │
                     └──────────────────────────┘
 
            ┌─────────────────────┐
            │  Curated YAML       │  rag/data/curated_relationships.yaml
            └─────────┬───────────┘
                      │
-            tools/yaml_wiki_validator.py
+            tools/yaml_wiki_validator.py             ◄── Tier 2 (incl. Dim F)
                      │
            ┌─────────▼───────────┐
            │  Codebase wiki      │  docs/<model>-knowledge-base/<model>-codebase-wiki-<commit>/
            └─────────┬───────────┘
                      │
-            tools/codebase_wiki_validator.py
+            tools/codebase_wiki_validator.py         ◄── Tier 1
                      │
            ┌─────────▼───────────┐
            │  Source code        │  pinned commit (E3SM checkout, etc.)
            └─────────────────────┘
 ```
 
-Read bottom-up: the wiki claims things about the source. The YAML curates relationships from the wiki and parameter file. The RAG indexes both. **Every arrow is now a checked edge.**
+Read bottom-up: the wiki claims things about the source. The YAML curates relationships from the wiki and parameter file. The RAG indexes both. The chunk metadata + graph node attrs propagate the YAML's mode tags. **Every arrow is now a checked edge.**
+
+**Tier 4 specifically asserts:**
+- (a) YAML-entity propagation: every YAML entry with applies_in: has matching applies_in_* flags on its chunk(s) and graph node
+- (b) Path-prefix propagation: every wiki chunk whose source matches a loader path-prefix entry has the table's expected flags
+- (c) Precedence invariant: NO chunk has both applies_universal=True AND applies_in_* flags
+- (d) No-orphan invariant: every chunk and graph node has either applies_universal OR per-axis flags
+- (e) Graph-chunk consistency: where YAML entity has both chunk + graph node, applies_in_* flags agree
 
 The dependency goes bottom-up too: don't trust the YAML validator's "BOTH found" verdict if the wiki hasn't been validated against source first.
 
@@ -63,11 +83,12 @@ The dependency goes bottom-up too: don't trust the YAML validator's "BOTH found"
 
 ## When to run
 
-Three triggers warrant a full validation pass:
+Four triggers warrant a full validation pass:
 
 1. **Before merging a new milestone wiki.** The wiki regen subagents (per `codebase_wiki_generation_roadmap.md`) can hallucinate. Validate before the wiki gets canonized.
-2. **After a curated YAML edit.** Hand edits drift from the wiki and parameter file, especially if the model recently bumped.
-3. **After a RAG rebuild at a new commit.** The diff vs the prior milestone catches regressions and confirms expected differences.
+2. **After a curated YAML edit.** Hand edits drift from the wiki and parameter file, especially if the model recently bumped. Always run Tier 2 (Dim F) to catch `applies_in:` schema typos.
+3. **After a RAG rebuild at a new commit.** The diff vs the prior milestone catches regressions and confirms expected differences. ALSO run Tier 4 — it catches build-process bugs that strip mode metadata silently (the kind of bug `rag/vector_store.py:add_documents` had at v2.92 RC).
+4. **After adding a new path-prefix entry to `rag/loader.py`.** Rebuild + Tier 4 confirms the new entry actually tags chunks.
 
 Single-file curation tweaks (one-line YAML fix) don't need the full sweep — re-run only the affected layer.
 
@@ -153,6 +174,100 @@ python tools/rag_diff.py \
 ```
 
 Four dimensions: nodes, edges, params, mechanisms. Adapter-kit users skip this step on a first build (no reference profile yet).
+
+### Step 4 — Mode-metadata propagation (Tier 4, v2.92+)
+
+Question answered: "did the YAML `applies_in:` blocks propagate correctly to ChromaDB chunk metadata and graph node attrs?"
+
+```bash
+# Example (api-43-1 milestone post-rebuild)
+python tools/mode_metadata_validator.py --profile api-43-1 \
+    --output docs/a2mc_reference/mode_metadata_validation_api-43-1.md
+```
+
+Five assertion classes:
+
+- **(a) YAML-entity propagation**: every YAML entry with `applies_in:` has matching `applies_in_*` flags on its corresponding chunk(s) AND graph node.
+- **(b) Path-prefix propagation**: every wiki chunk whose source matches a `_WIKI_PATH_PREFIX_TAGS` entry in `rag/loader.py` carries the table's expected flags.
+- **(c) Precedence invariant**: NO chunk has both `applies_universal: True` AND any `applies_in_*` flag (mutually exclusive states).
+- **(d) No-orphan invariant**: every chunk has either `applies_universal` OR per-axis flags (no untagged chunks slip through).
+- **(e) Graph-chunk consistency**: where YAML entity has both chunk + graph node, applies_in flags agree.
+
+Verdict: Green (all OK), Yellow (warnings only — typically "no chunks matched pattern" for stale path-prefix entries), Red (any ERROR — propagation chain broken).
+
+**When to run:** after rebuilding the index, especially after adding entries to the path-prefix table or `applies_in:` blocks. Catches silent metadata stripping (vector_store allowlist bugs, build process drift).
+
+**Don't run Step 4 before Step 1.** It validates propagation, not source truthfulness; if the wiki is wrong, Tier 4 will happily propagate wrong tags.
+
+### Step 5 — Snapshot integration test (Validator #1, v2.95+)
+
+Question answered: "does the AI's prompt context REALLY change correctly when the user runs in different modes?"
+
+```bash
+python tools/snapshot_validator.py --profile api-43-1 \
+    --output docs/a2mc_reference/snapshot_validation_api-43-1.md
+```
+
+Captures the AI's actual Phase 3 prompt context for 5 fixture ConfigModes (`kougarok_cnp_eca`, `parteh1_carbon_only`, `elm_only_bgc`, `kougarok_with_fire`, `kougarok_nocomp`). For each, asserts:
+
+- The "Active Run Configuration" prompt block reflects the active mode (Phase A)
+- Mode-restricted chunks DO NOT appear in retrieval (source-based: parses `[N] Source: <path>` lines, not raw content — avoids false positives from cross-references)
+- Universal content DOES appear in all modes
+- For ELM-only mode, `kb_source` filter excludes FATES wiki paths
+
+Verdict: Green or Red (no Yellow — integration is binary).
+
+**Why it's needed:** Tiers 1–4 validate individual layers. Snapshot exercises the FULL CHAIN: env vars → ConfigMode → reasoning → retriever → ChromaDB → rendered prompt. Catches refactor regressions that drop `config_mode` arguments, mistranslate where clauses, or de-sync the prompt-block helper from the dataclass.
+
+**When to run:** after any change to `tools/config.py`, `rag/hybrid_retriever.py`, `reasoning/base.py`, or `reasoning/methods.py`.
+
+### Step 6 — Profile completeness (Validator #2, v2.95+)
+
+Question answered: "does the built profile have the EXPECTED COVERAGE?"
+
+```bash
+python tools/profile_completeness_validator.py --profile api-43-1 \
+    --output docs/a2mc_reference/profile_completeness_api-43-1.md
+```
+
+Five distribution checks (Tier 4 catches binary invariants; this catches statistical drift):
+
+| Category | What it asserts |
+|---|---|
+| (a) Chunk-tagging distribution | ~70-95% universal, ~1%+ YAML-entity, ~1%+ path-prefix |
+| (b) Wiki-directory coverage | Every entry in `_WIKI_PATH_PREFIX_TAGS` produces matching chunks with expected flags |
+| (c) YAML-entity coverage | Every YAML parameter and output has a corresponding chunk |
+| (d) Tier 2 axis distribution | For each Tier 2 axis, count chunks per axis-value combo |
+| (e) Per-mode chunk counts | Golden values from prior build within ±50 tolerance |
+
+Verdict: Green / Yellow (warnings) / Red (errors).
+
+**When to run:** after any rebuild. Catches "loader bug dropped half the path-prefix matches" (passes Tier 4 vacuously, fails Validator #2).
+
+### Step 7 — Cross-milestone consistency (Validator #3, v2.95+)
+
+Question answered: "do the per-milestone YAMLs agree on `applies_in:` tags?"
+
+```bash
+python tools/cross_milestone_validator.py \
+    --output docs/a2mc_reference/cross_milestone_validation.md
+```
+
+Compares `applies_in:` blocks across canonical YAML + all active milestone YAMLs (legacy frozen milestones excluded by default; pass `--include-legacy` to audit them).
+
+Three categories: parameter drift, mechanism drift, output drift. Plus coverage WARN for entries present in some profiles but missing from others.
+
+**When to run:** after any YAML curation work. Catches "I updated canonical but forgot to copy to api-43-1."
+
+### Unified harness (v2.95+)
+
+Run all 7 layers (4 tiers + 3 new validators) plus the fixture suite + smoke tests in a single command:
+
+```bash
+python scripts/verify_mode_aware.py
+```
+
+Reports each layer's verdict and a unified GREEN/RED status. GREEN only if every layer is in (Green, Yellow, Skipped); RED otherwise. Snapshot is strict (Green or Red, no Yellow — integration is binary).
 
 ---
 

@@ -467,9 +467,38 @@ def scale_thresholds(name_a: str, name_b: str) -> Tuple[Dict[str, int], int]:
     return scaled, api_distance
 
 
+def detect_bulk_node_additions(graph_struct: Optional[dict],
+                               threshold: int = 500) -> List[str]:
+    """Detect node-type deltas large enough to suggest a structural rebuild
+    (e.g., the v2.96 ELM-output extraction added ~1640 Output nodes to api-43-1).
+
+    Returns a list of context notes — these are *informational*, not verdict
+    escalations. They steer the reader toward checking metadata
+    (elm_output_var_file_sha, fates_param_file_sha) before treating a large
+    add as drift.
+    """
+    if not graph_struct:
+        return []
+    notes = []
+    for t, ch in sorted(graph_struct.get("node_changes_per_type", {}).items()):
+        added = ch.get("added", 0)
+        if added >= threshold:
+            hint = (f"{added} '{t}' nodes added in B. This is large enough "
+                    f"to suggest a structural rebuild rather than an upstream "
+                    f"source change.")
+            if t.lower() == "output":
+                hint += (" If diffing across the v2.96 boundary, check "
+                         "`param_files.elm_output_var_file` in both profile "
+                         "metadata — v2.96+ ingests an ELM-side output CDL "
+                         "(~1640 fields) that older builds lack.")
+            notes.append(hint)
+    return notes
+
+
 def sanity_verdict(param_inv: dict, wiki: dict,
                    profile_a_name: str = "",
-                   profile_b_name: str = "") -> Tuple[str, List[str]]:
+                   profile_b_name: str = "",
+                   graph_struct: Optional[dict] = None) -> Tuple[str, List[str]]:
     """Return (verdict, notes) per plan thresholds, scaled by API distance."""
     added = len(param_inv["added"])
     removed = len(param_inv["removed"])
@@ -509,7 +538,11 @@ def sanity_verdict(param_inv: dict, wiki: dict,
             f"{near_zero_frac*100:.0f}% of shared wiki files have near-zero similarity "
             f"(Red threshold > 50%); regen may have broken alignment."
         )
-    if verdict == "Green":
+
+    # Bulk-node-add context (e.g., v2.96 ELM-output extraction). Informational only.
+    notes.extend(detect_bulk_node_additions(graph_struct))
+
+    if verdict == "Green" and not any("nodes added in B" in n for n in notes):
         notes.append("All thresholds within Green band; safe to proceed.")
 
     return verdict, notes
@@ -805,7 +838,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     print(f"[rag_diff] Computing verdict...", file=sys.stderr)
     verdict, notes = sanity_verdict(param_inv, wiki,
-                                    profile_a.name, profile_b.name)
+                                    profile_a.name, profile_b.name,
+                                    graph_struct=graph_struct)
 
     print(f"[rag_diff] Rendering report...", file=sys.stderr)
     report = render_report(profile_a, profile_b, param_inv, graph_struct,

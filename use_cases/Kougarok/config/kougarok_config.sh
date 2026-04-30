@@ -123,6 +123,37 @@ export A2MC_ENSEMBLE_NAME="Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP" 
 export A2MC_ENSEMBLE_PREFIX="Kougarok_ELM-FATES"
 export A2MC_CASE_NAME_PATTERN="${A2MC_ENSEMBLE_PREFIX}_PtCNPEn{N}_{PHASE}"
 export A2MC_ENSEMBLE_OUTPUT="${A2MC_OUTPUT_ROOT}/${A2MC_ENSEMBLE_NAME}"
+
+# -----------------------------------------------------------------------------
+# CASE DIR (v2.93+ — for case-dir-enrichment of mode-aware retrieval)
+# -----------------------------------------------------------------------------
+# A2MC's ConfigMode.from_env() reads env vars first (user intent), then enriches
+# from a CIME case dir if available. The case dir provides Tier 2 use_fates_*
+# flags from user_nl_elm/lnd_in plus ELM defaults that env vars don't specify.
+#
+# Set A2MC_CASE_DIR to ANY representative ensemble member's case directory.
+# All ensemble members share the same compset / ELM_BLDNML_OPTS / user_nl_elm
+# (only the FATES parameter file differs), so any one works as the reference.
+#
+# Default: pick En86 TRANS phase (matches the committed example case).
+#export A2MC_CASE_DIR="${A2MC_E3SM_ROOT}/cime/scripts/${A2MC_ENSEMBLE_PREFIX}_PtCNPEn86_TRANS"
+#
+# OR, if A2MC_E3SM_ROOT + A2MC_CASE_NAME are set, A2MC auto-detects:
+#export A2MC_CASE_NAME="${A2MC_ENSEMBLE_PREFIX}_PtCNPEn86_TRANS"
+#
+# If neither is set, ConfigMode uses env-vars-only path (still works; just no
+# case-dir enrichment). See docs/a2mc_reference/mode_aware_workflow.md.
+
+# -----------------------------------------------------------------------------
+# MODE-AWARE RETRIEVAL ENV VARS (v2.94+ — primary source = USER INTENT)
+# -----------------------------------------------------------------------------
+# ConfigMode resolves: env vars (here) > case dir (above, if set) > defaults.
+# These reflect Kougarok's actual run config (FATES + PARTEH=2 + CNP + ECA +
+# CENTURY soil decomp), overriding ELM source defaults (which would be SP).
+export A2MC_ELM_OPTIONS="-bgc fates -nutrient cnp -nutrient_comp_pathway eca -soil_decomp century"
+export A2MC_FATES_PARTEH_MODE=2
+# All other Tier 2 / Tier 3 flags default off (no fire, no hydraulics, etc.)
+# -----------------------------------------------------------------------------
 # Extracted monthly data (NetCDF files from extract_monthly_variables_FATES.py)
 export A2MC_EXTRACTED_DATA="${A2MC_OUTPUT_ROOT}/${A2MC_ENSEMBLE_NAME}_Extract"
 

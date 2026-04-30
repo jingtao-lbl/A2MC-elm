@@ -36,7 +36,9 @@ class FATESRetriever:
         self,
         knowledge_base_path: Union[str, list[str]] = None,
         persist_dir: str = None,
-        auto_build: bool = False
+        auto_build: bool = False,
+        wiki_subdirs: list[str] = None,
+        docs_subdirs: list[str] = None,
     ):
         """
         Initialize the retriever.
@@ -49,6 +51,12 @@ class FATESRetriever:
                          from `$A2MC_RAG_DIR/chroma_db/$A2MC_RAG_ACTIVE` (env
                          vars must be set; see version-association infra).
             auto_build: If True, automatically build index if empty
+            wiki_subdirs: Optional list of explicit wiki subdir names, parallel
+                          to `kb_paths`. Required when wiki dirs don't follow
+                          the legacy `<kb>-codebase-wiki/` pattern (e.g.,
+                          post-symlink-removal in v2.90 where dirs are
+                          commit-pinned like `fates-codebase-wiki-e027a40/`).
+            docs_subdirs: Same shape as `wiki_subdirs`, for official-docs dirs.
         """
         # Handle default and normalize to list
         if knowledge_base_path is None:
@@ -60,6 +68,10 @@ class FATESRetriever:
 
         # Keep single path for backward compatibility
         self.kb_path = self.kb_paths[0] if len(self.kb_paths) == 1 else self.kb_paths
+
+        # Wiki / docs subdir overrides (None per slot = probe fallback)
+        self.wiki_subdirs = wiki_subdirs
+        self.docs_subdirs = docs_subdirs
 
         # Vector store resolves persist_dir from env vars if not given.
         self.vector_store = FATESVectorStore(persist_dir=persist_dir)
@@ -81,12 +93,20 @@ class FATESRetriever:
         # Load documents from all knowledge bases
         if len(self.kb_paths) == 1:
             print(f"Building index from: {self.kb_paths[0]}")
-            docs = load_knowledge_base(self.kb_paths[0])
+            wiki_sd = self.wiki_subdirs[0] if self.wiki_subdirs else None
+            docs_sd = self.docs_subdirs[0] if self.docs_subdirs else None
+            docs = load_knowledge_base(
+                self.kb_paths[0], wiki_subdir=wiki_sd, docs_subdir=docs_sd,
+            )
         else:
             print(f"Building index from {len(self.kb_paths)} knowledge bases:")
             for path in self.kb_paths:
                 print(f"  - {path}")
-            docs = load_multiple_knowledge_bases(self.kb_paths)
+            docs = load_multiple_knowledge_bases(
+                self.kb_paths,
+                wiki_subdirs=self.wiki_subdirs,
+                docs_subdirs=self.docs_subdirs,
+            )
 
         if not docs:
             print("Warning: No documents found!")
@@ -150,7 +170,9 @@ class FATESRetriever:
         outputs: list[str] = None,
         mechanisms: list[str] = None,
         n_results_per_query: int = 2,
-        max_total_results: int = 10
+        max_total_results: int = 10,
+        kb_source: Optional[str] = None,
+        mode_where: Optional[dict] = None,
     ) -> str:
         """
         Get context relevant to specific calibration targets.
@@ -200,7 +222,9 @@ class FATESRetriever:
         results = self.vector_store.query_multiple(
             queries,
             n_results_per_query=n_results_per_query,
-            deduplicate=True
+            deduplicate=True,
+            kb_source=kb_source,
+            mode_where=mode_where,
         )
 
         # Limit total results
@@ -341,7 +365,9 @@ class FATESRetriever:
 def create_retriever(
     knowledge_base_path: str = "docs/fates-knowledge-base",
     persist_dir: str = None,
-    rebuild: bool = False
+    rebuild: bool = False,
+    wiki_subdirs: list = None,
+    docs_subdirs: list = None,
 ) -> FATESRetriever:
     """
     Factory function to create a retriever with optional rebuild.
@@ -365,7 +391,9 @@ def create_retriever(
     retriever = FATESRetriever(
         knowledge_base_path=knowledge_base_path,
         persist_dir=persist_dir,
-        auto_build=True
+        auto_build=True,
+        wiki_subdirs=wiki_subdirs,
+        docs_subdirs=docs_subdirs,
     )
 
     return retriever

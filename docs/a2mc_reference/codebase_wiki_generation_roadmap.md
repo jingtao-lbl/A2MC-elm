@@ -607,8 +607,36 @@ The wiki produced by this roadmap feeds into:
 | NetworkX knowledge graph | Parameter file + curated YAML overlay + wiki structure | `rag_build_roadmap.md` |
 | Milestone metadata | Source-pin headers + commit hashes | `docs/18_ELM_FATES_Version_Association_Plan.md` |
 | Calibration agent prompts | RAG retrieval results | `reasoning/methods.py` |
+| Mode-aware path-prefix tags | Wiki path layout + `rag/loader.py:_WIKI_PATH_PREFIX_TAGS` | `mode_aware_workflow.md`, Doc 21 §B.2.3 |
 
 If any of those downstream artifacts produces wrong content, the most likely root cause is wiki errors. Treat wiki generation as the foundation; nothing built on top can be more correct than it.
+
+### Path-prefix tagging conventions for new wiki trees (Phase B / v2.92)
+
+When generating a wiki for a new model (Workflow A) or rewriting an existing wiki (Workflow B), identify which paths gate mode-restricted content and add them to `rag/loader.py:_WIKI_PATH_PREFIX_TAGS`. The canonical FATES table is the reference (Doc 21 §B.2.3 path-prefix mapping). Conventions:
+
+- **Mode-specific subdirectories** (e.g., `fire/`, `logging/`, `biophysics/hydraulics/`): tag with the gating flag plus `use_fates: [True]`.
+- **Inverse-tagged docs** (apply when feature is OFF): use the same flag but with `[False]`. Example: `biophysics/transpiration.md` is tagged `use_fates_planthydro: [False]` because BTRAN runs only when hydraulics is off.
+- **Theory docs by hypothesis** (`parteh/cnp_*.md`, `parteh/carbon_only.md`): tag with `parteh_mode: [2]` or `[1]` plus `use_fates: [True]` and `nutrient: [...]`.
+- **Filename-prefix substring** (`parteh/h2_`): used when multiple files share a prefix (CNP allocation hypothesis files under `fates-official-docs/docs/source/parteh/`).
+
+After adding entries, rebuild the index and run Tier 4 (`tools/mode_metadata_validator.py`) to confirm the new tags propagate.
+
+### Output-registry extraction (parallel to wiki regen, v2.96+)
+
+The wiki captures human-readable knowledge; the **output registry** captures the structured list of every variable the model exposes through its history-file mechanism. Both are needed for the AI to ground retrieval correctly. The wiki tells it *what concepts exist*; the output CDL tells it *what variables it can reference by name*.
+
+For each model, produce a CDL by extracting from source code (NOT from `ncdump -h` of a representative case — that approach is case-specific and was abandoned in Phase 4):
+
+| Model | Source pattern | Extraction |
+|---|---|---|
+| **FATES** | `set_history_var(...)` calls in `FatesHistoryInterfaceMod.F90` | Phase 4 wiki regen (manual / agent task; no committed extractor) |
+| **ELM core** | `hist_addfld1d(...)` and `hist_addfld2d(...)` calls across `components/elm/src/**/*.F90` | `python scripts/extract_elm_outputs.py` |
+| **New model (adapter-kit)** | Whatever your model uses to register history variables (see your model's docs) | Adapt `extract_elm_outputs.py`'s parser pattern: strip Fortran comments + collapse `&` continuations + regex match `call <register-fn>(<args>)`, then `key='value'` arg parsing |
+
+The output CDL gets one row in the milestone registry (`rag/milestones.json`) under `output_cdl` (single-model) or `fates_output_cdl` + `elm_output_cdl` (ELM-FATES two-model). The build script auto-detects from the milestone's commit short SHAs but explicit registration is preferred for self-describing milestones.
+
+After each wiki regen, re-extract the corresponding output CDL — they're tied to the same commit pins.
 
 ---
 

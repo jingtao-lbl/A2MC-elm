@@ -483,6 +483,30 @@ class CalibrationOrchestrator:
         # if not, warns and (unless A2MC_RAG_AUTO_REBUILD=true) aborts.
         self._check_rag_alignment()
 
+        # Doc 20 Phase A: detect simulation mode from env vars; will be passed
+        # to retrieval calls + injected into AI prompts.
+        self.config_mode = self._detect_config_mode()
+
+    def _detect_config_mode(self):
+        """Build a ConfigMode from env vars + log the active mode block.
+
+        Reads `A2MC_USE_FATES`, `A2MC_FATES_PARTEH_MODE`, `A2MC_USE_FATES_NOCOMP`,
+        and `A2MC_ELM_OPTIONS`. Defaults are conservative (FATES on, PARTEH=2,
+        nutrient=cnp) so existing site configs continue to work. Logs the
+        rendered prompt block so the active mode is visible at startup.
+        """
+        try:
+            from tools.config import ConfigMode
+            mode = ConfigMode.from_env()
+        except Exception as e:
+            logger.warning(f"[Mode] Could not build ConfigMode: {e}. "
+                           f"Continuing without mode-aware retrieval.")
+            return None
+        logger.info(f"[Mode] {mode.to_dict()}")
+        for line in mode.to_prompt_block().splitlines():
+            logger.info(f"[Mode] {line}")
+        return mode
+
     def _check_rag_alignment(self):
         """Verify the active RAG profile matches the user's A2MC_MODEL_PATH.
 

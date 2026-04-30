@@ -284,7 +284,8 @@ def _add_auto_extracted_outputs(
     kg: FATESKnowledgeGraph,
     output_cdl_path: str,
     include_elm: bool = True,
-    elm_filter: Optional[List[str]] = None
+    elm_filter: Optional[List[str]] = None,
+    elm_output_cdl_path: Optional[str] = None,
 ) -> int:
     """Parse output CDL, add all output variable nodes with metadata.
 
@@ -292,6 +293,10 @@ def _add_auto_extracted_outputs(
     1. Create node with dimensions, units, description, dimension_level, category
     2. Add has_dimension edges
     3. Filter ELM variables to key subset
+
+    If elm_output_cdl_path is given (v2.96+), also parse that CDL and add
+    its variables as ELM-side output nodes. Variables already added from
+    the FATES CDL are NOT duplicated.
 
     Returns number of output nodes added.
     """
@@ -341,6 +346,29 @@ def _add_auto_extracted_outputs(
                 if dim_id in kg.graph:
                     kg.add_relationship(output_id, dim_id, kg.HAS_DIMENSION)
 
+    # v2.96: Add ELM core output variables from the dedicated ELM CDL.
+    # Skip names already added from the FATES CDL (FATES wins on dupe).
+    if elm_output_cdl_path:
+        elm_parser = FATESOutputParser(elm_output_cdl_path)
+        elm_dims = elm_parser.get_dimensions()
+        for dim_name, dim_size in elm_dims.items():
+            dim_id = kg._make_node_id(kg.DIMENSION, dim_name)
+            if dim_id not in kg.graph:
+                kg.add_dimension(dim_name, size=dim_size)
+        elm_all = elm_parser.parse()
+        for name, var in elm_all.items():
+            output_id = kg._make_node_id(kg.OUTPUT, name)
+            if output_id in kg.graph:
+                continue  # already added from FATES CDL
+            kg.add_output(name, var.long_name, var.units, var.dimension_level)
+            count += 1
+            for dim in var.dimensions:
+                if dim in ("time", "lndgrid", "gridcell"):
+                    continue
+                dim_id = kg._make_node_id(kg.DIMENSION, dim)
+                if dim_id in kg.graph:
+                    kg.add_relationship(output_id, dim_id, kg.HAS_DIMENSION)
+
     return count
 
 
@@ -361,11 +389,26 @@ def _overlay_curated_relationships(
     3. Add controls, affects, related_to edges
     4. For curated outputs: update metadata on existing nodes
     5. PFT-specific edges for curated parameters
+    6. Phase B: write applies_in_* metadata + inactive flag onto graph nodes
 
     Returns number of relationships added.
     """
     if not curated_data:
         return 0
+
+    # Lazy import to avoid circular dependencies at module load time
+    from tools.config import build_applies_in_flags
+
+    def _write_mode_flags(node_id: str, entry: Dict) -> None:
+        """Write applies_in_* + inactive metadata onto a graph node."""
+        if node_id not in kg.graph:
+            return
+        applies_in = (entry or {}).get('applies_in')
+        flags = build_applies_in_flags(applies_in)
+        for k, v in flags.items():
+            kg.graph.nodes[node_id][k] = v
+        if (entry or {}).get('inactive'):
+            kg.graph.nodes[node_id]['inactive'] = True
 
     # Add mechanisms from YAML
     mechanisms = extract_mechanisms_from_yaml(curated_data)
@@ -376,6 +419,12 @@ def _overlay_curated_relationships(
             mech.get("code_location"),
             mech.get("module")
         )
+
+    # Phase B: tag mechanism nodes with applies_in_* metadata
+    if 'mechanisms' in curated_data:
+        for mech_name, mech_data in curated_data['mechanisms'].items():
+            mech_id = kg._make_node_id(kg.MECHANISM, mech_name)
+            _write_mode_flags(mech_id, mech_data)
 
     # Update parameter metadata from curated YAML
     if 'parameters' in curated_data:
@@ -388,6 +437,13 @@ def _overlay_curated_relationships(
                     existing_desc = kg.graph.nodes[param_id].get('description', '')
                     if len(notes) > len(existing_desc or ''):
                         kg.graph.nodes[param_id]['description'] = notes.split('\n')[0]
+            # Phase B: tag with applies_in_* even if param node didn't exist before
+            _write_mode_flags(param_id, param_data)
+            # Also tag any PFT-specific child nodes
+            if include_pft_specific:
+                for pft_idx in pft_list:
+                    pft_param_id = f"parameter:{param_name}:pft{pft_idx}"
+                    _write_mode_flags(pft_param_id, param_data)
 
     # Update output metadata from curated YAML
     if 'outputs' in curated_data:
@@ -399,6 +455,8 @@ def _overlay_curated_relationships(
                     kg.graph.nodes[output_id]['notes'] = out_data['notes']
                 if out_data.get('category'):
                     kg.graph.nodes[output_id]['category'] = out_data['category']
+            # Phase B: tag output node with applies_in_* metadata
+            _write_mode_flags(output_id, out_data)
 
     # Add relationships
     relationships = extract_relationships_from_yaml(curated_data)
@@ -439,6 +497,7 @@ def build_fates_graph(
     output_cdl_path: Optional[str] = None,
     pft_list: Optional[List[int]] = None,
     include_elm_outputs: bool = True,
+    elm_output_cdl_path: Optional[str] = None,
 ) -> FATESKnowledgeGraph:
     """
     Build a complete FATES knowledge graph with two-layer construction.
@@ -500,8 +559,11 @@ def build_fates_graph(
 
     if output_cdl_path:
         print(f"    Outputs: {Path(output_cdl_path).name}")
+        if elm_output_cdl_path:
+            print(f"    ELM outputs: {Path(elm_output_cdl_path).name}")
         output_count = _add_auto_extracted_outputs(
-            kg, output_cdl_path, include_elm=include_elm_outputs
+            kg, output_cdl_path, include_elm=include_elm_outputs,
+            elm_output_cdl_path=elm_output_cdl_path,
         )
         print(f"    Added {output_count} output nodes")
     else:
@@ -564,6 +626,20 @@ def build_fates_graph(
             pft_b_id = kg._make_node_id(kg.PFT, f"PFT{pft_b}")
             if pft_a_id in kg.graph and pft_b_id in kg.graph:
                 kg.add_relationship(pft_a_id, pft_b_id, "competes_with")
+
+    # --- Phase B default-permissive sweep ---
+    # Every node must have either `applies_universal: True` OR per-axis flags.
+    # Auto-extracted nodes (parameters/outputs not in curated YAML) and any
+    # other untagged nodes get applies_universal: True so they pass any
+    # ConfigMode filter.
+    untagged = 0
+    for nid, attrs in kg.graph.nodes(data=True):
+        has_universal = attrs.get('applies_universal') is True
+        has_per_axis = any(k.startswith('applies_in_') for k in attrs.keys())
+        if not has_universal and not has_per_axis:
+            kg.graph.nodes[nid]['applies_universal'] = True
+            untagged += 1
+    print(f"    Default-permissive sweep: tagged {untagged} previously-untagged nodes as universal")
 
     # --- Print stats ---
     stats = kg.get_stats()

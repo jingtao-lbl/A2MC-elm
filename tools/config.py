@@ -27,9 +27,10 @@ Author: A2MC Framework
 """
 
 import os
+import re
 from pathlib import Path
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -149,6 +150,24 @@ class A2MCConfig:
         return os.environ.get('A2MC_RAG_AUTO_REBUILD', 'false').lower() in (
             'true', '1', 'yes', 'on'
         )
+
+    # ========================
+    # SIMULATION MODE (Phase A of Doc 20: Mode-aware RAG retrieval)
+    # ========================
+
+    @property
+    def MODE(self) -> 'ConfigMode':
+        """Detected simulation configuration. Composes a filter signature for RAG.
+
+        Reads `A2MC_USE_FATES`, `A2MC_FATES_PARTEH_MODE`, `A2MC_USE_FATES_NOCOMP`,
+        and parses `A2MC_ELM_OPTIONS` for `-nutrient`, `-nutrient_comp_pathway`,
+        `-soil_decomp` flags.
+
+        Defaults are conservative (FATES on, PARTEH=2 CNP, competition on,
+        nutrient cnp, ECA pathway) so that legacy site configs without the
+        mode env vars produce the same retrieval as before mode-awareness.
+        """
+        return ConfigMode.from_env()
 
     # ========================
     # ENSEMBLE PATHS
@@ -491,6 +510,687 @@ class A2MCConfig:
 
 
 # Global config instance
+# =============================================================================
+# Mode dataclass (Doc 20: Mode-aware RAG retrieval)
+# =============================================================================
+
+# Bare boolean flags (no value follows) in ELM_OPTIONS.
+# Source: components/elm/cime_config/config_component.xml compset modifiers
+_BARE_BOOLEAN_FLAGS = frozenset({
+    "crop", "dynamic_vegetation", "methane",
+    "hydrstress", "topounit", "tw_irr_on",
+    "no-megan", "no-drydep",
+})
+
+
+def _truthy(s: str) -> bool:
+    """Standard string-to-bool, handles CIME's `.true.`/`.false.` too."""
+    return str(s).lower() in ("true", "1", "yes", "on", ".true.")
+
+
+def parse_elm_options(elm_options: str) -> Dict[str, object]:
+    """Parse a CIME options string into a flag-to-value dict.
+
+    Handles both `-flag value` pairs and bare boolean flags (`-crop`,
+    `-hydrstress`, etc.). Bare flags resolve to ``True``; paired flags
+    resolve to their value string.
+
+    Examples
+    --------
+    >>> parse_elm_options("-bgc fates -nutrient cnp -nutrient_comp_pathway eca")
+    {'bgc': 'fates', 'nutrient': 'cnp', 'nutrient_comp_pathway': 'eca'}
+
+    >>> parse_elm_options("-bgc bgc -nutrient cnp -methane -hydrstress")
+    {'bgc': 'bgc', 'nutrient': 'cnp', 'methane': True, 'hydrstress': True}
+
+    >>> parse_elm_options("-irrig .true. -tw_irr_on")
+    {'irrig': '.true.', 'tw_irr_on': True}
+
+    Empty / unset string produces empty dict.
+    """
+    if not elm_options:
+        return {}
+    tokens = elm_options.split()
+    result: Dict[str, object] = {}
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok.startswith("-"):
+            flag = tok.lstrip("-")
+            # Decide bare vs paired: bare if next token is another flag, end
+            # of string, or the flag is in the bare-flag whitelist.
+            next_is_flag = (i + 1 >= len(tokens)) or tokens[i + 1].startswith("-")
+            if next_is_flag or flag in _BARE_BOOLEAN_FLAGS:
+                result[flag] = True
+                i += 1
+            else:
+                result[flag] = tokens[i + 1]
+                i += 2
+        else:
+            # Stray non-flag token (rare); skip.
+            i += 1
+    return result
+
+
+@dataclass
+class ConfigMode:
+    """Active simulation configuration for retrieval filtering.
+
+    Each field is a mode dimension. Defaults reflect ELM api-43-1's
+    ``namelist_defaults.xml`` (a vanilla ELM run with no compset modifier:
+    Satellite Phenology, no FATES, no biogeochemistry). Site configs like
+    ``kougarok_config.sh`` OVERRIDE defaults via env vars; the schema
+    represents the model's worldview, not one user's run.
+
+    20 dimensions across 3 tiers:
+
+    - Tier 1 (primary, 7): bgc_mode, use_fates (derived), parteh_mode,
+      use_fates_nocomp, nutrient, nutrient_comp_pathway, soil_decomp
+    - Tier 2 (FATES feature flags, 6): fates_spitfire_mode,
+      use_fates_planthydro, use_fates_logging, use_fates_sp,
+      use_fates_ed_prescribed_phys, use_fates_fixed_biogeog
+    - Tier 3 (secondary compset modifiers, 7): crop, dynamic_vegetation,
+      methane, hydrstress, topounit, irrig, solar_rad_scheme
+
+    See ``docs/21_Mode_Aware_RAG_Phase_B_Implementation.md`` for the design.
+    """
+    # ----- Tier 1: primary dimensions (7) -----
+    bgc_mode: str = "sp"                   # ELM default: 'sp' (namelist_defaults.xml:32)
+    use_fates: bool = False                # Derived from bgc_mode == 'fates'
+    parteh_mode: int = 1                   # ELM default: 1 (carbon-only; namelist_defaults.xml:2251)
+    use_fates_nocomp: bool = False         # ELM default: false (namelist_defaults.xml:2278-2280)
+    nutrient: str = ""                     # No global default; only set via -nutrient flag
+    nutrient_comp_pathway: str = "rd"      # ELM default: 'rd' (namelist_defaults.xml:67)
+    soil_decomp: str = ""                  # No global default; only set via -soil_decomp flag
+
+    # ----- Tier 2: FATES feature flags (6) — direct wiki impact -----
+    fates_spitfire_mode: int = 0           # 0=off, 1=lightning, 2=lightning+managed
+    use_fates_planthydro: bool = False
+    use_fates_logging: bool = False
+    use_fates_sp: bool = False
+    use_fates_ed_prescribed_phys: bool = False
+    use_fates_fixed_biogeog: bool = False
+
+    # ----- Tier 3: secondary compset modifiers (7) — scaffolding -----
+    crop: bool = False
+    dynamic_vegetation: bool = False
+    methane: bool = False                  # Auto-derived: True iff bgc_mode == 'bgc'
+    hydrstress: bool = False               # PHS
+    topounit: bool = False                 # TGU
+    irrig: bool = False                    # WFM
+    solar_rad_scheme: str = ""             # '' (default) or 'top' (TOP)
+
+    @classmethod
+    def from_env(cls) -> "ConfigMode":
+        """Build a ConfigMode from env vars (user intent), enriched by case dir.
+
+        Resolution priority (v2.94+, corrected from v2.93):
+
+        1. **User-provided env vars (PRIMARY)** — represent user INTENT. For
+           each ConfigMode field, if the user explicitly set the corresponding
+           ``A2MC_*`` env var or the flag in ``A2MC_ELM_OPTIONS``, use that
+           value. This is what the user wants A2MC to calibrate against.
+        2. **CIME case dir (ENRICHMENT)** — fills in fields the user did NOT
+           explicitly set. Read from ``$A2MC_CASE_DIR`` or auto-detected from
+           ``$A2MC_E3SM_ROOT/cime/scripts/$A2MC_CASE_NAME``. Provides Tier 2
+           use_fates_* flags from ``lnd_in`` plus ELM-default values that CIME
+           applied to the user's intent.
+        3. **Dataclass defaults** — last-resort baseline (carbon-only PARTEH=1,
+           etc., from ELM ``namelist_defaults.xml``). Used only if neither env
+           vars nor case dir provide a value.
+        4. **Raise** — if no source produces a valid ``bgc_mode`` (the
+           irreducible minimum). No silent SP fallback.
+
+        Why this order? See ``memory/feedback_env_vars_are_intent_case_dir_is_truth.md``.
+        Env vars are user intent; case dir is downstream of that intent (intent
+        + ELM defaults applied by CIME). The two CAN disagree (e.g., stale case
+        from before the user changed env vars); we prefer env vars and warn.
+
+        Constraints (raise ValueError on inconsistency):
+        - ``bgc_mode == 'fates'`` ⇔ ``use_fates == True`` (derivation)
+        - ``bgc_mode == 'fates'`` ⇒ ``dynamic_vegetation == False`` (FATES is its own DGVM)
+        - ``bgc_mode == 'sp'`` ⇒ ``use_fates_sp == False``
+        """
+        elm_options = os.environ.get("A2MC_ELM_OPTIONS", "")
+        opts = parse_elm_options(elm_options)
+
+        # Try to load case dir for enrichment (NOT primary)
+        case_mode = None
+        try:
+            from tools.case_parser import resolve_case_dir, case_to_config_mode
+            case_dir = resolve_case_dir()
+            if case_dir is not None:
+                try:
+                    case_mode = case_to_config_mode(case_dir)
+                except ValueError as e:
+                    # Don't crash — log via plain print since logger may not be set up
+                    import warnings
+                    warnings.warn(
+                        f"Case dir at {case_dir} could not be parsed ({e}); "
+                        "proceeding with env vars only.",
+                        RuntimeWarning,
+                    )
+        except ImportError:
+            pass  # case_parser unavailable; env vars only
+
+        # Helper: prefer env-explicit > case_mode field > default
+        def _env_or_case(env_value, case_attr: str, default):
+            """Return env_value if not None, else case_mode field, else default."""
+            if env_value is not None:
+                return env_value
+            if case_mode is not None:
+                return getattr(case_mode, case_attr)
+            return default
+
+        # Helper: warn if env and case disagree on a field
+        def _warn_conflict(field: str, env_val, case_val):
+            if case_mode is None or env_val is None:
+                return
+            if env_val != case_val:
+                import warnings
+                warnings.warn(
+                    f"ConfigMode: {field}={env_val!r} (env var) overrides "
+                    f"{case_val!r} (case dir). Case dir may be stale; "
+                    "rebuild the case to refresh.",
+                    RuntimeWarning,
+                )
+
+        # ----- Tier 1: bgc_mode (REQUIRED — raise if missing from all sources) -----
+        env_bgc_mode = opts.get("bgc") or os.environ.get("A2MC_BGC_MODE")
+        bgc_mode = _env_or_case(env_bgc_mode, "bgc_mode", None)
+        if not bgc_mode:
+            raise ValueError(
+                "ConfigMode.from_env() cannot resolve bgc_mode. Set ONE of:\n"
+                "  1. A2MC_ELM_OPTIONS containing '-bgc <mode>' (recommended)\n"
+                "  2. A2MC_BGC_MODE=<sp|cn|bgc|fates>\n"
+                "  3. A2MC_CASE_DIR=/path/to/CIME/case (case dir auto-parsing)\n"
+                "  4. A2MC_E3SM_ROOT + A2MC_CASE_NAME (auto-detect case dir)\n"
+                "See docs/a2mc_reference/mode_aware_workflow.md for details."
+            )
+        bgc_mode = str(bgc_mode)
+        if bgc_mode not in ("sp", "cn", "bgc", "fates"):
+            raise ValueError(
+                f"bgc_mode={bgc_mode!r} invalid; expected one of "
+                "'sp', 'cn', 'bgc', 'fates'"
+            )
+        if env_bgc_mode and case_mode is not None:
+            _warn_conflict("bgc_mode", str(env_bgc_mode), case_mode.bgc_mode)
+
+        # use_fates: DERIVED from bgc_mode (with consistency check)
+        derived_use_fates = (bgc_mode == "fates")
+        env_use_fates = os.environ.get("A2MC_USE_FATES")
+        if env_use_fates is not None:
+            explicit = _truthy(env_use_fates)
+            if explicit != derived_use_fates:
+                raise ValueError(
+                    f"A2MC_USE_FATES={env_use_fates!r} is inconsistent with "
+                    f"bgc_mode={bgc_mode!r} (derives use_fates={derived_use_fates}). "
+                    "Set bgc_mode='fates' to enable FATES; or remove A2MC_USE_FATES."
+                )
+        use_fates = derived_use_fates
+
+        # parteh_mode: env > case > default 1
+        env_parteh = os.environ.get("A2MC_FATES_PARTEH_MODE")
+        parteh_mode = _env_or_case(
+            int(env_parteh) if env_parteh is not None else None,
+            "parteh_mode", 1,
+        )
+        if parteh_mode not in (1, 2):
+            raise ValueError(
+                f"parteh_mode={parteh_mode} invalid; expected 1 (carbon-only) or 2 (CNP)"
+            )
+        if env_parteh is not None and case_mode is not None:
+            _warn_conflict("parteh_mode", int(env_parteh), case_mode.parteh_mode)
+
+        # use_fates_nocomp: env > case > default false
+        env_nocomp = os.environ.get("A2MC_USE_FATES_NOCOMP")
+        use_fates_nocomp = _env_or_case(
+            _truthy(env_nocomp) if env_nocomp is not None else None,
+            "use_fates_nocomp", False,
+        )
+
+        # nutrient: env (ELM_OPTIONS) > case > default ''
+        env_nutrient = opts.get("nutrient")
+        nutrient = _env_or_case(env_nutrient, "nutrient", "")
+        nutrient = str(nutrient)
+        if nutrient and nutrient not in ("c", "cn", "cnp"):
+            raise ValueError(
+                f"nutrient={nutrient!r} invalid; expected '', 'c', 'cn', or 'cnp'"
+            )
+
+        # nutrient_comp_pathway: env > case > default 'rd' (ELM source default)
+        env_pathway = opts.get("nutrient_comp_pathway")
+        nutrient_comp_pathway = _env_or_case(env_pathway, "nutrient_comp_pathway", "rd")
+        nutrient_comp_pathway = str(nutrient_comp_pathway)
+        if nutrient_comp_pathway not in ("rd", "eca"):
+            raise ValueError(
+                f"nutrient_comp_pathway={nutrient_comp_pathway!r} invalid; "
+                "expected 'rd' or 'eca'"
+            )
+
+        # soil_decomp: env > case > default ''
+        env_decomp = opts.get("soil_decomp")
+        soil_decomp = _env_or_case(env_decomp, "soil_decomp", "")
+        soil_decomp = str(soil_decomp)
+        if soil_decomp and soil_decomp not in ("ctc", "century"):
+            raise ValueError(
+                f"soil_decomp={soil_decomp!r} invalid; expected '', 'ctc', or 'century'"
+            )
+
+        # ----- Tier 2: FATES feature flags — env > case > default false -----
+        env_spitfire = os.environ.get("A2MC_FATES_SPITFIRE_MODE")
+        fates_spitfire_mode = _env_or_case(
+            int(env_spitfire) if env_spitfire is not None else None,
+            "fates_spitfire_mode", 0,
+        )
+        if fates_spitfire_mode not in (0, 1, 2):
+            raise ValueError(
+                f"fates_spitfire_mode={fates_spitfire_mode} invalid; expected 0, 1, or 2"
+            )
+
+        # Tier 2 booleans: env > case > default false
+        def _bool_env_or_case(env_var: str, case_attr: str) -> bool:
+            env_val = os.environ.get(env_var)
+            if env_val is not None:
+                return _truthy(env_val)
+            if case_mode is not None:
+                return getattr(case_mode, case_attr)
+            return False
+
+        use_fates_planthydro = _bool_env_or_case("A2MC_USE_FATES_PLANTHYDRO", "use_fates_planthydro")
+        use_fates_logging = _bool_env_or_case("A2MC_USE_FATES_LOGGING", "use_fates_logging")
+        use_fates_sp = _bool_env_or_case("A2MC_USE_FATES_SP", "use_fates_sp")
+        use_fates_ed_prescribed_phys = _bool_env_or_case(
+            "A2MC_USE_FATES_ED_PRESCRIBED_PHYS", "use_fates_ed_prescribed_phys",
+        )
+        use_fates_fixed_biogeog = _bool_env_or_case(
+            "A2MC_USE_FATES_FIXED_BIOGEOG", "use_fates_fixed_biogeog",
+        )
+
+        # ----- Tier 3: ELM_OPTIONS bare flags > case > default false -----
+        # For Tier 3, "explicit" means present in A2MC_ELM_OPTIONS; if absent
+        # AND case_mode has a value, use case_mode. Tier 3 doesn't have
+        # individual A2MC_* env vars (only ELM_OPTIONS).
+        def _flag_env_or_case(opt_key: str, case_attr: str) -> bool:
+            if opt_key in opts:
+                return bool(opts[opt_key])
+            if case_mode is not None:
+                return getattr(case_mode, case_attr)
+            return False
+
+        crop = _flag_env_or_case("crop", "crop")
+        dynamic_vegetation = _flag_env_or_case("dynamic_vegetation", "dynamic_vegetation")
+        methane_explicit = _flag_env_or_case("methane", "methane")
+        # Auto-pair: -bgc bgc implies methane
+        methane = methane_explicit or (bgc_mode == "bgc")
+        hydrstress = _flag_env_or_case("hydrstress", "hydrstress")
+        topounit = _flag_env_or_case("topounit", "topounit")
+        # -irrig is paired (-irrig .true.) but tw_irr_on is bare; conventionally
+        # both go together. Treat irrig=true if either appears truthy in env,
+        # else fall back to case dir.
+        irrig_paired = opts.get("irrig", None)
+        if irrig_paired is not None or "tw_irr_on" in opts:
+            irrig = (
+                bool(opts.get("tw_irr_on", False))
+                or (isinstance(irrig_paired, str) and _truthy(irrig_paired))
+                or (isinstance(irrig_paired, bool) and irrig_paired)
+            )
+        elif case_mode is not None:
+            irrig = case_mode.irrig
+        else:
+            irrig = False
+
+        env_solar = opts.get("solar_rad_scheme")
+        solar_rad_scheme = _env_or_case(env_solar, "solar_rad_scheme", "")
+        solar_rad_scheme = str(solar_rad_scheme)
+        if solar_rad_scheme not in ("", "top"):
+            raise ValueError(
+                f"solar_rad_scheme={solar_rad_scheme!r} invalid; expected '' or 'top'"
+            )
+
+        # ----- Cross-axis constraints -----
+        if bgc_mode == "fates" and dynamic_vegetation:
+            raise ValueError(
+                "bgc_mode='fates' is incompatible with dynamic_vegetation=True; "
+                "FATES is its own DGVM."
+            )
+        if bgc_mode == "sp" and use_fates_sp:
+            raise ValueError(
+                "bgc_mode='sp' (ELM Satellite Phenology) is incompatible with "
+                "use_fates_sp=True. Use one or the other."
+            )
+
+        return cls(
+            bgc_mode=bgc_mode,
+            use_fates=use_fates,
+            parteh_mode=parteh_mode,
+            use_fates_nocomp=use_fates_nocomp,
+            nutrient=nutrient,
+            nutrient_comp_pathway=nutrient_comp_pathway,
+            soil_decomp=soil_decomp,
+            fates_spitfire_mode=fates_spitfire_mode,
+            use_fates_planthydro=use_fates_planthydro,
+            use_fates_logging=use_fates_logging,
+            use_fates_sp=use_fates_sp,
+            use_fates_ed_prescribed_phys=use_fates_ed_prescribed_phys,
+            use_fates_fixed_biogeog=use_fates_fixed_biogeog,
+            crop=crop,
+            dynamic_vegetation=dynamic_vegetation,
+            methane=methane,
+            hydrstress=hydrstress,
+            topounit=topounit,
+            irrig=irrig,
+            solar_rad_scheme=solar_rad_scheme,
+        )
+
+    def to_prompt_block(self) -> str:
+        """Render a compact block for the AI prompt declaring active mode.
+
+        Renders all relevant axes (hides off-default Tier 2/3 unless True).
+        Goes near the top of every Phase 3 / Phase 4 prompt so the LLM can
+        self-correct on retrieved content that spans multiple modes.
+        """
+        # ELM-only branch (FATES off): much narrower content
+        if not self.use_fates:
+            lines = [
+                "## Active Run Configuration",
+                f"- bgc_mode: {self.bgc_mode} (FATES DISABLED; FATES parameters "
+                "and mechanisms do NOT apply)",
+            ]
+            if self.nutrient:
+                lines.append(f"- Nutrient cycling: {self.nutrient.upper()}")
+            if self.nutrient_comp_pathway:
+                lines.append(f"- Nutrient competition: {self.nutrient_comp_pathway.upper()}")
+            if self.soil_decomp:
+                lines.append(f"- Soil decomposition: {self.soil_decomp}")
+            tier3 = self._tier3_active_summary()
+            if tier3:
+                lines.append(f"- Active modifiers: {tier3}")
+            return "\n".join(lines)
+
+        # FATES-on branch
+        parteh_label = {
+            1: "carbon-only allocation",
+            2: "CNP allocation (nutrient cycling ON)",
+        }.get(self.parteh_mode, f"unknown PARTEH={self.parteh_mode}")
+
+        comp_label = "OFF (PFTs in separate patches; ECA/RD do NOT apply)" \
+            if self.use_fates_nocomp \
+            else f"ON ({self.nutrient_comp_pathway.upper() or '?'} pathway)"
+
+        nutrient_note = ""
+        if self.parteh_mode == 1:
+            nutrient_note = " - CNP mechanisms (PID controller, nutrient " \
+                            "uptake, stoichiometry) do NOT apply to this run"
+        elif self.nutrient == "cn":
+            nutrient_note = " - P-cycle parameters (fates_cnp_*ptase, " \
+                            "FATES_PUPTAKE_*) do NOT apply"
+
+        lines = [
+            "## Active Run Configuration",
+            f"- bgc_mode: {self.bgc_mode}, FATES: enabled (PARTEH={self.parteh_mode}, {parteh_label}){nutrient_note}",
+            f"- Nutrient cycling: {self.nutrient.upper() or 'NONE'}",
+            f"- Competition: {comp_label}",
+        ]
+        if self.soil_decomp:
+            lines.append(f"- Soil decomposition: {self.soil_decomp}")
+
+        # Tier 2 FATES feature flags (only show if active)
+        tier2 = self._tier2_active_summary()
+        if tier2:
+            lines.append(f"- FATES features: {tier2}")
+        # Tier 3 (only show if active)
+        tier3 = self._tier3_active_summary()
+        if tier3:
+            lines.append(f"- Active modifiers: {tier3}")
+
+        return "\n".join(lines)
+
+    def _tier2_active_summary(self) -> str:
+        """One-line summary of active Tier 2 FATES feature flags."""
+        active = []
+        if self.fates_spitfire_mode:
+            active.append(f"spitfire={self.fates_spitfire_mode}")
+        if self.use_fates_planthydro:
+            active.append("planthydro")
+        if self.use_fates_logging:
+            active.append("logging")
+        if self.use_fates_sp:
+            active.append("sp")
+        if self.use_fates_ed_prescribed_phys:
+            active.append("prescribed_phys")
+        if self.use_fates_fixed_biogeog:
+            active.append("fixed_biogeog")
+        return ", ".join(active)
+
+    def _tier3_active_summary(self) -> str:
+        """One-line summary of active Tier 3 secondary compset modifiers."""
+        active = []
+        if self.crop:
+            active.append("crop")
+        if self.dynamic_vegetation:
+            active.append("dynamic_vegetation")
+        if self.methane:
+            active.append("methane")
+        if self.hydrstress:
+            active.append("hydrstress")
+        if self.topounit:
+            active.append("topounit")
+        if self.irrig:
+            active.append("irrig")
+        if self.solar_rad_scheme:
+            active.append(f"solar_rad_scheme={self.solar_rad_scheme}")
+        return ", ".join(active)
+
+    def kb_source_filter(self) -> Optional[str]:
+        """Return 'elm' if FATES is off (filters retrieval to ELM-only chunks),
+        None otherwise (no filter; both ELM and FATES content allowed).
+        """
+        return "elm" if not self.use_fates else None
+
+    def to_dict(self) -> Dict:
+        return {
+            # Tier 1
+            "bgc_mode": self.bgc_mode,
+            "use_fates": self.use_fates,
+            "parteh_mode": self.parteh_mode,
+            "use_fates_nocomp": self.use_fates_nocomp,
+            "nutrient": self.nutrient,
+            "nutrient_comp_pathway": self.nutrient_comp_pathway,
+            "soil_decomp": self.soil_decomp,
+            # Tier 2
+            "fates_spitfire_mode": self.fates_spitfire_mode,
+            "use_fates_planthydro": self.use_fates_planthydro,
+            "use_fates_logging": self.use_fates_logging,
+            "use_fates_sp": self.use_fates_sp,
+            "use_fates_ed_prescribed_phys": self.use_fates_ed_prescribed_phys,
+            "use_fates_fixed_biogeog": self.use_fates_fixed_biogeog,
+            # Tier 3
+            "crop": self.crop,
+            "dynamic_vegetation": self.dynamic_vegetation,
+            "methane": self.methane,
+            "hydrstress": self.hydrstress,
+            "topounit": self.topounit,
+            "irrig": self.irrig,
+            "solar_rad_scheme": self.solar_rad_scheme,
+        }
+
+    def to_chroma_where(self) -> Dict:
+        """Build a ChromaDB ``where`` clause for the active mode.
+
+        Each axis contributes one ``$or`` branch: the chunk passes if it is
+        either flagged as universal (``applies_universal: True``) OR has the
+        matching axis flag for the current value (``applies_in_<axis>_<value>:
+        True``). All axes combined with ``$and``.
+
+        Iterates over ``ALL_AXIS_VALUES`` so all 20 axes are covered
+        automatically.
+
+        Example output for default ELM run (bgc_mode='sp', use_fates=False):
+
+            {
+              "$and": [
+                {"$or": [{"applies_universal": True},
+                         {"applies_in_bgc_mode_sp": True}]},
+                {"$or": [{"applies_universal": True},
+                         {"applies_in_use_fates_false": True}]},
+                ... (one $or per axis)
+              ]
+            }
+        """
+        # Map axis name → current value, for all 20 axes
+        active_values: Dict[str, object] = {
+            # Tier 1
+            "bgc_mode": self.bgc_mode,
+            "use_fates": self.use_fates,
+            "parteh_mode": self.parteh_mode,
+            "use_fates_nocomp": self.use_fates_nocomp,
+            "nutrient": self.nutrient,
+            "nutrient_comp_pathway": self.nutrient_comp_pathway,
+            "soil_decomp": self.soil_decomp,
+            # Tier 2
+            "fates_spitfire_mode": self.fates_spitfire_mode,
+            "use_fates_planthydro": self.use_fates_planthydro,
+            "use_fates_logging": self.use_fates_logging,
+            "use_fates_sp": self.use_fates_sp,
+            "use_fates_ed_prescribed_phys": self.use_fates_ed_prescribed_phys,
+            "use_fates_fixed_biogeog": self.use_fates_fixed_biogeog,
+            # Tier 3
+            "crop": self.crop,
+            "dynamic_vegetation": self.dynamic_vegetation,
+            "methane": self.methane,
+            "hydrstress": self.hydrstress,
+            "topounit": self.topounit,
+            "irrig": self.irrig,
+            "solar_rad_scheme": self.solar_rad_scheme,
+        }
+        clauses = []
+        for axis in ALL_AXIS_VALUES:
+            value = active_values[axis]
+            flag_key = f"applies_in_{axis}_{_axis_value_token(value)}"
+            clauses.append({
+                "$or": [
+                    {"applies_universal": True},
+                    {flag_key: True},
+                ],
+            })
+        return {"$and": clauses}
+
+
+# =============================================================================
+# Axis value enumerations (for graph_builder, validator, and to_chroma_where)
+# =============================================================================
+
+# Enumerates the legal values for each of the 20 mode dimensions.
+# Source: tools/config.py:ConfigMode docstring + ELM api-43-1
+# namelist_defaults.xml + components/elm/cime_config/config_component.xml.
+#
+# Used by:
+#   - rag/graph_builder.py: to write `applies_in_<axis>_<value>` flags
+#     for ALL values per axis (set False for unlisted, True for listed)
+#   - tools/yaml_wiki_validator.py (Dim F): to reject typos and out-of-enum
+#     values in YAML `applies_in:` blocks
+#   - tools/config.py:ConfigMode.to_chroma_where(): to iterate over axes
+ALL_AXIS_VALUES: Dict[str, List] = {
+    # ----- Tier 1 (7 primary) -----
+    "bgc_mode": ["sp", "cn", "bgc", "fates"],
+    "use_fates": [True, False],
+    "parteh_mode": [1, 2],
+    "use_fates_nocomp": [True, False],
+    "nutrient": ["", "c", "cn", "cnp"],
+    "nutrient_comp_pathway": ["rd", "eca"],
+    "soil_decomp": ["", "ctc", "century"],
+    # ----- Tier 2 (6 FATES feature flags) -----
+    "fates_spitfire_mode": [0, 1, 2],
+    "use_fates_planthydro": [True, False],
+    "use_fates_logging": [True, False],
+    "use_fates_sp": [True, False],
+    "use_fates_ed_prescribed_phys": [True, False],
+    "use_fates_fixed_biogeog": [True, False],
+    # ----- Tier 3 (7 secondary compset modifiers) -----
+    "crop": [True, False],
+    "dynamic_vegetation": [True, False],
+    "methane": [True, False],
+    "hydrstress": [True, False],
+    "topounit": [True, False],
+    "irrig": [True, False],
+    "solar_rad_scheme": ["", "top"],
+}
+
+# FATES-specific axes — tagging any of these without also tagging
+# `use_fates: [true]` is brittle; the validator Dim F emits a warning.
+FATES_SPECIFIC_AXES = frozenset({
+    "parteh_mode",
+    "use_fates_nocomp",
+    "nutrient",
+    "nutrient_comp_pathway",
+    "fates_spitfire_mode",
+    "use_fates_planthydro",
+    "use_fates_logging",
+    "use_fates_sp",
+    "use_fates_ed_prescribed_phys",
+    "use_fates_fixed_biogeog",
+})
+
+
+def _axis_value_token(value: object) -> str:
+    """Render an axis value as the token used in ``applies_in_<axis>_<value>``.
+
+    - bool → 'true' / 'false' (lowercased)
+    - int → str(int)
+    - str → the string itself; '' → 'empty'
+    """
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str):
+        return value if value else "empty"
+    return str(value)
+
+
+def build_applies_in_flags(applies_in: Optional[Dict]) -> Dict[str, bool]:
+    """Build chunk/node metadata flags from a YAML ``applies_in:`` block.
+
+    Default-permissive design with two mutually exclusive states:
+
+    - **Untagged** (``applies_in`` is None or empty dict): emits
+      ``{"applies_universal": True}`` only. The chunk passes any
+      ``ConfigMode.to_chroma_where()`` clause via the universal $or branch.
+
+    - **Tagged**: per-axis flags. For each axis listed in ``applies_in``,
+      write ``applies_in_<axis>_<v>: True`` for v in the listed values and
+      ``False`` for v not in the listed values. For each of the 20 axes
+      NOT mentioned in ``applies_in``, write ``True`` for all values
+      (universal w.r.t. that axis). NO ``applies_universal`` flag.
+
+    The metadata is suitable for ChromaDB chunk metadata or NetworkX node
+    attrs. Boolean values; key names use the ``applies_in_<axis>_<token>``
+    convention from ``_axis_value_token()``.
+
+    Returns
+    -------
+    dict[str, bool]
+        Flag dict ready to merge into chunk/node metadata.
+    """
+    if not applies_in:
+        return {"applies_universal": True}
+
+    flags: Dict[str, bool] = {}
+    for axis, values in ALL_AXIS_VALUES.items():
+        if axis in applies_in:
+            listed = applies_in[axis] or []
+            for v in values:
+                key = f"applies_in_{axis}_{_axis_value_token(v)}"
+                flags[key] = (v in listed)
+        else:
+            # Axis not mentioned: universal w.r.t. this axis (all values pass)
+            for v in values:
+                key = f"applies_in_{axis}_{_axis_value_token(v)}"
+                flags[key] = True
+    return flags
+
+
 config = A2MCConfig()
 
 

@@ -85,6 +85,7 @@ def build_metadata_from_version(
     fates_param_file_format: str,
     output_var_file: str,
     curated_yaml_path: str,
+    elm_output_var_file: Optional[str] = None,
     stats: Optional[Dict[str, int]] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> dict:
@@ -92,12 +93,15 @@ def build_metadata_from_version(
 
     All file path arguments are stored as strings (rel-to-repo-root preferred,
     but absolute is also OK). SHAs of `fates_param_file`, `output_var_file`,
-    and `curated_yaml_path` are computed automatically.
+    `elm_output_var_file` (v2.96+), and `curated_yaml_path` are computed
+    automatically.
 
-    Schema follows docs/18 §4.3.1.
+    Schema follows docs/18 §4.3.1; ``elm_output_var_file`` is the v2.96
+    extension (companion to the FATES output CDL).
     """
     fates_param_sha = _safe_sha(fates_param_file)
     output_var_sha = _safe_sha(output_var_file)
+    elm_output_var_sha = _safe_sha(elm_output_var_file) if elm_output_var_file else None
     curated_yaml_sha = _safe_sha(curated_yaml_path)
 
     md = {
@@ -129,6 +133,10 @@ def build_metadata_from_version(
             "fates_param_file_sha": fates_param_sha,
             "output_var_file": output_var_file,
             "output_var_file_sha": output_var_sha,
+            # v2.96+: companion ELM core output CDL (None if not present;
+            # legacy api-31-0 milestone has FATES output CDL only)
+            "elm_output_var_file": elm_output_var_file,
+            "elm_output_var_file_sha": elm_output_var_sha,
         },
         "curated_yaml": {
             "path": curated_yaml_path,

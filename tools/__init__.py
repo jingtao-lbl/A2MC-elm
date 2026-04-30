@@ -22,13 +22,16 @@ from pathlib import Path
 
 TOOLS_DIR = Path(__file__).parent
 
-# Import config for convenient access
-try:
-    from .config import config, get_case_path, get_case_name
-except ImportError:
-    config = None
-    get_case_path = None
-    get_case_name = None
+# NOTE (v2.93, 2026-04-30): Removed `from .config import config, ...` line.
+# Importing `config` (the A2MCConfig() singleton) at the package level
+# shadowed the `tools.config` submodule, breaking `import tools.config as
+# cfg_mod` in `tools/case_parser.py`. All callers already use the explicit
+# `from tools.config import config` (or `import config as a2mc_config`)
+# form, so removing the package-level shortcut is safe.
+#
+# If you need the singleton, use:
+#     from tools.config import config            # the A2MCConfig instance
+#     from tools.config import config as cfg     # alias for clarity
 
 # Import key functions from fates_output_variables for convenient access
 from .fates_output_variables import (

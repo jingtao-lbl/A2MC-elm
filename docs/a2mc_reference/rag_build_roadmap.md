@@ -105,13 +105,27 @@ Layer 2 enriches Layer 1 nodes with richer descriptions and notes. It does NOT r
 |---|---|---|---|
 | Wiki Markdown root | `docs/fates-knowledge-base/` and `docs/elm-knowledge-base/` | Hand-written or auto-generated wiki | **Yes** |
 | Parameter CDL | `docs/fates-knowledge-base/fates_params_info.cdl` | `ncdump -h` of `fates_params_default.nc` from a FATES build, or curated equivalent | Yes for full param coverage |
-| Output variable CDL | `docs/fates-knowledge-base/elm_fates_output_info.cdl` | `ncdump -h` of an ELM-FATES output file (`*.elm.h0.*.nc`) | Yes for full output coverage |
-| Curated relationships YAML | `rag/data/curated_relationships.yaml` | Hand-curated, ~1387 lines | Yes for mechanistic edges |
+| FATES output CDL | `docs/fates-knowledge-base/elm_fates_output_info_<fates-commit>.cdl` | Source-grounded extraction from `FatesHistoryInterfaceMod.F90:set_history_var()` calls (Phase 4 wiki regen) | Yes for FATES output coverage |
+| **ELM output CDL** (v2.96+) | `docs/fates-knowledge-base/elm_output_info_<elm-commit>.cdl` | `python scripts/extract_elm_outputs.py` parses `components/elm/src/**/*.F90` for `hist_addfld1d/2d` calls (~1640 ELM core variables) | Yes for ELM-only / BGC-CNP runs |
+| Curated relationships YAML | `rag/data/curated_relationships.yaml` | Hand-curated, ~1480 lines (incl. v2.92 `applies_in:` blocks) | Yes for mechanistic edges |
+| Per-milestone YAML | `rag/data/curated_relationships_<profile>.yaml` | Synced from canonical at milestone freeze; carries Phase B `applies_in:` tags | Yes for milestone-aware retrieval |
 | Python 3.10 | `/Library/Frameworks/Python.framework/Versions/3.10/bin/python3` | `python.org` installer | **Yes** (NOT Homebrew Python) |
 | Required packages | `chromadb`, `sentence-transformers`, `networkx`, `pyyaml`, `numpy` | Pre-installed in the Python 3.10 env | **Yes** |
 | Optional package | `netCDF4` | For parsing `.nc` parameter files directly (instead of `.cdl`) | Optional |
 
 **Why Python 3.10 and not Homebrew Python 3.12?** macOS Homebrew Python 3.12 is externally-managed and blocks pip installs. Python 3.10 from `python.org` has all RAG dependencies pre-installed. See `memory/dev_logs/20260202b_RAG_Python_Environment_Fix.md` for the history.
+
+---
+
+### Mode-aware retrieval (Phase B / v2.92)
+
+Per Doc 21, the build now writes `applies_in_<axis>_<value>` flags on every chunk and graph node. Three knobs you can tune at build time:
+
+- **YAML `applies_in:` blocks**: tag a parameter / mechanism / output with mode restrictions. See `docs/a2mc_reference/mode_aware_workflow.md` for syntax.
+- **Path-prefix table** (`rag/loader.py:_WIKI_PATH_PREFIX_TAGS`): map wiki source paths to mode tags. Add an entry when a new wiki section gates mode-specific content.
+- **20-dim ConfigMode** (`tools/config.py`): the schema. Defaults match ELM `namelist_defaults.xml`. Add a new dimension when calibration extends to a new mode.
+
+After any build with curation changes, run the validation quadrilateral (`docs/a2mc_reference/rag_validation_workflow.md`) including the new Tier 4 (`tools/mode_metadata_validator.py`).
 
 ---
 

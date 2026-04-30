@@ -3,7 +3,7 @@
 [![CAF Agent of the Week](https://img.shields.io/badge/CAF-Agent%20of%20the%20Week-blue)](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
 
 **Status:** Implementation Complete <br>
-**Version:** 2.90 <br>
+**Version:** 2.97 <br>
 **Purpose:** Fully autonomous multi-target calibration of ELM using AI API + HPC + RAG/GraphRAG + Adaptive Memory
 
 ---
@@ -98,6 +98,20 @@ vim a2mc_config.sh
 export A2MC_PROJECT="your_project"        # HPC allocation
 export A2MC_E3SM_ROOT="/path/to/E3SM"     # E3SM source code
 export A2MC_OUTPUT_ROOT="/path/to/output" # Simulation output root
+
+# REQUIRED for version-aware RAG (v2.90+): point at your E3SM/ELM-FATES checkout
+# A2MC reads the FATES + ELM commits and selects the matching RAG profile
+export A2MC_MODEL_PATH="/path/to/your/E3SM_FATES_checkout"
+
+# Optional for configuration-aware retrieval (v2.92+): override mode env vars
+# Defaults match ELM namelist_defaults.xml (vanilla SP run, no FATES)
+# Set in your site config to enable FATES with CNP + ECA, etc.
+export A2MC_ELM_OPTIONS="-bgc fates -nutrient cnp -nutrient_comp_pathway eca"
+export A2MC_FATES_PARTEH_MODE=2           # 1=carbon-only, 2=CNP
+# Tier 2 FATES feature flags (default false):
+#   A2MC_FATES_SPITFIRE_MODE, A2MC_USE_FATES_PLANTHYDRO,
+#   A2MC_USE_FATES_LOGGING, A2MC_USE_FATES_SP, etc.
+# See docs/a2mc_reference/mode_aware_workflow.md for the full 20-dim schema
 ```
 
 ### Step 5: Configure AI Settings
@@ -168,6 +182,8 @@ A2MC is an autonomous calibration framework that combines:
 - **HPC-native execution** for efficient simulation management
 - **Multi-objective optimization** for simultaneous PFT calibration
 - **Adaptive Memory System** for learning from experiments and avoiding repeated failures
+- **Version-aware RAG** that auto-detects the user's E3SM/ELM-FATES checkout and loads the matching knowledge profile (v2.90+)
+- **Configuration-aware retrieval** that filters knowledge chunks based on the active simulation mode (FATES on/off, PARTEH carbon-only vs CNP, ECA vs RD competition, fire/hydraulics/logging on/off, etc.) so the AI sees only mode-applicable content (v2.91 / v2.92)
 
 The framework runs entirely on NERSC HPC (no SSH tunneling) and uses the Anthropic Claude API for intelligent decision-making. The Adaptive Memory System enables the AI agent to persistently store and retrieve knowledge across sessions.
 
@@ -564,8 +580,8 @@ A2MC uses a three-tier architecture for FATES knowledge, ensuring the AI has acc
 
 | Tier | Location | Format | Purpose |
 |------|----------|--------|---------|
-| **Static Documentation** | `docs/fates-knowledge-base/` | Markdown | Human reference, RAG indexing |
-| **RAG/GraphRAG** | `rag/` | ChromaDB + JSON graph | AI semantic search, graph traversal |
+| **Static Documentation** | `docs/fates-knowledge-base/` (per-commit subdirs) | Markdown | Human reference, RAG indexing |
+| **RAG/GraphRAG** | `rag/{chroma_db,graphs,metadata}/<profile>/` | ChromaDB + JSON graph | AI semantic search, graph traversal — version-aware (per-milestone) and configuration-aware (per simulation mode) |
 | **Adaptive Memory** | `memory/gained_knowledge/` | JSON | AI reasoning context, learned discoveries |
 
 **Key resources for CNP calibration:**
@@ -573,6 +589,111 @@ A2MC uses a three-tier architecture for FATES knowledge, ensuring the AI has acc
 - PID controller: `docs/fates-knowledge-base/fates-codebase-wiki/plant-physiology/parteh/cnp_allocation.md`
 - ECA/RD competition: `docs/fates-knowledge-base/fates-codebase-wiki/advanced/nutrient_competition.md`
 - Nutrient uptake: `docs/fates-knowledge-base/fates-codebase-wiki/plant-physiology/parteh/soil_plant_interface.md`
+
+---
+
+## Version-Aware and Configuration-Aware Retrieval
+
+The RAG/GraphRAG tier is **version-aware** (v2.90+) and **configuration-aware** (v2.91 / v2.92). A2MC auto-detects the user's E3SM/ELM-FATES checkout and the active simulation mode, then loads the right knowledge profile and filters out content that doesn't apply. The AI sees only the FATES/ELM source for the correct version, in the modes the user is actually running.
+
+### Version association (v2.90, Doc 18 Phases 1–4)
+
+A2MC reads the user's `A2MC_MODEL_PATH` (E3SM checkout root), detects the FATES + ELM commit hashes, and matches against the milestone registry at `rag/milestones.json`. Each milestone owns a self-contained profile: ChromaDB index, NetworkX graph, metadata, and a frozen per-milestone curated YAML.
+
+| Milestone | FATES tag | FATES commit | ELM commit | Param file | Status |
+|---|---|---|---|---|---|
+| `api-43-1` | `sci.1.91.1_api.43.1.0` | `e027a40` | `d40b843` | JSON | Canonical (active development) |
+| `api-31-0` | `sci.1.68.2_api.31.0.0` | `e85d997` | `60d9aad` | CDL | Legacy / Kougarok manuscript reproducibility |
+
+**End-user workflow:**
+
+```bash
+# Set in your site config (use_cases/<site>/config/<site>_config.sh):
+export A2MC_MODEL_PATH="/path/to/your/E3SM_FATES_checkout"
+
+# A2MC auto-detects on startup, picks the right RAG profile, and aligns or warns
+source a2mc_config.sh
+source use_cases/Kougarok/config/kougarok_config.sh
+python orchestrator.py --run
+```
+
+**Diagnostic CLIs:**
+
+```bash
+# List registered milestones
+python scripts/rag_list.py
+
+# Diagnose which milestone matches a checkout
+python scripts/rag_match.py --model-path /path/to/E3SM_FATES
+
+# Bump to a new milestone (T1 metadata refresh, T2 param-only delta, T3 new epoch)
+python scripts/rag_bump.py --tier T2 --new-version sci.1.91.4_api.43.1.0 --mode prompt-pack
+
+# Validate Phase 4 capabilities (24 content gates + 9 smoke tests)
+python scripts/verify_phase4.py
+```
+
+Per-milestone YAML reproducibility: each milestone owns `rag/data/curated_relationships_<profile>.yaml`. The canonical YAML is treated as active development; rebuilding a milestone always uses its frozen YAML, preventing silent corruption when the canonical evolves. Full workflow: `docs/a2mc_reference/version_association_workflow.md`.
+
+### Configuration-aware retrieval (v2.91 / v2.92, Docs 20+21)
+
+A2MC parses the user's `A2MC_ELM_OPTIONS` and Tier 2 env vars into a 20-dimension `ConfigMode`. The RAG retriever builds a ChromaDB `where` clause from this and filters every chunk: PARTEH=1 retrieval no longer surfaces CNP allocation theory, fire chunks are filtered when SPITFIRE is off, ELM-only runs see only ELM content.
+
+**The 20 dimensions** (defaults match ELM `namelist_defaults.xml` — a vanilla SP run):
+
+- **Tier 1 primary (7):** `bgc_mode` (sp/cn/bgc/fates), `use_fates` (derived), `parteh_mode` (1=carbon-only / 2=CNP), `use_fates_nocomp`, `nutrient` (c/cn/cnp), `nutrient_comp_pathway` (rd/eca), `soil_decomp` (ctc/century)
+- **Tier 2 FATES feature flags (6):** `fates_spitfire_mode`, `use_fates_planthydro`, `use_fates_logging`, `use_fates_sp`, `use_fates_ed_prescribed_phys`, `use_fates_fixed_biogeog`
+- **Tier 3 secondary compset modifiers (7):** `crop`, `dynamic_vegetation`, `methane`, `hydrstress`, `topounit`, `irrig`, `solar_rad_scheme`
+
+**Three independent metadata sources tag chunks during the build:**
+
+1. **YAML curation** — `applies_in:` blocks on parameters / mechanisms / outputs in the curated YAML. 17 mode-restricted parameters + 3 mechanisms tagged in the canonical YAML.
+2. **Path-prefix table** — 11 patterns covering 22+ wiki docs hard-coded in `rag/loader.py:_WIKI_PATH_PREFIX_TAGS`. Includes inverse-tagged docs (e.g., `biophysics/transpiration.md` applies when hydraulics is OFF).
+3. **Default-permissive sweep** — any chunk/node not tagged by the above two ends up `applies_universal: True` (passes any filter).
+
+**Example config: Kougarok PARTEH=2 + ECA + CNP**
+
+```bash
+export A2MC_ELM_OPTIONS="-bgc fates -nutrient cnp -nutrient_comp_pathway eca"
+export A2MC_FATES_PARTEH_MODE=2
+# Optional Tier 2 (default off):
+# export A2MC_FATES_SPITFIRE_MODE=1
+# export A2MC_USE_FATES_PLANTHYDRO=true
+```
+
+A2MC's reasoning module reads `ConfigMode.from_env()` once per Phase 3/4 retrieval call and threads the where clause through `HybridRetriever.get_targeted_context()`, `get_calibration_context()`, and `get_context()` to the ChromaDB layer.
+
+### Validation — quadrilateral (4 tiers)
+
+Phase B added Tier 4 to A2MC's RAG validation stack. The full quadrilateral:
+
+| Tier | Validator | Asserts |
+|---|---|---|
+| **1** | `tools/codebase_wiki_validator.py` | Wiki claims match source (per-commit) |
+| **2** | `tools/yaml_wiki_validator.py` (incl. Dim F for `applies_in:`) | Curated YAML entries present in wiki + parameter file; mode tags valid |
+| **3** | `tools/rag_diff.py` | Diff between two RAG profiles (e.g., milestone bump) |
+| **4** | `tools/mode_metadata_validator.py` (NEW v2.92) | YAML `applies_in:` propagates correctly to chunks + graph nodes |
+
+**Verification on api-43-1:** 50/50 unittest fixtures + 6/6 smoke tests + 79/79 Tier 4 propagation assertions — all GREEN.
+
+```bash
+# End-to-end Phase A+B verification
+python scripts/verify_mode_aware.py
+# Phase A+B status: GREEN
+
+# Standalone Tier 4 validator
+python tools/mode_metadata_validator.py --profile api-43-1 \
+    --output docs/a2mc_reference/mode_metadata_validation_api-43-1.md
+```
+
+### Reference docs
+
+- **Comprehensive workflow:** `docs/a2mc_reference/mode_aware_workflow.md` (schema, recipes, curation guide, troubleshooting, file map)
+- **Quick how-to:** `docs/a2mc_reference/mode_aware_howto.md`
+- **ELM compset reference:** `docs/a2mc_reference/elm_compset_reference.md` (fills the wiki gap on `cime_config/` + `bld/`)
+- **Version association workflow:** `docs/a2mc_reference/version_association_workflow.md`
+- **Validation playbook:** `docs/a2mc_reference/rag_validation_workflow.md`
+- **Design plans:** `docs/18_ELM_FATES_Version_Association_Plan.md`, `docs/20_Mode_Aware_RAG_Retrieval_Plan.md`, `docs/21_Mode_Aware_RAG_Phase_B_Implementation.md`
 
 ---
 

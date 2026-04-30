@@ -1,6 +1,6 @@
 # Phase 4 Verification Report
 
-**Generated:** 2026-04-28T15:44:22+00:00
+**Generated:** 2026-04-30T19:03:46+00:00
 
 Per docs/18 §16 content-correctness gates plus end-to-end smoke tests of the milestone-tier infrastructure.
 
@@ -52,7 +52,7 @@ Per docs/18 §16 content-correctness gates plus end-to-end smoke tests of the mi
 | Test | Result | Detail |
 |---|---|---|
 | manifest has both milestones | ✓ | 2 registered |
-| HybridRetriever loads api-43-1 via env vars | ✓ | 3266 docs, 1538 graph nodes |
+| HybridRetriever loads api-43-1 via env vars | ✓ | 6326 docs, 3178 graph nodes |
 | HybridRetriever loads api-31-0 (profile switch) | ✓ | 2581 docs, 1295 graph nodes |
 | Loader resolves wiki via explicit wiki_subdir (no symlink) | ✓ | 66 docs loaded |
 | fates-codebase-wiki symlink removed | ✓ | absent |

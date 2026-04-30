@@ -123,6 +123,10 @@ outputs:                           # Output variables → which parameters affec
 parameters:                        # Per-parameter relationships
   fates_cnp_pid_kp:
     category: cnp
+    applies_in:                    # Phase B / v2.92: mode tagging (optional)
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cn, cnp]
     controls: [PID_Controller]
     affects: [FATES_L2FR, FATES_LEAFC, FATES_FROOTC]
     related_to: [fates_cnp_pid_ki, fates_cnp_pid_kd]
@@ -131,6 +135,20 @@ parameters:                        # Per-parameter relationships
       Higher values = more responsive to nutrient stress.
       Typical range: 1e-6 to 0.01
 ```
+
+### `applies_in:` block (Phase B / v2.92)
+
+Optional. Tags entries with simulation modes where they apply. The retriever filters chunks based on the active `ConfigMode` so PARTEH=1 retrieval doesn't surface CNP allocation params, etc. **Default-permissive**: untagged entries are universal (apply in all modes).
+
+Schema rules (validated by `tools/yaml_wiki_validator.py` Dim F):
+
+- Axis names must be in `tools/config.py:ALL_AXIS_VALUES` (20 axes total).
+- Values must be in the per-axis enum (e.g., `parteh_mode: [3]` is rejected).
+- Tagging a FATES-specific axis (`parteh_mode`, `nutrient`, etc.) without `use_fates: [true]` produces a warning (works under default-permissive logic but is brittle).
+
+FAQ: **"Do I need to tag every entry?"** No. Default-permissive: untagged entries pass any filter. Tag only entries that should be filtered out for some modes. The Kougarok canonical YAML tags 17 of 30 parameters and 3 of 7 mechanisms.
+
+See `docs/a2mc_reference/mode_aware_workflow.md` for the full curation guide.
 
 ### Relationship types
 

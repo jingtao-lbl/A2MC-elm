@@ -137,7 +137,9 @@ class HybridRetriever:
         query: str,
         n_vector_results: int = 5,
         graph_depth: int = 2,
-        include_graph: bool = True
+        include_graph: bool = True,
+        kb_source: Optional[str] = None,
+        config_mode=None,
     ) -> dict:
         """
         Get context using both vector search and graph traversal.
@@ -147,13 +149,23 @@ class HybridRetriever:
             n_vector_results: Number of vector search results
             graph_depth: Depth for graph traversal
             include_graph: Whether to include graph context
+            kb_source: Filter vector retrieval to chunks with this kb_source
+                       (e.g., 'elm' for ELM-only runs). Doc 20 Phase A.
+            config_mode: Optional ``ConfigMode`` for mode-aware chunk filtering
+                         (Doc 20 Phase B). When provided, chunks tagged as
+                         inapplicable to the active mode are filtered at the
+                         vector-store layer. None = no mode filtering.
 
         Returns:
             Dictionary with 'vector_context' and 'graph_context'
         """
+        # Phase B: build mode-aware where clause
+        mode_where = config_mode.to_chroma_where() if config_mode is not None else None
+
         # Vector search
         vector_results = self.vector_retriever.vector_store.query(
-            query, n_results=n_vector_results
+            query, n_results=n_vector_results, kb_source=kb_source,
+            mode_where=mode_where,
         )
 
         vector_context = self._format_vector_results(vector_results)
@@ -178,7 +190,8 @@ class HybridRetriever:
         mechanisms: list[str] = None,
         pft: Optional[int] = None,
         n_vector_results: int = 3,
-        graph_depth: int = 2
+        graph_depth: int = 2,
+        config_mode=None,
     ) -> dict:
         """
         Get calibration-specific context.
@@ -206,12 +219,18 @@ class HybridRetriever:
             'combined': ""
         }
 
+        # Phase B: build mode-aware where clause + kb_source filter
+        mode_where = config_mode.to_chroma_where() if config_mode is not None else None
+        kb_source_filter = config_mode.kb_source_filter() if config_mode is not None else None
+
         # Get vector context for calibration
         doc_context = self.vector_retriever.get_calibration_context(
             parameters=parameters,
             outputs=outputs,
             mechanisms=mechanisms,
-            n_results_per_query=n_vector_results
+            n_results_per_query=n_vector_results,
+            kb_source=kb_source_filter,
+            mode_where=mode_where,
         )
         context['documentation'] = doc_context
 
@@ -538,7 +557,8 @@ class HybridRetriever:
         param_names: list[str],
         include_related: bool = True,
         include_docs: bool = True,
-        max_related: int = 5
+        max_related: int = 5,
+        mode_where: Optional[dict] = None,
     ) -> str:
         """Get formatted parameter context for specific parameters.
 
@@ -602,7 +622,8 @@ class HybridRetriever:
             try:
                 doc_results = self.vector_retriever.query_parameters(
                     ' '.join(param_names[:5]),
-                    n_results=3
+                    n_results=3,
+                    mode_where=mode_where,
                 )
                 if doc_results:
                     doc_parts = []
@@ -669,7 +690,9 @@ class HybridRetriever:
         output_names: list[str] = None,
         mechanisms: list[str] = None,
         pft: int = None,
-        include_docs: bool = True
+        include_docs: bool = True,
+        kb_source: Optional[str] = None,
+        config_mode=None,
     ) -> str:
         """Unified method replacing raw text injection.
 
@@ -682,10 +705,19 @@ class HybridRetriever:
             mechanisms: Mechanism names to look up
             pft: PFT index for additional context
             include_docs: Include documentation from vector search
+            kb_source: Filter the documentation retrieval to chunks with this
+                       kb_source ('elm' for ELM-only runs). Doc 20 Phase A.
+            config_mode: Optional ``ConfigMode`` for mode-aware chunk filtering
+                         (Doc 20 Phase B). When provided, chunks tagged as
+                         inapplicable to the active mode are filtered at the
+                         vector-store layer AND graph nodes flagged as
+                         inapplicable are skipped during traversal.
 
         Returns:
             Formatted context string for inclusion in AI prompts
         """
+        # Phase B: build mode-aware where clause for vector queries
+        mode_where = config_mode.to_chroma_where() if config_mode is not None else None
         sections = []
         sections.append("## FATES Parameter & Output Context (Targeted)\n")
 
@@ -693,7 +725,8 @@ class HybridRetriever:
         if param_names:
             param_context = self.get_parameter_definitions(
                 param_names, include_related=True,
-                include_docs=include_docs
+                include_docs=include_docs,
+                mode_where=mode_where,
             )
             sections.append(param_context)
 
@@ -745,7 +778,9 @@ class HybridRetriever:
             try:
                 doc_results = self.vector_retriever.vector_store.query(
                     ' '.join(query_terms),
-                    n_results=3
+                    n_results=3,
+                    kb_source=kb_source,
+                    mode_where=mode_where,
                 )
                 if doc_results:
                     doc_parts = []

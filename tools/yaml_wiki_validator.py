@@ -365,6 +365,143 @@ def validate_code_refs(curated: dict, wiki: WikiCorpus) -> DimensionResult:
     return result
 
 
+def _load_axis_values():
+    """Load ALL_AXIS_VALUES + FATES_SPECIFIC_AXES from tools/config.
+
+    Loaded lazily to avoid import-time failure if tools/config has issues.
+    """
+    cfg_mod = _load_module("_cfg_mod", REPO_ROOT / "tools" / "config.py")
+    return cfg_mod.ALL_AXIS_VALUES, cfg_mod.FATES_SPECIFIC_AXES
+
+
+def _validate_one_applies_in(name: str, applies_in: dict, axis_values: Dict,
+                              fates_axes: frozenset) -> List[Tuple]:
+    """Validate one applies_in: block. Returns rows for the report.
+
+    Each row is (entry_name, severity, axis, value, message).
+    severity: 'OK' (passed), 'WARN' (advisory), 'ERROR' (schema violation).
+    """
+    rows = []
+    if not isinstance(applies_in, dict):
+        rows.append((name, "ERROR", "—", "—",
+                     f"applies_in: must be a mapping, got {type(applies_in).__name__}"))
+        return rows
+
+    has_use_fates_true = (
+        "use_fates" in applies_in
+        and isinstance(applies_in["use_fates"], list)
+        and True in applies_in["use_fates"]
+    )
+
+    for axis, values in applies_in.items():
+        # (a) axis name must be in ALL_AXIS_VALUES
+        if axis not in axis_values:
+            rows.append((name, "ERROR", axis, "—",
+                         f"unknown axis '{axis}' (valid axes: "
+                         f"{', '.join(sorted(axis_values))})"))
+            continue
+        # (b) values must be a list
+        if not isinstance(values, list):
+            rows.append((name, "ERROR", axis, str(values),
+                         f"axis '{axis}' value must be a list, got "
+                         f"{type(values).__name__}"))
+            continue
+        if not values:
+            rows.append((name, "ERROR", axis, "[]",
+                         f"axis '{axis}' value list cannot be empty"))
+            continue
+        # (c) each value must be in the axis enum
+        valid = axis_values[axis]
+        for v in values:
+            if v not in valid:
+                rows.append((name, "ERROR", axis, repr(v),
+                             f"value {v!r} not in {valid}"))
+
+    # (d) Partial-tagging warning: FATES-specific axis tagged without use_fates: [true]
+    fates_tagged = set(applies_in.keys()) & fates_axes
+    if fates_tagged and not has_use_fates_true:
+        rows.append((name, "WARN", ", ".join(sorted(fates_tagged)), "—",
+                     "tags FATES-specific axis without use_fates: [true]; "
+                     "consider adding for explicitness"))
+
+    if not rows:
+        rows.append((name, "OK", "—", "—", "all axes valid"))
+    return rows
+
+
+def validate_applies_in(curated: dict) -> DimensionResult:
+    """Dimension F: validate `applies_in:` blocks across YAML.
+
+    Parameters, mechanisms, and outputs may each carry an optional
+    `applies_in:` block. This dimension confirms:
+
+      - Every axis name appears in ALL_AXIS_VALUES.
+      - Every value appears in ALL_AXIS_VALUES[axis].
+      - FATES-specific axes are not tagged without use_fates: [true]
+        (warning, not error — partial tagging works under default-permissive
+        logic but is brittle).
+
+    Untagged entries are NOT flagged; default-permissive design treats them
+    as universal (applies in all modes).
+    """
+    result = DimensionResult()
+    try:
+        axis_values, fates_axes = _load_axis_values()
+    except Exception as e:
+        result.extra_notes.append(
+            f"Could not load ALL_AXIS_VALUES from tools/config: {e}. Skipping Dim F."
+        )
+        return result
+
+    sections = ("parameters", "mechanisms", "outputs")
+    error_count = 0
+    warn_count = 0
+    ok_count = 0
+
+    for section in sections:
+        entries = curated.get(section) or {}
+        for entry_name, entry_data in entries.items():
+            if not isinstance(entry_data, dict):
+                continue
+            applies_in = entry_data.get("applies_in")
+            if applies_in is None:
+                # Universal entry — fine, no applies_in block needed
+                continue
+            rows = _validate_one_applies_in(
+                f"{section}.{entry_name}", applies_in, axis_values, fates_axes,
+            )
+            for row in rows:
+                _name, severity, _axis, _value, _msg = row
+                if severity == "ERROR":
+                    error_count += 1
+                elif severity == "WARN":
+                    warn_count += 1
+                else:
+                    ok_count += 1
+                result.rows.append(row)
+
+    result.total = ok_count + warn_count + error_count
+    # Pass = OK + WARN (warnings don't fail the dimension). Errors fail.
+    result.pass_count = ok_count + warn_count
+    if result.total == 0:
+        result.extra_notes.append(
+            "No applies_in: blocks present in YAML. "
+            "Phase B curation has not yet been applied; this is OK pre-Phase-B."
+        )
+    elif error_count > 0:
+        result.extra_notes.append(
+            f"{error_count} schema errors detected (axis or value typos). "
+            "Fix these before rebuilding the index."
+        )
+    if warn_count:
+        result.extra_notes.append(
+            f"{warn_count} partial-tagging warnings "
+            "(FATES-specific axis without use_fates: [true]). "
+            "Advisory; works under default-permissive logic."
+        )
+    return result
+
+
 def validate_citations(curated: dict, wiki: WikiCorpus,
                        sample_size: int = 10) -> DimensionResult:
     """Dimension E: sample calibration_notes citations and verify file existence."""
@@ -480,13 +617,18 @@ def write_report(out_path: Path,
                  curated: dict, wiki: WikiCorpus,
                  dim_a: DimensionResult, dim_b: DimensionResult,
                  dim_c: DimensionResult, dim_d: DimensionResult,
-                 dim_e: DimensionResult) -> None:
+                 dim_e: DimensionResult,
+                 dim_f: Optional[DimensionResult] = None) -> None:
     n_params = len(curated.get("parameters") or {})
     n_mechs = len(curated.get("mechanisms") or {})
     n_outs = len(collect_yaml_outputs(curated))
     n_files = len(wiki.files)
-    verdict = overall_verdict([dim_a, dim_b, dim_c, dim_d, dim_e])
+    dims = [dim_a, dim_b, dim_c, dim_d, dim_e]
+    if dim_f is not None:
+        dims.append(dim_f)
+    verdict = overall_verdict(dims)
     e_total = dim_e.total if dim_e.total else 0
+    f_total = dim_f.total if (dim_f is not None and dim_f.total) else 0
 
     out: List[str] = [
         f"# YAML-Wiki Validation: curated_relationships.yaml vs {wiki_root.name}",
@@ -508,21 +650,24 @@ def write_report(out_path: Path,
         f"- Total wiki .md files: {n_files}",
         "",
     ]
-    out += _table(
-        ["Dimension", "Status", "Pass / Total"],
-        [
-            ("A. Parameter coverage in wiki", color_for(dim_a.status),
-             f"{dim_a.pass_count}/{dim_a.total}"),
-            ("B. Mechanism coverage in wiki", color_for(dim_b.status),
-             f"{dim_b.pass_count}/{dim_b.total}"),
-            ("C. Output reference validity", color_for(dim_c.status),
-             f"{dim_c.pass_count}/{dim_c.total}"),
-            ("D. Code-reference resolution", color_for(dim_d.status),
-             f"{dim_d.pass_count}/{dim_d.total}"),
-            ("E. Citation freshness sample", color_for(dim_e.status),
-             f"{dim_e.pass_count}/{e_total}"),
-        ],
-    )
+    summary_rows = [
+        ("A. Parameter coverage in wiki", color_for(dim_a.status),
+         f"{dim_a.pass_count}/{dim_a.total}"),
+        ("B. Mechanism coverage in wiki", color_for(dim_b.status),
+         f"{dim_b.pass_count}/{dim_b.total}"),
+        ("C. Output reference validity", color_for(dim_c.status),
+         f"{dim_c.pass_count}/{dim_c.total}"),
+        ("D. Code-reference resolution", color_for(dim_d.status),
+         f"{dim_d.pass_count}/{dim_d.total}"),
+        ("E. Citation freshness sample", color_for(dim_e.status),
+         f"{dim_e.pass_count}/{e_total}"),
+    ]
+    if dim_f is not None:
+        summary_rows.append(
+            ("F. applies_in: schema (Phase B)", color_for(dim_f.status),
+             f"{dim_f.pass_count}/{f_total}"),
+        )
+    out += _table(["Dimension", "Status", "Pass / Total"], summary_rows)
     out += [
         "",
         f"**Overall verdict:** {verdict}",
@@ -602,6 +747,27 @@ def write_report(out_path: Path,
                       [(f"`{p}`", f"`{f}`", s) for p, f, s in dim_e.rows])
     out.append("")
 
+    if dim_f is not None:
+        out += ["## F. applies_in: schema (Phase B)", ""]
+        for n in dim_f.extra_notes:
+            out.append(f"- {n}")
+        if dim_f.rows:
+            out.append("")
+            # Show errors first, then warnings, then OK rows
+            ordered_rows = sorted(
+                dim_f.rows,
+                key=lambda r: {"ERROR": 0, "WARN": 1, "OK": 2}.get(r[1], 3),
+            )
+            out += _table(
+                ["Entry", "Severity", "Axis", "Value", "Message"],
+                [(f"`{n}`", s, f"`{a}`" if a != "—" else a,
+                  f"`{v}`" if v != "—" else v, m)
+                 for n, s, a, v, m in ordered_rows[:50]],
+            )
+            if len(dim_f.rows) > 50:
+                out.append(f"\n*({len(dim_f.rows) - 50} additional rows omitted)*")
+        out.append("")
+
     out += ["---", "", "## Summary recommendations", ""]
     for r in _build_recommendations(verdict, dim_a, dim_b, dim_c, dim_d, dim_e):
         out.append(f"- {r}")
@@ -667,11 +833,15 @@ def main() -> int:
     dim_e = validate_citations(curated, wiki)
     print(f"  {dim_e.pass_count}/{dim_e.total}  ({dim_e.status})")
 
+    print("Dimension F: applies_in: schema (Phase B)...")
+    dim_f = validate_applies_in(curated)
+    print(f"  {dim_f.pass_count}/{dim_f.total}  ({dim_f.status})")
+
     print(f"Writing report: {args.output}")
     write_report(args.output, args.yaml, args.wiki, args.param_file,
                  args.output_cdl, curated, wiki,
-                 dim_a, dim_b, dim_c, dim_d, dim_e)
-    verdict = overall_verdict([dim_a, dim_b, dim_c, dim_d, dim_e])
+                 dim_a, dim_b, dim_c, dim_d, dim_e, dim_f)
+    verdict = overall_verdict([dim_a, dim_b, dim_c, dim_d, dim_e, dim_f])
     print(f"Done. Overall verdict: {verdict}")
     return 0
 

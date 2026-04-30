@@ -982,20 +982,52 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
         injected ALL ~290 parameter definitions (~53K chars) into every prompt.
         This method retrieves only the relevant parameters/outputs (~5-10K chars).
 
+        Reads simulation mode (Doc 20 Phase A + Phase B) and applies:
+          - kb_source filter for ELM-only runs (Phase A)
+          - mode-aware where clause filtering chunks tagged inapplicable to
+            the active mode (Phase B)
+
         Falls back to empty string if RAG unavailable.
         """
         if not self.rag_retriever:
             return ""
+        config_mode = self._get_active_config_mode()
+        kb_source = config_mode.kb_source_filter() if config_mode else None
         try:
             # Resolve shorthand names to official FATES names for graph lookup
             resolved_params = self._resolve_param_names(param_names) if param_names else param_names
             return self.rag_retriever.get_targeted_context(
                 param_names=resolved_params, output_names=output_names,
-                mechanisms=mechanisms, pft=pft, include_docs=True
+                mechanisms=mechanisms, pft=pft, include_docs=True,
+                kb_source=kb_source,
+                config_mode=config_mode,
             )
         except Exception as e:
             logger.warning(f"Targeted param context retrieval failed: {e}")
             return ""
+
+    def _get_active_config_mode(self):
+        """Read ConfigMode from env (Phase B). Cached per call.
+
+        Returns None if ConfigMode cannot be parsed (e.g., invalid env state).
+        Callers handle None gracefully (no filtering applied).
+        """
+        try:
+            from tools.config import ConfigMode
+            return ConfigMode.from_env()
+        except Exception as e:
+            logger.warning(f"ConfigMode.from_env() failed: {e}; skipping mode filter")
+            return None
+
+    def _mode_kb_source_filter(self) -> Optional[str]:
+        """Read ConfigMode from env and return kb_source filter (or None).
+
+        Phase A backward-compat shim. New code should use
+        ``_get_active_config_mode()`` and call ``.kb_source_filter()`` on
+        the result; this preserves the old call sites unchanged.
+        """
+        config_mode = self._get_active_config_mode()
+        return config_mode.kb_source_filter() if config_mode else None
 
     def _get_rag_context(self,
                          parameters: List[str] = None,
@@ -1019,6 +1051,10 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
         if not self.rag_retriever:
             return ""
 
+        # Phase B: read ConfigMode once per call; pass through to all RAG calls
+        config_mode = self._get_active_config_mode()
+        kb_source_filter = config_mode.kb_source_filter() if config_mode else None
+
         try:
             context_parts = []
 
@@ -1034,7 +1070,8 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
                     mechanisms=mechanisms,
                     pft=pft,
                     n_vector_results=3,
-                    graph_depth=2
+                    graph_depth=2,
+                    config_mode=config_mode,
                 )
                 if cal_context.get('combined'):
                     context_parts.append(cal_context['combined'])
@@ -1045,7 +1082,9 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
                     query=query,
                     n_vector_results=3,
                     graph_depth=2,
-                    include_graph=True
+                    include_graph=True,
+                    kb_source=kb_source_filter,
+                    config_mode=config_mode,
                 )
                 if query_context.get('combined'):
                     context_parts.append(query_context['combined'])

@@ -132,6 +132,11 @@ class FATESVectorStore:
                                   'dimension_level', 'output_category'):
                     if extra_key in c:
                         meta[extra_key] = c[extra_key]
+                # Phase B: pass through mode-aware filter metadata
+                # (applies_universal, applies_in_<axis>_<value>, inactive)
+                for k, v in c.items():
+                    if k.startswith('applies_') or k == 'inactive':
+                        meta[k] = v
                 metadatas.append(meta)
             ids = [c['chunk_id'] for c in batch]
 
@@ -175,7 +180,9 @@ class FATESVectorStore:
         query: str,
         n_results: int = 5,
         filter_type: Optional[str] = None,
-        filter_source: Optional[str] = None
+        filter_source: Optional[str] = None,
+        kb_source: Optional[str] = None,
+        mode_where: Optional[dict] = None,
     ) -> list[dict]:
         """
         Query the vector store for relevant documents.
@@ -185,14 +192,37 @@ class FATESVectorStore:
             n_results: Maximum number of results to return
             filter_type: Filter by document type (e.g., 'codebase-wiki', 'official-docs')
             filter_source: Filter by source path (substring match)
+            kb_source: Filter by knowledge base source ('fates' or 'elm'). Set
+                       this to 'elm' for ELM-only runs (Doc 20 Phase A) so
+                       FATES content is excluded from retrieval. None = no filter.
+            mode_where: Pre-built ChromaDB ``where`` clause for mode-aware
+                        filtering (Doc 20 Phase B). Typically obtained from
+                        ``ConfigMode.to_chroma_where()``. Merged with the
+                        kb_source/type clauses under ``$and``.
 
         Returns:
             List of result dictionaries with content, source, type, distance
         """
         # Build where clause for filtering
-        where = None
+        clauses = []
         if filter_type:
-            where = {"type": filter_type}
+            clauses.append({"type": filter_type})
+        if kb_source:
+            clauses.append({"kb_source": kb_source})
+        # Phase B: merge mode-aware filter clause(s)
+        if mode_where:
+            # mode_where is typically {"$and": [...]} from ConfigMode.to_chroma_where().
+            # Flatten its inner clauses into our $and list to avoid nesting $and inside $and.
+            if isinstance(mode_where, dict) and "$and" in mode_where:
+                clauses.extend(mode_where["$and"])
+            else:
+                clauses.append(mode_where)
+        if not clauses:
+            where = None
+        elif len(clauses) == 1:
+            where = clauses[0]
+        else:
+            where = {"$and": clauses}
 
         # Query the collection
         results = self.collection.query(
@@ -230,7 +260,8 @@ class FATESVectorStore:
         self,
         query: str,
         n_results: int = 10,
-        category: Optional[str] = None
+        category: Optional[str] = None,
+        mode_where: Optional[dict] = None,
     ) -> list[dict]:
         """Query for parameter definitions only.
 
@@ -238,16 +269,17 @@ class FATESVectorStore:
             query: Search query
             n_results: Max results
             category: Filter by parameter category (e.g., 'cnp', 'alloc')
+            mode_where: Optional mode-aware filter clause (Doc 20 Phase B).
 
         Returns:
             List of result dicts filtered to parameter definitions
         """
-        where = {"entity_type": "parameter"}
+        clauses = [{"entity_type": "parameter"}]
         if category:
-            where = {"$and": [
-                {"entity_type": "parameter"},
-                {"param_category": category}
-            ]}
+            clauses.append({"param_category": category})
+        if mode_where and "$and" in mode_where:
+            clauses.extend(mode_where["$and"])
+        where = clauses[0] if len(clauses) == 1 else {"$and": clauses}
 
         try:
             results = self.collection.query(
@@ -282,7 +314,8 @@ class FATESVectorStore:
         self,
         query: str,
         n_results: int = 10,
-        dimension_level: Optional[str] = None
+        dimension_level: Optional[str] = None,
+        mode_where: Optional[dict] = None,
     ) -> list[dict]:
         """Query for output variable definitions only.
 
@@ -290,16 +323,17 @@ class FATESVectorStore:
             query: Search query
             n_results: Max results
             dimension_level: Filter by dimension level (e.g., 'site', 'pft', 'szpf')
+            mode_where: Optional mode-aware filter clause (Doc 20 Phase B).
 
         Returns:
             List of result dicts filtered to output definitions
         """
-        where = {"entity_type": "output"}
+        clauses = [{"entity_type": "output"}]
         if dimension_level:
-            where = {"$and": [
-                {"entity_type": "output"},
-                {"dimension_level": dimension_level}
-            ]}
+            clauses.append({"dimension_level": dimension_level})
+        if mode_where and "$and" in mode_where:
+            clauses.extend(mode_where["$and"])
+        where = clauses[0] if len(clauses) == 1 else {"$and": clauses}
 
         try:
             results = self.collection.query(
@@ -333,7 +367,9 @@ class FATESVectorStore:
         self,
         queries: list[str],
         n_results_per_query: int = 3,
-        deduplicate: bool = True
+        deduplicate: bool = True,
+        kb_source: Optional[str] = None,
+        mode_where: Optional[dict] = None,
     ) -> list[dict]:
         """
         Query with multiple queries and combine results.
@@ -342,6 +378,9 @@ class FATESVectorStore:
             queries: List of query strings
             n_results_per_query: Number of results per query
             deduplicate: Whether to remove duplicate results
+            kb_source: Forwarded to ``query()`` (Doc 20 Phase A)
+            mode_where: Forwarded to ``query()`` for mode-aware filtering
+                        (Doc 20 Phase B)
 
         Returns:
             Combined list of results
@@ -350,7 +389,8 @@ class FATESVectorStore:
         seen_sources = set()
 
         for query in queries:
-            results = self.query(query, n_results=n_results_per_query)
+            results = self.query(query, n_results=n_results_per_query,
+                                 kb_source=kb_source, mode_where=mode_where)
 
             for r in results:
                 if deduplicate:

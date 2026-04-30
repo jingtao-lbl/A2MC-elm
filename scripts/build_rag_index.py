@@ -41,6 +41,7 @@ import argparse
 import os
 import sys
 from pathlib import Path
+from typing import Optional
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
@@ -196,6 +197,44 @@ def resolve_param_files(args, version: ELMFATESVersion) -> tuple[str, str]:
     return param_file, output_file
 
 
+def resolve_elm_output_cdl(args, version, profile: Optional[str] = None) -> Optional[str]:
+    """Return absolute path to the ELM-side output CDL if available.
+
+    Companion to the FATES output CDL (resolve_param_files).
+
+    Resolution order:
+        1. ``--elm-output-cdl`` CLI arg
+        2. Milestone registry's ``elm_output_cdl`` field (v2.96+ schema)
+        3. Auto-detect: ``elm_output_info_<elm-commit-short>.cdl``
+
+    Returns None if no CDL is found at any of the above (build proceeds
+    with FATES-only outputs, as in v2.95 and earlier).
+    """
+    if args.elm_output_cdl:
+        return args.elm_output_cdl
+
+    # Check milestone registry first (v2.96+ schema)
+    if profile is not None:
+        try:
+            import json as _json
+            with open(_REPO_ROOT / "rag" / "milestones.json") as _f:
+                _ms = _json.load(_f)
+            milestone = _ms.get("milestones", {}).get(profile, {})
+            registered = milestone.get("elm_output_cdl")
+            if registered:
+                candidate = _REPO_ROOT / "docs" / "fates-knowledge-base" / registered
+                if candidate.exists():
+                    return str(candidate)
+        except Exception:
+            pass
+
+    if version is None or version.elm is None:
+        return None
+    elm_short = version.elm.commit_short
+    candidate = _REPO_ROOT / "docs" / "fates-knowledge-base" / f"elm_output_info_{elm_short}.cdl"
+    return str(candidate) if candidate.exists() else None
+
+
 def resolve_curated_yaml(args, profile: str) -> str:
     """Return the curated YAML path for this profile.
 
@@ -284,6 +323,13 @@ def main():
         help="FATES output CDL. Auto-detected from FATES commit short SHA if not given.",
     )
     parser.add_argument(
+        "--elm-output-cdl", default=None,
+        help="ELM core output CDL. Auto-detected from ELM commit short SHA "
+             "(e.g. elm_output_info_d40b843.cdl). Optional but recommended for "
+             "complete ELM-side output coverage; without it, ~1640 ELM core "
+             "variables are absent from the vector index.",
+    )
+    parser.add_argument(
         "--curated-yaml", default=None,
         help="Curated relationships YAML. Auto-detected: per-profile snapshot "
              "(rag/data/curated_relationships_<profile>.yaml) if it exists, "
@@ -316,6 +362,7 @@ def main():
     rag_dir = resolve_rag_dir()
     fates_wiki_subdir, elm_wiki_subdir = resolve_wiki_subdirs(args, version)
     fates_param_file, output_var_file = resolve_param_files(args, version)
+    elm_output_var_file = resolve_elm_output_cdl(args, version, profile=profile)
     curated_yaml = resolve_curated_yaml(args, profile)
 
     # FATES first by convention; --kb-paths order matters for wiki_subdirs alignment.
@@ -388,6 +435,7 @@ def main():
             fates_param_file=fates_param_file,
             fates_param_file_format=fates_param_format,
             output_var_file=output_var_file,
+            elm_output_var_file=elm_output_var_file,
             curated_yaml_path=curated_yaml,
             stats={
                 "chunk_count": chunk_count,
@@ -410,19 +458,32 @@ def main():
                 knowledge_base_path=kb_paths,
                 persist_dir=str(persist_dir),
                 rebuild=True,
+                wiki_subdirs=wiki_subdirs,
             )
         else:
             retriever = FATESRetriever(
                 knowledge_base_path=kb_paths,
                 persist_dir=str(persist_dir),
                 auto_build=True,
+                wiki_subdirs=wiki_subdirs,
             )
         if not args.no_definitions:
             print("\n" + "-" * 40)
             print("Indexing parameter/output definitions...")
+            # Phase B: pass curated YAML so per-parameter chunks inherit
+            # applies_in: tags from matching YAML entities.
+            try:
+                import yaml as _yaml
+                with open(curated_yaml) as _f:
+                    _curated_yaml_data = _yaml.safe_load(_f)
+            except Exception as _e:
+                print(f"  Warning: could not load curated YAML for Phase B tagging: {_e}")
+                _curated_yaml_data = None
             definition_chunks = load_parameter_descriptions(
                 param_cdl_path=fates_param_file,
                 output_cdl_path=output_var_file,
+                curated_yaml_data=_curated_yaml_data,
+                elm_output_cdl_path=elm_output_var_file,
             )
             if definition_chunks:
                 print(f"Adding {len(definition_chunks)} definition chunks...")
@@ -447,6 +508,7 @@ def main():
                 include_pft_specific=True,
                 param_cdl_path=fates_param_file,
                 output_cdl_path=output_var_file,
+                elm_output_cdl_path=elm_output_var_file,
             )
         else:
             print(f"Loading existing graph from: {g_path}")

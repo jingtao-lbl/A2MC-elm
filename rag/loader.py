@@ -14,6 +14,140 @@ from pathlib import Path
 from typing import Optional
 
 
+# =============================================================================
+# Mode-aware path-prefix tagging (Phase B Chunk B.2.3 — zero-leakage)
+# =============================================================================
+#
+# Each entry maps a wiki source path GLOB to an `applies_in:` block. The path
+# is matched against `chunk['source']` (relative to the wiki tree root). On
+# match, chunks under that path inherit the listed flags via
+# `tools.config.build_applies_in_flags()`. On no match, chunks get
+# `applies_universal: True`.
+#
+# Source: docs/21_Mode_Aware_RAG_Phase_B_Implementation.md §B.2.3
+# Audit: memory/dev_logs/20260429b_Phase_B_Wiki_And_YAML_Audit.md
+
+# Globs evaluated against the chunk's `source` field. First match wins
+# (the table is ordered most-specific to least-specific where it matters).
+_WIKI_PATH_PREFIX_TAGS = [
+    # ---- Tier 2 FATES feature flags (5 dirs / 11 docs) ----
+    # Fire mechanisms: only applicable when SPITFIRE is on
+    ("fire/", {
+        "use_fates": [True],
+        "fates_spitfire_mode": [1, 2],
+    }),
+    # Plant hydraulics: only when use_fates_planthydro=True
+    ("biophysics/hydraulics/", {
+        "use_fates": [True],
+        "use_fates_planthydro": [True],
+    }),
+    # Logging mechanisms: only when use_fates_logging=True
+    ("logging/", {
+        "use_fates": [True],
+        "use_fates_logging": [True],
+    }),
+    # ---- Inverse-tagged docs (apply when the feature is OFF) ----
+    # BTRAN empirical pathway applies when hydraulics is OFF
+    ("biophysics/transpiration.md", {
+        "use_fates": [True],
+        "use_fates_planthydro": [False],
+    }),
+    # Regular photosynthesis runs when prescribed_phys is OFF
+    ("biophysics/photosynthesis.md", {
+        "use_fates": [True],
+        "use_fates_ed_prescribed_phys": [False],
+    }),
+    # ---- Theory-doc level filtering (zero-leakage) ----
+    # CNP allocation theory: only PARTEH=2 + N or NP nutrient
+    ("plant-physiology/parteh/cnp_allocation.md", {
+        "use_fates": [True],
+        "parteh_mode": [2],
+        "nutrient": ["cn", "cnp"],
+    }),
+    # Nutrient uptake mechanics: only PARTEH=2 + N or NP nutrient
+    ("plant-physiology/parteh/soil_plant_interface.md", {
+        "use_fates": [True],
+        "parteh_mode": [2],
+        "nutrient": ["cn", "cnp"],
+    }),
+    # Carbon-only allocation theory: only PARTEH=1
+    ("plant-physiology/parteh/carbon_only.md", {
+        "use_fates": [True],
+        "parteh_mode": [1],
+    }),
+    # CNP calibration playbook: PARTEH=2 + N or NP
+    ("advanced/cnp_calibration_guide.md", {
+        "use_fates": [True],
+        "parteh_mode": [2],
+        "nutrient": ["cn", "cnp"],
+    }),
+    # ECA/RD competition theory: PARTEH=2 + N or NP
+    ("advanced/nutrient_competition.md", {
+        "use_fates": [True],
+        "parteh_mode": [2],
+        "nutrient": ["cn", "cnp"],
+    }),
+    # Crown damage mortality: future use_fates_tree_damage flag (out of scope);
+    # tag with use_fates only so it filters out for ELM-only runs
+    ("plant-physiology/crown_damage.md", {
+        "use_fates": [True],
+    }),
+    # ---- Official-docs .rst PARTEH theory (parteh/* directory) ----
+    # The .rst files under fates-official-docs/docs/source/parteh/ describe
+    # both PARTEH=1 carbon-only and PARTEH=2 CNP allocation in detail. Most
+    # are CNP-specific (h2_*) or carbon-only (h1_*); blanket-tag the parteh/
+    # subdirectory with use_fates: [true] + parteh_mode: [2] (the dominant
+    # use). Carbon-only-specific files would need their own pattern, but the
+    # codebase-wiki carbon_only.md already covers PARTEH=1 theory.
+    ("parteh/h2_", {
+        "use_fates": [True],
+        "parteh_mode": [2],
+        "nutrient": ["cn", "cnp"],
+    }),
+]
+
+
+def path_prefix_tags(source: str) -> Optional[dict]:
+    """Return the applies_in: block for a wiki source path, or None on no match.
+
+    `source` is the chunk's `source` field (relative to the wiki tree root).
+
+    Matching rules (first match wins, table order):
+      - Pattern ending with ``/`` is a directory prefix; matches anything
+        whose source starts with the pattern (e.g. ``fire/`` matches
+        ``fire/ignition.md``).
+      - Pattern ending with a literal filename (``.md`` or ``.rst``) is an
+        exact-or-suffix match (handles wiki-tree-relative paths and absolute
+        paths alike).
+      - Other patterns are filename-prefix matches: ``parteh/h2_`` matches
+        any source containing that substring at the start of the basename
+        (e.g. ``parteh/h2_callom_flexstoich.rst``). Used for tagging
+        groups of related files by name.
+
+    Returns
+    -------
+    Optional[dict]
+        The applies_in: dict if a path-prefix entry matches, None otherwise.
+        None means the chunk is universal (applies_universal: True will be set).
+    """
+    if not source:
+        return None
+    for path_glob, tags in _WIKI_PATH_PREFIX_TAGS:
+        if path_glob.endswith("/"):
+            # Directory prefix
+            if source.startswith(path_glob):
+                return tags
+        elif path_glob.endswith(".md") or path_glob.endswith(".rst"):
+            # Specific filename match (exact or suffix)
+            if source == path_glob or source.endswith("/" + path_glob):
+                return tags
+        else:
+            # Filename-prefix substring (e.g. 'parteh/h2_')
+            if path_glob in source:
+                return tags
+    return None
+
+
 def load_markdown_files(base_path: str) -> list[dict]:
     """
     Load all markdown files from a directory.
@@ -138,6 +272,18 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 
+def _build_chunk_mode_flags(source: str) -> dict:
+    """Build the applies_in_* metadata flags for a wiki chunk by source path.
+
+    Looks up the path against `_WIKI_PATH_PREFIX_TAGS` and returns either
+    per-axis flags (for a path-prefix match) or `{'applies_universal': True}`.
+    """
+    # Lazy import to avoid circular dependency at module load time
+    from tools.config import build_applies_in_flags
+    tags = path_prefix_tags(source)
+    return build_applies_in_flags(tags)
+
+
 def chunk_documents(
     docs: list[dict],
     chunk_size: int = 1000,
@@ -183,16 +329,26 @@ def chunk_documents(
         doc_chunks = _recursive_split(content, separators, chunk_size, chunk_overlap)
 
         # Filter out too-small chunks and create chunk records
+        kb = doc.get('kb_source', '')
+        # Prefix chunk_id with kb_source to avoid collisions when multiple
+        # KBs have files with identical names (e.g., FATES index.md vs ELM index.md).
+        id_prefix = f"{kb}/" if kb else ""
+        # Mode-aware metadata: path-prefix tags (Phase B Chunk B.2.3)
+        mode_flags = _build_chunk_mode_flags(doc['source'])
+
         for i, chunk_text in enumerate(doc_chunks):
             if len(chunk_text) >= min_chunk_size:
-                chunks.append({
+                chunk = {
                     'content': chunk_text,
                     'source': doc['source'],
                     'type': doc['type'],
                     'title': doc.get('title', ''),
                     'format': doc.get('format', 'unknown'),
-                    'chunk_id': f"{doc['source']}::chunk_{i}"
-                })
+                    'kb_source': kb,  # propagate to chunk
+                    'chunk_id': f"{id_prefix}{doc['source']}::chunk_{i}",
+                }
+                chunk.update(mode_flags)
+                chunks.append(chunk)
 
     return chunks
 
@@ -518,7 +674,9 @@ DEFAULT_KNOWLEDGE_BASES = [
 
 def load_parameter_descriptions(
     param_cdl_path: str,
-    output_cdl_path: str = None
+    output_cdl_path: str = None,
+    curated_yaml_data: Optional[dict] = None,
+    elm_output_cdl_path: str = None,
 ) -> list[dict]:
     """Generate document chunks from CDL metadata for vector indexing.
 
@@ -545,6 +703,13 @@ def load_parameter_descriptions(
     """
     chunks = []
 
+    # Lazy import for mode-aware tagging
+    from tools.config import build_applies_in_flags
+
+    # Pre-build a name → applies_in lookup from curated YAML (B.2.2)
+    yaml_params = (curated_yaml_data or {}).get('parameters') or {}
+    yaml_outputs = (curated_yaml_data or {}).get('outputs') or {}
+
     # --- Parameter definitions ---
     if param_cdl_path:
         from .parameter_parser import FATESParameterParser, CATEGORIES
@@ -568,30 +733,72 @@ def load_parameter_descriptions(
                     f"Category: {cat_name}"
                 )
 
-                chunks.append({
+                # Mode-aware metadata: inherit applies_in: from YAML entity
+                # of the same name. Untagged parameters are universal.
+                yaml_entry = yaml_params.get(name) or {}
+                applies_in = yaml_entry.get('applies_in')
+                inactive = bool(yaml_entry.get('inactive', False))
+                mode_flags = build_applies_in_flags(applies_in)
+
+                chunk = {
                     'content': content,
                     'source': f'fates_params_info.cdl::{name}',
                     'type': 'parameter_definition',
                     'title': f'Parameter: {name}',
                     'format': 'cdl',
+                    'kb_source': 'fates',  # FATES parameter file
                     'chunk_id': f'param_def::{name}',
                     'entity_type': 'parameter',
                     'param_category': param.category_key,
                     'is_pft_specific': str(param.is_pft_specific),
-                })
+                }
+                chunk.update(mode_flags)
+                if inactive:
+                    chunk['inactive'] = True
+                chunks.append(chunk)
 
             print(f"  Generated {len(chunks)} parameter definition chunks")
         except Exception as e:
             print(f"  Warning: Could not load parameter definitions: {e}")
 
     # --- Output variable definitions ---
-    if output_cdl_path:
+    # Two-CDL setup (v2.96+): FATES core registry + ELM core registry.
+    # Each is parsed independently and merged into all_vars. ELM vars override
+    # only on duplicate name (rare), with the FATES CDL source winning.
+    if output_cdl_path or elm_output_cdl_path:
         from .output_parser import FATESOutputParser
         try:
-            out_parser = FATESOutputParser(output_cdl_path)
-            fates_vars = out_parser.get_fates_variables()
-            key_elm = out_parser.get_key_elm_variables()
-            all_vars = {**fates_vars, **key_elm}
+            all_vars = {}
+            sources = {}  # name -> source CDL filename for the chunk's `source` field
+
+            # FATES outputs first (existing path)
+            if output_cdl_path:
+                fates_parser = FATESOutputParser(output_cdl_path)
+                fates_vars = fates_parser.get_fates_variables()
+                key_elm = fates_parser.get_key_elm_variables()
+                fates_basename = Path(output_cdl_path).name
+                for name, var in {**fates_vars, **key_elm}.items():
+                    all_vars[name] = var
+                    sources[name] = fates_basename
+
+            # ELM-side outputs (Phase B follow-up; v2.96+).
+            # Skip names already in all_vars (FATES CDL takes precedence on dupe).
+            if elm_output_cdl_path:
+                elm_parser = FATESOutputParser(elm_output_cdl_path)
+                # The ELM CDL has the SAME structure (parser doesn't care that
+                # the file represents ELM core variables — variable shapes
+                # and CDL syntax are identical). Both methods retrieve
+                # variables; for the ELM-only CDL we use parse() directly
+                # to get all variables without the FATES_ filter.
+                elm_all = elm_parser.parse()
+                elm_basename = Path(elm_output_cdl_path).name
+                added_elm = 0
+                for name, var in elm_all.items():
+                    if name in all_vars:
+                        continue
+                    all_vars[name] = var
+                    sources[name] = elm_basename
+                    added_elm += 1
 
             out_count = 0
             for name, var in all_vars.items():
@@ -606,17 +813,28 @@ def load_parameter_descriptions(
                     f"Category: {var.category}"
                 )
 
-                chunks.append({
+                # Mode-aware metadata: inherit applies_in: from YAML output
+                # entity of the same name; universal otherwise.
+                yaml_entry = yaml_outputs.get(name) or {}
+                applies_in = yaml_entry.get('applies_in')
+                mode_flags = build_applies_in_flags(applies_in)
+
+                chunk = {
                     'content': content,
-                    'source': f'elm_fates_output_info.cdl::{name}',
+                    'source': f'{sources.get(name, "output.cdl")}::{name}',
                     'type': 'output_definition',
                     'title': f'Output: {name}',
                     'format': 'cdl',
+                    # is_fates is set per output variable in FATESOutputParser:
+                    # output CDL contains both FATES_* (FATES) and ELM bare-name vars (ELM)
+                    'kb_source': 'fates' if var.is_fates else 'elm',
                     'chunk_id': f'output_def::{name}',
                     'entity_type': 'output',
                     'dimension_level': var.dimension_level,
                     'output_category': var.category,
-                })
+                }
+                chunk.update(mode_flags)
+                chunks.append(chunk)
                 out_count += 1
 
             print(f"  Generated {out_count} output definition chunks")

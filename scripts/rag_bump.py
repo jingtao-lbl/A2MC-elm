@@ -201,7 +201,12 @@ def build_plan(
             "T3 bump: new api epoch. Wiki regen required: 10 FATES + 6 ELM "
             "topics must be rewritten against the new source. After wiki regen, "
             "rebuild graph + ChromaDB + write metadata + freeze curated YAML "
-            "snapshot."
+            "snapshot. v2.96+ note: also re-extract the ELM output CDL via "
+            "`python scripts/extract_elm_outputs.py --elm-src <path>/components/elm/src "
+            "--elm-commit <new-elm-commit-short>` and re-extract the FATES output "
+            "registry CDL (matching the FATES wiki regen workflow). Register both "
+            "in milestones.json under the new milestone's `fates_output_cdl` and "
+            "`elm_output_cdl` fields."
         )
 
     return plan

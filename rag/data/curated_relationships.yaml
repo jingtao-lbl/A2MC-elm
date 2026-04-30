@@ -112,6 +112,10 @@ categories:
 mechanisms:
   PID_Controller:
     description: "Proportional-Integral-Derivative controller for C:N:P allocation"
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cn, cnp]
     code_reference: "parteh/PRTAllometricCNPMod.F90::CNPAdjustFRootTargets"
     doc_reference: "Knox et al. 2024 CNP Guidebook"
     parameters:
@@ -134,6 +138,11 @@ mechanisms:
 
   ECA_Competition:
     description: "Equilibrium Chemistry Approximation for nutrient uptake"
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cnp]
+      nutrient_comp_pathway: [eca]
     code_reference: "biogeochem/FatesSoilBGCFluxMod.F90"
     doc_reference: "Knox et al. 2024 Section 11"
     parameters:
@@ -161,6 +170,11 @@ mechanisms:
 
   RD_Competition:
     description: "Relative Demand approach for nutrient uptake"
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cnp]
+      nutrient_comp_pathway: [rd]
     code_reference: "biogeochem/FatesSoilBGCFluxMod.F90"
     parameters:
       - fates_cnp_vmax_nh4
@@ -941,6 +955,10 @@ parameters:
   # CNP Parameters
   fates_cnp_pid_kp:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cn, cnp]
     controls:
       - PID_Controller
     affects:
@@ -958,6 +976,10 @@ parameters:
 
   fates_cnp_pid_ki:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cn, cnp]
     controls:
       - PID_Controller
     affects:
@@ -972,6 +994,10 @@ parameters:
 
   fates_cnp_pid_kd:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cn, cnp]
     controls:
       - PID_Controller
     affects:
@@ -986,6 +1012,12 @@ parameters:
 
   fates_cnp_vmax_p:
     category: cnp
+    applies_in:
+      # vmax_p applies in BOTH ECA and RD pathways (per mechanism notes), so
+      # do not narrow by nutrient_comp_pathway.
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cnp]
     controls:
       - ECA_Competition
     affects:
@@ -1003,6 +1035,11 @@ parameters:
 
   fates_cnp_eca_vmax_ptase:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cnp]
+      nutrient_comp_pathway: [eca]
     controls:
       - ECA_Competition
     affects:
@@ -1016,6 +1053,9 @@ parameters:
 
   fates_cnp_eca_alpha_ptase:
     category: cnp
+    # NO applies_in: this parameter is INACTIVE in api-43-1 source
+    # (EDPftvarcon.F90:1044 aborts if non-zero). Kept for documentation only.
+    inactive: true
     controls:
       - ECA_Competition
     affects:
@@ -1024,6 +1064,7 @@ parameters:
       - fates_cnp_eca_vmax_ptase
       - fates_cnp_eca_lambda_ptase
     calibration_notes: |
+      INACTIVE in api-43-1: validation at EDPftvarcon.F90:1044 aborts on non-zero.
       Phosphatase mining cost coefficient (per unit C invested).
       Higher values raise the C cost of mining organic P, reducing P uptake
       via the ECA pathway. Tune jointly with vmax_ptase and lambda_ptase
@@ -1031,6 +1072,11 @@ parameters:
 
   fates_cnp_eca_decompmicc:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cnp]
+      nutrient_comp_pathway: [eca]
     controls:
       - ECA_Competition
     affects:
@@ -1046,6 +1092,9 @@ parameters:
 
   fates_cnp_eca_lambda_ptase:
     category: cnp
+    # NO applies_in: this parameter is INACTIVE in api-43-1 source
+    # (EDPftvarcon.F90:1038 aborts if non-zero). Kept for documentation only.
+    inactive: true
     controls:
       - ECA_Competition
     affects:
@@ -1054,12 +1103,18 @@ parameters:
       - fates_cnp_eca_vmax_ptase
       - fates_cnp_eca_alpha_ptase
     calibration_notes: |
+      INACTIVE in api-43-1: validation at EDPftvarcon.F90:1038 aborts on non-zero.
       Phosphatase decay constant (1/s). Controls how quickly phosphatase
       activity dissipates after production. Tune with vmax_ptase and
       alpha_ptase as a coordinated triplet.
 
   fates_cnp_eca_plant_escalar:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cnp]
+      nutrient_comp_pathway: [eca]
     controls:
       - ECA_Competition
     affects:
@@ -1258,6 +1313,10 @@ parameters:
   # Storage and Stability Parameters (Knox 2026 recommendations)
   fates_cnp_nitr_store_ratio:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cn, cnp]
     controls:
       - Storage_Allocation
     affects:
@@ -1272,6 +1331,10 @@ parameters:
 
   fates_cnp_phos_store_ratio:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cnp]
     controls:
       - Storage_Allocation
     affects:
@@ -1286,6 +1349,10 @@ parameters:
 
   fates_cnp_store_ovrflw_frac:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cn, cnp]
     controls:
       - Storage_Allocation
     affects:
@@ -1299,6 +1366,10 @@ parameters:
   # Retranslocation Parameters
   fates_cnp_turnover_nitr_retrans:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cn, cnp]
     controls:
       - Nutrient_Uptake
     affects:
@@ -1313,6 +1384,10 @@ parameters:
 
   fates_cnp_turnover_phos_retrans:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cnp]
     controls:
       - Nutrient_Uptake
     affects:
@@ -1328,6 +1403,10 @@ parameters:
   # N Fixation Parameter
   fates_cnp_nfix1:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cn, cnp]
     controls:
       - Nutrient_Uptake
     affects:
@@ -1342,6 +1421,11 @@ parameters:
   # KM Parameters
   fates_cnp_eca_km_nh4:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cn, cnp]
+      nutrient_comp_pathway: [eca]
     controls:
       - ECA_Competition
     affects:
@@ -1357,6 +1441,11 @@ parameters:
 
   fates_cnp_eca_km_no3:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cn, cnp]
+      nutrient_comp_pathway: [eca]
     controls:
       - ECA_Competition
     affects:
@@ -1372,6 +1461,11 @@ parameters:
 
   fates_cnp_eca_km_p:
     category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cnp]
+      nutrient_comp_pathway: [eca]
     controls:
       - ECA_Competition
     affects:

@@ -86,6 +86,26 @@ Hard error on missing `A2MC_MODEL_PATH` — version association is mandatory.
 
 ---
 
+## Relation to mode-aware retrieval (Phase B / v2.92)
+
+Version association and mode-aware retrieval are **orthogonal**:
+
+- **Milestone selection** (this doc) decides WHICH RAG profile loads — what's in the chunk corpus.
+- **Mode-aware filtering** (`mode_aware_workflow.md`) decides WHICH chunks within that profile pass at retrieval time, based on the active `ConfigMode` (env vars + `A2MC_ELM_OPTIONS`).
+
+Adopters configure both:
+
+```bash
+# Site config
+export A2MC_MODEL_PATH="/path/to/E3SM-checkout"           # version association
+export A2MC_ELM_OPTIONS="-bgc fates -nutrient cnp -nutrient_comp_pathway eca"  # mode
+export A2MC_FATES_PARTEH_MODE=2                            # mode
+```
+
+Each milestone profile has its own per-milestone YAML (`rag/data/curated_relationships_<profile>.yaml`) carrying its own `applies_in:` tags. Mode filters apply per-profile after the milestone is selected.
+
+---
+
 ## End-user workflows
 
 ### Workflow 1: First-time setup
