@@ -146,11 +146,15 @@ After any build with curation changes, run the validation quadrilateral (`docs/a
 | `hybrid_retriever.py` | ~750 | Combined vector+graph retrieval. **`get_targeted_context()` is the primary API used by ReasoningModule**. Also `get_calibration_context()`, `get_parameter_info()`, etc. | Yes — class name, mechanism keyword map |
 | `data/curated_relationships.yaml` | ~1387 | Layer 2 overlay: 7 mechanisms + ~65 parameters + ~100 outputs + 6 category groups, all with `controls`/`affects`/`related_to`/`controlled_by`/`key_parameters` edges and calibration notes | **Entirely** FATES-specific content (schema is model-agnostic) |
 
-### Build entry point
+### Build entry points
+
+A2MC has three entry points into the build pipeline; pick by use case:
 
 | File | Role |
 |---|---|
-| `scripts/build_rag_index.py` | The CLI driver. Two-phase build: vector index then knowledge graph. CLI flags: `--rebuild`, `--test`, `--graph-only`, `--vector-only`, `--no-definitions`, `--kb-path`, `--persist-dir`, `--graph-path`, `--param-cdl`, `--output-cdl` |
+| `scripts/build_rag_index.py` | The low-level CLI driver. Two-phase build: vector index then knowledge graph. CLI flags: `--rebuild`, `--test`, `--graph-only`, `--vector-only`, `--no-definitions`, `--kb-path`, `--persist-dir`, `--graph-path`, `--param-cdl`, `--output-cdl`, `--elm-output-cdl`, `--record-metadata-only` |
+| `scripts/rag_bump.py` | Tier-aware orchestrator (T1 / T2 / T3) + three execution modes (`prompt-pack`, `api`, `auto`). Use this for any version bump: it classifies the bump and runs the appropriate workflow (metadata refresh / partial rebuild / full wiki regen + rebuild). |
+| `tools/auto_rebuild.py` | (v2.98) The orchestrator's auto-rebuild path. Invoked from `_check_rag_alignment()` when drift is detected and `A2MC_RAG_AUTO_REBUILD=true`. Internally dispatches to `rag_refresh.refresh_metadata()` (T1, in-process) or `rag_bump.py --mode auto` (T2 / T3-near, subprocess), with `<profile>.previous/` snapshot + validator gate + rollback. T3-distant always emits prompt-pack and aborts. See docs/22. |
 
 ### Persistent state (output of build)
 

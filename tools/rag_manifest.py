@@ -59,6 +59,8 @@ class Milestone:
     elm_commit_built: Optional[str] = None
     elm_wiki_subdir: Optional[str] = None
     fates_wiki_subdir: Optional[str] = None
+    fates_output_cdl: Optional[str] = None  # v2.96+: filename under docs/fates-knowledge-base/
+    elm_output_cdl: Optional[str] = None    # v2.96+: filename under docs/fates-knowledge-base/
     covers_sci_tags: List[str] = field(default_factory=list)
     canonical: bool = False
     legacy: bool = False
@@ -77,6 +79,8 @@ class Milestone:
             "elm_commit_built": self.elm_commit_built,
             "elm_wiki_subdir": self.elm_wiki_subdir,
             "fates_wiki_subdir": self.fates_wiki_subdir,
+            "fates_output_cdl": self.fates_output_cdl,
+            "elm_output_cdl": self.elm_output_cdl,
             "covers_sci_tags": list(self.covers_sci_tags),
             "canonical": self.canonical,
             "legacy": self.legacy,
@@ -98,6 +102,8 @@ class Milestone:
             elm_commit_built=body.get("elm_commit_built"),
             elm_wiki_subdir=body.get("elm_wiki_subdir"),
             fates_wiki_subdir=body.get("fates_wiki_subdir"),
+            fates_output_cdl=body.get("fates_output_cdl"),
+            elm_output_cdl=body.get("elm_output_cdl"),
             covers_sci_tags=list(body.get("covers_sci_tags", [])),
             canonical=bool(body.get("canonical", False)),
             legacy=bool(body.get("legacy", False)),

@@ -1,6 +1,6 @@
 # Mode-Aware Retrieval Verification Report
 
-**Generated:** 2026-04-30T19:42:11+00:00
+**Generated:** 2026-04-30T18:57:05+00:00
 
 Doc 20 Phase A + Phase B verification. Runs the unittest fixture suite at `tests/test_mode_filters.py` plus a real-index smoke test (kb_source + mode-aware filter end-to-end) plus the Tier 4 mode-metadata validator (Doc 21 Chunk B.3.5).
 
@@ -21,7 +21,7 @@ Doc 20 Phase A + Phase B verification. Runs the unittest fixture suite at `tests
 | kb_source populated on all chunks (no MISSING/empty) | PASS | total=6326, fates=3270, elm=3056, missing/empty=0 |
 | kb_source='fates' returns only FATES chunks | PASS | got 5 results, kb_sources={'fates'} |
 | kb_source='elm' returns only ELM chunks | PASS | got 5 results, kb_sources={'elm'} |
-| no filter returns mixed kb_sources | PASS | got 10 results, kb_sources={'fates', 'elm'} |
+| no filter returns mixed kb_sources | PASS | got 10 results, kb_sources={'elm', 'fates'} |
 | ConfigMode default (bgc=sp -> ELM-only) -> kb_source_filter() == 'elm' | PASS | got 'elm' |
 | ConfigMode(bgc_mode='fates') -> kb_source_filter() = None | PASS | got None |
 

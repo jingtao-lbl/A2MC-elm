@@ -387,6 +387,72 @@ def run_cross_milestone_validator() -> dict:
         return {"error": str(e), "verdict": "Error"}
 
 
+# =============================================================================
+# In-process entry point for orchestrator validator gate (v2.98 Chunk C)
+# =============================================================================
+
+def run_all_validators(profile_name: str = "api-43-1",
+                       *, include_smoke: bool = True) -> dict:
+    """Run all five validation layers in-process and return a unified verdict.
+
+    Used by the orchestrator's auto-rebuild path (docs/22 Chunk D) as a
+    post-rebuild gate: a Red verdict triggers rollback to the previous
+    profile snapshot.
+
+    Args:
+        profile_name: milestone profile to validate (default ``"api-43-1"``).
+        include_smoke: when True (default), runs the unit fixture suite and
+            real-index smoke tests in addition to the four named validators.
+            Set False for a faster gate when only the rebuilt profile's
+            content needs checking.
+
+    Returns:
+        ``{'verdict': 'Green' | 'Red', 'details': {layer_name: {...}}}``
+        where ``layer_name`` covers ``fixtures``, ``smoke``, ``tier4``,
+        ``snapshot``, ``completeness``, ``cross_milestone``. Each layer's
+        sub-dict matches what the per-layer ``run_*`` function returns.
+
+    Verdict rules mirror ``main()`` exactly:
+        - fixtures: PASS iff failures == 0 and errors == 0
+        - smoke: PASS iff every test result is True
+        - tier4 / completeness / cross_milestone: PASS for verdicts in
+          {Green, Yellow, Skipped} (Yellow is informational, not blocking)
+        - snapshot: PASS only for {Green, Skipped} (snapshot Yellow is
+          treated as Red because it indicates a real fixture mismatch)
+    """
+    details: dict = {}
+    layer_oks: list[bool] = []
+
+    if include_smoke:
+        details["fixtures"] = run_fixtures()
+        layer_oks.append(
+            details["fixtures"]["failures"] == 0
+            and details["fixtures"]["errors"] == 0
+        )
+        details["smoke"] = run_real_index_smoke()
+        smoke_pass = sum(1 for t in details["smoke"]["tests"] if t["result"])
+        layer_oks.append(smoke_pass == len(details["smoke"]["tests"]))
+
+    details["tier4"] = run_tier4_validator(profile_name)
+    layer_oks.append(details["tier4"].get("verdict") in ("Green", "Yellow", "Skipped"))
+
+    details["snapshot"] = run_snapshot_validator(profile_name)
+    layer_oks.append(details["snapshot"].get("verdict") in ("Green", "Skipped"))
+
+    details["completeness"] = run_completeness_validator(profile_name)
+    layer_oks.append(details["completeness"].get("verdict") in ("Green", "Yellow", "Skipped"))
+
+    details["cross_milestone"] = run_cross_milestone_validator()
+    layer_oks.append(
+        details["cross_milestone"].get("verdict") in ("Green", "Yellow", "Skipped")
+    )
+
+    return {
+        "verdict": "Green" if all(layer_oks) else "Red",
+        "details": details,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Verify mode-aware retrieval (Doc 20 Phase A + Phase B)."

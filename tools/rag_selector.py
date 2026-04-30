@@ -323,19 +323,41 @@ def get_milestone_param_sha(rag_dir: Path, profile_name: str) -> Optional[str]:
 # Helper: determine bump tier (T1 / T2 / T3) for the rag_bump tool
 # =============================================================================
 
+@dataclass
+class BumpClassification:
+    """Tier classification + epoch distance for orchestrator dispatch.
+
+    `tier` drives which rebuild workflow runs (`rag_bump.py` mode).
+    `epoch_distance` is 0 for T1 / T2 (within-epoch) and >0 for T3
+    (`abs(major_a-major_b)*100 + abs(minor_a-minor_b)`); the orchestrator
+    uses it to decide whether T3 is close enough to auto-rebuild
+    (see docs/22 §3.2).
+    """
+    tier: str            # 'T1' | 'T2' | 'T3'
+    epoch_distance: int  # 0 for T1/T2; >0 for T3
+
+    def to_dict(self) -> dict:
+        return {"tier": self.tier, "epoch_distance": self.epoch_distance}
+
+
 def classify_bump_tier(selection: RAGSelection,
-                       user_param_sha_matches: bool) -> str:
-    """Return 'T1', 'T2', or 'T3' for `rag_bump.py` orchestration.
+                       user_param_sha_matches: bool) -> BumpClassification:
+    """Classify a bump as T1 / T2 / T3 with epoch distance.
 
     T1: same epoch, sha matches, no rebuild needed (just metadata refresh).
     T2: same epoch, sha differs (param-file-only delta — partial rebuild).
     T3: different epoch (full new-epoch bump — wiki regen required).
+
+    Returns a :class:`BumpClassification`. T1 and T2 always have
+    ``epoch_distance == 0``; T3 carries the selector's reported distance
+    (or 0 if the selector failed to compute one).
     """
     if selection.mode in ("exact_epoch", "close_enough"):
         if user_param_sha_matches:
-            return "T1"
-        return "T2"
-    return "T3"
+            return BumpClassification(tier="T1", epoch_distance=0)
+        return BumpClassification(tier="T2", epoch_distance=0)
+    return BumpClassification(tier="T3",
+                              epoch_distance=selection.epoch_distance or 0)
 
 
 # =============================================================================

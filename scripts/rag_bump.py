@@ -518,7 +518,8 @@ def main():
         user_param = fates_root / "parameter_files" / f"fates_params_default.{fmt}"
         if user_param.exists() and ms_sha:
             user_param_sha_matches = (compute_file_sha(user_param) == ms_sha)
-    tier = classify_bump_tier(sel, user_param_sha_matches)
+    classification = classify_bump_tier(sel, user_param_sha_matches)
+    tier = classification.tier
 
     # Resolve basis: either user-supplied or selector's nearest
     basis_milestone = args.basis or (sel.profile_name if sel.profile_name else None)

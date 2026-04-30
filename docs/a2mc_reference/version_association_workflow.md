@@ -69,7 +69,8 @@ Single JSON file maps profile name to a milestone description. Per entry:
 | `A2MC_MODEL_PATH` | **Yes** | Absolute path to user's E3SM/ELM-FATES checkout root |
 | `A2MC_RAG_DIR` | No (default `<repo>/rag`) | RAG storage tree root |
 | `A2MC_RAG_ACTIVE` | Auto-set by orchestrator | Active milestone profile name |
-| `A2MC_RAG_AUTO_REBUILD` | No (default `false`) | If `true`, orchestrator rebuilds silently on drift |
+| `A2MC_RAG_AUTO_REBUILD` | No (default `false`) | If `true`, orchestrator auto-rebuilds on T2 / T3-near drift |
+| `A2MC_RAG_T3_AUTO_DISTANCE` | No (default `100`) | T3 epoch-distance ceiling above which the orchestrator always emits a prompt-pack instead of auto-rebuilding |
 
 Hard error on missing `A2MC_MODEL_PATH` — version association is mandatory.
 
@@ -82,7 +83,25 @@ Hard error on missing `A2MC_MODEL_PATH` — version association is mandatory.
 3. Loads `rag/milestones.json`.
 4. Calls `tools.rag_selector.select_rag()` → `RAGSelection`.
 5. Sets `A2MC_RAG_ACTIVE` to the matched profile.
-6. If drift detected (different FATES commit), warns and either auto-rebuilds (`A2MC_RAG_AUTO_REBUILD=true`) or exits with instructions.
+6. If drift detected, dispatches via `tools.auto_rebuild.handle_drift()` (v2.98, docs/22).
+
+### Auto-rebuild tier policy (v2.98)
+
+`handle_drift()` classifies the bump (`tools.rag_selector.classify_bump_tier()`) and dispatches per docs/22 §3.1:
+
+| Tier / condition | Action | Flag-gated? |
+|---|---|---|
+| **T1** (no drift, sha matches) | Not entered — `rebuild_required` is false here. | n/a |
+| **T2** (same epoch, sha differs) | If flag set: subprocess `rag_bump.py --mode auto` + in-process validator gate; on Red verdict, rollback from `<profile>.previous/` snapshot. If flag unset: warn + continue. | Yes |
+| **T3-near** (`epoch_distance ≤ A2MC_RAG_T3_AUTO_DISTANCE`) | Same as T2. | Yes |
+| **T3-distant** (`epoch_distance > A2MC_RAG_T3_AUTO_DISTANCE`) | Always emit prompt-pack via `rag_bump.py --mode prompt-pack`, abort startup. Distant epoch jumps need human-supervised wiki regen. | No (always manual) |
+| **`no_match`** | Log error, abort startup — no basis to rebuild from. | n/a |
+
+Default `A2MC_RAG_T3_AUTO_DISTANCE = 100` (one major epoch step). The api-43-1 → api-44-0 case has distance 100 (still auto-eligible). The api-31-0 → api-43-1 case has distance 1201 (always manual).
+
+Concurrency: a file lock at `<rag_dir>/.bump.lock` prevents two startups from racing on a rebuild.
+
+Mode-aware safety: T1 only writes metadata (chunks / graph nodes / curated YAML untouched). T2 / T3-near rebuilds run against the source-pinned wikis + per-milestone curated YAML (which carry `applies_in:` blocks); the validator gate (Tier 4 + snapshot + completeness + cross-milestone) catches any mode-tagging regression.
 
 ---
 
@@ -221,7 +240,7 @@ export A2MC_RAG_ACTIVE=api-31-0
 python orchestrator.py --run
 ```
 
-The orchestrator's alignment hook will warn if your checkout doesn't match the forced profile, but won't abort unless `A2MC_RAG_AUTO_REBUILD` says so.
+The orchestrator's alignment hook will warn if your checkout doesn't match the forced profile. With `A2MC_RAG_AUTO_REBUILD=true` it will auto-rebuild for T2 / T3-near drift; T3-distant drift always emits a prompt-pack and aborts (see "Auto-rebuild tier policy" above).
 
 ---
 

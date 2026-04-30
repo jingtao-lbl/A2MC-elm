@@ -593,13 +593,25 @@ class CalibrationOrchestrator:
             )
             return
 
-        if sel.rebuild_required and not auto_rebuild:
-            logger.warning(
-                "[RAG alignment] Drift detected (param-file sha mismatch or "
-                "epoch mismatch). Continuing anyway since A2MC_RAG_AUTO_REBUILD "
-                "is not set. Run `scripts/rag_match.py` for triage and "
-                "`scripts/rag_bump.py` to rebuild."
-            )
+        if sel.rebuild_required:
+            # docs/22 Chunk D: tier-aware drift handler. T1 always auto;
+            # T2 / T3-near gated by A2MC_RAG_AUTO_REBUILD; T3-distant always
+            # emits prompt-pack and aborts.
+            from rag_selector import classify_bump_tier
+            from auto_rebuild import handle_drift, DriftHandlerError
+            classification = classify_bump_tier(sel, user_param_sha_matches=False)
+            repo_root = Path(__file__).resolve().parent
+            rag_dir = repo_root / "rag"
+            try:
+                handle_drift(
+                    sel, classification,
+                    model_path=Path(model_path),
+                    rag_dir=rag_dir,
+                    repo_root=repo_root,
+                    auto_rebuild=auto_rebuild,
+                )
+            except DriftHandlerError as e:
+                raise RuntimeError(f"[RAG alignment] {e}") from e
 
     @property
     def reasoning(self):
