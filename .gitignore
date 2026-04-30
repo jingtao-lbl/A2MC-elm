@@ -25,6 +25,12 @@ venv/
 .DS_Store
 Thumbs.db
 
+# AI assistant context (local-only; never push)
+CLAUDE.md
+
+# Local-only scientific analysis logs (manuscript working notes)
+memory/ana_logs/
+
 # Memory data (only development logs are ignored)
 memory/logs/
 
