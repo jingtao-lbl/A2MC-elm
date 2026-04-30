@@ -601,7 +601,10 @@ class CalibrationOrchestrator:
             from auto_rebuild import handle_drift, DriftHandlerError
             classification = classify_bump_tier(sel, user_param_sha_matches=False)
             repo_root = Path(__file__).resolve().parent
-            rag_dir = repo_root / "rag"
+            # Honor A2MC_RAG_DIR so snapshot/rollback in handle_drift operate
+            # on the same tree the rebuild subprocess (rag_bump.py) writes to.
+            # The subprocess inherits the env var; we must too.
+            rag_dir = Path(os.environ.get("A2MC_RAG_DIR", str(repo_root / "rag")))
             try:
                 handle_drift(
                     sel, classification,
