@@ -16,8 +16,7 @@ A2MC's RAG/GraphRAG holds wiki text, parameter metadata, and curated knowledge f
 2. A2MC reads your FATES + ELM commits.
 3. A2MC matches them to a registered "milestone" RAG profile.
 4. The orchestrator loads the right profile silently. No symlink switching, no per-run config tweaking.
-
-If your checkout doesn't match any registered milestone, A2MC tells you exactly what to do.
+5. If your checkout has drifted off the milestone, A2MC dispatches to a **tier-aware drift handler** (v2.98): T1 always auto-refreshes metadata; T2 and near-T3 can auto-rebuild when you opt in via `A2MC_RAG_AUTO_REBUILD=true`; distant T3 always emits a prompt-pack you run by hand. See "Auto-rebuild (v2.98)" below.
 
 ---
 
@@ -100,31 +99,64 @@ If you see this, **you're done**. A2MC will pick up `api-43-1` automatically eve
               ▼
      select_rag(version, manifest)
               │
-       ┌──────┴───────────────────┐
-       ▼                          ▼
-  exact_epoch / close_enough    rebuild_needed / no_match
-       │                          │
-       ▼                          ▼
-  set A2MC_RAG_ACTIVE         WARN + tell user to run
-  to matched profile          scripts/rag_bump.py
-       │
+       ┌──────┴────────────┐
+       ▼                   ▼
+  matched profile        no_match
+       │                   │
+       ▼                   ▼
+  set A2MC_RAG_ACTIVE   ERROR + abort
+       │                (no basis to rebuild)
        ▼
-  HybridRetriever auto-loads
-  rag/chroma_db/<profile>/
-  rag/graphs/<profile>.json
+  rebuild_required?
        │
-       ▼
-  AI calibration agent uses
-  the right RAG silently
+   ┌───┴────┐
+  no       yes
+   │        │
+   ▼        ▼
+HybridRetriever      handle_drift()  (v2.98, see below)
+loads profile         T1: in-process metadata refresh
+   │                  T2 / T3-near + flag set:
+   ▼                    subprocess rebuild + validator gate
+AI agent uses         T2 / T3-near + flag unset:
+the right RAG           warn and continue
+silently              T3-distant:
+                        emit prompt-pack and abort
 ```
 
-The key auto-detection step is in `_check_rag_alignment()` in `orchestrator.py`. It runs at every orchestrator start.
+The key auto-detection step is in `_check_rag_alignment()` in `orchestrator.py`. It runs at every orchestrator start. When drift is detected, it dispatches via `tools/auto_rebuild.py:handle_drift()` per the table below.
 
 ---
 
-## What A2MC does when it can't auto-match
+## Drift handling (T1 / T2 / T3)
 
-If your FATES checkout doesn't fit any registered milestone, the selector reports `mode: rebuild_needed` and `rag_match.py` recommends a concrete next step. Three scenarios:
+When your checkout differs from the closest registered milestone, the selector reports `mode: rebuild_needed` and classifies the gap into one of three tiers. Below first: how the orchestrator handles each tier automatically (when you opt in). After: how to drive the same workflow yourself with `rag_bump.py`.
+
+### Auto-rebuild (v2.98)
+
+Set this in your site config to opt into automatic handling:
+
+```bash
+export A2MC_RAG_AUTO_REBUILD="true"
+# Optional, default 100 (one major api epoch step)
+export A2MC_RAG_T3_AUTO_DISTANCE=100
+```
+
+With the flag on, the orchestrator's startup hook handles drift per docs/22 §3.1:
+
+| Tier | Condition | What runs |
+|---|---|---|
+| **T1** | No drift, all SHAs match (rare; only if you re-ran without changes) | In-process metadata refresh. Always auto, regardless of the flag. |
+| **T2** | Same api epoch, FATES parameter file SHA differs | Subprocess `rag_bump.py --mode auto` + in-process validator gate. Validators Red → rollback to `<profile>.previous/` snapshot, abort startup. |
+| **T3-near** | Different api epoch, `epoch_distance ≤ A2MC_RAG_T3_AUTO_DISTANCE` (default 100 = one major step) | Same as T2 (full pipeline) |
+| **T3-distant** | `epoch_distance > A2MC_RAG_T3_AUTO_DISTANCE` | Always emits a prompt-pack at `Offline/bump_pack_<target>/` and aborts startup. Distant epoch jumps need human review (parameter file format may have changed, dim semantics may shift) — auto-rebuild is unsafe. |
+
+`epoch_distance` formula: `|major_a - major_b| × 100 + |minor_a - minor_b|`. So api-43-1 → api-44-0 = 100 (auto-eligible); api-31-0 → api-43-1 = 1201 (always manual).
+
+With the flag **off** (default), drift produces a warning and continues with the matched-but-drifted profile. Your run still works but uses slightly stale knowledge — fine for casual exploration, not fine for a production calibration.
+
+### Manual workflow (when you'd rather drive it yourself)
+
+The same tier classification is what `rag_match.py` reports and what `rag_bump.py` consumes. Three scenarios:
 
 ### Scenario T1: You're at the exact milestone commit
 
@@ -265,42 +297,30 @@ A detailed report drops at `docs/a2mc_reference/phase4_verification.md`. Any Red
 | Loader prints "WARNING: explicit wiki_subdir 'X' not found" | Wiki subdir name in metadata doesn't match disk | Check `rag/metadata/<profile>.json` against `ls docs/*-knowledge-base/` |
 | `mode: no_match` | No milestone covers your checkout's epoch | Run `rag_bump.py --target-milestone api-<your-epoch>` |
 | Cost guardrail blocks an API run | Estimated > $5 | Add `--confirm-spend` if you accept the cost, or use `--mode prompt-pack` instead |
+| `[RAG alignment] Drift detected ... A2MC_RAG_AUTO_REBUILD is not set` | T2 / T3-near drift, flag off | Either set `A2MC_RAG_AUTO_REBUILD=true` to opt in, or run `rag_bump.py` manually |
+| `[RAG alignment] T3 bump required (epoch_distance=N exceeds auto threshold M)` | T3-distant — always-manual | Follow the prompts under `Offline/bump_pack_<target>/`, then re-run |
+| `[RAG alignment] Auto-rebuild ... failed validator gate (verdict=Red). Profile rolled back from snapshot.` | Rebuild produced bad RAG; orchestrator restored previous | Inspect `rag/chroma_db/<profile>.failed_<timestamp>/` for forensics; fix the underlying issue (often a curated YAML edit), then re-run |
 
 ---
 
-## Quick reference: the four scripts
+## Quick reference: the five scripts
 
 | Script | What it does | When to run |
 |---|---|---|
 | `scripts/rag_list.py` | Show all registered milestones + active profile | When you want to see what's available |
 | `scripts/rag_match.py` | Diagnose your checkout vs milestones; show git-log drift | When `rag_list` says you're at an unfamiliar commit |
-| `scripts/rag_bump.py` | Run a T1 / T2 / T3 bump; three execution modes | When `rag_match.py` says you need a rebuild |
+| `scripts/rag_bump.py` | Run a T1 / T2 / T3 bump; three execution modes | When `rag_match.py` says you need a rebuild and you want to drive it manually |
 | `scripts/verify_phase4.py` | Run all content-correctness gates + smoke tests | After any setup change or bump |
+| `scripts/verify_mode_aware.py` | Run all five validators (snapshot + completeness + cross-milestone + mode-metadata + tier coverage). Same gate the orchestrator uses post-rebuild | Before merging YAML changes; after manual rebuilds |
 
 ---
 
 ## Going deeper
 
 - **`version_association_workflow.md`** — comprehensive reference. Covers maintainer workflows (registering a new milestone, freezing per-milestone YAMLs, promoting canonical), the per-milestone YAML reproducibility principle, recipe library (A1-A5), and known limitations.
+- **`docs/22_Auto_Rebuild_Tier_Policy_Implementation.md`** — design + implementation of the v2.98 tier-aware drift handler (T1 / T2 / T3-near / T3-distant), file-lock + snapshot/rollback safety net, and the API-tag distance metric.
+- **`mode_aware_workflow.md`** — Phase B mode-aware retrieval (filter chunks by simulation configuration). Orthogonal to version association — selects WHICH chunks within the active profile pass at retrieval time.
 - **`rag_build_roadmap.md`** — what `build_rag_index.py` does internally. Read this if a bump fails and you need to understand the build pipeline.
 - **`codebase_wiki_generation_roadmap.md`** — Step 1 of the adapter kit; what a "wiki" must contain and how to regenerate one against a new commit.
 - **`graphrag_curated_yaml_roadmap.md`** — Step 3 of the adapter kit; the curated YAML's role and how to evolve it.
-- **`rag_validation_workflow.md`** — Step 4 of the adapter kit; the three-tier validation toolkit (codebase_wiki, yaml_wiki, rag_diff).
-
----
-
-## Why we built this
-
-A2MC originally relied on a single RAG/GraphRAG built against one FATES commit, with the wiki dir selected via a symlink. This was fragile:
-
-- Silent failures: switch the symlink wrong and everything still "runs" but with the wrong content.
-- Single-user: only one wiki target on disk at a time.
-- No rebuild path: when FATES bumped, users had no automation to refresh the RAG.
-
-Phase 4 of `docs/18_ELM_FATES_Version_Association_Plan.md` solved this by making versions first-class:
-
-- A user's checkout is a query → which registered milestone fits? (rag_match.py)
-- A milestone is a versioned, self-contained artifact set (chroma_db + graph + metadata + curated YAML).
-- A bump is an orchestrated workflow with three execution modes (rag_bump.py).
-
-End result: A2MC now correctly auto-detects "I need the api.31.0 RAG for this Kougarok run" or "I need the api.43.1 RAG for this E3SM-master run" without you having to think about it.
+- **`rag_validation_workflow.md`** — Step 4 of the adapter kit; the four-tier validation toolkit + three new validators (snapshot, profile-completeness, cross-milestone).
