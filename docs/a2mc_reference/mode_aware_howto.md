@@ -95,7 +95,7 @@ export A2MC_USE_FATES=true
 export A2MC_ELM_OPTIONS="-bgc fates -nutrient cn -nutrient_comp_pathway eca"
 ```
 
-Prompt block declares "Nutrient cycling: CN ... P-cycle parameters (fates_cnp_*ptase, FATES_PUPTAKE_*) do NOT apply". The AI avoids recommending phosphorus-related parameter tuning.
+Prompt block declares "Nutrient cycling: CN ... P-cycle parameters (`fates_cnp_eca_*_ptase`, `FATES_PUPTAKE_*`) do NOT apply". The AI avoids recommending phosphorus-related parameter tuning.
 
 ---
 
