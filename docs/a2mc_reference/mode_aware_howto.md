@@ -2,14 +2,16 @@
 
 **Audience:** A2MC users running ELM-FATES or ELM-only calibrations who want the RAG/GraphRAG retrieval to respect their simulation configuration (PARTEH mode, nutrient cycling, competition, etc.).
 
-**Reading time:** ~5 minutes. For the comprehensive plan see `docs/20_Mode_Aware_RAG_Retrieval_Plan.md`.
+**Reading time:** ~5 minutes. For the comprehensive plan see `mode_aware_workflow.md`.
 
-**What ships in Phase A (v2.91):**
-1. Active-mode prompt block — every Phase 3/4 prompt now declares the run's mode at the top, letting the AI self-correct on retrieved content.
-2. `kb_source` filter — ELM-only runs (`A2MC_USE_FATES=false`) exclude FATES content from retrieval entirely.
-3. Python config plumbing — four new env vars become accessible to the orchestrator and reasoning module.
+**What it does** (matured over v2.91 → v2.96):
 
-**What's deferred to Phase B:** per-mode chunk-level filtering for within-FATES modes (PARTEH=1 vs 2, NOCOMP, CN-only). Phase A relies on the prompt block to nudge the AI; Phase B will hard-filter content from retrieval.
+1. **20-dimension `ConfigMode`** read from your env vars at orchestrator startup — covers FATES on/off, PARTEH=1 vs 2, ECA vs RD nutrient competition, SPITFIRE, plant hydraulics, logging, no-comp, plus seven secondary compset modifiers. Defaults match ELM `namelist_defaults.xml` (vanilla SP, no FATES).
+2. **Active-mode prompt block** — every Phase 3/4 AI prompt declares the run's mode at the top, letting the AI self-correct on any retrieved content that's mode-irrelevant.
+3. **Chunk-level filtering** — ChromaDB `where` clauses gate chunks based on `ConfigMode` axes. PARTEH=1 retrieval does NOT surface CNP chunks; ELM-only retrieval excludes FATES content (the `kb_source` axis); NOCOMP excludes ECA/RD competition content; etc.
+4. **Curated YAML `applies_in:` blocks** propagate to chunks + graph nodes via the build pipeline (see `mode_aware_workflow.md`).
+5. **Path-prefix wiki tagging** — 11 patterns covering 22+ wiki docs gate fire/, hydraulics/, logging/, CNP theory, carbon-only theory, etc.
+6. **Five-validator gate** (Tier 4 + snapshot + profile-completeness + cross-milestone + tier coverage) all Green against api-43-1.
 
 ---
 
@@ -25,7 +27,7 @@ export A2MC_USE_FATES_NOCOMP=false      # true = PFTs in separate patches
 export A2MC_ELM_OPTIONS="-bgc fates -nutrient cnp -nutrient_comp_pathway eca"
 ```
 
-Defaults are conservative (FATES on, PARTEH=2, nutrient=cnp, ECA pathway) so legacy configs continue to work unchanged.
+Defaults match ELM `namelist_defaults.xml` (vanilla SP run, no FATES; per the April 30 design correction). To enable FATES + CNP + ECA (the Kougarok-style configuration), set the env vars above explicitly in your site config.
 
 ---
 
@@ -61,9 +63,12 @@ No retrieval filtering applied. Prompt block declares "FATES: enabled (PARTEH=2,
 
 ```bash
 export A2MC_USE_FATES=false
+# or equivalently:  export A2MC_ELM_OPTIONS="-bgc bgc"
 ```
 
 Retrieval applies `kb_source='elm'` filter — FATES content excluded from vector search results. Prompt block declares "FATES: DISABLED (ELM-only run; FATES parameters and mechanisms do NOT apply)". The AI agent will not recommend `fates_*` parameter tuning.
+
+**v2.96+:** ELM-only runs are first-class. `scripts/extract_elm_outputs.py` indexes 1640 ELM core variables (extracted from `hist_addfld1d/2d` calls in `components/elm/src/**/*.F90`) into the api-43-1 RAG, so non-FATES configurations get full output coverage.
 
 ### PARTEH=1 carbon-only
 
@@ -96,34 +101,24 @@ Prompt block declares "Nutrient cycling: CN ... P-cycle parameters (fates_cnp_*p
 
 ## Verification
 
-Run the verification harness after any setup change:
+Run the harness after any setup change:
 
 ```bash
 python scripts/verify_mode_aware.py
 ```
 
-Healthy output (Phase A):
+Healthy output (current main):
 
 ```
-17/20 fixture tests pass (3 Phase B skipped, 0 fail, 0 error)
+61/61 fixture tests pass
 6/6 real-index smoke tests pass
+Tier 4 mode-metadata validator: Green
+Validator #1 (snapshot, api-43-1): Green (5/5 fixtures pass)
+Validator #2 (profile completeness, api-43-1): Green
+Validator #3 (cross-milestone consistency): Green (0 drift, 0 coverage warnings)
 ```
 
-Detailed report drops at `docs/a2mc_reference/mode_aware_verification.md`. Failures point to specific assertions that broke.
-
----
-
-## Phase B (v2.92, 2026-04-29) — now active
-
-Phase B shipped, replacing the "deferred" status of within-FATES chunk filtering. Active features:
-
-- **20-dim ConfigMode** — schema covers Tier 1 (primary), Tier 2 (FATES feature flags), Tier 3 (compset modifiers). Defaults match ELM `namelist_defaults.xml`. See `mode_aware_workflow.md`.
-- **Curated-YAML `applies_in:` blocks** — 17 mode-restricted parameters + 3 mechanisms tagged in canonical YAML.
-- **Path-prefix wiki tagging** — 11 patterns covering 22+ wiki docs gate fire/, hydraulics/, logging/, CNP theory, carbon-only theory, inverse-tagged BTRAN/photosynthesis docs.
-- **Tier 4 validator** — `tools/mode_metadata_validator.py` confirms YAML → chunk + graph propagation chain is intact.
-- **End-to-end verification GREEN** on api-43-1: 50/50 fixtures, 6/6 smoke, 79/79 Tier 4 assertions.
-
-For comprehensive details on Phase B: `docs/a2mc_reference/mode_aware_workflow.md`.
+Detailed report drops at `docs/a2mc_reference/mode_aware_verification.md`. Failures point to specific assertions that broke. Same harness is used as the **post-rebuild gate** by the orchestrator's auto-rebuild path (v2.98) — a Red verdict triggers automatic rollback to the `<profile>.previous/` snapshot.
 
 ---
 
@@ -140,23 +135,25 @@ For comprehensive details on Phase B: `docs/a2mc_reference/mode_aware_workflow.m
 
 ## Implementation reference
 
-| File | Role |
-|---|---|
-| `tools/config.py` | `ConfigMode` dataclass (20 dims), `ALL_AXIS_VALUES`, `to_chroma_where()`, `build_applies_in_flags()`, `parse_elm_options()`, `to_prompt_block()`, `kb_source_filter()` |
-| `rag/loader.py` | `_WIKI_PATH_PREFIX_TAGS` table + `path_prefix_tags()` matcher; `chunk_documents()` + `load_parameter_descriptions()` write applies_in flags |
-| `rag/graph_builder.py` | `_overlay_curated_relationships()` writes flags onto graph nodes; default-permissive sweep at end of `build_fates_graph()` |
-| `rag/vector_store.py` | `add_documents()` passes through `applies_*`/`inactive` metadata; `query()` family accepts `mode_where` kwarg |
-| `rag/hybrid_retriever.py` | 3 top-level methods accept `config_mode`; threads `mode_where` to inner queries |
-| `reasoning/base.py` | `_get_active_config_mode()`; threads `config_mode` through Phase 3/4 RAG calls |
-| `tools/yaml_wiki_validator.py` | Dim F validates `applies_in:` schema |
-| `tools/mode_metadata_validator.py` | Tier 4 validator: end-to-end propagation chain |
-| `orchestrator.py:_detect_config_mode()` | Startup hook: log active mode |
-| `reasoning/methods.py:_build_active_mode_block()` | Inject mode block into Phase 3/4 prompts |
-| `reasoning/base.py:_mode_kb_source_filter()` | Pull kb_source filter from ConfigMode for retrieval calls |
-| `rag/vector_store.py:query()` | Accepts `kb_source` keyword; builds ChromaDB `where` clause |
-| `rag/hybrid_retriever.py:get_targeted_context() / get_context()` | Pass `kb_source` to underlying vector_store calls |
-| `rag/loader.py:chunk_documents()` | Propagates `kb_source` from doc to chunk; prefixes `chunk_id` to avoid FATES/ELM file-name collisions |
-| `tests/test_mode_filters.py` | 20 fixtures (17 Phase A + 3 Phase B placeholders) |
-| `scripts/verify_mode_aware.py` | Runs fixtures + real-index smoke; writes Markdown report |
+The user-facing entry points:
 
-For the design rationale see `docs/20_Mode_Aware_RAG_Retrieval_Plan.md`. For the audit that scoped this work see `memory/dev_logs/20260428e_Audit_Config_Aware_RAG_Retrieval.md`.
+| Layer | File | What it gives you |
+|---|---|---|
+| Config | `tools/config.py` | `ConfigMode` dataclass (20 dims) read from env vars; `to_prompt_block()` for the AI block; `to_chroma_where()` for the retrieval filter |
+| Retrieval | `rag/hybrid_retriever.py` | `get_targeted_context(config_mode=...)` is the primary call; threads mode through to ChromaDB `where` clause |
+| Reasoning | `reasoning/base.py`, `reasoning/methods.py` | Auto-injects the mode block into every Phase 3/4 prompt; pulls `kb_source` filter from active `ConfigMode` |
+| Validation | `tools/yaml_wiki_validator.py`, `tools/mode_metadata_validator.py`, `tools/snapshot_validator.py`, `tools/profile_completeness_validator.py`, `tools/cross_milestone_validator.py` | Five validators ensure YAML → chunk + graph propagation; harness via `scripts/verify_mode_aware.py` |
+| Tests | `tests/test_mode_filters.py` | 61 fixtures across all dimensions |
+
+For the full code map (every helper, every dispatch site) see `mode_aware_workflow.md` "Implementation reference" section.
+
+For the original design rationale see `docs/20_Mode_Aware_RAG_Retrieval_Plan.md` (Phase A) and `docs/21_Mode_Aware_RAG_Phase_B_Implementation.md` (Phase B). For the audit that scoped this work see `memory/dev_logs/20260428e_Audit_Config_Aware_RAG_Retrieval.md`.
+
+---
+
+## Going deeper
+
+- **`mode_aware_workflow.md`** — comprehensive reference. Full code map, the per-mode `applies_in:` schema, validator details, mode-block design rationale.
+- **`version_association_howto.md`** — the parallel 5-min guide for version association (which RAG profile loads). Mode-awareness filters chunks WITHIN a profile; version association picks the profile.
+- **`docs/22_Auto_Rebuild_Tier_Policy_Implementation.md`** — the v2.98 auto-rebuild design. Same `verify_mode_aware.py` harness gates rebuilds.
+- **`rag_validation_workflow.md`** — adapter-kit Step 4: the four-tier validation triangle + three new validators (snapshot, profile-completeness, cross-milestone).
