@@ -6,7 +6,7 @@
 
 **What it does** (matured over v2.91 → v2.96):
 
-1. **20-dimension `ConfigMode`** read from your env vars at orchestrator startup — covers FATES on/off, PARTEH=1 vs 2, ECA vs RD nutrient competition, SPITFIRE, plant hydraulics, logging, no-comp, plus seven secondary compset modifiers. Defaults match ELM `namelist_defaults.xml` (vanilla SP, no FATES).
+1. **20-dimension `ConfigMode`** read from your env vars at orchestrator startup — covers FATES on/off, PARTEH=1 vs 2, ECA vs RD nutrient competition, SPITFIRE, plant hydraulics, logging, no-comp, plus seven secondary compset modifiers.
 2. **Active-mode prompt block** — every Phase 3/4 AI prompt declares the run's mode at the top, letting the AI self-correct on any retrieved content that's mode-irrelevant.
 3. **Chunk-level filtering** — ChromaDB `where` clauses gate chunks based on `ConfigMode` axes. PARTEH=1 retrieval does NOT surface CNP chunks; ELM-only retrieval excludes FATES content (the `kb_source` axis); NOCOMP excludes ECA/RD competition content; etc.
 4. **Curated YAML `applies_in:` blocks** propagate to chunks + graph nodes via the build pipeline (see `mode_aware_workflow.md`).
