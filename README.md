@@ -112,6 +112,15 @@ export A2MC_FATES_PARTEH_MODE=2           # 1=carbon-only, 2=CNP
 #   A2MC_FATES_SPITFIRE_MODE, A2MC_USE_FATES_PLANTHYDRO,
 #   A2MC_USE_FATES_LOGGING, A2MC_USE_FATES_SP, etc.
 # See docs/a2mc_reference/mode_aware_workflow.md for the full 20-dim schema
+
+# Optional for auto-rebuild on drift (v2.98+):
+# When the orchestrator detects your checkout has drifted off the matched
+# milestone, this opts in to automatic rebuild for T2 / T3-near drift
+# (subprocess + validator gate; rollback to <profile>.previous/ on failure).
+# T3-distant drift always emits a prompt-pack and aborts regardless.
+export A2MC_RAG_AUTO_REBUILD="false"      # default false (warn-and-continue)
+export A2MC_RAG_T3_AUTO_DISTANCE=100      # default 100 = one major epoch step
+# See docs/22_Auto_Rebuild_Tier_Policy_Implementation.md.
 ```
 
 ### Step 5: Configure AI Settings
@@ -184,6 +193,7 @@ A2MC is an autonomous calibration framework that combines:
 - **Adaptive Memory System** for learning from experiments and avoiding repeated failures
 - **Version-aware RAG** that auto-detects the user's E3SM/ELM-FATES checkout and loads the matching knowledge profile (v2.90+)
 - **Configuration-aware retrieval** that filters knowledge chunks based on the active simulation mode (FATES on/off, PARTEH carbon-only vs CNP, ECA vs RD competition, fire/hydraulics/logging on/off, etc.) so the AI sees only mode-applicable content (v2.91 / v2.92)
+- **Auto-rebuild on drift** with a tier-aware policy — T1 always auto-refreshes metadata; T2 and near-T3 can auto-rebuild on opt-in (`A2MC_RAG_AUTO_REBUILD=true`) with snapshot + validator gate + rollback; distant T3 always emits a prompt-pack for human-supervised regen (v2.98)
 
 The framework runs entirely on NERSC HPC (no SSH tunneling) and uses the Anthropic Claude API for intelligent decision-making. The Adaptive Memory System enables the AI agent to persistently store and retrieve knowledge across sessions.
 
@@ -594,7 +604,7 @@ A2MC uses a three-tier architecture for FATES knowledge, ensuring the AI has acc
 
 ## Version-Aware and Configuration-Aware Retrieval
 
-The RAG/GraphRAG tier is **version-aware** (v2.90+) and **configuration-aware** (v2.91 / v2.92). A2MC auto-detects the user's E3SM/ELM-FATES checkout and the active simulation mode, then loads the right knowledge profile and filters out content that doesn't apply. The AI sees only the FATES/ELM source for the correct version, in the modes the user is actually running.
+The RAG/GraphRAG tier is **version-aware** (v2.90+), **configuration-aware** (v2.91 / v2.92), and **drift-aware** (v2.98). A2MC auto-detects the user's E3SM/ELM-FATES checkout and the active simulation mode, loads the right knowledge profile, filters out content that doesn't apply, and (with opt-in) auto-rebuilds the profile when the checkout drifts off the matched milestone. The AI sees only the FATES/ELM source for the correct version, in the modes the user is actually running.
 
 ### Version association (v2.90, Doc 18 Phases 1–4)
 
@@ -663,28 +673,49 @@ export A2MC_FATES_PARTEH_MODE=2
 
 A2MC's reasoning module reads `ConfigMode.from_env()` once per Phase 3/4 retrieval call and threads the where clause through `HybridRetriever.get_targeted_context()`, `get_calibration_context()`, and `get_context()` to the ChromaDB layer.
 
-### Validation — quadrilateral (4 tiers)
+### Auto-rebuild on drift (v2.98, Doc 22)
 
-Phase B added Tier 4 to A2MC's RAG validation stack. The full quadrilateral:
+When the orchestrator's startup hook detects that the user's checkout has drifted off the matched milestone, it dispatches via `tools/auto_rebuild.py:handle_drift()` per the tier policy:
 
-| Tier | Validator | Asserts |
+| Tier | Condition | Action | Flag-gated? |
+|---|---|---|---|
+| **T1** | No drift, all SHAs match | In-process metadata refresh via `tools/rag_refresh.py` | No (always auto) |
+| **T2** | Same epoch, FATES parameter file SHA differs | Subprocess `rag_bump.py --mode auto` + in-process validator gate; rollback to `<profile>.previous/` snapshot on Red verdict | Yes (`A2MC_RAG_AUTO_REBUILD=true`) |
+| **T3-near** | `epoch_distance ≤ A2MC_RAG_T3_AUTO_DISTANCE` (default 100) | Same as T2 (full pipeline) | Yes |
+| **T3-distant** | `epoch_distance > A2MC_RAG_T3_AUTO_DISTANCE` | Always emit prompt-pack at `Offline/bump_pack_<target>/` and abort startup | No (always manual) |
+
+`epoch_distance` formula: `|major_a − major_b| × 100 + |minor_a − minor_b|`. So api-43-1 → api-44-0 = 100 (auto-eligible); api-31-0 → api-43-1 = 1201 (always manual).
+
+Concurrency is enforced by a file lock at `<rag_dir>/.bump.lock`. Mode-aware safety: T1 only writes metadata; T2/T3 rebuilds run against source-pinned wikis + per-milestone curated YAML, with the same five-validator harness (below) gating the result. A Red verdict triggers automatic rollback to `<profile>.previous/`; the broken build is preserved at `<profile>.failed_<UTC-timestamp>/` for forensics.
+
+Full design: `docs/22_Auto_Rebuild_Tier_Policy_Implementation.md`. End-user how-to: `docs/a2mc_reference/version_association_howto.md` "Drift handling" section.
+
+### Validation — five layers
+
+Started as a three-tier triangle (codebase_wiki + yaml_wiki + rag_diff), gained Tier 4 for mode-metadata propagation in v2.92, and added three more validators in v2.95 to close coverage gaps:
+
+| Layer | Validator | Asserts |
 |---|---|---|
-| **1** | `tools/codebase_wiki_validator.py` | Wiki claims match source (per-commit) |
-| **2** | `tools/yaml_wiki_validator.py` (incl. Dim F for `applies_in:`) | Curated YAML entries present in wiki + parameter file; mode tags valid |
-| **3** | `tools/rag_diff.py` | Diff between two RAG profiles (e.g., milestone bump) |
-| **4** | `tools/mode_metadata_validator.py` (NEW v2.92) | YAML `applies_in:` propagates correctly to chunks + graph nodes |
+| **Tier 1** | `tools/codebase_wiki_validator.py` | Wiki claims match source (per-commit) |
+| **Tier 2** | `tools/yaml_wiki_validator.py` (incl. Dim F for `applies_in:`) | Curated YAML entries present in wiki + parameter file; mode tags valid |
+| **Tier 3** | `tools/rag_diff.py` | Diff between two RAG profiles (e.g., milestone bump) |
+| **Tier 4** | `tools/mode_metadata_validator.py` (v2.92) | YAML `applies_in:` propagates correctly to chunks + graph nodes |
+| **Snapshot** | `tools/snapshot_validator.py` (v2.95) | End-to-end integration test: mode block + filter both fire correctly across 5 fixture ConfigModes |
+| **Profile completeness** | `tools/profile_completeness_validator.py` (v2.95) | 5-category statistical coverage: chunk-tagging distribution, wiki-dir coverage, YAML-entity coverage, Tier 2 axis distribution, per-mode golden chunk counts |
+| **Cross-milestone** | `tools/cross_milestone_validator.py` (v2.95) | `applies_in:` drift between milestone YAMLs (DRIFT vs WARN coverage) |
 
-**Verification on api-43-1:** 50/50 unittest fixtures + 6/6 smoke tests + 79/79 Tier 4 propagation assertions — all GREEN.
+**Verification on api-43-1 (current main):** 61/61 unittest fixtures + 6/6 smoke tests + four named-validator Greens — all GREEN.
 
 ```bash
-# End-to-end Phase A+B verification
+# Unified harness — runs all five layers + the orchestrator-side gate (v2.98)
 python scripts/verify_mode_aware.py
-# Phase A+B status: GREEN
+# Verdict: GREEN
 
-# Standalone Tier 4 validator
-python tools/mode_metadata_validator.py --profile api-43-1 \
-    --output docs/a2mc_reference/mode_metadata_validation_api-43-1.md
+# Per-layer validators all have standalone CLI entry points; see
+# docs/a2mc_reference/rag_validation_workflow.md for the full playbook.
 ```
+
+The same `run_all_validators(profile)` function is used by the v2.98 auto-rebuild path as a post-rebuild gate — a Red verdict triggers automatic rollback to `<profile>.previous/`.
 
 ### Reference docs
 
@@ -692,7 +723,9 @@ python tools/mode_metadata_validator.py --profile api-43-1 \
 - **Quick how-to:** `docs/a2mc_reference/mode_aware_howto.md`
 - **ELM compset reference:** `docs/a2mc_reference/elm_compset_reference.md` (fills the wiki gap on `cime_config/` + `bld/`)
 - **Version association workflow:** `docs/a2mc_reference/version_association_workflow.md`
+- **Version association quick how-to:** `docs/a2mc_reference/version_association_howto.md`
 - **Validation playbook:** `docs/a2mc_reference/rag_validation_workflow.md`
+- **Auto-rebuild tier policy (v2.98):** `docs/22_Auto_Rebuild_Tier_Policy_Implementation.md`
 - **Design plans:** `docs/18_ELM_FATES_Version_Association_Plan.md`, `docs/20_Mode_Aware_RAG_Retrieval_Plan.md`, `docs/21_Mode_Aware_RAG_Phase_B_Implementation.md`
 
 ---
