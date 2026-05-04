@@ -130,8 +130,8 @@ export A2MC_ELM_OPTIONS="-nutrient cnp -nutrient_comp_pathway eca -soil_decomp c
 #   R2: Kougarok_PlantTraitsCNPEnsemble162_Morris
 #   R3: Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP
 #   R4 (subset_replay, superseded): Kougarok_PlantTraitsCNPEnsemble162_PrescribedP
-#   R4 (current — full Morris with ADSP N+P): Kougarok_PlantTraitsCNPEnsemble162_ADSPSupNP
-export A2MC_ENSEMBLE_NAME="Kougarok_PlantTraitsCNPEnsemble162_ADSPSupNP"
+#   R4 (current — full Morris with ADSP N+P): Kougarok_PlantTraitsCNPEnsemble162_Morris_ADSPSupNP
+export A2MC_ENSEMBLE_NAME="Kougarok_PlantTraitsCNPEnsemble162_Morris_ADSPSupNP"
 export A2MC_ENSEMBLE_PREFIX="Kougarok_ELM-FATES"
 # Case names: append "ADSPSupNP" suffix after the case number so this round's
 # CIME case folders don't collide with R2 / R3 / old-R4 cases on the shared
