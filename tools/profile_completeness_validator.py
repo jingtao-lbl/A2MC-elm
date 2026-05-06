@@ -313,22 +313,26 @@ def check_golden_chunk_counts(metadatas, profile: str) -> CategoryResult:
     client = chromadb.PersistentClient(path=str(paths["chroma_db"]))
     coll = client.get_collection(client.list_collections()[0].name)
 
-    # Golden values from v2.96 build (post-ELM-output-CDL integration).
-    # Original v2.92 baselines (pre-ELM-CDL) were:
-    #   default-elm-sp: 4055, kougarok-parteh2: 4333, parteh1: 4145
-    # The ELM CDL added 1640 ELM-side output chunks; these are universal
-    # so they pass every filter, raising counts uniformly across modes.
+    # Golden values from v2.99 build (post-FATES-official-docs RST→MD conversion).
+    # Baseline progression:
+    #   v2.92 (pre-ELM-CDL):       default=4055, kougarok-cnp=4333, parteh1=4145
+    #   v2.96 (post-ELM-CDL):      default=5650, kougarok-cnp=5973, parteh1=5740
+    #     (the ELM CDL added 1640 ELM-side output chunks, universal)
+    #   v2.99 (post-RST→MD):       default=6206, kougarok-cnp=6570, parteh1=6354
+    #     (pandoc-converted FATES tech doc adds ~600 markdown chunks; mostly
+    #      universal but PARTEH=1 mode also gets parteh/h1_*.md and PARTEH=2
+    #      mode also gets parteh/h2_*.md, hence the spread across modes)
     golden = {
-        "default-elm-sp": (ConfigMode(), 5650),
+        "default-elm-sp": (ConfigMode(), 6206),
         "kougarok-parteh2-cnp-eca": (
             ConfigMode(bgc_mode="fates", use_fates=True, parteh_mode=2,
                        nutrient="cnp", nutrient_comp_pathway="eca"),
-            5973,
+            6570,
         ),
         "parteh1-carbon-only": (
             ConfigMode(bgc_mode="fates", use_fates=True, parteh_mode=1,
                        nutrient="c", nutrient_comp_pathway="rd"),
-            5740,
+            6354,
         ),
     }
 

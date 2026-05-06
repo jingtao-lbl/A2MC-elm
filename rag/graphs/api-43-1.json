@@ -50907,7 +50907,7 @@
   "_metadata": {
     "metadata_schema_version": 1,
     "profile_name": "api-43-1",
-    "built_at": "2026-04-30T18:54:57+00:00",
+    "built_at": "2026-05-06T03:56:31+00:00",
     "a2mc_version": "v2.89-dev",
     "model_path": "/Users/jingtao/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES_api43-1",
     "elm": {
@@ -50932,14 +50932,16 @@
       "fates_param_file_format": "json",
       "fates_param_file_sha": "8b199acaa1353b84e52389d8d69d1cad871b38be8292d96c4d8cbb879ba81c6f",
       "output_var_file": "/Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Program/A2MC/docs/fates-knowledge-base/elm_fates_output_info_e027a40.cdl",
-      "output_var_file_sha": "20a451e062defdefa18681876a854e121f6b1bbe66246550078ca265541b8ace"
+      "output_var_file_sha": "20a451e062defdefa18681876a854e121f6b1bbe66246550078ca265541b8ace",
+      "elm_output_var_file": null,
+      "elm_output_var_file_sha": null
     },
     "curated_yaml": {
       "path": "/Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Program/A2MC/rag/data/curated_relationships_api-43-1.yaml",
       "sha": "0159aa03828f38e6e6ec31ab5da5b732d035b2400944fc6cf386466aa0f32b55"
     },
     "stats": {
-      "chunk_count": 6326,
+      "chunk_count": 6981,
       "graph_nodes": 3178,
       "graph_edges": 2772
     }

@@ -1,6 +1,6 @@
 # Mode-Aware Retrieval Verification Report
 
-**Generated:** 2026-04-30T18:57:05+00:00
+**Generated:** 2026-05-06T03:58:12+00:00
 
 Doc 20 Phase A + Phase B verification. Runs the unittest fixture suite at `tests/test_mode_filters.py` plus a real-index smoke test (kb_source + mode-aware filter end-to-end) plus the Tier 4 mode-metadata validator (Doc 21 Chunk B.3.5).
 
@@ -18,7 +18,7 @@ Doc 20 Phase A + Phase B verification. Runs the unittest fixture suite at `tests
 
 | Test | Result | Detail |
 |---|---|---|
-| kb_source populated on all chunks (no MISSING/empty) | PASS | total=6326, fates=3270, elm=3056, missing/empty=0 |
+| kb_source populated on all chunks (no MISSING/empty) | PASS | total=6981, fates=3925, elm=3056, missing/empty=0 |
 | kb_source='fates' returns only FATES chunks | PASS | got 5 results, kb_sources={'fates'} |
 | kb_source='elm' returns only ELM chunks | PASS | got 5 results, kb_sources={'elm'} |
 | no filter returns mixed kb_sources | PASS | got 10 results, kb_sources={'elm', 'fates'} |
@@ -30,7 +30,7 @@ Doc 20 Phase A + Phase B verification. Runs the unittest fixture suite at `tests
 ## Tier 4 mode-metadata validator (Doc 21 Chunk B.3.5)
 
 - Verdict: **Green**
-- OK:    79
+- OK:    81
 - WARN:  0
 - ERROR: 0
 
@@ -51,12 +51,12 @@ Captures real Phase 3 prompt context for 5 ConfigMode fixtures and asserts mode 
 ## Validator #2: profile completeness (statistical coverage)
 
 - Verdict: **Green**
-- Chunks: 6326  |  Nodes: 3178
+- Chunks: 6981  |  Nodes: 3178
 
 | Category | Severity | Summary |
 |---|---|---|
 | (a) Chunk-tagging distribution | OK | Within bounds |
-| (b) Wiki-directory coverage | OK | All 12 path-prefix patterns matched expected chunks |
+| (b) Wiki-directory coverage | OK | All 13 path-prefix patterns matched expected chunks |
 | (c) YAML-entity coverage | OK | All YAML entities have matching chunks |
 | (d) Tier 2 axis distribution | OK | Tier 2 axes: 6 axes, distributions logged |
 | (e) Golden chunk counts (per-mode) | OK | All 3 golden values within 50 tolerance |

@@ -92,13 +92,18 @@ _WIKI_PATH_PREFIX_TAGS = [
     ("plant-physiology/crown_damage.md", {
         "use_fates": [True],
     }),
-    # ---- Official-docs .rst PARTEH theory (parteh/* directory) ----
-    # The .rst files under fates-official-docs/docs/source/parteh/ describe
-    # both PARTEH=1 carbon-only and PARTEH=2 CNP allocation in detail. Most
-    # are CNP-specific (h2_*) or carbon-only (h1_*); blanket-tag the parteh/
-    # subdirectory with use_fates: [true] + parteh_mode: [2] (the dominant
-    # use). Carbon-only-specific files would need their own pattern, but the
-    # codebase-wiki carbon_only.md already covers PARTEH=1 theory.
+    # ---- Official-docs PARTEH theory (parteh/* directory) ----
+    # The files under fates-official-docs/docs/source/{,_converted_md/}parteh/
+    # describe both PARTEH=1 carbon-only and PARTEH=2 CNP allocation in detail.
+    # Naming convention: h1_* = carbon-only hypothesis, h2_* = CNP flexible
+    # hypothesis. Other files (hypotheses, overview_domain, turnover) describe
+    # the framework that applies regardless of mode and stay universal.
+    # v2.99: also matches the converted markdown at parteh/h1_*.md / h2_*.md
+    # since the basename-prefix match strips the directory.
+    ("parteh/h1_", {
+        "use_fates": [True],
+        "parteh_mode": [1],
+    }),
     ("parteh/h2_", {
         "use_fates": [True],
         "parteh_mode": [2],
@@ -454,19 +459,53 @@ def load_all_documents(knowledge_base_path: str) -> list[dict]:
         print(f"Loaded {len(wiki_docs)} documents from codebase wiki")
         all_docs.extend(wiki_docs)
 
-    # Load markdown from official docs (if any)
+    # Load markdown from official docs (if any). Two paths:
+    # (a) `_converted_md/` — pandoc-rendered markdown from RST source (v2.99+).
+    #     Preferred: math directives become LaTeX, cross-refs become links,
+    #     headings become #-style. Embedding-friendly and human-readable.
+    # (b) Top-level `fates-official-docs/*.md` — any hand-written markdown
+    #     (rare; reserved for future use).
+    # (c) Legacy fallback: raw RST files. Kept so older snapshots still load,
+    #     but flagged with a warning so users know to run the converter.
+    official_md_converted = (
+        base / "fates-official-docs" / "docs" / "source" / "_converted_md"
+    )
+    official_rst_path = base / "fates-official-docs" / "docs" / "source"
+
+    if official_md_converted.exists():
+        md_docs = load_markdown_files(str(official_md_converted))
+        # Tag as official-docs source so downstream metadata (kb_source,
+        # path-prefix tagging, applies_in:) treats them like the original RST
+        # would have been treated.
+        for d in md_docs:
+            d["type"] = "official-docs"
+        print(
+            f"Loaded {len(md_docs)} converted markdown files from official docs"
+        )
+        all_docs.extend(md_docs)
+    elif official_rst_path.exists():
+        print(
+            "WARNING: _converted_md/ not found; falling back to raw RST. "
+            "Run scripts/convert_official_docs.py to generate clean markdown."
+        )
+        rst_docs = load_rst_files(str(official_rst_path))
+        print(f"Loaded {len(rst_docs)} RST files from official docs (fallback)")
+        all_docs.extend(rst_docs)
+
+    # Top-level hand-written markdown alongside the official docs (if any)
     official_md_path = base / "fates-official-docs"
     if official_md_path.exists():
-        official_md_docs = load_markdown_files(str(official_md_path))
-        print(f"Loaded {len(official_md_docs)} markdown files from official docs")
-        all_docs.extend(official_md_docs)
-
-    # Load RST from official docs
-    official_rst_path = base / "fates-official-docs" / "docs" / "source"
-    if official_rst_path.exists():
-        rst_docs = load_rst_files(str(official_rst_path))
-        print(f"Loaded {len(rst_docs)} RST files from official docs")
-        all_docs.extend(rst_docs)
+        # Only top-level .md files, not the converted tree we already loaded
+        official_md_docs = [
+            d for d in load_markdown_files(str(official_md_path))
+            if "_converted_md" not in d.get("source", "")
+        ]
+        if official_md_docs:
+            print(
+                f"Loaded {len(official_md_docs)} top-level markdown files "
+                f"from official docs"
+            )
+            all_docs.extend(official_md_docs)
 
     # Also load index.md from knowledge base root
     index_path = base / "index.md"
