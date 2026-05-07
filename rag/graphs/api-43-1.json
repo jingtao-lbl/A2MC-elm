@@ -50907,7 +50907,7 @@
   "_metadata": {
     "metadata_schema_version": 1,
     "profile_name": "api-43-1",
-    "built_at": "2026-05-06T03:56:31+00:00",
+    "built_at": "2026-05-07T14:29:18+00:00",
     "a2mc_version": "v2.89-dev",
     "model_path": "/Users/jingtao/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES_api43-1",
     "elm": {
@@ -50941,7 +50941,7 @@
       "sha": "0159aa03828f38e6e6ec31ab5da5b732d035b2400944fc6cf386466aa0f32b55"
     },
     "stats": {
-      "chunk_count": 6981,
+      "chunk_count": 6328,
       "graph_nodes": 3178,
       "graph_edges": 2772
     }

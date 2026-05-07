@@ -1,6 +1,6 @@
 # Mode-Aware Retrieval Verification Report
 
-**Generated:** 2026-05-06T03:58:12+00:00
+**Generated:** 2026-05-07T14:30:31+00:00
 
 Doc 20 Phase A + Phase B verification. Runs the unittest fixture suite at `tests/test_mode_filters.py` plus a real-index smoke test (kb_source + mode-aware filter end-to-end) plus the Tier 4 mode-metadata validator (Doc 21 Chunk B.3.5).
 
@@ -18,7 +18,7 @@ Doc 20 Phase A + Phase B verification. Runs the unittest fixture suite at `tests
 
 | Test | Result | Detail |
 |---|---|---|
-| kb_source populated on all chunks (no MISSING/empty) | PASS | total=6981, fates=3925, elm=3056, missing/empty=0 |
+| kb_source populated on all chunks (no MISSING/empty) | PASS | total=6328, fates=3272, elm=3056, missing/empty=0 |
 | kb_source='fates' returns only FATES chunks | PASS | got 5 results, kb_sources={'fates'} |
 | kb_source='elm' returns only ELM chunks | PASS | got 5 results, kb_sources={'elm'} |
 | no filter returns mixed kb_sources | PASS | got 10 results, kb_sources={'elm', 'fates'} |
@@ -51,7 +51,7 @@ Captures real Phase 3 prompt context for 5 ConfigMode fixtures and asserts mode 
 ## Validator #2: profile completeness (statistical coverage)
 
 - Verdict: **Green**
-- Chunks: 6981  |  Nodes: 3178
+- Chunks: 6328  |  Nodes: 3178
 
 | Category | Severity | Summary |
 |---|---|---|

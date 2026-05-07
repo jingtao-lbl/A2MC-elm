@@ -595,6 +595,13 @@ def load_knowledge_base(
                 break
 
     # Look for official/technical docs. Same explicit-vs-probe pattern.
+    # v2.99: when fates-official-docs/docs/source/_converted_md/ exists, the
+    # markdown loader already picks up the pandoc-converted .md files (since
+    # load_markdown_files recurses through .md). In that case we must NOT
+    # also load the raw RST source, or we double-index the same content.
+    def _has_converted_md(rst_path: Path) -> bool:
+        return (rst_path / "_converted_md").exists()
+
     if docs_subdir is not None:
         docs_path = base / docs_subdir
         if docs_path.exists():
@@ -605,13 +612,15 @@ def load_knowledge_base(
                 print(f"  Loaded {len(md_docs)} markdown files from {docs_subdir}/ (explicit docs_subdir)")
                 all_docs.extend(md_docs)
             rst_path = docs_path / "docs" / "source"
-            if rst_path.exists():
+            if rst_path.exists() and not _has_converted_md(rst_path):
                 rst_docs = load_rst_files(str(rst_path))
                 for doc in rst_docs:
                     doc['kb_source'] = kb_name
                 if rst_docs:
-                    print(f"  Loaded {len(rst_docs)} RST files from {docs_subdir}/docs/source/")
+                    print(f"  Loaded {len(rst_docs)} RST files from {docs_subdir}/docs/source/ (no _converted_md/ found)")
                     all_docs.extend(rst_docs)
+            elif rst_path.exists():
+                print(f"  Skipping RST loader for {docs_subdir}/docs/source/ (using _converted_md/ instead)")
         else:
             print(f"  WARNING: explicit docs_subdir '{docs_subdir}' not found under {base}")
     else:
@@ -632,13 +641,15 @@ def load_knowledge_base(
                     print(f"  Loaded {len(md_docs)} markdown files from {pattern}/")
                     all_docs.extend(md_docs)
                 rst_path = docs_path / "docs" / "source"
-                if rst_path.exists():
+                if rst_path.exists() and not _has_converted_md(rst_path):
                     rst_docs = load_rst_files(str(rst_path))
                     for doc in rst_docs:
                         doc['kb_source'] = kb_name
                     if rst_docs:
-                        print(f"  Loaded {len(rst_docs)} RST files from {pattern}/docs/source/")
+                        print(f"  Loaded {len(rst_docs)} RST files from {pattern}/docs/source/ (no _converted_md/ found)")
                         all_docs.extend(rst_docs)
+                elif rst_path.exists():
+                    print(f"  Skipping RST loader for {pattern}/docs/source/ (using _converted_md/ instead)")
                 break
 
     # Load index.md from root if exists
