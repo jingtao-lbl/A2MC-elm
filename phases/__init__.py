@@ -14,6 +14,6 @@ Phase Overview:
     phase6_refinement/  - Evaluate results, extract lessons
 
 Usage:
-    from phases.phase0_design import create_morris_ensemble
+    from phases.phase0_design import generate_parameter_files
     from phases.phase2_screening import compare_biomass_topcases
 """

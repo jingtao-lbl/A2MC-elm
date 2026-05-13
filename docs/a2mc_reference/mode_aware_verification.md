@@ -1,6 +1,6 @@
 # Mode-Aware Retrieval Verification Report
 
-**Generated:** 2026-05-07T14:30:31+00:00
+**Generated:** 2026-05-12T20:51:40+00:00
 
 Doc 20 Phase A + Phase B verification. Runs the unittest fixture suite at `tests/test_mode_filters.py` plus a real-index smoke test (kb_source + mode-aware filter end-to-end) plus the Tier 4 mode-metadata validator (Doc 21 Chunk B.3.5).
 

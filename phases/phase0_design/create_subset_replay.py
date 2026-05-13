@@ -7,8 +7,8 @@ previous calibration round, applies a global parameter override (e.g.,
 fates_cnp_prescribed_puptake=1.0), and reruns them. Used for mechanistic
 hypothesis tests like "does removing P limitation rescue PFT10?"
 
-Unlike create_morris_ensemble.py, this script does NOT recompute parameters
-from a Morris matrix. It copies the existing source parameter files and
+Unlike generate_parameter_files.py, this script does NOT recompute parameters
+from a sampling matrix. It copies the existing source parameter files and
 modifies only the override fields in place — symmetric with how Phase 5
 modifies parameters for individual experiments.
 

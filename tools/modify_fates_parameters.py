@@ -26,6 +26,7 @@ Created: December 9, 2025
 """
 
 import argparse
+import json
 import logging
 import netCDF4 as nc
 import numpy as np
@@ -33,6 +34,42 @@ import re
 import shutil
 import sys
 from pathlib import Path
+
+
+# =============================================================================
+# Format detection (v2.100: api-43+ JSON support)
+# =============================================================================
+
+def detect_format(path) -> str:
+    """Detect parameter file format. Returns 'json' or 'netcdf'.
+
+    Detection order:
+      1. File extension (`.json` -> json; `.nc` / `.nc4` / `.cdf` -> netcdf)
+      2. Magic bytes (HDF5 / netCDF3 -> netcdf; leading `{` -> json)
+
+    Raises ValueError if the format can't be determined.
+    """
+    p = Path(path)
+    suffix = p.suffix.lower()
+    if suffix == ".json":
+        return "json"
+    if suffix in (".nc", ".nc4", ".cdf"):
+        return "netcdf"
+    # Fallback: peek at first bytes
+    try:
+        with open(p, "rb") as f:
+            head = f.read(8)
+    except OSError as e:
+        raise ValueError(f"Cannot read {p} for format detection: {e}")
+    if head.startswith(b"\x89HDF") or head[:3] == b"CDF":
+        return "netcdf"
+    stripped = head.lstrip()
+    if stripped.startswith(b"{"):
+        return "json"
+    raise ValueError(
+        f"Cannot detect parameter file format for {p} (suffix={suffix!r}, "
+        f"first bytes={head!r}). Expected .json or .nc/.nc4/.cdf."
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -340,12 +377,20 @@ def create_modified_parameter_file(input_file, output_file, modifications, verbo
     """
     Create a new parameter file with specified modifications.
 
+    Format-detecting dispatcher (v2.100+). Reads the input file's format
+    via detect_format() and routes to the matching backend:
+        netcdf -> _create_modified_nc()  (legacy api-31 milestones)
+        json   -> _create_modified_json() (api-43+ milestones)
+
+    Public API is stable — callers don't need to know which format the
+    backend uses. Same `modifications` list shape works for both.
+
     Parameters:
     -----------
     input_file : str or Path
-        Path to input NetCDF parameter file
+        Path to input parameter file (.nc or .json)
     output_file : str or Path
-        Path to output NetCDF parameter file
+        Path to output parameter file (extension must match input)
     modifications : list of dict
         List of modifications, each dict containing:
         - 'param': parameter name (e.g., 'fates_alloc_storage_cushion', 'fates_stoich_nitr')
@@ -371,6 +416,212 @@ def create_modified_parameter_file(input_file, output_file, modifications, verbo
     if not input_file.exists():
         raise FileNotFoundError(f"Input file not found: {input_file}")
 
+    fmt = detect_format(input_file)
+    if fmt == "json":
+        return _create_modified_json(input_file, output_file, modifications, verbose=verbose)
+    return _create_modified_nc(input_file, output_file, modifications, verbose=verbose)
+
+
+def _modify_json_param(params_doc, param_name, pft_index,
+                       new_value=None, percent_change=None,
+                       organ=None, verbose=True):
+    """JSON twin of modify_parameter().
+
+    Operates on the loaded JSON document (dict). Handles the same 4 access
+    patterns as the NetCDF path:
+      - scalar: dims == []
+      - 1D PFT: dims == ["fates_pft"]
+      - 2D organ × PFT: dims contains both "fates_plant_organs" and "fates_pft"
+      - 2D leafage × PFT: dims contains both "fates_leafage_class" and "fates_pft"
+        (uses leafage index 0, same as NC path)
+
+    Returns (old_value, new_value). Modifies params_doc in place.
+
+    Index convention matches NC path: pft_index and organ are 1-based on
+    input, converted to 0-based for array indexing.
+    """
+    # PFT / organ 1-based -> 0-based
+    pft_array_index = pft_index - 1 if pft_index > 0 else None
+    organ_array_index = organ - 1 if organ is not None and organ > 0 else None
+
+    # Look up the parameter
+    params = params_doc.get("parameters", {})
+    if param_name not in params:
+        # Provide a hint of what's available
+        available = list(params.keys())
+        sample = ", ".join(available[:5])
+        raise ValueError(
+            f"Parameter {param_name!r} not found in JSON parameter file. "
+            f"Available (first 5 of {len(available)}): {sample}..."
+        )
+
+    var = params[param_name]
+    dims = var.get("dims", []) or []
+    data = var.get("data")
+
+    # Read old value based on dim signature
+    if not dims or dims == ["scalar"]:
+        # Scalar
+        if isinstance(data, list):
+            old_value = float(data[0]) if data else 0.0
+        else:
+            old_value = float(data)
+    elif dims == ["fates_pft"]:
+        if pft_array_index is None:
+            old_value = float(data[0])  # use index 0 for "global" reads
+        else:
+            old_value = float(data[pft_array_index])
+    elif "fates_plant_organs" in dims and "fates_pft" in dims:
+        organ_dim_idx = dims.index("fates_plant_organs")
+        pft_dim_idx = dims.index("fates_pft")
+        if organ_array_index is None or pft_array_index is None:
+            raise ValueError(
+                f"Parameter {param_name!r} requires both organ and pft indices. "
+                f"dims={dims}"
+            )
+        if organ_dim_idx == 0 and pft_dim_idx == 1:
+            old_value = float(data[organ_array_index][pft_array_index])
+        elif organ_dim_idx == 1 and pft_dim_idx == 0:
+            old_value = float(data[pft_array_index][organ_array_index])
+        else:
+            raise ValueError(
+                f"Unexpected dim ordering for {param_name!r}: {dims}"
+            )
+    elif "fates_leafage_class" in dims and "fates_pft" in dims:
+        leafage_dim_idx = dims.index("fates_leafage_class")
+        pft_dim_idx = dims.index("fates_pft")
+        if pft_array_index is None:
+            raise ValueError(
+                f"Parameter {param_name!r} requires pft index. dims={dims}"
+            )
+        # Use leafage=0 (same as NC path)
+        if leafage_dim_idx == 0 and pft_dim_idx == 1:
+            old_value = float(data[0][pft_array_index])
+        elif leafage_dim_idx == 1 and pft_dim_idx == 0:
+            old_value = float(data[pft_array_index][0])
+        else:
+            raise ValueError(
+                f"Unexpected dim ordering for {param_name!r}: {dims}"
+            )
+    else:
+        raise ValueError(
+            f"Parameter {param_name!r} has unsupported dims: {dims}"
+        )
+
+    # Compute new value
+    if new_value is not None:
+        final_value = new_value
+    elif percent_change is not None:
+        final_value = old_value * (1.0 + percent_change / 100.0)
+    else:
+        raise ValueError("Must provide either new_value or percent_change")
+
+    # Write back, mirroring the dim signature
+    if not dims or dims == ["scalar"]:
+        if isinstance(data, list):
+            data[0] = final_value
+        else:
+            var["data"] = final_value
+    elif dims == ["fates_pft"]:
+        if pft_array_index is None:
+            # Set all PFTs to the same value (rare but supported)
+            for i in range(len(data)):
+                data[i] = final_value
+        else:
+            data[pft_array_index] = final_value
+    elif "fates_plant_organs" in dims and "fates_pft" in dims:
+        organ_dim_idx = dims.index("fates_plant_organs")
+        pft_dim_idx = dims.index("fates_pft")
+        if organ_dim_idx == 0 and pft_dim_idx == 1:
+            data[organ_array_index][pft_array_index] = final_value
+        elif organ_dim_idx == 1 and pft_dim_idx == 0:
+            data[pft_array_index][organ_array_index] = final_value
+    elif "fates_leafage_class" in dims and "fates_pft" in dims:
+        leafage_dim_idx = dims.index("fates_leafage_class")
+        pft_dim_idx = dims.index("fates_pft")
+        if leafage_dim_idx == 0 and pft_dim_idx == 1:
+            data[0][pft_array_index] = final_value
+        elif leafage_dim_idx == 1 and pft_dim_idx == 0:
+            data[pft_array_index][0] = final_value
+
+    if verbose:
+        organ_str = f", organ {organ}" if organ is not None else ""
+        change_pct = ((final_value - old_value) / old_value * 100) if old_value != 0 else 0
+        print(f"  {param_name}[PFT {pft_index}{organ_str}]: "
+              f"{old_value:.6e} → {final_value:.6e} ({change_pct:+.1f}%)")
+
+    return old_value, final_value
+
+
+def _create_modified_json(input_file, output_file, modifications, verbose=True):
+    """JSON backend for create_modified_parameter_file.
+
+    Reads the input JSON, applies each modification via _modify_json_param,
+    writes the result to output_file. Same `modifications` list shape as
+    the NetCDF path.
+
+    Behavior parity with _create_modified_nc:
+      - Returns a list of result dicts (param/pft/old_value/new_value/change_pct).
+      - Verbose output mirrors the NC path's format.
+      - Does NOT enforce cross-parameter constraints (PFT#9 nfix1,
+        slamax floor, prescribed_uptake=0); those are caller-side concerns
+        handled by phases/phase0_design/generate_parameter_files.py.
+    """
+    # Read template
+    if verbose:
+        print(f"\nReading {input_file.name} (JSON)")
+    with open(input_file) as f:
+        params_doc = json.load(f)
+
+    if verbose:
+        print(f"\nApplying {len(modifications)} modifications:")
+
+    results = []
+    for mod in modifications:
+        param = mod['param']
+        pft = mod.get('pft', 0)
+        organ = mod.get('organ', None)
+        value = mod.get('value', None)
+        percent = mod.get('percent', None)
+
+        old_val, new_val = _modify_json_param(
+            params_doc, param, pft,
+            new_value=value,
+            percent_change=percent,
+            organ=organ,
+            verbose=verbose
+        )
+
+        result = {
+            'param': param,
+            'pft': pft,
+            'old_value': old_val,
+            'new_value': new_val,
+            'change_pct': ((new_val - old_val) / old_val * 100) if old_val != 0 else 0
+        }
+        if organ is not None:
+            result['organ'] = organ
+        results.append(result)
+
+    # Write output
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_file, "w") as f:
+        json.dump(params_doc, f, indent=2)
+
+    if verbose:
+        print(f"\n✓ Successfully created: {output_file}")
+        print(f"  File size: {output_file.stat().st_size / 1024:.1f} KB")
+
+    return results
+
+
+def _create_modified_nc(input_file, output_file, modifications, verbose=True):
+    """NetCDF backend for create_modified_parameter_file.
+
+    Existing pre-v2.100 logic, lifted into a private function so the
+    public dispatcher can route format. Behavior unchanged — any
+    regression here is a regression of the existing NC pipeline.
+    """
     # Copy input file to output file
     if verbose:
         print(f"\nCopying {input_file.name} → {output_file.name}")

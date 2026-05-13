@@ -667,6 +667,8 @@ def main():
                         help='Generate restart script')
     parser.add_argument('--parallel', type=int, default=16,
                         help='Number of parallel workers')
+    parser.add_argument('--no-validate', action='store_true',
+                       help='Skip auto-validation of the generated restart script')
     parser.add_argument('--output-dir', type=str, default='.',
                         help='Output directory for reports')
     args = parser.parse_args()
@@ -921,6 +923,29 @@ def main():
 
         os.chmod(restart_file, 0o755)
         print(f"Restart script: {restart_file}")
+
+        # 4b. Auto-validate the generated restart script
+        if not args.no_validate:
+            print()
+            print("=" * 60)
+            print("RESTART SCRIPT VALIDATION")
+            print("=" * 60)
+            import sys as _sys
+            import subprocess as _subprocess
+            validator = Path(__file__).parent / 'validate_restart_script.py'
+            if validator.is_file():
+                cmd = [_sys.executable, str(validator), str(restart_file),
+                       '--incomplete-cases', str(incomplete_file)]
+                result = _subprocess.run(cmd)
+                if result.returncode != 0:
+                    print()
+                    print("VALIDATION FAILED — review errors above before submitting")
+                    print(f"(Re-run validator manually: python {validator} {restart_file})")
+                else:
+                    print()
+                    print("Validation passed — restart script is ready to submit.")
+            else:
+                print(f"  (validator not found at {validator}; skipping)")
 
     # 5. Summary by last year for each phase (helpful for understanding where things failed)
     print()
