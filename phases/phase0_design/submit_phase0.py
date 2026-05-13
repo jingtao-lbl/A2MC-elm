@@ -399,13 +399,29 @@ def main() -> int:
                         help="Skip auto-invoking tools/validate_submission_plan.py")
     parser.add_argument('--allow-existing-case-dirs', action='store_true',
                         help="Forwarded to the validator: suppress 'CIME case dir already exists' warning")
+    parser.add_argument('--skip-build-case', action='store_true',
+                        help="Skip Stage 3c.1 (running the build case synchronously). "
+                             "Use when the build case has already been completed by a separate "
+                             "submit_phase0.py call (e.g., a pilot run) and is currently running or "
+                             "queued in SLURM. The build_case is then ONLY used as the --reuse-build "
+                             "target for the En*.sh scripts of cases in --start/--end (its own "
+                             "En*.sh is left alone). When set, --build-case is allowed to be "
+                             "outside the case range.")
     args = parser.parse_args()
 
     cfg = Config.from_env()
     cases = parse_case_list(args)
     build_case = args.build_case if args.build_case is not None else cases[0]
-    if build_case not in cases:
-        raise SystemExit(f"ERROR: --build-case {build_case} not in case list")
+    if build_case not in cases and not args.skip_build_case:
+        raise SystemExit(f"ERROR: --build-case {build_case} not in case list "
+                         f"(use --skip-build-case if the build case has already been "
+                         f"completed/submitted by a separate orchestrator call)")
+    if args.skip_build_case and build_case in cases:
+        print(f"WARNING: --skip-build-case skips Stage 3c.1 entirely, but build_case "
+              f"{build_case} IS in [{min(cases)}..{max(cases)}]. Its En{build_case}.sh "
+              f"will be generated but never run, so case {build_case} will not be submitted "
+              f"to SLURM by this invocation. Pass --build-case OUTSIDE the case range to "
+              f"avoid generating its En*.sh.", file=sys.stderr)
 
     print("=" * 60)
     print("A2MC Phase 0 — Submit Ensemble")
@@ -417,10 +433,14 @@ def main() -> int:
     print(f"  ensemble output:    {cfg.ensemble_output}")
     print(f"  case scripts:       {cfg.case_scripts}")
     print(f"  total cases:        {len(cases)}  (range {min(cases)}..{max(cases)})")
-    print(f"  build case:         {build_case}  (fresh build; cases below reuse its bld/)")
+    if args.skip_build_case:
+        print(f"  build case:         {build_case}  (--skip-build-case: assumed already done; only used as --reuse-build target)")
+    else:
+        print(f"  build case:         {build_case}  (fresh build; cases below reuse its bld/)")
     print(f"  batch size:         {args.batch_size}")
     print(f"  submit to SLURM:    {args.submit}")
     print(f"  dry-run:            {args.dry_run}")
+    print(f"  skip build case:    {args.skip_build_case}")
     print()
 
     # Stage 3a: generate per-case scripts
@@ -460,7 +480,12 @@ def main() -> int:
         return 0
 
     # Stage 3c: coordinated submit
-    submit_build_case(cfg, build_case)
+    if args.skip_build_case:
+        print(f"\nStage 3c.1: SKIPPED (--skip-build-case). "
+              f"Assuming case {build_case} is already complete/running/queued "
+              f"and its bld/ is available for --reuse-build {build_case}.")
+    else:
+        submit_build_case(cfg, build_case)
     remaining = [n for n in cases if n != build_case]
     if remaining:
         submit_remaining_cases(cfg, remaining, args.batch_size)
