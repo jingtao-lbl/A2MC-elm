@@ -2,6 +2,23 @@
 # =======================================================================================
 # A2MC Submit Ensemble Script
 #
+# DEPRECATED in favor of phases/phase0_design/submit_phase0.py (added in
+# the 2026-05-11 Phase 0 refactor). The new orchestrator does the same
+# work plus:
+#   - Generates per-case scripts via `create_case.sh --write-script` so
+#     each case's full configuration is auditable on disk
+#   - Coordinates the build case (fresh build) vs reuse cases automatically
+#     (no manual two-step --start 1 --end 1 / --start 2 --end N pattern)
+#   - Runs a pre-flight validator (tools/validate_submission_plan.py) and
+#     refuses to submit on errors
+#   - Writes $A2MC_ENSEMBLE_OUTPUT/submission_manifest.json for audit
+# See: docs/20_Phase_0_R5_Refactor_Plan.md
+#      memory/dev_logs/20260511f_Phase0_P5_Submit_Phase0_Orchestrator.md
+#
+# This script is kept for backwards compatibility and as a fallback if
+# the new path needs hardening. New ensembles should use:
+#   python phases/phase0_design/submit_phase0.py --start N --end M --submit
+#
 # Submits multiple ensemble cases using create_case.sh as the template.
 # Supports parallel submission with configurable batch sizes.
 #

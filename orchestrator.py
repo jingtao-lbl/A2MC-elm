@@ -2826,7 +2826,11 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
         Delegates evaluation to phases/phase6_refinement/evaluate_results.py.
         Keeps loop control (phase transitions, counter updates) here.
         """
-        from phases.phase6_refinement import evaluate_experiments, determine_refinement_action
+        from phases.phase6_refinement import (
+            evaluate_experiments,
+            determine_refinement_action,
+            all_experiments_unreliable,
+        )
 
         logger.info("Evaluating experiment results...")
 
@@ -2850,6 +2854,27 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             self.state.iteration += 1
             self.state.current_phase = Phase.DIAGNOSIS.value
             return
+
+        # Refuse to advance when no experiment in this cycle produced usable
+        # data — otherwise Phase 6's "no improvement, try a different
+        # hypothesis" decision would run on phantom 0/6 readings, the same
+        # failure mode that produced the c00/c01 contamination cascade
+        # (see dev_log 20260519a). The current phase stays as REFINEMENT so
+        # --resume re-enters here after the operator fixes the upstream cause.
+        if all_experiments_unreliable(eval_result['outcomes']):
+            n_total = len(eval_result['outcomes'])
+            logger.error(
+                f"All {n_total} experiments in cycle "
+                f"{self.state.experiment_count} returned unreliable data. "
+                f"Refusing to advance to next cycle. Common causes: extraction "
+                f"pipeline failure, missing case directories, job submission "
+                f"issues. Investigate before resuming with --resume."
+            )
+            self.state.save(str(self.state_path))
+            raise RuntimeError(
+                f"All {n_total} experiments in cycle "
+                f"{self.state.experiment_count} returned no usable data"
+            )
 
         best_exp = eval_result['best_experiment']
         best_targets_met = eval_result['best_targets_met']

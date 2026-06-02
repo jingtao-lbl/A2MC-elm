@@ -439,6 +439,33 @@ cd /path/to/case_TRANS
 
 **Configuration:** Uses `A2MC_CASE_NAME_PATTERN` from site config (see "Case Name Pattern" section above). Other settings read from `a2mc_config.sh` and site config.
 
+**Auto-validation:** After writing `restart_incomplete_TIMESTAMP.sh`, the tool now automatically invokes `tools/validate_restart_script.py` against it and prints a per-case PASS/FAIL report. Pass `--no-validate` to skip.
+
+### Validate Restart Script (`tools/validate_restart_script.py`)
+
+Validates the auto-generated restart script for filesystem state and internal consistency. Runs automatically at the end of `diagnose_ensemble_status.py`, or can be invoked standalone.
+
+**Checks per case/phase:**
+- Script case set == `incomplete_cases_TIMESTAMP.txt` set
+- Case dir, `user_nl_elm`, and finidat `.nc` files exist
+- `user_nl_elm` last non-blank line starts with `finidat` (so `sed -i '$ d'` deletes the correct line)
+- `finidat` year (from filename) == `RUN_STARTDATE` year for continue mode
+- `STOP_N + RUN_STARTDATE_year == phase_end_year` (end years auto-detected from completed sibling cases in `$A2MC_ENSEMBLE_OUTPUT`, or supplied via `--adsp-end` / `--rgsp-end` / `--trans-end`)
+- `case.submit --batch-args=...` contains `-q <queue>` and `--mem=`
+- `--dependency=afterok:$JOBID_<P>_<N>` matches a `JOBID_<P>_<N>=` assignment earlier in the same case block
+
+**Usage:**
+```bash
+# Standalone (incomplete_cases auto-discovered from filename)
+python tools/validate_restart_script.py /path/to/restart_incomplete_TIMESTAMP.sh
+
+# With overrides (skip auto-detection of phase end years)
+python tools/validate_restart_script.py restart_incomplete_TIMESTAMP.sh \
+    --rgsp-end 401 --trans-end 2020
+```
+
+Exit code 0 = all checks pass; 1 = any check fails.
+
 ### Create Morris Ensemble Parameters (`tools/create_morris_ensemble_params.py`)
 
 Generates FATES parameter files from Morris ensemble matrix.

@@ -11,7 +11,9 @@ This script scans the ensemble output directory to identify:
 FIXED VERSION: Corrects restart logic based on MATLAB templates:
 - Uses RUN_STARTDATE + finidat approach (not CONTINUE_RUN)
 - Correctly calculates STOP_N = end_year - restart_year + 1
-- Handles finidat in user_nl_elm (ADSP removes 2 lines, RGSP/TRANS removes 1)
+- Handles finidat in user_nl_elm (ADSP strips 2 lines and conditionally
+  re-adds `nyears_ad_carbon_only = K` if restart_year <= K, where K is read
+  from $A2MC_ADSP_NYEARS_AD_CARBON_ONLY in a2mc_config.sh; RGSP/TRANS strips 1)
 - Handles fresh starts by pointing to previous phase's restart file
 
 - It creates restart_incomplete_{timestamp}.sh
@@ -103,6 +105,13 @@ CASE_SCRIPT_PATTERN = os.environ.get('A2MC_CASE_SCRIPT_PATTERN', '{CASE_PREFIX}_
 _spinup_start = int(os.environ.get('A2MC_SPINUP_START_YEAR', '1901'))
 _spinup_end = int(os.environ.get('A2MC_SPINUP_END_YEAR', '1920'))
 FORCING_CYCLE_LENGTH = _spinup_end - _spinup_start + 1
+
+# AD-carbon-only window — number of (calendar) years from RUN_STARTDATE during
+# which the ELM/FATES gate `yr .le. nyears_ad_carbon_only` runs the model in
+# AD-carbon-only mode. Set in a2mc_config.sh as A2MC_ADSP_NYEARS_AD_CARBON_ONLY.
+# Used by the ADSP-continue prep block to decide whether to re-append
+# `nyears_ad_carbon_only = K` after stripping (only if restart_year <= K).
+NYEARS_AD_CARBON_ONLY = int(os.environ.get('A2MC_ADSP_NYEARS_AD_CARBON_ONLY', '30'))
 
 # Phase definitions
 # - duration: how many years to simulate
@@ -473,6 +482,19 @@ def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_ye
             if aligned_year != restart_year:
                 restart_year = aligned_year
 
+        # No phase ever wrote a checkpoint AT its own start_year — the model
+        # begins from cold init (ADSP) or from the previous phase's final
+        # restart (RGSP, TRANS) at that boundary. So if cycle alignment (or
+        # the raw last_year, for TRANS) leaves restart_year at start_year,
+        # the would-be `finidat = '<self>/run/<self>.elm.r.<start_year>-...nc'`
+        # yields a GETFIL abort. Flip to fresh — the existing fresh code path
+        # handles each phase correctly:
+        #   ADSP fresh  -> just resubmit (no finidat, cold init)
+        #   RGSP fresh  -> finidat = ADSP.elm.r.0201-01-01-00000.nc
+        #   TRANS fresh -> finidat = RGSP.elm.r.0401-01-01-00000.nc
+        if restart_type == 'continue' and restart_year == phase_info['start_year']:
+            restart_type = 'fresh'
+
     stop_n = phase_info['end_year'] - restart_year + 1
 
     if stop_n <= 0:
@@ -513,18 +535,42 @@ def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_ye
         restart_file = f"{OUTPUT_ROOT}/{case_name}/run/{case_name}.elm.r.{restart_yearstr}-01-01-00000.nc"
 
         if phase == 'ADSP':
-            sed_cmd = "sed -i '$ d' ./user_nl_elm && sed -i '$ d' ./user_nl_elm"
+            # ADSP user_nl_elm tail (per case template):
+            #   ... finidat = ''
+            #       nyears_ad_carbon_only = K
+            # K is the project-level config (a2mc_config.sh:
+            # A2MC_ADSP_NYEARS_AD_CARBON_ONLY, default 30). Strip both trailing
+            # lines, append the new finidat, then iff restart_year <= K
+            # re-append `nyears_ad_carbon_only = K`. The model's gate is
+            # `yr .le. K` (yr is the calendar year from RUN_STARTDATE), so K
+            # must remain in the namelist whenever there are still
+            # AD-carbon-only years left to run. For restart_year > K the line
+            # is functionally inert (gate fails for all yr >= 1) so we drop it.
+            keep_ad_carbon_only = restart_year <= NYEARS_AD_CARBON_ONLY
+            cmd_lines.extend([
+                f"# Continue from year {restart_year} "
+                    f"(K={NYEARS_AD_CARBON_ONLY}, "
+                    f"keep nyears_ad_carbon_only: {keep_ad_carbon_only})",
+                f"./xmlchange STOP_N={stop_n}",
+                f"./xmlchange RUN_STARTDATE={restart_yearstr}-01-01",
+                f"sed -i '$ d' ./user_nl_elm && sed -i '$ d' ./user_nl_elm",
+                f"echo \"finidat = '{restart_file}'\" >> user_nl_elm",
+            ])
+            if keep_ad_carbon_only:
+                cmd_lines.append(
+                    f"echo 'nyears_ad_carbon_only = {NYEARS_AD_CARBON_ONLY}' "
+                    f">> user_nl_elm"
+                )
+            cmd_lines.append(f"./case.setup")
         else:
-            sed_cmd = "sed -i '$ d' ./user_nl_elm"
-
-        cmd_lines.extend([
-            f"# Continue from year {restart_year}",
-            f"./xmlchange STOP_N={stop_n}",
-            f"./xmlchange RUN_STARTDATE={restart_yearstr}-01-01",
-            f"{sed_cmd}",
-            f"echo \"finidat = '{restart_file}'\" >> user_nl_elm",
-            f"./case.setup",
-        ])
+            cmd_lines.extend([
+                f"# Continue from year {restart_year}",
+                f"./xmlchange STOP_N={stop_n}",
+                f"./xmlchange RUN_STARTDATE={restart_yearstr}-01-01",
+                f"sed -i '$ d' ./user_nl_elm",
+                f"echo \"finidat = '{restart_file}'\" >> user_nl_elm",
+                f"./case.setup",
+            ])
 
     # Submit command with job ID capture
     if capture_jobid_var:
@@ -555,7 +601,10 @@ def generate_restart_command(case_result):
     - For continues: set RUN_STARTDATE, update finidat, calculate STOP_N
     - ADSP/RGSP continues: align restart year to forcing cycle boundary
       (e.g., last_year=171 snaps back to 161 for 20-year forcing cycle)
-    - ADSP: remove 2 lines from user_nl_elm (finidat='' and nyears_ad_carbon_only)
+    - ADSP: strip 2 trailing lines (finidat='' and nyears_ad_carbon_only = K),
+      append the new finidat, then re-append `nyears_ad_carbon_only = K` iff
+      restart_year <= K (K read from $A2MC_ADSP_NYEARS_AD_CARBON_ONLY in
+      a2mc_config.sh — single source of truth, project-level protocol setting)
     - RGSP/TRANS: remove 1 line from user_nl_elm (old finidat)
     """
     if not case_result['needs_restart']:
@@ -667,6 +716,8 @@ def main():
                         help='Generate restart script')
     parser.add_argument('--parallel', type=int, default=16,
                         help='Number of parallel workers')
+    parser.add_argument('--no-validate', action='store_true',
+                       help='Skip auto-validation of the generated restart script')
     parser.add_argument('--output-dir', type=str, default='.',
                         help='Output directory for reports')
     args = parser.parse_args()
@@ -908,7 +959,10 @@ def main():
             f.write(f"# Key implementation details:\n")
             f.write(f"# - Uses RUN_STARTDATE + finidat approach (not CONTINUE_RUN)\n")
             f.write(f"# - STOP_N = end_year - restart_year + 1\n")
-            f.write(f"# - ADSP: removes 2 lines (finidat, nyears_ad_carbon_only)\n")
+            f.write(f"# - ADSP continue: strips 2 lines (finidat, nyears_ad_carbon_only),\n")
+            f.write(f"#   appends new finidat, re-appends nyears_ad_carbon_only=K iff\n")
+            f.write(f"#   restart_year <= K (K from $A2MC_ADSP_NYEARS_AD_CARBON_ONLY,\n")
+            f.write(f"#   currently {NYEARS_AD_CARBON_ONLY})\n")
             f.write(f"# - RGSP/TRANS: removes 1 line (old finidat)\n")
             f.write(f"# - Fresh starts use previous phase's restart file\n")
 
@@ -921,6 +975,29 @@ def main():
 
         os.chmod(restart_file, 0o755)
         print(f"Restart script: {restart_file}")
+
+        # 4b. Auto-validate the generated restart script
+        if not args.no_validate:
+            print()
+            print("=" * 60)
+            print("RESTART SCRIPT VALIDATION")
+            print("=" * 60)
+            import sys as _sys
+            import subprocess as _subprocess
+            validator = Path(__file__).parent / 'validate_restart_script.py'
+            if validator.is_file():
+                cmd = [_sys.executable, str(validator), str(restart_file),
+                       '--incomplete-cases', str(incomplete_file)]
+                result = _subprocess.run(cmd)
+                if result.returncode != 0:
+                    print()
+                    print("VALIDATION FAILED — review errors above before submitting")
+                    print(f"(Re-run validator manually: python {validator} {restart_file})")
+                else:
+                    print()
+                    print("Validation passed — restart script is ready to submit.")
+            else:
+                print(f"  (validator not found at {validator}; skipping)")
 
     # 5. Summary by last year for each phase (helpful for understanding where things failed)
     print()

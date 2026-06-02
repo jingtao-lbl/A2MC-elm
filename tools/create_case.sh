@@ -70,6 +70,53 @@ if [ -n "${A2MC_SITE_CONFIG:-}" ] && [ -f "$A2MC_SITE_CONFIG" ] && \
 fi
 
 # ========================
+# CASE NAME RESOLUTION
+# ========================
+
+# Resolve a case name from $A2MC_CASE_NAME_PATTERN with substitutions for
+# {N} (case number) and optionally {PHASE}. When PHASE is omitted, the
+# function returns the base name with the `_{PHASE}` suffix stripped.
+#
+# Usage:
+#   resolve_case_name "<pattern>" <CASE_NUM> [PHASE]
+#
+# Errors loudly if any {...} token remains after substitution, which
+# catches pattern shape changes the call site didn't anticipate.
+resolve_case_name() {
+    local pattern="$1"
+    local case_num="$2"
+    local phase="${3:-}"
+    local resolved="$pattern"
+
+    if [ -z "$pattern" ]; then
+        echo "ERROR: resolve_case_name: empty pattern (is A2MC_CASE_NAME_PATTERN set?)" >&2
+        return 1
+    fi
+
+    # Substitute {N} first
+    resolved="${resolved//\{N\}/${case_num}}"
+
+    if [ -n "$phase" ]; then
+        # Substitute {PHASE} with the given phase name
+        resolved="${resolved//\{PHASE\}/${phase}}"
+    else
+        # Base name path: strip the `_{PHASE}` suffix if present
+        resolved="${resolved%_\{PHASE\}}"
+    fi
+
+    # Post-condition: no unresolved {...} tokens should remain
+    case "$resolved" in
+        *"{"*"}"*)
+            echo "ERROR: resolve_case_name: unresolved token(s) in '$resolved'" >&2
+            echo "  pattern='$pattern' case_num='$case_num' phase='$phase'" >&2
+            return 1
+            ;;
+    esac
+
+    printf '%s' "$resolved"
+}
+
+# ========================
 # ARGUMENT PARSING
 # ========================
 
@@ -176,10 +223,9 @@ fi
 
 # Derive BASE_CASE_NAME from A2MC_CASE_NAME_PATTERN for naming consistency.
 # Pattern example: "Kougarok_ELM-FATES_PtCNPEn{N}_{PHASE}"
-# Strip _{PHASE} to get the base, replace {N} with CASE_NUM.
+# Uses resolve_case_name() defined at the top of this script.
 if [ -n "${A2MC_CASE_NAME_PATTERN:-}" ]; then
-    # Derive from pattern: strip {PHASE} placeholder, substitute {N}
-    BASE_CASE_NAME=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed 's/_{PHASE}//' | sed "s/{N}/${CASE_NUM}/")
+    BASE_CASE_NAME=$(resolve_case_name "${A2MC_CASE_NAME_PATTERN}" "${CASE_NUM}") || exit 1
 else
     # Fallback when pattern is not set
     BASE_CASE_NAME="${CASE_PREFIX}_En${CASE_NUM}"
@@ -329,6 +375,11 @@ CASE_NAME_PATTERN="${A2MC_CASE_NAME_PATTERN}"
 # Build reuse
 REUSE_BUILD="${_ws_reuse_build}"
 SKIP_BUILD=${_ws_skip_build}
+# Cross-ensemble bld reuse (R5+ pattern): when set, takes precedence over
+# the pattern-based --reuse-build resolution. Used directly as EXEROOT
+# template with {PHASE} substituted. Useful when a new round shares the
+# FATES build with a prior round (e.g., R5 reusing R4's case-1 bld).
+REUSE_BUILD_EXEROOT_TEMPLATE="${A2MC_REUSE_BUILD_EXEROOT_TEMPLATE:-}"
 EOF
 
     # Write the functions and main loop as literal script (no variable expansion)
@@ -466,13 +517,40 @@ NLEOF
         cp "${FORCING_DIR}"/user_datm.streams.txt* ./ 2>/dev/null || true
     fi
 
-    # Build or reuse existing build
-    if [ -n "$REUSE_BUILD" ]; then
+    # Build or reuse existing build.
+    # Precedence:
+    #   1. REUSE_BUILD_EXEROOT_TEMPLATE set → cross-ensemble reuse (R5+ pattern;
+    #      bypasses --reuse-build pattern resolution). Used as a literal
+    #      template with {PHASE} substituted.
+    #   2. --reuse-build N (P4 self-skip: skip when CASE_NUM == REUSE_BUILD).
+    #   3. Otherwise, build fresh (or honor --skip-build).
+    if [ -n "${REUSE_BUILD_EXEROOT_TEMPLATE:-}" ]; then
+        REUSE_EXEROOT="${REUSE_BUILD_EXEROOT_TEMPLATE//\{PHASE\}/${PHASE}}"
+        case "$REUSE_EXEROOT" in
+            *"{"*"}"*)
+                echo "ERROR: unresolved token(s) in REUSE_BUILD_EXEROOT_TEMPLATE: $REUSE_EXEROOT"
+                exit 1
+                ;;
+        esac
+        echo "Reusing bld via REUSE_BUILD_EXEROOT_TEMPLATE: ${REUSE_EXEROOT}"
+        ./xmlchange EXEROOT="${REUSE_EXEROOT}"
+        ./xmlchange BUILD_COMPLETE=TRUE
+        ./case.setup
+        ./preview_namelists
+    elif [ -n "$REUSE_BUILD" ] && [ "$REUSE_BUILD" != "$CASE_NUM" ]; then
         if [ -z "${CASE_NAME_PATTERN:-}" ]; then
             echo "ERROR: CASE_NAME_PATTERN is not set. Source your site config first."
             exit 1
         fi
-        REUSE_CASE=$(echo "${CASE_NAME_PATTERN}" | sed "s/{N}/${REUSE_BUILD}/" | sed "s/{PHASE}/${PHASE}/")
+        # Bash parameter expansion (P3): substitute {N} and {PHASE} natively
+        REUSE_CASE="${CASE_NAME_PATTERN//\{N\}/${REUSE_BUILD}}"
+        REUSE_CASE="${REUSE_CASE//\{PHASE\}/${PHASE}}"
+        case "$REUSE_CASE" in
+            *"{"*"}"*)
+                echo "ERROR: unresolved token(s) in '$REUSE_CASE' (pattern=$CASE_NAME_PATTERN)"
+                exit 1
+                ;;
+        esac
         REUSE_EXEROOT="${CIME_OUTPUT_ROOT}${REUSE_CASE}/bld"
         echo "Reusing build from: ${REUSE_CASE}"
         ./xmlchange EXEROOT="${REUSE_EXEROOT}"
@@ -487,7 +565,11 @@ NLEOF
         ./preview_namelists
 
         if [ "$SKIP_BUILD" = false ]; then
-            echo "Building case..."
+            if [ -n "$REUSE_BUILD" ] && [ "$REUSE_BUILD" = "$CASE_NUM" ]; then
+                echo "Building case (this IS the build case for the ensemble; --reuse-build self-skip)..."
+            else
+                echo "Building case..."
+            fi
             ./case.build
         fi
     fi
@@ -727,16 +809,30 @@ EOF
         cp "${A2MC_FORCING_DIR}"/user_datm.streams.txt* ./ 2>/dev/null || true
     fi
 
-    # Build or reuse existing build
-    if [ -n "$REUSE_BUILD" ]; then
-        # Reuse compiled binary from another case
-        # Use CASE_NAME_PATTERN to resolve the full case name (consistent with --write-script)
-        if [ -n "${A2MC_CASE_NAME_PATTERN:-}" ]; then
-            REUSE_CASE=$(echo "${A2MC_CASE_NAME_PATTERN}" | sed "s/{N}/${REUSE_BUILD}/" | sed "s/{PHASE}/${PHASE}/")
-        else
-            echo "ERROR: A2MC_CASE_NAME_PATTERN is not set. Source your site config first."
-            exit 1
-        fi
+    # Build or reuse existing build.
+    # Precedence:
+    #   1. $A2MC_REUSE_BUILD_EXEROOT_TEMPLATE set → cross-ensemble reuse.
+    #      Used as a literal template with {PHASE} substituted. Useful when
+    #      a new round shares the FATES build with a prior round (e.g., R5
+    #      reuses R4's case-1 bld since both use fates-cnp-eca-tj).
+    #   2. --reuse-build N (P4 self-skip: build the build-case itself fresh).
+    #   3. Otherwise, build fresh (or honor --skip-build).
+    if [ -n "${A2MC_REUSE_BUILD_EXEROOT_TEMPLATE:-}" ]; then
+        REUSE_EXEROOT="${A2MC_REUSE_BUILD_EXEROOT_TEMPLATE//\{PHASE\}/${PHASE}}"
+        case "$REUSE_EXEROOT" in
+            *"{"*"}"*)
+                echo "ERROR: unresolved token(s) in A2MC_REUSE_BUILD_EXEROOT_TEMPLATE: $REUSE_EXEROOT"
+                exit 1
+                ;;
+        esac
+        echo "Reusing bld via A2MC_REUSE_BUILD_EXEROOT_TEMPLATE: ${REUSE_EXEROOT}"
+        ./xmlchange EXEROOT="${REUSE_EXEROOT}"
+        ./xmlchange BUILD_COMPLETE=TRUE
+        ./case.setup
+        ./preview_namelists
+    elif [ -n "$REUSE_BUILD" ] && [ "$REUSE_BUILD" != "$CASE_NUM" ]; then
+        # Reuse compiled binary from another case in the SAME ensemble
+        REUSE_CASE=$(resolve_case_name "${A2MC_CASE_NAME_PATTERN}" "${REUSE_BUILD}" "${PHASE}") || exit 1
         REUSE_EXEROOT="${CIME_OUTPUT_ROOT}${REUSE_CASE}/bld"
         echo "Reusing build from: ${REUSE_CASE}"
         ./xmlchange EXEROOT="${REUSE_EXEROOT}"
@@ -751,7 +847,11 @@ EOF
         ./preview_namelists
 
         if [ "$SKIP_BUILD" = false ]; then
-            echo "Building case..."
+            if [ -n "$REUSE_BUILD" ] && [ "$REUSE_BUILD" = "$CASE_NUM" ]; then
+                echo "Building case (this IS the build case for the ensemble; --reuse-build self-skip)..."
+            else
+                echo "Building case..."
+            fi
             ./case.build
         fi
     fi

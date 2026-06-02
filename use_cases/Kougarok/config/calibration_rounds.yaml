@@ -185,17 +185,49 @@ rounds:
           litter-trap mechanism (mortality pulse during 1963-68 drought
           + low w_scalar suppression of decomposition), not plant uptake.
           So prescribed P uptake didn't test what we thought.
-      (3) FATES source quirk: prescribed_puptake declared but unused;
-          the magnitude was actually controlled by prescribed_nuptake=1.0
-          (default). Numerically R4 still ran "prescribed P at full
-          demand" but via the wrong code path. Fixed in 2026-04-28 FATES
-          rebuild.
+      (3) FATES source quirk: `prescribed_puptake` is declared but
+          unused in the daily P-gain calculation — `FatesSoilBGCFluxMod.F90:202`
+          reads `prescribed_nuptake(pft)` for both N and P scaling
+          magnitude (copy-paste typo from the parallel N-uptake block
+          at lines 165-166). CORRECTED 2026-05-11: the original
+          interpretation in this entry assumed `prescribed_nuptake`
+          fell back to its source-code default (1.0). It does not.
+          The A2MC ensemble generator (`phases/phase0_design/create_morris_ensemble.py:357`)
+          explicitly sets `fates_cnp_prescribed_nuptake = 0` in every
+          per-case parameter file, overriding the source default. So
+          when old-R4 set `prescribed_puptake = 1.0`, the mode flipped
+          to "prescribed P uptake" but the actual daily P gain was
+          scaled by `prescribed_nuptake = 0` → effectively **P uptake
+          forced to ZERO**, not "P at full demand". Old-R4 was therefore
+          testing the *opposite* protocol from what was intended.
+          Implication: "fully prescribed P uptake" has never actually
+          been tested in any A2MC round. If a future round wants to
+          test that, both `prescribed_puptake` AND `prescribed_nuptake`
+          must be set to 1.0 in the parameter file (or in the override
+          list), AND the 2026-04-28 FATES patch (which fixes
+          `FatesSoilBGCFluxMod.F90:202` to use `prescribed_puptake(pft)`)
+          must be applied. The patch is on the `fates-cnp-eca-tj`
+          branch but is a no-op for R4 (new), R5, etc. unless they
+          actually exercise prescribed-P mode.
       Cross-round comparison (tools/compare_rounds.py): PFT10 fineroot
       unchanged across 183/183 paired cases vs R3; Spearman ρ(R3 ranks,
       old-R4 ranks) = 0.05; top 5 R3 cases collapsed under prescribed P.
-      Reading: P prescription alone does not rescue PFT10. Motivated the
-      redesigned R4 (ADSPSupNP) to test the N-limitation-during-ADSP
-      hypothesis instead.
+      Reading (CORRECTED 2026-05-11): the original reading was "P
+      prescription alone does not rescue PFT10," based on the assumption
+      that old-R4 had successfully prescribed P at full demand. Per
+      finding (3) above, that assumption was wrong — old-R4 actually
+      ran with effective P uptake = ZERO during TRANS (because the
+      source quirk routes the magnitude through `prescribed_nuptake`,
+      which the ensemble generator sets to 0). The "top 5 R3 cases
+      collapsed under prescribed P" observation is therefore explained
+      by P starvation, not by demonstration that P-prescription doesn't
+      help. **What old-R4 actually tested was "R3 protocol + P uptake
+      forced to zero in TRANS," not "R3 protocol + P at full demand."**
+      Old-R4 thus carries no information about whether fully-prescribed
+      P would rescue PFT10 — that hypothesis remains untested. The
+      decision to redesign R4 (ADSPSupNP) is still defensible (P
+      starvation is not a useful treatment to study), but the framing
+      "P prescription alone does not rescue PFT10" should be retracted.
     status: superseded
 
   4:
@@ -289,5 +321,139 @@ rounds:
       the N-limitation hypothesis is eliminated and structural / bound
       issues (mort_freezetol_10, l2fr_10 below 1, alloc_storage_cushion_10)
       become the focus of subsequent rounds.
+    outcome: |
+      R4 completed 4890/4890 paired cases on 2026-05-12. Headline (per
+      memory/ana_logs/20260511a_R2_vs_R4_Attribution_Refresh_4884cases.md
+      with 2026-05-12 addendum extending to 4890):
+
+      (1) ADSP_SUPLNITRO=ALL DOES NOT RESCUE PFT10. PFT10 ADSP-end leaf
+          delta (R4-R2) median = 0 with IQR [-0.128, +0.001] across all
+          4890 paired cases. N supplementation reaches PFT7/9 (shrubs)
+          but not PFT10 (graminoid). The R4 primary hypothesis is
+          decisively falsified.
+
+      (2) FINE-ROOT RE-ALLOCATION PATHOLOGY surfaced. R4's ADSP N
+          supplementation REDUCES fine-root biomass for all 3 PFTs
+          (median deltas: PFT7 −0.023, PFT9 −0.001, PFT10 −4e-5). Classic
+          plant-physiology trade-off (N abundant → less foraging
+          investment), but for PFT10 the trade nets NEGATIVE (no leaf
+          gain to offset the fineroot cost). Once supplementation ends,
+          plants have a diminished fineroot pool but the same need to
+          forage for season-pulsed nutrients during TRANS. The R4
+          protocol fights itself for the very PFT it was designed to
+          help.
+
+      (3) HYDRAULIC MORTALITY RAMP IS A WASH at aggregate. TRANS-
+          integrated hydraulic mortality flux delta (R4-R2): PFT7 median
+          slightly positive (+7e-10, R4 has MORE mortality), PFT9/PFT10
+          medians near-null. The smoother ramp produces variance
+          changes worth a follow-up but no aggregate magnitude reduction.
+
+      (4) BEST-CASE NRMSE: case #302 with NRMSE = 0.5280 (vs R2's #1386
+          at 0.5867). Improvement is real but small, and not cleanly
+          attributable to either intervention.
+
+      Implication: subsequent rounds should target the ALLOCATION
+      pathology (l2fr, fates_recruit_init_density, alloc_storage_cushion
+      for PFT10) and/or test ALL-supplementation-OFF baselines. The N-
+      limitation lever is now exhausted as a useful treatment.
+    status: completed
+    completed_date: "2026-05-12"
+
+  5:
+    parameters: 162
+    ensembles: 4890
+    trajectories: 30
+    sampling_scheme: "morris"
+    config_file: "use_cases/Kougarok/config/kougarok_config_r5.sh"
+    paths:
+      ensemble_name: "Kougarok_PlantTraitsCNPEnsemble162_PrescribedP"
+      ensemble_output: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP"
+      extracted_data: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP_Extract"
+      param_dir: "/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_PrescribedP_EnPlantTraitsCNPparam162"
+      param_pattern: "fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"
+      case_name_pattern: "Kougarok_ELM-FATES_PtCNPEn{N}PrescP_{PHASE}"
+      case_scripts: "${A2MC_SCRIPTS_DIR}/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase_PrescribedP"
+    targets:
+      - "PFT7_leaf, PFT7_fineroot"
+      - "PFT9_leaf, PFT9_fineroot"
+      - "PFT10_leaf, PFT10_fineroot"
+    protocol:
+      suplphos:
+        ADSP: "NONE"   # OFF — differs from a2mc_config.sh default ALL; differs from R4 (ALL)
+        RGSP: "NONE"
+        TRANS: "NONE"
+      suplnitro:
+        ADSP: "NONE"   # OFF — differs from R4 (ALL)
+        RGSP: "NONE"
+        TRANS: "NONE"
+    overrides:
+      fates_cnp_prescribed_puptake: 1.0    # Per-PFT array, all 12 PFTs = 1.0
+    fates_source:
+      branch: "fates-cnp-eca-tj"
+      base_commit: "e85d997"
+      patches:
+        - id: "gradual-hydraulic-mortality"
+          file: "biogeochem/EDMortalityFunctionsMod.F90"
+          summary: |
+            Replaces the binary hydraulic mortality switch at hf_sm_threshold
+            with a linear ramp. Same patch as R4 (current).
+        - id: "prescribed-puptake-fix"
+          file: "biogeochem/FatesSoilBGCFluxMod.F90"
+          line: 202
+          summary: |
+            prescribed_nuptake(pft) → prescribed_puptake(pft) in daily_p_gain.
+            CRITICAL for R5: this patch is what makes
+            fates_cnp_prescribed_puptake=1.0 actually deliver "P at full
+            demand". Without it, the param value would be ignored and the
+            magnitude would silently read from prescribed_nuptake (which is
+            set to 0 by the ensemble generator) — the exact bug that
+            silently turned old R4 subset_replay into a P-starvation test
+            (see entry 4_subset_replay_PrescP_superseded.outcome finding 3
+            for the full correction).
+    changes_from_previous:
+      # vs R4 (current Morris ADSPSupNP)
+      - "Protocol vs R4: ADSP_SUPLPHOS ALL→NONE; ADSP_SUPLNITRO ALL→NONE. ALL phases now run with NO nutrient supplementation."
+      - "Override added: fates_cnp_prescribed_puptake = 1.0 (all 12 PFTs). Combined with the FATES prescribed-puptake-fix patch, delivers P uptake at daily demand rate throughout ADSP+RGSP+TRANS."
+      - "Sampling unchanged: full 4890-case Morris on the same X matrix (FATES_CNPnPlantTraits_162param_Morris_4890sets.txt). Same parameter draws across R2/R3/R4/R5; only protocol + overrides differ — enables clean within-case paired comparison."
+      - "Parameter files: new dir /global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_PrescribedP_EnPlantTraitsCNPparam162 (built by phases/phase0_design/apply_param_override.py from R3's non-prescribed dir with prescribed_puptake=1.0 applied; 4890 NCs, 384MB)"
+      - "FATES build reused from R4 (fates-cnp-eca-tj). The prescribed-puptake-fix patch is the FIRST patch that actually matters for any A2MC round: R4 doesn't use prescribed-P mode so the patch is a no-op there; R5 turns the patch on for the first production use."
+      - "Case-dir suffix: PrescP (matches old superseded R4). R4-new uses ADSPSupNP — no collision."
+    rationale: >
+      Two findings from R4 motivate R5: (1) the fine-root re-allocation
+      pathology under N supplementation means future N-supp variants will
+      deepen the same trade-off, not resolve it; (2) "fully prescribed P
+      uptake" has never been cleanly tested in any A2MC round (the old
+      R4 subset_replay attempted this but a FATES source quirk + the
+      A2MC ensemble generator's zero-fill of prescribed_nuptake combined
+      to deliver P uptake = ZERO during TRANS instead of full demand).
+
+      R5 is the first attempt to cleanly answer "is P availability the
+      bottleneck for PFT10?" To do so without confounds:
+        - Turn OFF ALL nutrient supplementation (no fattening-then-
+          starving cycle from R4's ADSP_SUPLNITRO=ALL).
+        - Prescribe P uptake at full demand throughout via the parameter
+          override (works correctly because the FATES build has the
+          prescribed-puptake-fix patch).
+        - Leave N coupled (from soil ECA dynamics). If PFT10 still fails
+          despite full-demand P, the bottleneck is NOT P-availability
+          — it's allocation/light/turnover/etc.
+
+      Risk acknowledged: removing ADSP_SUPLNITRO=ALL means N is solely
+      coupled during AD spinup. Per R3 iter07 diagnosis, this was the
+      identified bottleneck for PFT10 establishment. If R5 shows PFT10
+      still fails despite P prescription, that result is consistent
+      with EITHER (a) N limits PFT10 during ADSP, OR (b) the bottleneck
+      is elsewhere. A follow-up round prescribing BOTH N and P would
+      disentangle further if needed.
+
+      Expected R5 outcome shape: if P-availability is the PFT10
+      bottleneck, mean PFT10 leaf and fineroot biomass rise substantially
+      vs R2 (which has the same protocol baseline, coupled P). If P
+      availability is NOT the bottleneck, R5 biomass distributions look
+      similar to R2 across all 3 PFTs — telling us future calibration
+      should target allocation parameters (l2fr_10,
+      alloc_storage_cushion_10, fates_recruit_init_density_10) rather
+      than nutrient pathways.
     outcome: null
-    status: in_progress
+    status: planned

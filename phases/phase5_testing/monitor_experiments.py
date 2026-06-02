@@ -329,6 +329,40 @@ def extract_experiment_results(
 
             exp["extraction_status"] = "extracted"
 
+            # The extraction script returns 0 even when its internal process_case()
+            # fails to find h0 files (it prints a stdout warning, then continues).
+            # Verify an NC actually landed so the status field doesn't lie to
+            # downstream consumers (e.g. Phase 6 auto_learn). See dev_log
+            # 20260519a for the contamination that this guards against.
+            from tools.evaluate_case import find_extracted_nc
+            search_dirs = []
+            try:
+                from tools.config import config as a2mc_config
+                extracted_dir = Path(a2mc_config.EXTRACTED_DATA)
+                if extracted_dir.exists():
+                    search_dirs.append(extracted_dir)
+            except (ImportError, AttributeError):
+                pass
+            if output_root:
+                search_dirs.append(Path(output_root))
+            if find_extracted_nc(case_name, search_dirs) is None:
+                logger.error(
+                    f"Extraction subprocess returned 0 but no NC file found "
+                    f"for '{name}' (case_name='{case_name}'). "
+                    f"Treating as extraction_failed."
+                )
+                exp["extraction_status"] = "extraction_failed"
+                exp["results"] = {
+                    "error": (
+                        f"Extractor exited 0 but no NC found for {case_name}. "
+                        f"Likely case-name interpolation mismatch or missing h0 files."
+                    ),
+                    "targets_met": 0,
+                    "total_targets": len(targets) if targets else 0,
+                    "metrics": {}
+                }
+                continue
+
             # Try to load and evaluate extracted data
             try:
                 results = _evaluate_experiment(

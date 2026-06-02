@@ -71,46 +71,71 @@ def evaluate_experiments(
     outcomes = []
 
     for exp in latest_experiments:
-        results = exp.get("results", {})
+        results = exp.get("results", {}) or {}
         targets_met = results.get("targets_met", 0)
         outcome = classify_outcome(targets_met, total_targets)
 
-        logger.info(f"  {exp['name']}: {targets_met}/{total_targets} targets met")
+        # An experiment's data is reliable iff extraction succeeded AND no
+        # error was reported AND the metrics dict is non-empty. Phantom 0/6
+        # readings from a silent extraction failure (see dev_log 20260519a)
+        # would otherwise be classified as FAILED and poison auto_learn.
+        extraction_status = exp.get("extraction_status", "")
+        error_msg = results.get("error", "")
+        metrics_present = bool(results.get("metrics"))
+        data_reliable = (
+            extraction_status == "extracted"
+            and not error_msg
+            and metrics_present
+        )
+
+        logger.info(f"  {exp['name']}: {targets_met}/{total_targets} targets met"
+                    f"{'' if data_reliable else '  [unreliable: no usable data]'}")
 
         exp_outcome = {
             'experiment_name': exp.get('name', 'unknown'),
             'targets_met': targets_met,
-            'outcome': outcome
+            'outcome': outcome,
+            'data_reliable': data_reliable,
         }
 
-        # Extract lesson via reasoning module
-        if reasoning_module and auto_learn:
-            try:
-                lesson = reasoning_module.extract_lesson(
-                    experiment=exp,
-                    results=results,
-                    outcome=outcome
-                )
-                if lesson:
-                    logger.info(f"    Lesson extracted: {lesson.get('lesson', 'N/A')[:50]}...")
-                    exp_outcome['lesson'] = lesson
-            except Exception as e:
-                logger.debug(f"Could not extract lesson: {e}")
+        if not data_reliable:
+            skip_reason = error_msg[:80] if error_msg else 'empty metrics'
+            logger.warning(
+                f"  Skipping auto_learn for '{exp.get('name')}': "
+                f"extraction_status={extraction_status!r}, "
+                f"error={error_msg[:80]!r}, metrics_present={metrics_present}"
+            )
+            exp_outcome['skipped_auto_learn'] = True
+            exp_outcome['skip_reason'] = f"no data ({skip_reason})"
+        else:
+            # Extract lesson via reasoning module
+            if reasoning_module and auto_learn:
+                try:
+                    lesson = reasoning_module.extract_lesson(
+                        experiment=exp,
+                        results=results,
+                        outcome=outcome
+                    )
+                    if lesson:
+                        logger.info(f"    Lesson extracted: {lesson.get('lesson', 'N/A')[:50]}...")
+                        exp_outcome['lesson'] = lesson
+                except Exception as e:
+                    logger.debug(f"Could not extract lesson: {e}")
 
-        # Update experiment outcome in memory
-        if memory_manager and auto_learn:
-            try:
-                memory_manager.record_experiment(
-                    experiment=exp,
-                    results=results,
-                    outcome=outcome
-                )
-            except Exception as e:
-                logger.debug(f"Could not update experiment in memory: {e}")
+            # Update experiment outcome in memory
+            if memory_manager and auto_learn:
+                try:
+                    memory_manager.record_experiment(
+                        experiment=exp,
+                        results=results,
+                        outcome=outcome
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not update experiment in memory: {e}")
 
         outcomes.append(exp_outcome)
 
-        if targets_met > best_targets_met:
+        if data_reliable and targets_met > best_targets_met:
             best_targets_met = targets_met
             best_exp = exp
 
@@ -157,6 +182,19 @@ def determine_refinement_action(
             'hypothesis_status': 'FAILED',
             'description': f'REVISE HYPOTHESIS (no improvement: {best_targets_met}/{total_targets})'
         }
+
+
+def all_experiments_unreliable(outcomes: List[Dict]) -> bool:
+    """True iff every outcome was skipped by the auto_learn data-reliability gate.
+
+    The orchestrator uses this to refuse advancing to the next experiment cycle
+    when no experiment in the current cycle produced usable data — preventing
+    cycle-level decisions from being made on phantom 0/6 readings. See dev_log
+    20260519a.
+    """
+    if not outcomes:
+        return False
+    return all(o.get('skipped_auto_learn') for o in outcomes)
 
 
 def generate_comparison_plot(

@@ -10,6 +10,7 @@ from phases.phase6_refinement.evaluate_results import (
     evaluate_experiments,
     classify_outcome,
     determine_refinement_action,
+    all_experiments_unreliable,
     generate_comparison_plot,
 )
 
@@ -26,6 +27,7 @@ __all__ = [
     'evaluate_experiments',
     'classify_outcome',
     'determine_refinement_action',
+    'all_experiments_unreliable',
     'generate_comparison_plot',
     'plot_experiment_comparison',
 ]

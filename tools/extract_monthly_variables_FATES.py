@@ -450,6 +450,19 @@ def extract_all_variables(history_files, site_vars, levgrnd_vars, levsoi_vars, l
 
     # Open all files and concatenate
     ds_list = []
+    # All non-time level/depth coords get stripped per-file before concat
+    # (some yearly NCs have these stored as all-zeros from a partial
+    # write; xarray.concat fails alignment when years disagree on a
+    # coord). The data variables that use these dimensions are kept
+    # intact; we reattach canonical coord values once at the end.
+    #
+    # "Level" coords are detected by name prefix: anything starting with
+    # `lev` (levgrnd, levsoi, levlak, levdcmp, ...) or `fates_lev`
+    # (fates_levpft, fates_levscls, fates_levscpf, fates_levage, ...).
+    # `time` and `lndgrid` are NEVER stripped.
+    def _is_level_coord(name):
+        return name.startswith('lev') or name.startswith('fates_lev')
+    canonical_coords = {}
 
     for i, file in enumerate(history_files):
         print(f"    Loading file {i+1}/{len(history_files)}: {file.name}")
@@ -457,6 +470,26 @@ def extract_all_variables(history_files, site_vars, levgrnd_vars, levsoi_vars, l
         try:
             # Open file
             ds = xr.open_dataset(file, decode_times=False)
+
+            # Integrity check: some yearly NCs are partial-write artifacts
+            # from a crashed model (file header + dim definitions written,
+            # but per-timestep data never flushed). Detected as:
+            #   (a) time dim missing or length != 12 monthly timesteps
+            #   (b) signal variable FATES_LEAFC_SZPF entirely zero or NaN
+            # The level coord-stripping below handles a separate failure
+            # mode (corrupted coord values across an otherwise-valid file)
+            # but cannot rescue a file with no data. Skip those.
+            _time_n = ds.sizes.get('time', 0)
+            if _time_n != 12:
+                print(f"  ⚠ Skipping {file.name}: time dim is {_time_n} (expected 12)")
+                ds.close()
+                continue
+            if 'FATES_LEAFC_SZPF' in ds.variables:
+                _signal = ds['FATES_LEAFC_SZPF'].values
+                if not _signal.any() or np.all(np.isnan(_signal)):
+                    print(f"  ⚠ Skipping {file.name}: FATES_LEAFC_SZPF all-zero or all-NaN (partial write?)")
+                    ds.close()
+                    continue
 
             # Select only variables we need
             vars_to_extract = []
@@ -489,6 +522,24 @@ def extract_all_variables(history_files, site_vars, levgrnd_vars, levsoi_vars, l
 
             # Extract subset
             ds_subset = ds[vars_to_extract]
+
+            # Capture canonical level-coord values from the first file
+            # that has valid (non-all-zero) values, then strip every level
+            # coord before concat. This sidesteps alignment failures when
+            # a partially-corrupted yearly NC has `levgrnd=[0,...,0]` (or
+            # similar) while other years have proper values. The DATA
+            # variables using these dims (SOILICE, FATES_LEAFC_SZPF, etc.)
+            # are preserved unchanged — only the coord metadata is
+            # reattached from the canonical source after concat.
+            _level_coords_here = [c for c in ds_subset.coords if _is_level_coord(c)]
+            for _coord in _level_coords_here:
+                if _coord not in canonical_coords:
+                    _vals = ds_subset[_coord].values
+                    if hasattr(_vals, 'any') and _vals.any():  # at least one nonzero
+                        canonical_coords[_coord] = ds_subset[_coord].copy()
+            if _level_coords_here:
+                ds_subset = ds_subset.drop_vars(_level_coords_here)
+
             ds_list.append(ds_subset)
             ds.close()
 
@@ -503,6 +554,12 @@ def extract_all_variables(history_files, site_vars, levgrnd_vars, levsoi_vars, l
     print(f"    Concatenating {len(ds_list)} files...")
     # Concatenate along time dimension
     ds_combined = xr.concat(ds_list, dim='time')
+
+    # Reattach canonical vertical coords (dropped during the per-file loop
+    # to avoid alignment failures across partially-corrupted yearly NCs).
+    for _coord, _da in canonical_coords.items():
+        if _coord in ds_combined.dims:
+            ds_combined = ds_combined.assign_coords({_coord: _da})
 
     # Add metadata
     ds_combined.attrs['title'] = f'Monthly ELM-FATES Output - All Variables'
@@ -650,20 +707,22 @@ def process_case(case_id, available_site, available_levgrnd, available_levsoi, a
         True if successful, False otherwise
     """
 
-    # Handle both integer case numbers and string case IDs
+    # Handle both integer case numbers and string case IDs.
+    # When case_id is "{number}_{descriptor}" (e.g. "302_s0512h13m38_c0_exp1"),
+    # split it so that {N}=number goes through the pattern's case-id slot and
+    # {descriptor} becomes part of {PHASE}. Otherwise A2MC_CASE_NAME_PATTERN
+    # forms with a literal segment between {N} and {PHASE} (e.g. R4's
+    # "...PtCNPEn{N}ADSPSupNP_{PHASE}") put the experiment suffix in the wrong
+    # place and the resulting case_name does not match the case dir on disk.
     if isinstance(case_id, int):
-        # Regular ensemble case: use CASE_SUFFIX
         case_name = _make_case_name(case_id, CASE_SUFFIX)
     else:
-        # String case ID (e.g., "845_exp1")
-        # Check if it's an experimental case
-        if '_exp' in str(case_id):
-            # Experimental case: case_id already contains "845_exp1", just append "_TRANS"
-            # Result: Kougarok_ELM-FATES_PtCNPEn845_exp1_TRANS
-            case_name = _make_case_name(case_id, 'TRANS')
+        sid = str(case_id)
+        leading, sep, rest = sid.partition('_')
+        if sep and leading.isdigit() and rest:
+            case_name = _make_case_name(leading, f"{rest}_{CASE_SUFFIX}")
         else:
-            # Other string case ID: use CASE_SUFFIX
-            case_name = _make_case_name(case_id, CASE_SUFFIX)
+            case_name = _make_case_name(sid, CASE_SUFFIX)
 
     print(f"\n  Processing case {case_id}: {case_name}")
 

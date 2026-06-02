@@ -4,24 +4,132 @@ This phase handles the full lifecycle of ensemble simulations: parameter samplin
 
 ---
 
+## Pipeline overview
+
+Reflects the actual tooling on this branch (`kougarok_fates_demo`,
+anchored at FATES api-31-0).
+
+```
+   parameter list + bounds  (use_cases/{site}/parameters/*.txt)
+            |
+            |   Stage 1: SAMPLE
+            |   phases/phase0_design/create_parameter_sample.py
+            |   (Morris / Sobol / LHS via --method)
+            v
+   ensemble matrix X  (N_cases x M_params)
+   ($A2MC_ENSEMBLE_MATRIX_FILE, e.g. FATES_..._Nsets.txt)
+            |
+            |   Stage 2: MATERIALIZE
+            |   phases/phase0_design/create_morris_ensemble.py
+            |   (Morris-from-sample path; calls tools/modify_fates_parameters.py)
+            |
+            |   --- OR for override-based rounds (e.g. R5) ---
+            |   phases/phase0_design/apply_param_override.py
+            |   (copies an existing per-case NC dir + applies global override
+            |    like fates_cnp_prescribed_puptake=1.0)
+            |
+            |   (NetCDF format only on this branch — FATES api-31-0;
+            |    JSON support is FATES api-43+, lives on main)
+            v
+   N FATES parameter NetCDF files
+   ($A2MC_PARAM_DIR/fates_params_*_En{N}.nc)
+            |
+            |   Stage 3: SUBMIT
+            |   phases/phase0_design/submit_phase0.py
+            |   (generates per-case En{N}.sh via tools/create_case.sh --write-script,
+            |    auto-invokes tools/validate_submission_plan.py,
+            |    writes $A2MC_ENSEMBLE_OUTPUT/submission_manifest.json)
+            |
+            |   coordinated submit:
+            |     Stage 3c.1: build case (case 1) fresh, synchronous
+            |                 (skippable via --skip-build-case when build already done)
+            |     Stage 3c.2: cases 2..N in parallel batches (--batch-size, default 20)
+            |                 — each uses --reuse-build 1 (EXEROOT = case 1's bld)
+            |
+            |   each En{N}.sh queues ADSP -> RGSP -> TRANS chained via
+            |     sbatch --dependency=afterok:<prev_jobid>
+            v
+   N SLURM jobs running on Perlmutter  (3 jobs per case;
+                                        watch out for the ~5000-job ceiling
+                                        — submit in batches of <=1500 cases)
+```
+
+Notes on the current implementation:
+
+- **Stage 2 has Kougarok-specific column mapping** in `create_morris_ensemble.py`.
+  The script hardcodes the 162-param column-to-FATES-parameter map for this
+  site. Rewriting it as a generic format-aware
+  `generate_parameter_files.py` (with `.json`/api-43+ support) is documented
+  in `memory/dev_logs/20260511h_Create_Morris_Ensemble_Refactor_Recommendation.md`
+  as a handoff to `main`.
+- **`tools/submit_ensemble.sh`** is the deprecated legacy submitter
+  (header points at `submit_phase0.py`). Kept for compat; new rounds
+  should use `submit_phase0.py`.
+- **Restart-side validation** is independent of submission: when a case
+  needs restart, `tools/diagnose_ensemble_status.py` auto-invokes
+  `tools/validate_restart_script.py` after writing the
+  `restart_incomplete_<TS>.sh` script.
+
+---
+
 ## Quick Reference
 
 ```bash
-# Always source configs first
+# Always source configs first — the machine-level config (a2mc_config.sh)
+# AND your round-specific site config in that order. The round config
+# overrides any machine-level defaults that need to differ per round
+# (ensemble name, case-name pattern, per-phase protocol values, etc.).
 source a2mc_config.sh
-source use_cases/Kougarok/config/kougarok_config.sh
+source use_cases/<site>/config/<round>_config.sh
+# e.g., source use_cases/Kougarok/config/kougarok_config_r4.sh
 ```
 
 ### 1. Generate Parameter Ensemble
 
-Choose the sampling scheme based on the round goal:
-
-#### Option A — Morris OAT sampling (most common)
+Two stages: sample the parameter space → materialize per-case FATES NCs.
 
 ```bash
-# Generate Morris sampling design (162 params, 30 trajectories = 4890 cases)
+# Stage 1: Generate the sample matrix from $A2MC_PARAM_LIST_FILE.
+#   Writes $A2MC_ENSEMBLE_MATRIX_FILE + $A2MC_SALIB_PROBLEM_FILE.
+python phases/phase0_design/create_parameter_sample.py
+
+# Stage 2: Materialize per-case FATES parameter NetCDF files.
+#   Reads $A2MC_ENSEMBLE_MATRIX_FILE, writes one .nc per row to $A2MC_PARAM_DIR.
 python phases/phase0_design/create_morris_ensemble.py
 ```
+
+`create_parameter_sample.py` supports three sampling methods via
+`--method`. Pick by round goal:
+
+| Method | When to use | Sample count | Default knob |
+|---|---|---|---|
+| `morris` (default) | First exploration of a new parameter space; rank parameter importance via μ*/σ | `T × (P+1)` | `--trajectories 30 --num-levels 8` |
+| `sobol` | Variance decomposition (S_i, S_Ti, S_ij) after Morris narrows P down | `N × (2P+2)` (or `N × (P+2)` with `--no-second-order`) | `--n-samples 1024` (= 2^10) |
+| `lhs` | General-purpose uniform coverage; no sensitivity decomposition | `N` | `--n-samples 1024` |
+
+`P` is the number of parameters being sampled — the full list, or the
+active subset when `--screened-params FILE` is used (Sobol/LHS only; non-
+listed parameters take their `Default_Value` column or the bound midpoint).
+
+```bash
+# Morris (default) — 30 trajectories × (162+1) = 4890 cases for the Kougarok config
+python phases/phase0_design/create_parameter_sample.py
+
+# Sobol — N=1024 must be 2^k for low-discrepancy convergence.
+# Full 162-param Sobol is huge (1024*(2*162+2) = 333,824); pair with
+# --screened-params to keep tractable.
+python phases/phase0_design/create_parameter_sample.py --method sobol \
+    --screened-params top20_morris_mustar.txt
+
+# LHS — N samples, no power-of-2 requirement
+python phases/phase0_design/create_parameter_sample.py --method lhs --n-samples 1024
+```
+
+The parameter list file format is auto-detected: the existing A2MC files
+(with a multi-line preamble and a `Symbol/Short and PFT#` column) work,
+and a minimal 3-column `name<TAB>lower<TAB>upper` file also works for
+sites starting from scratch. Full per-method documentation in
+`python create_parameter_sample.py --help`.
 
 #### Option B — Subset replay (controlled experiment from previous round)
 
@@ -46,47 +154,68 @@ python phases/phase0_design/create_subset_replay.py
 For example, R4 case 86 corresponds to R3 case 86 with the override applied — same
 parameter values, same filename, just in a different directory.
 
-The script only PREPARES the parameter files. Submission to HPC uses your existing
-template-based CIME workflow:
+The script only PREPARES the parameter files. Submission is then handled
+by `submit_phase0.py` in `--cases-file` mode — the non-sequential case
+numbers in `subset_replay_case_list.txt` are passed through directly,
+and the same build-coordination logic applies (one build case fresh,
+rest reuse its bld):
 
-1. **No need to rebuild for R4** — point `EXEROOT` directly at the source round's
-   already-built case bld. For R4 (replaying R3), set the case template to:
-   ```bash
-   EXEROOT=${CIME_OUTPUT_ROOT}/Kougarok_ELM-FATES_PtCNPEn1_${PHASE}/bld
-   ```
-   This reuses R3 case 1's existing compiled binaries directly. The parameter files
-   are different (they have the override), but the FATES model code is unchanged.
+```bash
+python phases/phase0_design/submit_phase0.py \
+    --cases-file $A2MC_ENSEMBLE_OUTPUT/subset_replay_case_list.txt \
+    --build-case <FIRST_CASE_NUMBER> \
+    --submit
+```
 
-2. **Submit in parallel bundles** — modify your loop script to background each case
-   submission and wait between bundles, e.g.:
-   ```bash
-   BATCH_SIZE=20
-   batch_count=0
-   while read n; do
-       cp $sample_script Kougarok_ELM-FATES_PtCNP162_En${n}PrescP.sh
-       sed -i "s/casenumber=2939/casenumber=${n}/g" ...
-       chmod +x ...
-       ./Kougarok_ELM-FATES_PtCNP162_En${n}PrescP.sh > ${n}.log 2>&1 &
-       batch_count=$((batch_count + 1))
-       if [ $batch_count -ge $BATCH_SIZE ]; then
-           wait
-           batch_count=0
-       fi
-   done < <(grep -v '^#' $A2MC_ENSEMBLE_OUTPUT/subset_replay_case_list.txt)
-   wait
-   ```
+`<FIRST_CASE_NUMBER>` should be the first case in `subset_replay_case_list.txt`
+(or any case from the source round whose bld you want to reuse). Without
+`--build-case`, `submit_phase0.py` defaults to the smallest case number in
+the file.
 
-3. **`subset_replay_case_list.txt`** provides the case number list (one per line,
-   comments stripped) that the loop reads from. Case numbers match the source round
-   (e.g., 2939, 86, 82, ... for R4 from R3).
-
-If you'd prefer A2MC's built-in `submit_ensemble.sh --cases-file` mode (added in v2.81),
-that also accepts the same case list file and supports parallel batches via `--batch-size`.
+**Case-number traceability:** `subset_replay_case_list.txt` preserves
+the source round's case numbers (e.g., 2939, 86, 82, ... for R4 from
+R3). The output NCs in `$A2MC_PARAM_DIR` keep those numbers; downstream
+analysis joins back to the source round by case number.
 
 Phase 1 sensitivity analysis is automatically skipped for subset_replay rounds since
 there is no Morris design to analyze.
 
 ### 2. Create Cases and Submit to HPC
+
+The recommended path is `submit_phase0.py` — a single command that:
+1. Generates per-case scripts in `$A2MC_CASE_SCRIPTS` via
+   `tools/create_case.sh --write-script`, resolving all `$A2MC_*` values
+   at script-write time.
+2. Runs the build case (default: smallest in range) synchronously so the
+   FATES binary compiles once.
+3. Runs the remaining cases in parallel batches; each reuses the build
+   case's `bld/` via `EXEROOT` and submits its own ADSP→RGSP→TRANS
+   SLURM chain.
+4. Writes `submission_manifest.json` to `$A2MC_ENSEMBLE_OUTPUT` with the
+   full provenance (matrix SHA256, FATES + ELM commit, protocol values).
+
+```bash
+# Dry run (generates per-case scripts + writes manifest, no execution)
+python phases/phase0_design/submit_phase0.py --start 1 --end 4890 --dry-run
+
+# Real submission
+python phases/phase0_design/submit_phase0.py --start 1 --end 4890 --submit
+
+# Subset-replay mode (non-sequential case numbers)
+python phases/phase0_design/submit_phase0.py \
+    --cases-file $A2MC_ENSEMBLE_OUTPUT/subset_replay_case_list.txt --submit
+
+# Custom build case
+python phases/phase0_design/submit_phase0.py --start 1 --end 4890 \
+    --build-case 1 --batch-size 30 --submit
+```
+
+Build-coordination is automatic: the build case is fresh-built (skipping
+`--reuse-build` even if applied via the flag — see P4 of the refactor),
+remaining cases all reuse its `bld/`. No manual two-step submission
+needed.
+
+#### Legacy: `tools/submit_ensemble.sh` (deprecated, kept for compatibility)
 
 ```bash
 # Submit all ensemble cases (builds + submits ADSP → RGSP → TRANS chain)
@@ -174,11 +303,16 @@ The restart file from each phase initializes the next: ADSP → RGSP → TRANS.
 
 | Script | Location | Purpose |
 |--------|----------|---------|
-| `create_morris_ensemble.py` | `phases/phase0_design/` | Generate Morris OAT sampling design |
-| `create_case.sh` | `tools/` | Create and optionally submit a single CIME case (all 3 phases) |
-| `submit_ensemble.sh` | `tools/` | Submit multiple cases with batch control and build reuse |
+| `create_parameter_sample.py` | `phases/phase0_design/` | Sample the parameter space (Morris/Sobol/LHS) from the parameter-list-with-bounds file; writes the X matrix |
+| `create_morris_ensemble.py` | `phases/phase0_design/` | Materialize per-case FATES parameter NetCDF files from the X matrix |
+| `create_subset_replay.py` | `phases/phase0_design/` | Replay top-N source-round cases with parameter overrides |
+| `submit_phase0.py` | `phases/phase0_design/` | Orchestrate ensemble submission (generate per-case scripts → coordinated build → parallel submit + manifest) |
+| `create_case.sh` | `tools/` | Create / write-script / submit a single CIME case (all 3 phases) |
+| `validate_submission_plan.py` | `tools/` | Pre-flight validate a planned submission (auto-invoked by `submit_phase0.py`) |
+| `validate_restart_script.py` | `tools/` | Pre-flight validate `restart_incomplete_*.sh` (auto-invoked by `diagnose_ensemble_status.py`) |
 | `diagnose_ensemble_status.py` | `tools/` | Check completion status, generate restart scripts |
-| `modify_fates_parameters.py` | `tools/` | Generate FATES parameter NetCDF files from ensemble matrix |
+| `modify_fates_parameters.py` | `tools/` | Low-level helper used by `create_morris_ensemble.py` to write modifications into FATES parameter NetCDFs |
+| `submit_ensemble.sh` | `tools/` | **Deprecated** — see `submit_phase0.py` |
 
 ---
 
@@ -201,14 +335,22 @@ less restart_incomplete_*.sh
 ### Expanding parameter space for a new round
 
 1. Update parameter list in `use_cases/{site}/parameters/`
-2. Update `A2MC_N_PARAMS` in site config
-3. Regenerate ensemble: `python phases/phase0_design/create_morris_ensemble.py`
-4. Submit new ensemble: `./tools/submit_ensemble.sh --start 1 --end {new_size} --submit`
-5. Document in `use_cases/{site}/config/calibration_rounds.yaml`
+2. Update `A2MC_N_PARAMS` in the round-specific config (e.g., `kougarok_config_r5.sh`)
+3. Regenerate the sample matrix: `python phases/phase0_design/create_parameter_sample.py`
+4. Materialize per-case NCs: `python phases/phase0_design/create_morris_ensemble.py`
+5. Submit: `python phases/phase0_design/submit_phase0.py --start 1 --end {new_size} --submit`
+6. Document in `use_cases/{site}/config/calibration_rounds.yaml`
 
-### Changing simulation protocol (e.g., suplphos)
+### Changing simulation protocol (e.g., suplphos) for a new round
 
-1. Update protocol settings in `a2mc_config.sh` (e.g., `A2MC_RGSP_SUPLPHOS="ALL"`)
-2. Cases must be recreated from scratch (protocol changes affect spinup)
-3. Resubmit full ensemble
-4. Document in `calibration_rounds.yaml`
+The protocol values (`A2MC_ADSP_SUPLPHOS`, `A2MC_RGSP_SUPLPHOS`, etc.)
+are inherited from `a2mc_config.sh` and overridden in the round-specific
+site config — never edit `a2mc_config.sh` for a round-level change.
+
+1. Create a new round config: `cp use_cases/{site}/config/{site}_config_r4.sh use_cases/{site}/config/{site}_config_r5.sh`
+2. Update the protocol exports in the new config (e.g., `export A2MC_RGSP_SUPLPHOS="ALL"`)
+3. Set a unique `A2MC_ENSEMBLE_NAME` and `A2MC_CASE_NAME_PATTERN` suffix so the new round's case dirs don't collide with prior rounds
+4. Source the new config: `source use_cases/{site}/config/{site}_config_r5.sh`
+5. Resubmit: `python phases/phase0_design/submit_phase0.py --start 1 --end {N} --submit`
+   `submit_phase0.py` reads the round's protocol values via `$A2MC_SITE_CONFIG` and writes them into each per-case `user_nl_elm` automatically — no hand-editing per case.
+6. Document the round and its protocol overrides in `calibration_rounds.yaml`

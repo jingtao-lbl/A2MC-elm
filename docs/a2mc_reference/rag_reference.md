@@ -3,6 +3,15 @@
 **Purpose:** Detailed reference for the RAG/GraphRAG hybrid retrieval system.
 **Summary:** Read this when working on RAG code, knowledge graph, or vector store.
 **Referenced from:** `CLAUDE.md` → "RAG/GraphRAG System" section
+**Last verified against current index:** 2026-05-28 (post-2026-04-22 rebuild per `memory/dev_logs/20260422a_RAG_Rebuild_Against_New_Wikis_And_Curated_YAML_Fix.md`).
+
+To check current index size yourself:
+```bash
+ls -lh rag/chroma_db rag/fates_knowledge_graph.json
+python3 -c "from rag import HybridRetriever; r = HybridRetriever(); print(r.get_stats())"
+```
+
+Recipe for rebuilding from scratch (e.g., when bumping the wiki commit pin): see `docs/a2mc_reference/rag_build_roadmap.md` Recipe 1.
 
 ---
 
@@ -12,8 +21,8 @@ Hybrid retrieval system for FATES documentation and knowledge:
 
 | Component | Technology | Stats |
 |-----------|------------|-------|
-| Vector Store | ChromaDB | 2,707 document chunks (2,147 docs + 560 CDL definitions) |
-| Knowledge Graph | NetworkX | 1,299 nodes, 2,200 edges |
+| Vector Store | ChromaDB | 2,581 document chunks (post-2026-04-22 rebuild against `fates-codebase-wiki-e85d997/` and `elm-codebase-wiki-60d9aad/`) |
+| Knowledge Graph | NetworkX | 1,295 nodes, 2,197 edges |
 | Embedding Model | all-MiniLM-L6-v2 | sentence-transformers |
 | Knowledge Bases | FATES | 65 documents |
 
@@ -119,12 +128,15 @@ Curated mechanistic knowledge overlaid onto auto-extracted graph (Layer 2):
 - Curated metadata enriches (not replaces) auto-extracted node attributes
 
 **To rebuild the knowledge graph and vector index:**
+
+Set `$PYTHON310` to whatever Python 3.10+ environment has the RAG dependencies installed (see "Python Environment" below for the Mac vs. Perlmutter split):
+
 ```bash
 # Full rebuild (graph + vector store + CDL definitions)
-/Library/Frameworks/Python.framework/Versions/3.10/bin/python3 scripts/build_rag_index.py --rebuild --test
+$PYTHON310 scripts/build_rag_index.py --rebuild --test
 
 # Graph only
-/Library/Frameworks/Python.framework/Versions/3.10/bin/python3 scripts/build_rag_index.py --rebuild --graph-only --test
+$PYTHON310 scripts/build_rag_index.py --rebuild --graph-only --test
 ```
 
 **To update curated relationships only:**
@@ -156,31 +168,41 @@ Details: `memory/logs/20260211b_RAG_Expansion_Full_Parameter_Output_Coverage.md`
 
 ## Python Environment
 
-**IMPORTANT:** The RAG system requires Python 3.10 with specific packages installed:
+**IMPORTANT:** The RAG system requires Python 3.10+ with specific packages installed:
 
-```bash
-# Use this Python for all RAG operations:
-/Library/Frameworks/Python.framework/Versions/3.10/bin/python3
-
-# Required packages (already installed):
-# - networkx (knowledge graph)
-# - chromadb (vector store)
-# - sentence-transformers (embeddings)
-# - pyyaml (config loading)
+```
+networkx (knowledge graph)
+chromadb (vector store)
+sentence-transformers (embeddings)
+pyyaml (config loading)
 ```
 
-**Why Python 3.10?**
-- macOS Homebrew Python 3.12 is externally-managed and blocks pip installs
-- Python 3.10 has all RAG dependencies pre-installed
-- Use full path or create alias: `alias python310='/Library/Frameworks/Python.framework/Versions/3.10/bin/python3'`
+### Mac (local dev clone)
 
-**Example:**
+Homebrew Python 3.12 is externally-managed and blocks pip installs, so use the Python 3.10 framework install:
+
+```bash
+PYTHON310=/Library/Frameworks/Python.framework/Versions/3.10/bin/python3
+# Or alias for convenience: alias python310='/Library/Frameworks/Python.framework/Versions/3.10/bin/python3'
+```
+
+### Perlmutter (HPC)
+
+Activate the pre-built A2MC environment, which has Python 3.11 with all RAG dependencies installed:
+
+```bash
+source ~/a2mc_env/bin/activate
+PYTHON310=python   # any 3.10+ works once env is activated
+```
+
+### Example invocations
+
 ```bash
 # Run graph builder
-/Library/Frameworks/Python.framework/Versions/3.10/bin/python3 rag/graph_builder.py
+$PYTHON310 rag/graph_builder.py
 
 # Test hybrid retriever
-/Library/Frameworks/Python.framework/Versions/3.10/bin/python3 -c "from rag import HybridRetriever; r = HybridRetriever(); print(r.get_stats())"
+$PYTHON310 -c "from rag import HybridRetriever; r = HybridRetriever(); print(r.get_stats())"
 ```
 
 ---

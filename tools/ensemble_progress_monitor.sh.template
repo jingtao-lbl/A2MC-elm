@@ -1,0 +1,207 @@
+#!/bin/bash
+# Ensemble Progress Monitor — Template
+# ====================================
+#
+# Canonical pattern for tracking long HPC ensemble runs on Perlmutter.
+# Emits state-change events to stdout that downstream consumers (Claude
+# Monitor tool, dashboards, alerting hooks, etc.) can subscribe to.
+#
+# To adapt for a new round:
+#   1. Copy this template to tmp/<round>_progress_monitor.sh
+#   2. Customize the parameters in the "ROUND CUSTOMIZATION" block below
+#   3. Source the relevant a2mc_config.sh + site config
+#   4. Launch via: nohup ./<round>_progress_monitor.sh > monitor.log 2>&1 &
+#
+# Events emitted (one per line on stdout):
+#   QUEUE_DEPTH: queue=<N> running=<R> pending=<P>          (every poll cycle)
+#   QUEUE_BELOW_THRESHOLD: queue=<N>                         (one-shot, when first dips)
+#   TRANS_DONE: completed=<C> extracted=<E> pending=<C-E>    (when count changes)
+#   STARTING_EXTRACTION: cases=<N>                           (when extractors launch)
+#   EXTRACTION_TARGET_REACHED: <E> / <TARGET>                (end-of-batch signal)
+#
+# Companion documentation:
+#   memory/dev_logs/20260514c_Monitoring_Workflow_Pattern_For_HPC_Ensembles.md
+#
+# Author: Jing Tao with Claude
+
+set -u
+
+# ============================================================================
+# ROUND CUSTOMIZATION — edit these for each new round
+# ============================================================================
+
+# Cutoff timestamp for "fresh" vs "stale" output NCs.
+# Set to a moment slightly before the round's first job submission so that
+# any NCs from prior rounds (sharing the same filename pattern) are filtered out.
+LAUNCH="REPLACE_ME_YYYY-MM-DD_HH:MM:SS"
+
+# Total expected cases for this round (used for the end-of-batch trigger).
+TARGET_TOTAL=REPLACE_ME
+
+# Threshold for the QUEUE_BELOW_THRESHOLD one-shot event.
+# Computed as: MAX_QUEUE_PER_USER - next_batch_jobs - safety_margin
+# For Perlmutter (MAX_QUEUE=5000) + 1500-case batch (4500 jobs) + 500 margin → 500
+QUEUE_THRESHOLD=500
+
+# Polling cadence in seconds. 1800 = 30 min works well for ensemble runs;
+# tighten for short jobs, loosen for multi-day runs.
+POLL_INTERVAL_S=1800
+
+# Round-specific output-NC name pattern, with {CASE} as the case-number marker.
+# Used for the find -path filter on the ensemble run output dir AND on the
+# extracted data dir. Must match A2MC_CASE_NAME_PATTERN.
+# Example: "PtCNPEn{CASE}PrescP_TRANS" for the R5 round.
+ROUND_TRANS_PATTERN="REPLACE_ME_{CASE}_TRANS_pattern"
+
+# A2MC root + configs (assumed exported by the orchestrator;
+# we source defensively for standalone invocation)
+A2MC_ROOT=${A2MC_ROOT:-/global/u1/j/jingtao/A2MC}
+A2MC_CONFIG=${A2MC_CONFIG:-${A2MC_ROOT}/a2mc_config.sh}
+A2MC_SITE_CONFIG=${A2MC_SITE_CONFIG:-${A2MC_ROOT}/use_cases/Kougarok/config/kougarok_config.sh}
+
+# Extraction tools (one for ADSP/RGSP slim, one for full TRANS — both must be
+# idempotent: skip cases that already have output NCs)
+SLIM_EXTRACTOR=${SLIM_EXTRACTOR:-${A2MC_ROOT}/use_cases/Kougarok/analysis/extract_ADSP_RGSP_slim.py}
+FULL_EXTRACTOR=${FULL_EXTRACTOR:-${A2MC_ROOT}/tools/extract_monthly_variables_FATES.py}
+
+# Per-call extraction parallelism (worker count). 16 is a good default for
+# Perlmutter login nodes; reduce if I/O contention becomes an issue.
+EXTRACT_WORKERS=16
+
+# Working dir for transient files (needs list, extraction logs)
+WORK_DIR=${WORK_DIR:-${A2MC_ROOT}/tmp}
+
+# ============================================================================
+# END CUSTOMIZATION — body below should not need changes
+# ============================================================================
+
+source "$A2MC_CONFIG" > /dev/null 2>&1
+source "$A2MC_SITE_CONFIG" > /dev/null 2>&1
+
+# Sanity checks
+for var in A2MC_ENSEMBLE_OUTPUT A2MC_EXTRACTED_DATA; do
+  if [ -z "${!var:-}" ]; then
+    echo "FATAL: $var is empty — config not sourced correctly" >&2
+    exit 1
+  fi
+done
+
+if [ "$LAUNCH" = "REPLACE_ME_YYYY-MM-DD_HH:MM:SS" ] || [ "$TARGET_TOTAL" = "REPLACE_ME" ] \
+   || [[ "$ROUND_TRANS_PATTERN" == *"REPLACE_ME"* ]]; then
+  echo "FATAL: template not customized — edit the ROUND CUSTOMIZATION block" >&2
+  exit 1
+fi
+
+threshold_hit=0
+last_completed_announced=0
+
+USER_ID=$(whoami)
+
+while true; do
+  # ---- Queue depth ----
+  q=$(squeue -u "$USER_ID" -h 2>/dev/null | wc -l)
+  r=$(squeue -u "$USER_ID" -t RUNNING -h 2>/dev/null | wc -l)
+  p=$(squeue -u "$USER_ID" -t PENDING -h 2>/dev/null | wc -l)
+  echo "QUEUE_DEPTH: queue=$q running=$r pending=$p"
+
+  # ---- One-shot threshold trigger ----
+  if [ "$q" -le "$QUEUE_THRESHOLD" ] && [ "$threshold_hit" -eq 0 ]; then
+    echo "QUEUE_BELOW_THRESHOLD: queue=$q  threshold=$QUEUE_THRESHOLD -- safe to launch next batch"
+    threshold_hit=1
+  fi
+
+  # ---- TRANS completion (fresh, post-LAUNCH only) ----
+  trans_path_pattern=$(echo "$ROUND_TRANS_PATTERN" | sed 's/{CASE}/[0-9]*/')
+  completed=$(find "$A2MC_ENSEMBLE_OUTPUT" \
+                   -path "*${trans_path_pattern}/run/*.elm.r.2020-01-01-00000.nc" \
+                   -size +1k -newermt "$LAUNCH" 2>/dev/null | wc -l)
+
+  extract_glob=$(echo "$ROUND_TRANS_PATTERN" | sed 's/{CASE}/*/')_all_variables_monthly_*.nc
+  extracted=$(find "$A2MC_EXTRACTED_DATA" -maxdepth 1 \
+                   -name "$extract_glob" -newermt "$LAUNCH" 2>/dev/null | wc -l)
+  needs=$((completed - extracted))
+
+  if [ "$completed" -ne "$last_completed_announced" ]; then
+    echo "TRANS_DONE: completed=$completed extracted=$extracted pending=$needs"
+    last_completed_announced=$completed
+  fi
+
+  # ---- Trigger extraction if new work AND no extractor already running ----
+  if [ "$needs" -gt 0 ]; then
+    active=$(pgrep -fa "extract_ADSP_RGSP_slim|extract_monthly_variables_FATES" \
+              | grep -v "$0" | wc -l)
+    if [ "$active" -eq 0 ]; then
+      NEEDS_LIST="${WORK_DIR}/progress_monitor_needs.txt"
+
+      # Compute completed-but-not-extracted case numbers (mtime-filtered)
+      A2MC_ENSEMBLE_OUTPUT="$A2MC_ENSEMBLE_OUTPUT" \
+      A2MC_EXTRACTED_DATA="$A2MC_EXTRACTED_DATA" \
+      LAUNCH_TS="$LAUNCH" \
+      ROUND_PATTERN="$ROUND_TRANS_PATTERN" \
+      NEEDS_LIST="$NEEDS_LIST" \
+      python3 - <<'PYEOF'
+import os, glob, re, subprocess
+
+ens   = os.environ['A2MC_ENSEMBLE_OUTPUT']
+ext   = os.environ['A2MC_EXTRACTED_DATA']
+launch = os.environ['LAUNCH_TS']
+round_pattern = os.environ['ROUND_PATTERN']  # e.g. "PtCNPEn{CASE}PrescP_TRANS"
+needs_path = os.environ['NEEDS_LIST']
+
+# Build regex matching ROUND_PATTERN with {CASE} -> digit-capture
+case_re = re.compile(re.escape(round_pattern).replace(re.escape("{CASE}"), r"(\d+)"))
+path_glob = round_pattern.replace("{CASE}", "[0-9]*")
+
+# Completed = fresh year-2020 restart NCs
+done = set()
+res = subprocess.run(['find', ens,
+                      '-path', f'*{path_glob}/run/*.elm.r.2020-01-01-00000.nc',
+                      '-size', '+1k', '-newermt', launch],
+                     capture_output=True, text=True)
+for line in res.stdout.splitlines():
+    m = case_re.search(line)
+    if m:
+        done.add(int(m.group(1)))
+
+# Already-extracted = NCs in the extract dir with mtime > launch
+launch_epoch = int(subprocess.run(['date', '-d', launch, '+%s'],
+                                  capture_output=True, text=True).stdout.strip())
+have = set()
+extract_pattern = round_pattern.replace("{CASE}", "*") + "_all_variables_monthly_*.nc"
+for f in glob.glob(os.path.join(ext, extract_pattern)):
+    try:
+        if os.path.getmtime(f) > launch_epoch:
+            m = case_re.search(f)
+            if m:
+                have.add(int(m.group(1)))
+    except OSError:
+        pass
+
+needs = sorted(done - have)
+with open(needs_path, 'w') as f:
+    for n in needs:
+        f.write(f'{n}\n')
+print(len(needs))
+PYEOF
+      n_list=$(wc -l < "$NEEDS_LIST")
+      if [ "$n_list" -gt 0 ]; then
+        TS=$(date +%Y%m%d_%H%M%S)
+        echo "STARTING_EXTRACTION: cases=$n_list"
+        nohup python3 -u "$SLIM_EXTRACTOR" \
+              "$NEEDS_LIST" "$EXTRACT_WORKERS" \
+              > "${WORK_DIR}/progress_monitor_slim_${TS}.log" 2>&1 &
+        nohup python3 -u "$FULL_EXTRACTOR" \
+              --case-file "$NEEDS_LIST" --parallel "$EXTRACT_WORKERS" \
+              > "${WORK_DIR}/progress_monitor_full_${TS}.log" 2>&1 &
+      fi
+    fi
+  fi
+
+  # ---- End condition ----
+  if [ "$extracted" -ge "$TARGET_TOTAL" ]; then
+    echo "EXTRACTION_TARGET_REACHED: $extracted / $TARGET_TOTAL cases extracted"
+    break
+  fi
+
+  sleep "$POLL_INTERVAL_S"
+done
