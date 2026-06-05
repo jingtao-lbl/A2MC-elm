@@ -626,7 +626,7 @@ def main() -> int:
     print(f"  problem:     {out_problem}")
     print()
     print("Next step: materialize per-case parameter NetCDF files")
-    print("  python phases/phase0_design/create_parameter_files.py")
+    print("  python phases/phase0_design/create_morris_ensemble.py")
     return 0
 
 

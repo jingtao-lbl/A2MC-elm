@@ -20,9 +20,13 @@
 # and exec this script, so muscle-memory invocations and live `ps`/Monitor
 # wiring keep working.
 #
-# NOTE: This complements tools/hpc_ensemble_monitor_template.sh, which is the
-# copy-and-edit template form. This file is the flag/env-driven form that the
-# round wrappers exec directly (no copy needed).
+# NOTE: This is the canonical monitor — exec'd directly by per-round wrappers
+# (no copy needed). The former tools/hpc_ensemble_monitor_template.sh (a
+# copy-then-env-driven twin) was retired on 2026-06-05: this script is a
+# functional superset (CLI flags + pattern-derived globs + --max-case-num cap),
+# so the twin only added maintenance burden. See
+# memory/dev_logs/20260605c_*. For a copy-and-edit starter, see
+# tools/ensemble_progress_monitor.sh.template (a lighter, distinct variant).
 #
 # Side-effects per poll:
 #   1. Emit SLURM queue-depth + threshold-crossing events on stdout
