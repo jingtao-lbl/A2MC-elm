@@ -138,8 +138,11 @@ P limitation rescue PFT10?"). Replays the top-N cases from a previous round
 with a global parameter override applied.
 
 ```bash
-# Source the round-specific config (sets all REPLAY_* env vars)
-source use_cases/Kougarok/config/kougarok_config_r4.sh
+# Source the subset-replay round config (sets A2MC_SAMPLING_SCHEME=subset_replay
+# and all A2MC_REPLAY_* env vars). NOTE: the subset_replay config is
+# kougarok_config_r4_subset_replay_PrescP.sh, NOT kougarok_config_r4.sh — the
+# latter is the redesigned full-Morris ADSPSupNP R4 that superseded this design.
+source use_cases/Kougarok/config/kougarok_config_r4_subset_replay_PrescP.sh
 
 # Generate parameter files (copies top-N source NC files + applies overrides in place)
 python phases/phase0_design/create_subset_replay.py
@@ -231,7 +234,28 @@ needed.
 ./tools/submit_ensemble.sh --start 2 --end 4890 --submit --reuse-build 1
 ```
 
-### 3. Check Simulation Status
+### 3. Monitor and Check Simulation Status
+
+**Live auto-monitor** (`tools/ensemble_auto_monitor.sh`) — config-driven
+background poller for an in-flight ensemble. Each poll emits SLURM
+queue-depth + threshold-crossing events on stdout, detects new TRANS
+completions on disk and auto-kicks extraction, regenerates the milestone
+ensemble plot, and exits on terminal-idle. It derives its case-number regex
+and TRANS-extract glob from `$A2MC_CASE_NAME_PATTERN`.
+
+```bash
+nohup bash tools/ensemble_auto_monitor.sh \
+    --target-total 4890 \
+    >> $A2MC_CASE_SCRIPTS/auto_monitor.log 2>&1 &
+```
+
+The stdout event vocabulary (`QUEUE_DEPTH`, `QUEUE_BELOW_THRESHOLD`,
+`TRANS_DONE`, `STARTING_EXTRACTION`, `EXTRACTION_TARGET_REACHED`,
+`*_TERMINAL`) is what a Claude `Monitor` subscription arms against (see the
+`arm-hpc-monitoring` skill and CLAUDE.md Rule #6).
+
+**Point-in-time status** (`tools/diagnose_ensemble_status.py`) — one-shot
+completion accounting, no polling:
 
 ```bash
 # Diagnose all cases — shows completed, incomplete, and errored
@@ -311,6 +335,7 @@ The restart file from each phase initializes the next: ADSP → RGSP → TRANS.
 | `validate_submission_plan.py` | `tools/` | Pre-flight validate a planned submission (auto-invoked by `submit_phase0.py`) |
 | `validate_restart_script.py` | `tools/` | Pre-flight validate `restart_incomplete_*.sh` (auto-invoked by `diagnose_ensemble_status.py`) |
 | `diagnose_ensemble_status.py` | `tools/` | Check completion status, generate restart scripts |
+| `ensemble_auto_monitor.sh` | `tools/` | Live background monitor for an in-flight ensemble (queue polling + auto-extraction + milestone-plot regen + idle-exit) |
 | `modify_fates_parameters.py` | `tools/` | Low-level helper used by `create_morris_ensemble.py` to write modifications into FATES parameter NetCDFs |
 | `submit_ensemble.sh` | `tools/` | **Deprecated** — see `submit_phase0.py` |
 
