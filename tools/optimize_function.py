@@ -104,6 +104,11 @@ class OptimizationResult:
     n_satisfied: np.ndarray             # Number of targets satisfied per set
     config: OptimizationConfig
     targets: Dict[str, Target]
+    # Optional map from array position -> real case/parameter-set number.
+    # MUST be provided when the loaded ensemble is NOT the complete contiguous
+    # block 1..N (e.g. a partial ensemble with gaps). When None, set IDs fall
+    # back to (position+1), which is only correct for a complete ensemble.
+    case_numbers: Optional[np.ndarray] = None
 
     @property
     def n_sets(self) -> int:
@@ -114,10 +119,16 @@ class OptimizationResult:
         """0-based index of best set"""
         return int(self.ranked_indices[0])
 
+    def _idx_to_set_id(self, idx) -> int:
+        """Map a 0-based array position to its real set/case ID."""
+        if self.case_numbers is not None:
+            return int(np.asarray(self.case_numbers)[idx])
+        return int(idx) + 1
+
     @property
     def best_set_id(self) -> int:
-        """1-based ID of best set (for parameter file lookup)"""
-        return self.best_index + 1
+        """Real ID of best set (case number / row in parameter file)"""
+        return self._idx_to_set_id(self.best_index)
 
     @property
     def best_cost(self) -> float:
@@ -129,8 +140,12 @@ class OptimizationResult:
         return self.ranked_indices[:n]
 
     def get_top_set_ids(self, n: Optional[int] = None) -> np.ndarray:
-        """Get top N set IDs (1-based)"""
-        return self.get_top_indices(n) + 1
+        """Get top N real set IDs (case numbers). Falls back to position+1
+        only when case_numbers is unset (complete contiguous ensemble)."""
+        idx = self.get_top_indices(n)
+        if self.case_numbers is not None:
+            return np.asarray(self.case_numbers)[idx]
+        return idx + 1
 
 
 # =============================================================================
@@ -293,7 +308,7 @@ def save_optimization_results(
 
         # Data rows
         for rank, idx in enumerate(result.ranked_indices, start=1):
-            set_id = idx + 1
+            set_id = result._idx_to_set_id(idx)
             row = [
                 str(rank),
                 str(set_id),
@@ -316,10 +331,11 @@ def save_optimization_results(
     top_ids = result.get_top_set_ids(n_top)
 
     with open(indices_file, 'w') as f:
-        f.write(f"# Top {n_top} parameter set IDs (1-based)\n")
-        f.write(f"# Set #N corresponds to row N in parameter file\n")
+        f.write(f"# Top {n_top} parameter set IDs (real case numbers)\n")
+        f.write(f"# (mapped through case_numbers when the ensemble is partial;\n")
+        f.write(f"#  position+1 only when case_numbers is unset / complete ensemble)\n")
         for set_id in top_ids:
-            f.write(f"{set_id}\n")
+            f.write(f"{int(set_id)}\n")
 
     print(f"✓ Saved: {indices_file}")
 
@@ -380,7 +396,7 @@ def save_optimization_results(
 
         for i in range(min(10, n_sets)):
             idx = result.ranked_indices[i]
-            set_id = idx + 1
+            set_id = result._idx_to_set_id(idx)
             f.write(f"Rank {i+1}: Set #{set_id}\n")
             f.write(f"  Composite cost: {result.composite_cost[idx]:.6f}\n")
             f.write(f"  Targets satisfied: {result.n_satisfied[idx]}/{n_targets}\n\n")

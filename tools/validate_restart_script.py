@@ -56,6 +56,10 @@ RESTART_YEAR_RE = re.compile(r"\.elm\.r\.(\d{4})-\d{2}-\d{2}-\d{5}\.nc$")
 SUBMIT_BATCH_RE = re.compile(r"case\.submit\s+--batch-args=\"([^\"]+)\"")
 DEPENDENCY_RE = re.compile(r"--dependency=afterok:\$JOBID_(\w+)_(\d+)")
 JOBID_ASSIGN_RE = re.compile(r"JOBID_(\w+)_(\d+)=")
+# Count `sed -i '$ d'` (trailing-line deletes) per phase block. ADSP-continue
+# deletes 2 (finidat='' + nyears_ad_carbon_only=K, the AD-carbon-only line) and
+# re-appends finidat (+ nyears iff restart_year<=K); RGSP/TRANS delete 1 (finidat).
+SED_DELETE_RE = re.compile(r"sed\s+-i\s+'\$\s*d'")
 
 
 @dataclass
@@ -68,6 +72,8 @@ class PhaseBlock:
     batch_args: Optional[str] = None
     dependency: Optional[tuple] = None   # (phase_dep, case_dep)
     is_dependency_target: bool = False   # this phase defines JOBID_<P>_<N>
+    sed_deletes: int = 0                  # count of `sed -i '$ d'` trailing-line deletes
+                                          # (1 = RGSP/TRANS finidat; 2 = ADSP finidat+nyears_ad_carbon_only)
 
 
 @dataclass
@@ -117,6 +123,11 @@ def parse_script(path: Path) -> list:
         if current_phase is None:
             continue
         pb = current_case.phases[current_phase]
+
+        n_sed = len(SED_DELETE_RE.findall(line))
+        if n_sed:
+            pb.sed_deletes += n_sed
+            continue
 
         m = CD_RE.match(line)
         if m and pb.case_dir is None:
@@ -228,13 +239,39 @@ def validate(cases, args, end_years, incomplete_set):
                 check(Path(pb.case_dir).is_dir(), f"case dir exists: {pb.case_dir}", errors, warnings)
                 nl = Path(pb.case_dir) / "user_nl_elm"
                 if nl.is_file():
-                    last = ""
-                    for line in nl.read_text().splitlines():
-                        if line.strip():
-                            last = line.strip()
-                    check(last.startswith("finidat"),
-                          f"user_nl_elm last non-blank line starts with `finidat` (got: {last[:60]!r})",
-                          errors, warnings)
+                    nonblank = [l.strip() for l in nl.read_text().splitlines() if l.strip()]
+                    nd = pb.sed_deletes
+                    # The restart script does `sed -i '$ d'` nd times to strip the trailing
+                    # finidat (RGSP/TRANS, nd=1) or finidat + nyears_ad_carbon_only (ADSP
+                    # continue-past-carbon-only, nd=2) BEFORE re-appending. Validate that the
+                    # nd lines about to be deleted are exactly those expected — not real config.
+                    if nd == 0:
+                        # No trailing-line deletion in this block (fresh cold start) — nothing
+                        # to validate about the current user_nl_elm tail.
+                        check(True, "no user_nl_elm `sed '$ d'` in this block (fresh/cold start)",
+                              errors, warnings)
+                    elif nd == 1:
+                        last = nonblank[-1] if nonblank else ""
+                        check(last.startswith("finidat"),
+                              f"user_nl_elm last line is `finidat` (1 sed-delete) "
+                              f"(got: {last[:60]!r})", errors, warnings)
+                    else:  # nd >= 2: ADSP carbon-only-mode continue (double-sed)
+                        tail = nonblank[-nd:] if len(nonblank) >= nd else nonblank
+                        last = nonblank[-1] if nonblank else ""
+                        # (a) pristine pre-restart: the nd lines to be deleted are exactly
+                        #     finidat (='') + nyears_ad_carbon_only=K (last line = nyears).
+                        pristine = (len(tail) == nd
+                                    and any(t.startswith("finidat") for t in tail)
+                                    and any(t.startswith("nyears_ad_carbon_only") for t in tail))
+                        # (b) already-restarted (validator run mid-flight, after this case was
+                        #     processed): nyears already stripped, real finidat .nc appended as
+                        #     last line. Valid state — the double-sed already fired correctly.
+                        already_restarted = last.startswith("finidat") and ".nc" in last
+                        check(pristine or already_restarted,
+                              f"user_nl_elm ADSP carbon-only tail is either pristine "
+                              f"[finidat, nyears_ad_carbon_only] (pre-restart) or [finidat=<.nc>] "
+                              f"(already restarted) (got last {nd}: {tail})",
+                              errors, warnings)
                 else:
                     check(False, f"user_nl_elm missing at {nl}", errors, warnings)
 

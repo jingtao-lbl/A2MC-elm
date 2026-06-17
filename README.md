@@ -173,6 +173,69 @@ The framework runs entirely on NERSC HPC (no SSH tunneling) and uses the Anthrop
 
 ---
 
+## Two Ways to Run A2MC
+
+A2MC is **one agent with two runtimes**. The intelligence lives in the repo's shared assets — operating rules, a skills catalog, persistent memory, episodic logs, RAG knowledge, and tools — and two different runtimes consume those same assets:
+
+| | **Autonomous agent** (online) | **Interactive agent** (offline) |
+|---|---|---|
+| Runtime | `python orchestrator.py --run` — Claude API inside a Python state machine | A coding-agent harness (e.g. Claude Code) operating directly in the repo |
+| Driver | Fixed Phase 0→7 state machine | Human conversation, turn-by-turn |
+| Cadence | Unattended, at scale | Human-in-the-loop |
+| Best for | The repetitive, well-defined calibration loop | Open-ended, exploratory, one-off, judgment-heavy tasks |
+| Examples | Morris → screen → diagnose → hypothesize → test → refine | Ensemble forensics, cross-round synthesis, restart triage, figures, experiment design, auditing |
+
+Both runtimes read and write the **same knowledge substrate**, so discoveries made in one mode compound in the other (see [The knowledge loop](#the-knowledge-loop) below).
+
+### Using the autonomous agent
+
+The rest of this README's Quick Start covers this mode. In short:
+
+```bash
+source a2mc_config.sh
+source use_cases/<site>/config/<site>_config.sh
+python orchestrator.py --run        # full Phase 0→7 calibration loop
+```
+
+### Using the interactive agent
+
+The interactive agent is any coding-agent harness opened in a clone of this repo. Its **operating contract** is [`AGENTS.md`](AGENTS.md) (harness-neutral). On startup the harness auto-loads the operating rules plus the **capability catalog** of skills in `.claude/skills/` (indexed in [`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md)). You then drive it by conversation:
+
+```text
+1. Clone the repo and open it in a coding agent that reads AGENTS.md.
+2. The operating rules (AGENTS.md) and skills (.claude/skills/) load automatically.
+3. Describe the task in natural language — the agent matches it to a skill or
+   reasons from the shared tools, memory, and RAG knowledge.
+```
+
+Worked examples — each backed by a skill in the capability catalog:
+
+| Ask the interactive agent to… | Backing skill |
+|---|---|
+| "Summarize calibration round N" (ensemble figures + evaluation + sensitivity report) | `summarize-calibration-round` |
+| "Compare rounds R1…RN" / "which round is best" / refresh the multi-round figure | `compare-calibration-rounds` |
+| "Design and launch a parameter-sweep experiment to test hypothesis X" | `offline-testing-workflow` |
+| "Restart the jobs that failed in this ensemble" | `restart-failed-jobs` |
+| "Set up monitoring for the in-flight ensemble" | `arm-hpc-monitoring` |
+
+> The interactive agent is the tool for work the fixed Phase 0→7 loop cannot do: open-ended forensics, synthesis, triage, and one-off analysis. Most of the exploratory work behind A2MC's case studies was done in this mode.
+
+### The knowledge loop
+
+The two modes are two writers on **one knowledge substrate** — neither forks the knowledge base, so improvements compound across both:
+
+```
+  Interactive agent  ──writes──►  dev_logs / ana_logs / memories / gained_knowledge / tools
+        ▲                                          │
+        │ reasons over                             │ absorbed by
+        │ phase logs + run state                   ▼
+  Autonomous agent  ◄──reads/writes──  MemoryManager + RAG + phase execution logs
+```
+
+The interactive agent writes engineering + analysis logs, curates `gained_knowledge`, and builds shared tools; the autonomous agent's `MemoryManager` and RAG absorb that knowledge and apply it inside the calibration loop, while emitting phase logs and run state that the interactive agent then reasons over. A discovery made in either mode is available to the other on the next run.
+
+---
+
 ## Architecture
 
 ```

@@ -310,6 +310,11 @@ class Config:
     # Memory settings
     use_memory: bool = True          # Enable adaptive memory system
     auto_learn: bool = True          # Auto-extract lessons from experiments
+    # Curated Tier-3 write gate. The autonomous online agent defaults to "propose":
+    # auto_learn writes are staged to auto_discovered_pending.json for human review,
+    # never written straight to the curated KB. The interactive (human-in-the-loop)
+    # agent promotes vetted entries. See memory/dev_logs/20260612d_*.
+    memory_write_mode: str = "propose"
 
     # Workflow settings
     max_iterations: int = 10
@@ -416,14 +421,18 @@ class CalibrationOrchestrator:
             memory_dir = config.memory_dir or str(self.output_dir / "gained_knowledge")
             try:
                 from memory import MemoryManager
-                self._memory = MemoryManager(memory_dir)
+                # Autonomous online agent: propose-mode by default, so auto_learn
+                # writes are staged for human review, never written to curated KB.
+                write_mode = getattr(config, "memory_write_mode", "propose")
+                self._memory = MemoryManager(memory_dir, write_mode=write_mode)
                 stats = self._memory.stats()
                 logger.info(f"Memory system initialized: {stats['discoveries']['total']} discoveries, "
-                           f"{stats['experiments']['total']} experiments")
+                           f"{stats['experiments']['total']} experiments "
+                           f"(write_mode={self._memory.write_mode})")
                 # Also load generic (framework-level) knowledge
                 generic_dir = Path(__file__).parent / "memory" / "gained_knowledge"
                 if generic_dir.exists() and str(generic_dir.resolve()) != str(Path(memory_dir).resolve()):
-                    self._generic_memory = MemoryManager(str(generic_dir))
+                    self._generic_memory = MemoryManager(str(generic_dir), write_mode=write_mode)
                     g_stats = self._generic_memory.stats()
                     logger.info(f"Generic memory loaded: {g_stats['discoveries']['total']} discoveries")
             except ImportError as e:

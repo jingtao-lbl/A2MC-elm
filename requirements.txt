@@ -26,3 +26,6 @@ Pillow>=9.0.0
 
 # Anthropic API (for Claude integration)
 anthropic>=0.18.0
+
+# Testing (dev) — run: python -m pytest  (config in pytest.ini, basetemp under repo tmp/)
+pytest>=7.0

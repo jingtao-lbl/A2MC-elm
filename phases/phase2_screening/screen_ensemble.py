@@ -70,7 +70,12 @@ class ScreeningConfig:
     year_start: int = 1901
     year_end: int = 2019
     obs_year: int = 2016
-    obs_month: int = 7  # July
+    obs_month: int = 7  # July (primary month; kept for back-compat + cache key)
+    # Months whose simulated monthly means are AVERAGED for the obs comparison.
+    # Default [7, 8] (July+August): the field obs is a single late-July point,
+    # which a one-month mean under-samples on a rising seasonal curve. Set to a
+    # single month, e.g. [7], to restore plain July-mean comparison.
+    obs_months: List[int] = field(default_factory=lambda: [7, 8])
 
     # PFT settings
     pfts: List[int] = field(default_factory=lambda: [7, 9, 10])
@@ -92,6 +97,11 @@ class ScreeningConfig:
     aggregation_method: str = 'rmsre'
     tolerance: float = 0.2
     top_n: int = 100
+    # Optional upper bound on case number. Default None = no cap (per-round summary
+    # graphs legitimately exceed the Morris ensemble size, e.g. R3 + reruns = 4941).
+    # Set it (e.g. 4890) for CROSS-round comparison so out-of-Morris-range experiment
+    # cases sharing the extract dir (H1 #5001 etc.) don't contaminate the screening.
+    max_case_num: Optional[int] = None
 
     def __post_init__(self):
         """Initialize case_pattern from A2MC config if not set."""
@@ -114,8 +124,15 @@ class ScreeningConfig:
 
     @property
     def obs_idx(self) -> int:
-        """Index of observation timestep (0-based)"""
+        """Index of the primary observation timestep (0-based, obs_month)."""
         return (self.obs_year - self.year_start) * 12 + self.obs_month - 1
+
+    @property
+    def obs_idxs(self) -> List[int]:
+        """Timestep indices (0-based) averaged for the obs comparison
+        (one per entry in obs_months)."""
+        return [(self.obs_year - self.year_start) * 12 + m - 1
+                for m in self.obs_months]
 
 
 @dataclass
@@ -204,10 +221,18 @@ def get_available_cases(data_dir: Path, config: ScreeningConfig) -> List[int]:
         print(f"  DEBUG: case_pattern='{config.case_pattern}', regex='{regex_str}'")
         print(f"  DEBUG: {len(nc_files)} NC files found, sample: {nc_files[0].name}")
 
+    skipped_oor = 0
     for f in nc_files:
         match = pattern.search(f.name)
         if match:
-            cases.append(int(match.group(1)))
+            cnum = int(match.group(1))
+            if config.max_case_num is not None and cnum > config.max_case_num:
+                skipped_oor += 1
+                continue
+            cases.append(cnum)
+    if skipped_oor:
+        print(f"  Excluded {skipped_oor} case(s) > max_case_num={config.max_case_num} "
+              f"(out-of-Morris-range / experiment cases)")
 
     return sorted(cases)
 
@@ -251,7 +276,7 @@ def _get_cache_path(data_dir: Path, targets: Dict[str, Target], config: Screenin
     """Generate cache file path based on data directory and config."""
     # Create hash of target names and config to detect changes
     target_names = sorted(targets.keys())
-    config_str = f"{config.obs_year}_{config.obs_month}_{target_names}"
+    config_str = f"{config.obs_year}_{config.obs_months}_{target_names}"
     config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]
     return data_dir / f".screening_cache_{config_hash}.pkl"
 
@@ -358,7 +383,7 @@ def load_ensemble_simulated(
             continue
 
         # Extract all target values from this case's NC file
-        case_values = extract_case_values(nc_file, targets, config.obs_idx)
+        case_values = extract_case_values(nc_file, targets, config.obs_idxs)
 
         # Skip if no values extracted (invalid/corrupt file)
         if not case_values:
@@ -408,7 +433,8 @@ def screen_ensemble(
     targets: Dict[str, Target],
     config: Optional[ScreeningConfig] = None,
     top_n: int = 100,
-    verbose: bool = True
+    verbose: bool = True,
+    max_case_num: Optional[int] = None
 ) -> ScreeningResult:
     """
     Screen ensemble against validation targets.
@@ -452,6 +478,8 @@ def screen_ensemble(
     config = config or ScreeningConfig()
     config.data_dir = Path(data_dir)
     config.top_n = top_n
+    if max_case_num is not None:
+        config.max_case_num = max_case_num
 
     if verbose:
         print("\n" + "=" * 60)
@@ -491,6 +519,12 @@ def screen_ensemble(
         print("\nRunning optimization...")
 
     opt_result = optimize_ensemble(simulated, targets, opt_config)
+
+    # Attach the real case-number map so saved Set_IDs / indices are correct
+    # even on a PARTIAL ensemble (loaded cases non-contiguous -> array position
+    # != case number). Without this, optimize_function falls back to position+1,
+    # which silently mislabels case numbers when cases are missing.
+    opt_result.case_numbers = np.asarray(case_numbers)
 
     # Get best case
     best_idx = opt_result.best_index
@@ -608,6 +642,10 @@ def main():
                         help='Number of top cases to report')
     parser.add_argument('--output-dir', type=str, default=None,
                         help='Directory for output files')
+    parser.add_argument('--max-case-num', type=int, default=None,
+                        help='Exclude case numbers above this (default: no cap). Set for '
+                             'cross-round comparison to drop out-of-Morris-range experiment '
+                             'cases (e.g. 4890); leave unset for per-round summary graphs.')
     args = parser.parse_args()
 
     # Get data directory
@@ -623,7 +661,8 @@ def main():
     targets = load_kougarok_targets()
 
     # Run screening
-    result = screen_ensemble(data_dir, targets, top_n=args.top_n)
+    result = screen_ensemble(data_dir, targets, top_n=args.top_n,
+                             max_case_num=args.max_case_num)
 
     # Save results if output dir specified
     if args.output_dir:

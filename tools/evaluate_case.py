@@ -64,7 +64,9 @@ def extract_case_values(
               - any object (only the *key name* is used to determine the
                 variable / PFT; the observed value is not needed here)
         obs_idx: 0-based index of the observation timestep in the monthly
-            time dimension.
+            time dimension. May also be a sequence of indices, in which case the
+            per-PFT value is the MEAN across those timesteps (e.g. [July, August]
+            means to match a late-July point sample against monthly-mean output).
 
     Returns:
         Dict mapping target name → simulated value (in validation units,
@@ -118,20 +120,25 @@ def extract_case_values(
                 if data is None:
                     continue
 
-                # Validate obs_idx
-                if obs_idx < 0 or obs_idx >= data.shape[1]:
+                # obs_idx may be a single int OR a sequence of timestep indices
+                # to AVERAGE. Averaging consecutive months (e.g. July+August
+                # means) better matches a single late-month point measurement
+                # than one monthly mean does. Validate all requested indices.
+                idxs = ([int(obs_idx)] if isinstance(obs_idx, (int, np.integer))
+                        else [int(k) for k in obs_idx])
+                if any(k < 0 or k >= data.shape[1] for k in idxs):
                     logger.warning(
                         f"obs_idx {obs_idx} out of range for {nc_var} "
                         f"(n_times={data.shape[1]})"
                     )
                     continue
 
-                # Aggregate SZPF across size classes for this PFT
+                # Aggregate SZPF across size classes for this PFT, then mean
+                # over the requested timestep(s).
                 szpf_start, szpf_end = get_szpf_range(pft_id)
-                value = float(
-                    np.nansum(data[szpf_start : szpf_end + 1, obs_idx])
-                ) * factor
-                simulated[tname] = value
+                per_t = [float(np.nansum(data[szpf_start : szpf_end + 1, k]))
+                         for k in idxs]
+                simulated[tname] = float(np.mean(per_t)) * factor
 
     except Exception as e:
         logger.error(f"Failed to read {nc_path}: {e}")

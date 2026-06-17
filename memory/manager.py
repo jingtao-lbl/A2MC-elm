@@ -9,6 +9,7 @@ Provides the main interface for:
 """
 
 import logging
+import os
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -16,6 +17,17 @@ from datetime import datetime
 from .store import load_json, save_json
 
 logger = logging.getLogger(__name__)
+
+# Write-mode gate for curated Tier-3 Adaptive Memory.
+#   "interactive" — human-in-the-loop (offline agent + curation tools): curated
+#                   writes (discoveries / failed_approaches / experiments) land in
+#                   the curated JSONs as before.
+#   "propose"     — autonomous online agent (orchestrator): the same writes are
+#                   routed to a staging file (auto_discovered_pending.json) for
+#                   human review + promotion, never the curated JSONs.
+# Rationale + history: memory/dev_logs/20260612d_Memory_Write_Gate_Interactive_Only_Curated.md
+WRITE_MODES = ("interactive", "propose")
+PENDING_FILENAME = "auto_discovered_pending.json"
 
 
 class MemoryManager:
@@ -36,15 +48,32 @@ class MemoryManager:
         failed_approaches: Dict with "failed_approaches" list
     """
 
-    def __init__(self, data_dir: str):
+    def __init__(self, data_dir: str, write_mode: Optional[str] = None):
         """
         Initialize memory manager.
 
         Args:
             data_dir: Path to data directory containing JSON files
+            write_mode: Curated-write gate, "interactive" or "propose". If None,
+                resolves from env A2MC_MEMORY_WRITE_MODE, else defaults to
+                "interactive". In "propose" mode, curated writes
+                (add_discovery / add_failed_approach / record_experiment) are
+                routed to the staging file instead of the curated JSONs.
+                See WRITE_MODES and memory/dev_logs/20260612d_*.
         """
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
+
+        resolved_mode = (write_mode
+                         or os.environ.get("A2MC_MEMORY_WRITE_MODE")
+                         or "interactive")
+        if resolved_mode not in WRITE_MODES:
+            logger.warning(
+                f"Unknown memory write_mode {resolved_mode!r}; "
+                f"falling back to 'interactive'. Valid: {WRITE_MODES}"
+            )
+            resolved_mode = "interactive"
+        self.write_mode = resolved_mode
 
         # Load all data stores
         self.discoveries = load_json(
@@ -66,14 +95,16 @@ class MemoryManager:
 
         n_disc = sum(1 for v in self.discoveries.values() if isinstance(v, dict))
         logger.info(f"MemoryManager initialized with {n_disc} discoveries, "
-                   f"{len(self.experiments.get('experiments', []))} experiments")
+                   f"{len(self.experiments.get('experiments', []))} experiments "
+                   f"(write_mode={self.write_mode})")
 
     # ==================== QUERY METHODS ====================
 
     def get_relevant_context(self, failing_targets: Optional[List[str]] = None,
                             max_chars: int = 8000,
                             targets: Optional[List[str]] = None,
-                            parameters: Optional[List[str]] = None) -> str:
+                            parameters: Optional[List[str]] = None,
+                            verified_only: bool = False) -> str:
         """
         Get discoveries and lessons relevant to current failures or parameters.
 
@@ -84,6 +115,14 @@ class MemoryManager:
             max_chars: Maximum characters in returned context
             targets: List of target/output variable names
             parameters: List of parameter names to find relevant knowledge for
+            verified_only: When True, only curated/verified knowledge shapes the
+                output — discoveries with verified=True and experiments with
+                source="curated". Use from diagnosis/hypothesis-generation call sites
+                so contamination can't reach the reasoning prompt (the read-side gate
+                that complements the write gate). NOTE: the Kougarok baseline is
+                currently all verified=False, so enabling this empties the discoveries
+                section until the baseline is flagged — see memory/TODO.md (Q8). Default
+                False (backward compatible; retrospective call sites leave it False).
 
         Returns:
             Formatted string with relevant discoveries and warnings
@@ -104,6 +143,11 @@ class MemoryManager:
             for name, disc in param_discoveries:
                 if name not in existing_names:
                     relevant_discoveries.append((name, disc))
+
+        # Read-side gate: only verified discoveries shape the answer when requested.
+        if verified_only:
+            relevant_discoveries = [(n, d) for (n, d) in relevant_discoveries
+                                    if d.get("verified") is True]
 
         if relevant_discoveries:
             sections.append("## Relevant Discoveries from Previous Calibration\n")
@@ -157,6 +201,11 @@ class MemoryManager:
             for exp in param_failed:
                 if exp.get('id') not in existing_ids:
                     failed_experiments.append(exp)
+
+        # Read-side gate: only curated experiment records when requested.
+        if verified_only:
+            failed_experiments = [e for e in failed_experiments
+                                  if e.get("source") == "curated"]
 
         if failed_experiments:
             sections.append("## Failed Experiments (DO NOT REPEAT)\n")
@@ -379,6 +428,14 @@ class MemoryManager:
         if outcome == "catastrophic_collapse":
             record["repeat_warning"] = "CATASTROPHIC FAILURE - DO NOT REPEAT"
 
+        # Write-mode gate: autonomous online agent proposes; only the interactive
+        # (human-in-the-loop) agent writes curated knowledge. Routing to staging
+        # here also suppresses the catastrophic add_failed_approach cascade below.
+        # See 20260612d.
+        if self.write_mode == "propose":
+            self._stage("experiment", exp_id, record)
+            return exp_id
+
         # Update existing entry with same ID (avoid duplicates), or append new
         existing_idx = None
         for i, existing in enumerate(self.experiments["experiments"]):
@@ -449,7 +506,7 @@ class MemoryManager:
             confidence: 0-1 confidence score (default 0.6 for auto)
             references: List of reference file paths
         """
-        self.discoveries[name] = {
+        entry = {
             "source": source,
             "confidence": confidence,
             "verified": source == "curated",
@@ -463,6 +520,13 @@ class MemoryManager:
             "references": references or []
         }
 
+        # Write-mode gate: autonomous online agent proposes; only the interactive
+        # (human-in-the-loop) agent writes curated knowledge. See 20260612d.
+        if self.write_mode == "propose":
+            self._stage("discovery", name, entry)
+            return
+
+        self.discoveries[name] = entry
         self._save("discoveries.json", self.discoveries)
         logger.info(f"Added discovery: {name} (source: {source}, confidence: {confidence})")
 
@@ -487,6 +551,12 @@ class MemoryManager:
             "alternatives": alternatives,
             "date_added": datetime.now().isoformat()
         }
+
+        # Write-mode gate: autonomous online agent proposes; only the interactive
+        # (human-in-the-loop) agent writes curated knowledge. See 20260612d.
+        if self.write_mode == "propose":
+            self._stage("failed_approach", approach, record)
+            return
 
         # Dedupe: update existing entry with same (approach, experiment_id) pair
         # to prevent duplicates when Phase 6 re-runs after a crash
@@ -605,6 +675,29 @@ class MemoryManager:
     def _save(self, filename: str, data: Any) -> None:
         """Save data to JSON file."""
         save_json(self.data_dir / filename, data)
+
+    def _stage(self, kind: str, key: str, entry: Dict[str, Any]) -> None:
+        """
+        Append a proposed curated entry to the staging file instead of writing
+        the curated JSON. Used in write_mode="propose" (autonomous online agent).
+        The interactive agent reviews + promotes via tools/review_pending_knowledge.py.
+        """
+        path = self.data_dir / PENDING_FILENAME
+        pending = load_json(path, default={"pending": []})
+        pending["pending"].append({
+            "kind": kind,                 # "discovery" | "failed_approach" | "experiment"
+            "key": key,                   # discovery name / approach / experiment id
+            "staged_at": datetime.now().isoformat(),
+            "session": os.environ.get("A2MC_SESSION_ID", ""),
+            "verified": False,
+            "promoted": False,
+            "entry": entry,
+        })
+        save_json(path, pending)
+        logger.info(
+            f"[propose mode] staged {kind} '{key}' -> {PENDING_FILENAME} "
+            f"(NOT written to curated KB; awaiting human review/promotion)"
+        )
 
     def save_all(self) -> None:
         """Save all data stores to disk."""
