@@ -66,3 +66,7 @@ M/4890 done, K failed → propose restart of the infra failures via `restart-fai
 - For the full monitoring reactions table, read
   `memory/dev_logs/20260514c_Monitoring_Workflow_Pattern_For_HPC_Ensembles.md`
   (required reading when an ensemble is in flight, per CLAUDE.md Rule 6).
+
+## Changelog
+
+- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

@@ -148,3 +148,8 @@ manuscript knowledge (CLAUDE.md Rule 3); the audit trail matters as much as for
   evidence-backed.
 - Canonical worked example: `memory/dev_logs/20260519d_Inject_Clumping_Index_Knowledge_Into_A2MC_AI.md`.
   Authoring/validation recipes (G1–G4): `docs/a2mc_reference/graphrag_curated_yaml_roadmap.md`.
+
+## Changelog
+
+- 2026-06-17: Initial version — distilled from graphrag_curated_yaml_roadmap.md + dev log 20260519d (clumping_index injection).
+- 2026-06-17: Verify-pass fix — removed invalid `phase=` kwarg from the Step 5 memory smoke-test command (TypeError on copy-paste).

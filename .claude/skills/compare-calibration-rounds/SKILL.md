@@ -74,3 +74,7 @@ Also: `tools/compare_rounds.py` for quantitative round-vs-round deltas.
   `memory/ana_logs/20260606b` (findings).
 - Tools: `phases/phase2_screening/screen_ensemble.py`, `phases/phase1_exploration/morris_sensitivity_analysis.py`,
   `tools/{compare_rounds,extract_and_plot_selected_cases,plot_ensemble_cases}.py`.
+
+## Changelog
+
+- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

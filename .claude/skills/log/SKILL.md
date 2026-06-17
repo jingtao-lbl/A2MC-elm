@@ -169,3 +169,7 @@ Canonical spec + worked example (`20260514a` banner ↔ `20260608a` new analysis
 - **Auto-memory** (`MEMORY.md` + `feedback_*`/`project_*` files) is a separate system
   from these episodic logs; don't conflate them.
 - On a **feature branch**, logs go to `memory/dev_logs_<branchname>/`, not `dev_logs/`.
+
+## Changelog
+
+- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

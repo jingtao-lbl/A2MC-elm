@@ -86,3 +86,7 @@ matters.
   `memory/dev_logs/20260612d_*`; the contamination history `20260519a`/`b`/`f`.
 - This is the **interactive agent's** job by design (Tier-3 curated writes are
   interactive-only). The online agent only proposes.
+
+## Changelog
+
+- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

@@ -114,3 +114,7 @@ Whole pass ~half a working day for a coupled pair; re-runs after fixes are secon
 - Branch note: this is forward-dev tooling (milestone bumps live on `main`/adapter-kit);
   here on `kougarok_fates_demo` its main use is a sanity pass after a curated-YAML
   injection + `--graph-only` rebuild.
+
+## Changelog
+
+- 2026-06-17: Initial version — distilled from docs/a2mc_reference/rag_validation_workflow.md.

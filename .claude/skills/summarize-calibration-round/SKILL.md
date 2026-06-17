@@ -81,3 +81,7 @@ Write `R{N}_summary_<date>.md`, then render with the **`markdown-to-pdf`** skill
 - Tools: `tools/plot_ensemble_cases.py`, `phases/phase2_screening/screen_ensemble.py`,
   `phases/phase1_exploration/morris_sensitivity_analysis.py`, `tools/regen_ensemble_milestone_plot.sh`.
 - Worked references: `memory/dev_logs/20260610a,b` (R5/R3 graphs), `memory/ana_logs/20260606b`.
+
+## Changelog
+
+- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

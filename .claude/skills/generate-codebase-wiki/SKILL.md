@@ -111,3 +111,7 @@ cross-cutting a module so both under-document, over-long universal context. The 
   The api-31-0 wikis (`fates-codebase-wiki-e85d997`, `elm-codebase-wiki-60d9aad`) on
   `kougarok_fates_demo` are the manuscript-reproducibility anchor; regenerate them here only
   with explicit reason.
+
+## Changelog
+
+- 2026-06-17: Initial version — distilled from docs/a2mc_reference/codebase_wiki_generation_roadmap.md (Workflow A/B; FATES/ELM/EcoSIM proven examples).

@@ -13,9 +13,14 @@ description: <when to use this skill — Claude reads this to decide if it's rel
 ---
 
 # Skill body — action-oriented instructions
+
+## Changelog
+- YYYY-MM-DD: Initial version — distilled from <source>.
 ```
 
 When Claude Code starts in this repo, the skills are auto-discovered. The `description` field is what Claude uses to decide whether to invoke the skill for a given user request — write it as a triggering description, not a summary.
+
+Every `SKILL.md` ends with a **`## Changelog`** — dated one-liners of what changed and why. Git holds the diff; the Changelog is the human-readable evolution trail, so a future reader (or a refinement pass) can see how the skill grew without `git blame`. (Convention adopted 2026-06-17, ported from the E2SA skill-evolution design.)
 
 ## Current skills
 
@@ -36,6 +41,8 @@ When Claude Code starts in this repo, the skills are auto-discovered. The `descr
 | [rebuild-rag](rebuild-rag/SKILL.md) | Knowledge-base build (step 2): rebuild/repair the RAG/GraphRAG index (`scripts/build_rag_index.py`). Encodes the loader pattern-probe symlink footgun, `--rebuild` vs `--graph-only`, Python 3.10, verify gates. Invoke on "rebuild the RAG", "bump the wiki", "I edited the curated YAML", "the index stopped working". |
 | [inject-knowledge](inject-knowledge/SKILL.md) | Knowledge-base build (step 3): inject a human-originated fact (discovery / parameter insight / mechanism) across the up-to-3 curated channels (discoveries.json, parameters.json, curated YAML), validate + graph-rebuild. Judgment-scaffolding — you own the truth call. Human-originated counterpart to curate-knowledge. Invoke on "add this finding to A2MC's AI", "make the agent aware of X". |
 | [validate-rag-chain](validate-rag-chain/SKILL.md) | Knowledge-base build (step 4): validate source→wiki→YAML→RAG with the 3 validators in dependency order (`codebase_wiki_validator` → `yaml_wiki_validator` → `rag_diff`), Green/Yellow/Red banding + fabrication-vs-false-positive triage. |
+| [add-skill](add-skill/SKILL.md) | Meta (skill management): scaffold a new skill + register it in BOTH registries (this table + `skills_catalog.md`) + seed a `## Changelog` + run the drift check; human-gated. Invoke on "add/scaffold a skill", "distill X into a skill". |
+| [refine-skill](refine-skill/SKILL.md) | Meta (skill management): improve an existing skill from accumulated signal (dev_logs/ana_logs/verify findings) — propose a concrete `SKILL.md` diff, **never self-apply**, human gate, then edit + Changelog line. Invoke on "refine/improve the X skill", "review the skills". |
 
 ## Skills vs dev_logs
 
@@ -67,10 +74,24 @@ dev history," not a broken instruction.
 
 1. Look for a pattern across ≥ 2 dev_logs that would benefit from consolidation (mention by previous Claude session, repeated bash recipes, scattered decision criteria).
 2. Create `<.claude/skills/<kebab-name>/SKILL.md` with YAML frontmatter (`name`, `description`).
-3. Body: decision tree → recipes (numbered, with ready-to-run bash) → anti-patterns → cross-references.
-4. Add an entry to the `Current skills` table above.
-5. Commit on the appropriate branch (per CLAUDE.md Rule #11 — verify branch first).
-6. Write a brief dev_log noting why the skill was extracted and from which source logs.
+3. Body: decision tree → recipes (numbered, with ready-to-run bash) → anti-patterns → cross-references, ending with a **`## Changelog`** (seed an "Initial version" line citing the source).
+4. Register in **both** human-facing registries: the `Current skills` table above **and** `docs/a2mc_reference/skills_catalog.md`. (The `add-skill` skill does this for you.)
+5. Run `python3 tools/check_skill_registry.py` — it must exit 0 (verifies disk ↔ README table ↔ catalog parity, `name:`↔dir, and `## Changelog`). This is enforced by the **`.githooks/pre-commit`** hook whenever skill-system files are staged. Activate it once per clone (git doesn't auto-run hooks from clones): `git config core.hooksPath .githooks` (bypass in an emergency with `git commit --no-verify`).
+6. Commit on the appropriate branch (per CLAUDE.md Rule #11 — verify branch first).
+7. Write a brief dev_log noting why the skill was extracted and from which source logs.
+
+## Refining a skill (refine on signal, not noise)
+
+Skills should get better as they're used — absorbing the traps and better practices we discover — without silently rewriting themselves and drifting. The discipline (ported 2026-06-17 from the E2SA skill-evolution design):
+
+- **Refine on a repeated signal**, not a one-off: the same trap hit ≥ ~2–3 times, an explicit human correction, or a clear failure pattern. A single surprise is usually not enough to change the contract.
+- **Surgical edits only** — add or fix a step / gotcha / trigger phrase; don't bloat or rewrite wholesale. A skill that keeps growing is a smell — consider splitting or pruning instead.
+- **`description` (trigger) edits are the highest risk** — they change *when* the skill fires, so a careless edit silently mis-fires or hides the skill. Treat trigger changes with extra care and call them out in the dev_log.
+- **Cite the evidence** — every change names the dev_log / ana_log / verify-pass / correction that justifies it. No speculative edits.
+- **Append a `## Changelog` line** stating what changed and which signal drove it, in the same commit (Rule #11 wants the dev_log too if substantive).
+- Curated knowledge writes stay human-gated (see `curate-knowledge` / `inject-knowledge`); editing a skill is a contract change, so it is likewise a human-reviewed step, never an autonomous self-rewrite.
+
+A2MC has no `refine-skill` *meta-skill* yet (E2SA does); this is the convention a human-driven refinement follows. If refinements become frequent, distilling that into a meta-skill is the natural next step.
 
 ## Skills are branch-scoped
 

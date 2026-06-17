@@ -114,3 +114,8 @@ compat fix (`20260204a`).
   on `kougarok_fates_demo` the common use is a `--graph-only` refresh after a curated-YAML
   injection (e.g. `20260519d`). The api-31-0 index is the manuscript-reproducibility anchor
   — don't bump its wiki commit here without reason.
+
+## Changelog
+
+- 2026-06-17: Initial version — distilled from docs/a2mc_reference/rag_build_roadmap.md.
+- 2026-06-17: Verify-pass fix — corrected stats sanity figure (~2,700 → ~2,581 docs / ~1,295 nodes) to match the api-31-0 index.

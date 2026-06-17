@@ -400,3 +400,7 @@ Cross-link from:
 - `tools/submit_experiment.sh` — single-experiment harness
 - `tools/modify_fates_parameters.py` — `create_modified_parameter_file()` + `verify_modifications()`
 - `tools/validate_submission_plan.py` — pre-flight validator (auto-invoked by submit_phase0.py, must be invoked manually for experiments)
+
+## Changelog
+
+- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

@@ -69,3 +69,7 @@ Cross-check the mechanism against RAG/GraphRAG / `docs/fates-knowledge-base/` be
   science before triage is how the contamination episodes happened.
 - Related skills: `restart-failed-jobs` (after you confirm infra vs model failure),
   `curate-knowledge` (to land a confirmed lesson), `/log` (write-up + supersede).
+
+## Changelog
+
+- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

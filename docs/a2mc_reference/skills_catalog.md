@@ -252,6 +252,39 @@ calibration loop itself.
 
 ---
 
+## Skill management (meta)
+
+These two meta-skills are the skill-evolution machinery — they operate on the skill set
+itself rather than on a calibration subsystem. Adapted from the E2SA skill-evolution design
+(`End2EndScienceAgent/docs/design/09_skill_evolution.md`); backed by the mechanical drift
+gate `tools/check_skill_registry.py` (disk ↔ README table ↔ this catalog parity).
+
+### `add-skill`
+- **Purpose:** Scaffold a new skill **and** register it so the steps are never half-done.
+  Writes the `SKILL.md` (frontmatter + body + seeded `## Changelog`), registers it in **both**
+  human-facing registries (the README "Current skills" table and this catalog), runs the
+  drift check, and stops for human review before commit.
+- **Invoke when:** "add a skill", "create/scaffold a skill", "make this reusable as a skill",
+  "distill X into a skill".
+- **Backing tool:** `tools/check_skill_registry.py` (the register-in-both invariant, enforced).
+- **Key discipline:** register in BOTH registries or it drifts; minimal procedure (a one-off
+  isn't a skill); branch-scoped (don't bake `main`/api-43-1 into a `kougarok_fates_demo`
+  skill); public-sync aware (no secrets); human-gated.
+
+### `refine-skill`
+- **Purpose:** Improve an existing skill from accumulated signal — the distill → propose →
+  gate → apply half of skill evolution. Gathers evidence (dev_logs, ana_logs, verify-pass
+  findings, corrections), proposes a concrete `SKILL.md` diff, **stops at a human gate (never
+  self-applies)**, then on approval edits + appends a `## Changelog` line + commits.
+- **Invoke when:** "refine/improve the X skill", "the X skill should have caught Y", "review
+  the skills".
+- **Key discipline:** refine on a *repeated* signal (≥ ~2–3 / explicit correction / failure
+  pattern), not one-offs; surgical edits only (a growing skill is a smell); **`description`
+  /trigger edits are highest-risk**; evidence-cited; never self-apply (contract change, like
+  `curate-knowledge` / `inject-knowledge`).
+
+---
+
 ## Skills vs dev logs
 
 | | Skill (`.claude/skills/`) | Dev log (`memory/dev_logs/`) |

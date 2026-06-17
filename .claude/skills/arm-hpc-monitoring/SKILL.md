@@ -103,3 +103,7 @@ Document the tightening in the active dev_log so the next session uses the clean
 - Auto-memory: `feedback_arm_monitor_at_session_start.md`, `feedback_plot_filename_convention.md`
 - Today's worked example of filter-tightening: `memory/dev_logs/20260522b_*.md` Part 3
 - Live auto-monitor source: `use_cases/Kougarok/analysis/r5_auto_monitor.sh`
+
+## Changelog
+
+- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

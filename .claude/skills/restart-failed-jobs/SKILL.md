@@ -215,3 +215,7 @@ Jobs in `NODE_FAIL` state (distinct from `FAILED`) are typically auto-requeued b
 - Companion monitoring workflow: `arm-hpc-monitoring` skill + `memory/dev_logs/20260514c_*.md`
 - Today's worked example: `memory/dev_logs/20260521a` §"Open Items" §1 + `memory/dev_logs/20260522b` Part 2
 - Auto-memory: `feedback_slurm_query_pitfalls.md` (sacct filter pitfall); `reference_failed_job_restart_workflow.md` (this skill's pointer)
+
+## Changelog
+
+- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.
