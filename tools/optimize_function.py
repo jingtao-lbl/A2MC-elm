@@ -39,12 +39,12 @@ import json
 # Import cost functions from the new module
 try:
     from .cost_functions import (
-        CostFunction, ObservationType, aggregate_costs,
+        CostFunction, ObservationType, aggregate_costs, to_cost,
         compute_snapshot_cost, count_targets_satisfied, within_tolerance
     )
 except ImportError:
     from cost_functions import (
-        CostFunction, ObservationType, aggregate_costs,
+        CostFunction, ObservationType, aggregate_costs, to_cost,
         compute_snapshot_cost, count_targets_satisfied, within_tolerance
     )
 
@@ -54,15 +54,59 @@ except ImportError:
 # =============================================================================
 
 @dataclass
+class ObsPoint:
+    """
+    One observation point in time for a target.
+
+    A snapshot target has exactly one ObsPoint; a time-series target has several.
+    `months` is the optional per-point averaging window (list of month numbers whose
+    simulated monthly means are averaged to match this point) — defaults to [month].
+    The matching layer resolves (year, month/months) to monthly timestep index(es).
+    """
+    year: int
+    month: int
+    value: float
+    months: Optional[List[int]] = None     # averaging window; None => [month]
+    uncertainty: Optional[float] = None     # None => fall back to Target.uncertainty
+
+    @property
+    def window(self) -> List[int]:
+        return self.months if self.months else [self.month]
+
+
+@dataclass
 class Target:
-    """Single calibration target"""
+    """Single calibration target (snapshot or time series)."""
     name: str
-    observed: float
+    observed: float = None    # snapshot value; for a series, == observations[0].value (display/back-compat)
     uncertainty: float = 0.2  # Relative uncertainty (default ±20%)
     weight: float = 1.0       # Weight in composite cost
     units: str = ""
     description: str = ""
     obs_std: float = None     # Observed standard deviation (for error bars)
+    # Generic observation model. When None, this is a SNAPSHOT target whose single
+    # timestep is supplied externally (ScreeningConfig time anchor) — legacy behavior.
+    # When set, the target is self-contained: each ObsPoint carries its own time spec
+    # and value, so snapshot (len 1) and time series (len N) share one code path.
+    observations: Optional[List[ObsPoint]] = None
+    # Per-target cost metric override; None => OptimizationConfig.error_method.
+    cost_method: Optional[str] = None
+
+    @property
+    def n_points(self) -> int:
+        """Number of observation points (1 for a snapshot)."""
+        return len(self.observations) if self.observations else 1
+
+    @property
+    def is_time_series(self) -> bool:
+        return self.n_points > 1
+
+    @property
+    def obs_values(self) -> np.ndarray:
+        """Observed values as an array (length n_points; length-1 for snapshot)."""
+        if self.observations:
+            return np.array([p.value for p in self.observations], dtype=float)
+        return np.array([self.observed], dtype=float)
 
     @property
     def min_acceptable(self) -> float:
@@ -104,6 +148,11 @@ class OptimizationResult:
     n_satisfied: np.ndarray             # Number of targets satisfied per set
     config: OptimizationConfig
     targets: Dict[str, Target]
+    # Optional map from array position -> real case/parameter-set number.
+    # MUST be provided when the loaded ensemble is NOT the complete contiguous
+    # block 1..N (e.g. a partial ensemble with gaps). When None, set IDs fall
+    # back to (position+1), which is only correct for a complete ensemble.
+    case_numbers: Optional[np.ndarray] = None
 
     @property
     def n_sets(self) -> int:
@@ -114,10 +163,16 @@ class OptimizationResult:
         """0-based index of best set"""
         return int(self.ranked_indices[0])
 
+    def _idx_to_set_id(self, idx) -> int:
+        """Map a 0-based array position to its real set/case ID."""
+        if self.case_numbers is not None:
+            return int(np.asarray(self.case_numbers)[idx])
+        return int(idx) + 1
+
     @property
     def best_set_id(self) -> int:
-        """1-based ID of best set (for parameter file lookup)"""
-        return self.best_index + 1
+        """Real ID of best set (case number / row in parameter file)"""
+        return self._idx_to_set_id(self.best_index)
 
     @property
     def best_cost(self) -> float:
@@ -129,8 +184,12 @@ class OptimizationResult:
         return self.ranked_indices[:n]
 
     def get_top_set_ids(self, n: Optional[int] = None) -> np.ndarray:
-        """Get top N set IDs (1-based)"""
-        return self.get_top_indices(n) + 1
+        """Get top N real set IDs (case numbers). Falls back to position+1
+        only when case_numbers is unset (complete contiguous ensemble)."""
+        idx = self.get_top_indices(n)
+        if self.case_numbers is not None:
+            return np.asarray(self.case_numbers)[idx]
+        return idx + 1
 
 
 # =============================================================================
@@ -190,17 +249,25 @@ def optimize_ensemble(
         print(f"  Error method: {config.error_method}")
         print(f"  Aggregation: {config.aggregation_method}")
 
-    # Create cost function
-    cost_fn = CostFunction(method=config.error_method, obs_type=ObservationType.SNAPSHOT)
-
-    # Calculate individual errors for each target
+    # Calculate individual errors for each target.
+    # sim_values has shape (n_sets, n_points): one observation point for a snapshot
+    # target, several for a time series. Each target may pick its own cost metric
+    # (target.cost_method) and is scored SNAPSHOT (1 point) or TIME_SERIES (N points);
+    # CostFunction.compute reduces the per-point obs/sim arrays to one error per set.
     individual_errors = {}
     for name, target in targets.items():
-        sim_values = simulated[name]
+        sim_values = np.atleast_2d(np.asarray(simulated[name]))
+        if sim_values.shape[0] == 1 and n_sets != 1:
+            sim_values = sim_values.T  # tolerate a stored (n_sets,) 1-D array
+        obs_vals = target.obs_values
+        method = target.cost_method or config.error_method
+        otype = ObservationType.SNAPSHOT if target.n_points == 1 else ObservationType.TIME_SERIES
+        cost_fn = CostFunction(method=method, obs_type=otype)
         errors = np.zeros(n_sets)
         for i in range(n_sets):
-            result = cost_fn.compute(sim_values[i], target.observed)
-            errors[i] = result.value
+            # to_cost flips skill scores (nse/kge/correlation; higher=better) into a
+            # minimizable cost; error metrics pass through. Keeps ranking "lower=better".
+            errors[i] = to_cost(cost_fn.compute(sim_values[i], obs_vals).value, method)
         individual_errors[name] = errors
 
     # Calculate composite cost for each set
@@ -215,16 +282,23 @@ def optimize_ensemble(
             weights=weights if config.aggregation_method == 'weighted_mean' else None
         )
 
-    # Count satisfied targets for each set
+    # Count satisfied targets for each set.
+    # Snapshot: keep the exact relative/absolute within_tolerance check on the single
+    # value (identical to legacy behavior). Time series: a point-wise tolerance is
+    # ill-defined, so the target counts as satisfied when its computed error metric is
+    # within tolerance (interpreted in that metric's units).
     n_satisfied = np.zeros(n_sets, dtype=int)
     for i in range(n_sets):
         for name, target in targets.items():
-            if within_tolerance(
-                simulated[name][i],
-                target.observed,
-                config.tolerance,
-                config.tolerance_type
-            ):
+            if target.n_points == 1:
+                sim_scalar = float(np.asarray(simulated[name][i]).ravel()[0])
+                ok = within_tolerance(
+                    sim_scalar, target.observed,
+                    config.tolerance, config.tolerance_type
+                )
+            else:
+                ok = individual_errors[name][i] <= config.tolerance
+            if ok:
                 n_satisfied[i] += 1
 
     # Rank by composite cost (lowest = best)
@@ -293,7 +367,7 @@ def save_optimization_results(
 
         # Data rows
         for rank, idx in enumerate(result.ranked_indices, start=1):
-            set_id = idx + 1
+            set_id = result._idx_to_set_id(idx)
             row = [
                 str(rank),
                 str(set_id),
@@ -303,7 +377,11 @@ def save_optimization_results(
             for name in target_names:
                 row.append(f"{result.individual_errors[name][idx]:.6f}")
             for name in target_names:
-                row.append(f"{simulated[name][idx]:.2f}")
+                # simulated[name][idx] is a per-point array (length 1 for a snapshot).
+                # Report the scalar for a snapshot; the point-mean for a time series.
+                sim_pts = np.asarray(simulated[name][idx]).ravel()
+                sim_repr = sim_pts[0] if sim_pts.size == 1 else float(np.nanmean(sim_pts))
+                row.append(f"{sim_repr:.2f}")
             f.write("\t".join(row) + "\n")
 
     print(f"✓ Saved: {results_file}")
@@ -316,10 +394,11 @@ def save_optimization_results(
     top_ids = result.get_top_set_ids(n_top)
 
     with open(indices_file, 'w') as f:
-        f.write(f"# Top {n_top} parameter set IDs (1-based)\n")
-        f.write(f"# Set #N corresponds to row N in parameter file\n")
+        f.write(f"# Top {n_top} parameter set IDs (real case numbers)\n")
+        f.write(f"# (mapped through case_numbers when the ensemble is partial;\n")
+        f.write(f"#  position+1 only when case_numbers is unset / complete ensemble)\n")
         for set_id in top_ids:
-            f.write(f"{set_id}\n")
+            f.write(f"{int(set_id)}\n")
 
     print(f"✓ Saved: {indices_file}")
 
@@ -380,7 +459,7 @@ def save_optimization_results(
 
         for i in range(min(10, n_sets)):
             idx = result.ranked_indices[i]
-            set_id = idx + 1
+            set_id = result._idx_to_set_id(idx)
             f.write(f"Rank {i+1}: Set #{set_id}\n")
             f.write(f"  Composite cost: {result.composite_cost[idx]:.6f}\n")
             f.write(f"  Targets satisfied: {result.n_satisfied[idx]}/{n_targets}\n\n")

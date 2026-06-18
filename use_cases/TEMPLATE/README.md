@@ -88,6 +88,7 @@ Document discoveries and lessons learned during calibration.
 | File | Description |
 |------|-------------|
 | `config.yaml` | Site configuration |
+| `validation/targets.yaml` | Calibration targets + obs↔sim time matching + cost config (snapshot or time series). See `docs/24_Generic_Obs_Comparison_Plan.md` |
 | `validation_targets.json` | Target values for calibration |
 
 ---

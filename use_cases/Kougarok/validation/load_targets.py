@@ -15,61 +15,25 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from tools.optimize_function import Target
+from tools.targets_loader import parse_targets_yaml, parse_cost_config
 
 
 def load_targets(yaml_file: Path = None) -> Dict[str, Target]:
     """
-    Load validation targets from YAML file.
+    Load Kougarok validation targets from YAML.
 
-    Parameters
-    ----------
-    yaml_file : Path, optional
-        Path to targets.yaml. Defaults to same directory as this script.
-
-    Returns
-    -------
-    Dict[str, Target]
-        Dictionary of target names to Target objects
+    Thin wrapper over the framework-level parser ``tools.targets_loader.parse_targets_yaml``
+    (site-agnostic; supports snapshot and time-series targets — see
+    docs/24_Generic_Obs_Comparison_Plan.md). Defaults to this directory's targets.yaml.
     """
     if yaml_file is None:
         yaml_file = Path(__file__).parent / 'targets.yaml'
-
-    with open(yaml_file, 'r') as f:
-        config = yaml.safe_load(f)
-
-    targets = {}
-    for name, spec in config.get('targets', {}).items():
-        targets[name] = Target(
-            name=name,
-            observed=spec['observed'],
-            uncertainty=spec.get('uncertainty', 0.2),
-            units=spec.get('units', ''),
-            description=spec.get('description', '')
-        )
-
-    return targets
+    return parse_targets_yaml(yaml_file)
 
 
 def get_cost_config() -> dict:
-    """
-    Load cost function configuration from YAML.
-
-    Returns
-    -------
-    dict
-        Cost function configuration
-    """
-    yaml_file = Path(__file__).parent / 'targets.yaml'
-
-    with open(yaml_file, 'r') as f:
-        config = yaml.safe_load(f)
-
-    return config.get('cost_config', {
-        'error_method': 'relative_error',
-        'aggregation_method': 'rmsre',
-        'tolerance': 0.2,
-        'tolerance_type': 'relative'
-    })
+    """Load the cost-function config block from this case's targets.yaml."""
+    return parse_cost_config(Path(__file__).parent / 'targets.yaml')
 
 
 def get_pft_info() -> dict:

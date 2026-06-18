@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""commit-msg hook — block AI-attribution trailers in any commit (CLAUDE.md rule #1).
+
+Git-level fallback for the Claude Code PreToolUse `block-ai-attribution` hook: that hook
+only sees `git commit -m` via the Bash tool, so editor-based commits would slip past it.
+This catches the commit message file directly. Matches only the literal attribution
+signatures — NOT bare "Claude"/"Anthropic" (which legitimately appear in CLAUDE.md / .claude/).
+
+Activate (once per clone): git config core.hooksPath .githooks
+"""
+import re
+import sys
+
+PATTERNS = [
+    r"co-authored-by",
+    r"\U0001f916\s*generated with",      # 🤖 Generated with
+    r"generated with \[?claude code",
+]
+
+
+def main() -> int:
+    try:
+        msg = open(sys.argv[1], encoding="utf-8", errors="replace").read().lower()
+    except Exception:
+        return 0  # can't read → don't block
+    for p in PATTERNS:
+        if re.search(p, msg):
+            sys.stderr.write(
+                "commit-msg: AI-attribution trailer detected (/%s/). CLAUDE.md rule #1 "
+                "forbids Co-Authored-By / 'Generated with Claude' trailers. Remove it and retry.\n" % p
+            )
+            return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

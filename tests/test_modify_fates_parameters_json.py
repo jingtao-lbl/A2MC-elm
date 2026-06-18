@@ -26,6 +26,11 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+# tools.modify_fates_parameters imports netCDF4 at module level; skip cleanly under
+# an interpreter without it (e.g. ~/a2mc_env) so `pytest` collection doesn't halt.
+import pytest  # noqa: E402
+pytest.importorskip("netCDF4")
+
 from tools.modify_fates_parameters import (  # noqa: E402
     create_modified_parameter_file,
     detect_format,

@@ -76,6 +76,26 @@ class ErrorMetric:
     details: Dict = field(default_factory=dict)
 
 
+# =============================================================================
+# Metric registries (single source of truth; consumed by CostFunction,
+# aggregate_costs, to_cost, and tools/validate_targets_config.py)
+# =============================================================================
+# Per-target error metrics accepted by CostFunction.
+VALID_ERROR_METHODS = (
+    'relative_error', 'rmse', 'nrmse', 'mae', 'bias',
+    'relative_bias', 'nse', 'kge', 'correlation',
+)
+# Across-target composite aggregation methods accepted by aggregate_costs.
+VALID_AGGREGATION_METHODS = ('rmsre', 'rms', 'mean', 'weighted_mean', 'max', 'sum')
+# Skill scores are "higher = better" (1.0 = perfect); to_cost flips them to a cost.
+# They are also undefined/degenerate on a single point (need >= 2).
+SKILL_SCORE_METHODS = ('nse', 'kge', 'correlation')
+# Relative metrics divide by the observed value (sensitive to observed ~ 0); absolute
+# metrics carry the data's units (mixing the two under rmsre/mean lets one target dominate).
+RELATIVE_METHODS = ('relative_error', 'relative_bias')
+ABSOLUTE_METHODS = ('rmse', 'nrmse', 'mae', 'bias')
+
+
 class CostFunction:
     """
     Flexible cost function for model-observation comparison.
@@ -129,12 +149,8 @@ class CostFunction:
         self.weights = weights
 
         # Validate method
-        valid_methods = [
-            'relative_error', 'rmse', 'nrmse', 'mae', 'bias',
-            'relative_bias', 'nse', 'kge', 'correlation'
-        ]
-        if method not in valid_methods:
-            raise ValueError(f"Unknown method '{method}'. Valid: {valid_methods}")
+        if method not in VALID_ERROR_METHODS:
+            raise ValueError(f"Unknown method '{method}'. Valid: {VALID_ERROR_METHODS}")
 
     def compute(
         self,
@@ -368,6 +384,20 @@ class CostFunction:
             return 0.0
 
         return float(np.corrcoef(sim, obs)[0, 1])
+
+
+def to_cost(value: float, method: str) -> float:
+    """
+    Convert a raw metric value to a minimizable COST (lower = better, ~0 = perfect).
+
+    Error metrics are already costs and pass through unchanged. Skill scores
+    (nse, kge, correlation) are mapped to ``1 - value`` so a perfect score (1.0)
+    becomes cost 0 and worse scores become larger costs — directly comparable with,
+    and aggregatable alongside, error-metric costs.
+    """
+    if method in SKILL_SCORE_METHODS:
+        return 1.0 - value
+    return value
 
 
 def aggregate_costs(

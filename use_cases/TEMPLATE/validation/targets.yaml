@@ -1,0 +1,97 @@
+# =============================================================================
+# Validation Targets — TEMPLATE
+# =============================================================================
+# Copy this file to use_cases/<YourSite>/validation/targets.yaml and edit.
+#
+# This file is the SINGLE SOURCE for (a) the calibration targets, (b) how each
+# observation is matched to simulated output in time, and (c) the cost metric.
+# A2MC resolves it from $A2MC_VALIDATION_TARGETS, else
+# $A2MC_USE_CASE_DIR/validation/targets.yaml. Parsed by tools/targets_loader.py.
+# Full design: docs/24_Generic_Obs_Comparison_Plan.md.
+#
+# Each target is EITHER a snapshot (one scalar `observed` at a single time) OR a
+# time series (a list of dated `observations`). A snapshot is just the length-1
+# case of the same machinery, so both share one code path.
+# =============================================================================
+
+# --- Metadata (free-form; only the two time_* keys below are read) ----------
+site: YourSite
+observation_date: "YYYY-MM"        # human note; not parsed
+
+# --- Snapshot time anchor ----------------------------------------------------
+# Used ONLY by snapshot targets (those with a scalar `observed` and no
+# `observations:` list). Gives the year + month of the measurement. The
+# simulated value is read at that monthly timestep:
+#     idx = (time_year - year_start) * 12 + (time_month - 1)
+# (year_start is the simulation start year, from the screening config.)
+time_year: 2016
+time_month: 7                      # 1-12; the measurement month
+
+# --- Cost configuration (global defaults) ------------------------------------
+# error_method       : per-target metric when a target sets no `cost_method`.
+#                      Options: relative_error, rmse, nrmse, mae, bias,
+#                               relative_bias, nse, kge, correlation.
+#                      (nse/kge/correlation are skill scores, auto-converted to a
+#                       minimizable cost internally — higher skill = lower cost.)
+# aggregation_method : how per-target errors combine into one composite cost
+#                      across targets. Options: rmsre, mean, weighted_mean, max, sum.
+# tolerance          : a target counts as "satisfied" within this (relative by default).
+cost_config:
+  error_method: relative_error
+  aggregation_method: rmsre
+  tolerance: 0.2
+  tolerance_type: relative
+
+# --- PFT definitions (optional; documentation only) --------------------------
+pfts:
+  1:
+    name: your_pft_name
+    description: Short description
+
+# --- Targets -----------------------------------------------------------------
+# IMPORTANT: each target KEY must be "PFT<id>_<vartype>" (e.g. PFT1_leaf,
+# PFT2_fineroot). A2MC resolves the FATES variable + PFT from this NAME (the
+# `variable:` field below is documentation only). A name that does not match the
+# pattern, or an unknown <vartype>, is silently dropped at runtime — the
+# pre-flight validator (tools/validate_targets_config.py) flags it as error R1.
+# Run that validator after editing:  python tools/validate_targets_config.py
+targets:
+
+  # --- Example A: SNAPSHOT target (most common) ------------------------------
+  # One observed value, matched to the single month given by time_year/time_month.
+  PFT1_leaf:
+    pft: 1                         # PFT id (informational; resolution uses the key name)
+    variable: FATES_LEAFC_SZPF     # informational
+    observed: 24.6                 # observed value (validation units)
+    uncertainty: 0.2               # relative (±20%)
+    units: g C/m^2
+    description: Example single-time-point leaf biomass target
+    # original_std: 29.1           # optional: observed std (for error bars)
+
+  # --- Example B: SNAPSHOT with an averaging window --------------------------
+  # When the measurement timing does not line up with monthly output (e.g. a
+  # late-month point vs monthly means), average several months instead of one.
+  # `obs_months` lists the month numbers to average for THIS target.
+  PFT1_fineroot:
+    pft: 1
+    variable: FATES_FROOTC_SZPF
+    observed: 174.2
+    uncertainty: 0.2
+    obs_months: [7, 8]             # average July + August monthly means
+    units: g C/m^2
+    description: Example end-of-month-sampled target (matched by 2-month mean)
+
+  # --- Example C: TIME-SERIES target with a chosen cost metric ---------------
+  # A list of dated observation points; each point may carry its own averaging
+  # window (`months`) and uncertainty. `cost_method` overrides the global metric
+  # for this target (here NSE over the series; a skill score needs >= 2 points).
+  PFT2_leaf:
+    pft: 2
+    variable: FATES_LEAFC_SZPF
+    cost_method: nse               # per-target metric override
+    units: g C/m^2
+    description: Example monthly time-series target
+    observations:
+      - {year: 2016, month: 6, value: 1.2, uncertainty: 0.2}
+      - {year: 2016, month: 7, value: 3.4}
+      - {year: 2016, month: 8, value: 2.9, months: [8, 9]}   # this point = mean(Aug,Sep)

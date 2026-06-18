@@ -69,8 +69,17 @@ class ScreeningConfig:
     # Time settings
     year_start: int = 1901
     year_end: int = 2019
+    # Snapshot time ANCHOR + averaging window — these are the FALLBACK used only for
+    # legacy targets that carry no per-target observation spec (Target.observations is
+    # None). The generic, per-target match (snapshot OR time series, with per-point
+    # windows) comes from the case target config (targets.yaml -> Target.observations);
+    # see docs/24_Generic_Obs_Comparison_Plan.md. obs_year/obs_month should be set from
+    # the case config by the caller (screening_helpers), not hardcoded for a site.
     obs_year: int = 2016
-    obs_month: int = 7  # July
+    obs_month: int = 7  # primary month for the fallback anchor; also part of the cache key
+    # Optional fallback averaging window (list of month numbers). None => [obs_month]
+    # (single-month comparison). Set only to average months for legacy/un-specced targets.
+    obs_months: Optional[List[int]] = None
 
     # PFT settings
     pfts: List[int] = field(default_factory=lambda: [7, 9, 10])
@@ -92,6 +101,11 @@ class ScreeningConfig:
     aggregation_method: str = 'rmsre'
     tolerance: float = 0.2
     top_n: int = 100
+    # Optional upper bound on case number. Default None = no cap (per-round summary
+    # graphs legitimately exceed the Morris ensemble size, e.g. R3 + reruns = 4941).
+    # Set it (e.g. 4890) for CROSS-round comparison so out-of-Morris-range experiment
+    # cases sharing the extract dir (H1 #5001 etc.) don't contaminate the screening.
+    max_case_num: Optional[int] = None
 
     def __post_init__(self):
         """Initialize case_pattern from A2MC config if not set."""
@@ -114,8 +128,15 @@ class ScreeningConfig:
 
     @property
     def obs_idx(self) -> int:
-        """Index of observation timestep (0-based)"""
+        """Index of the primary observation timestep (0-based, obs_month)."""
         return (self.obs_year - self.year_start) * 12 + self.obs_month - 1
+
+    @property
+    def obs_idxs(self) -> List[int]:
+        """Fallback timestep-index window (0-based) for legacy snapshot targets:
+        one index per entry in obs_months, defaulting to [obs_month] (single month)."""
+        months = self.obs_months if self.obs_months else [self.obs_month]
+        return [(self.obs_year - self.year_start) * 12 + m - 1 for m in months]
 
 
 @dataclass
@@ -161,7 +182,9 @@ class ScreeningResult:
                 'case_num': self.case_numbers[idx],
                 'cost': float(result.composite_cost[idx]),
                 'n_satisfied': int(result.n_satisfied[idx]),
-                'simulated': {name: float(self.simulated[name][idx])
+                # simulated[name][idx] is a per-point array (length 1 for a snapshot);
+                # report the scalar for snapshots, the point-mean for time series.
+                'simulated': {name: float(np.nanmean(np.asarray(self.simulated[name][idx]).ravel()))
                              for name in self.simulated.keys()}
             }
             cases.append(case)
@@ -204,10 +227,18 @@ def get_available_cases(data_dir: Path, config: ScreeningConfig) -> List[int]:
         print(f"  DEBUG: case_pattern='{config.case_pattern}', regex='{regex_str}'")
         print(f"  DEBUG: {len(nc_files)} NC files found, sample: {nc_files[0].name}")
 
+    skipped_oor = 0
     for f in nc_files:
         match = pattern.search(f.name)
         if match:
-            cases.append(int(match.group(1)))
+            cnum = int(match.group(1))
+            if config.max_case_num is not None and cnum > config.max_case_num:
+                skipped_oor += 1
+                continue
+            cases.append(cnum)
+    if skipped_oor:
+        print(f"  Excluded {skipped_oor} case(s) > max_case_num={config.max_case_num} "
+              f"(out-of-Morris-range / experiment cases)")
 
     return sorted(cases)
 
@@ -251,7 +282,7 @@ def _get_cache_path(data_dir: Path, targets: Dict[str, Target], config: Screenin
     """Generate cache file path based on data directory and config."""
     # Create hash of target names and config to detect changes
     target_names = sorted(targets.keys())
-    config_str = f"{config.obs_year}_{config.obs_month}_{target_names}"
+    config_str = f"{config.obs_year}_{config.obs_months}_{target_names}"
     config_hash = hashlib.md5(config_str.encode()).hexdigest()[:8]
     return data_dir / f".screening_cache_{config_hash}.pkl"
 
@@ -333,8 +364,17 @@ def load_ensemble_simulated(
     simulated = {name: [] for name in targets.keys()}
     case_numbers = []
 
-    # Shared evaluation utility (same logic used by Phase 5 experiment evaluation)
-    from tools.evaluate_case import extract_case_values
+    # Shared evaluation utility (same SZPF-read core as Phase 5 single-case eval).
+    from tools.evaluate_case import extract_case_series, resolve_obs_index_windows
+
+    # Resolve each target's observation-point windows ONCE (they don't vary per case).
+    # Per-target spec from targets.yaml (Target.observations) -> one window per point;
+    # legacy targets with no spec fall back to the single ScreeningConfig window.
+    windows_by_target = {}
+    for name, t in targets.items():
+        w = resolve_obs_index_windows(t, config.year_start)
+        windows_by_target[name] = w if w is not None else [config.obs_idxs]
+    n_points_by_target = {name: len(w) for name, w in windows_by_target.items()}
 
     # Track skipped cases for diagnostics
     skipped_missing_file = []
@@ -357,21 +397,25 @@ def load_ensemble_simulated(
             skipped_missing_file.append(case_num)
             continue
 
-        # Extract all target values from this case's NC file
-        case_values = extract_case_values(nc_file, targets, config.obs_idx)
+        # Extract per-observation-point values for this case (one array per target,
+        # shape (n_points,); snapshot => length 1).
+        case_values = extract_case_series(nc_file, targets, windows_by_target)
 
         # Skip if no values extracted (invalid/corrupt file)
         if not case_values:
             skipped_no_values.append(case_num)
             continue
 
-        # Append values for each target (NaN for any missing)
+        # Append per-target point arrays (NaN-filled to the right length if missing)
         for name in targets:
-            simulated[name].append(case_values.get(name, np.nan))
+            arr = case_values.get(name)
+            if arr is None:
+                arr = np.full(n_points_by_target[name], np.nan)
+            simulated[name].append(np.asarray(arr, dtype=float))
 
         case_numbers.append(case_num)
 
-    # Convert to arrays
+    # Stack to (n_cases, n_points) per target (n_points == 1 for snapshot targets)
     simulated = {name: np.array(values) for name, values in simulated.items()}
 
     if verbose:
@@ -408,7 +452,8 @@ def screen_ensemble(
     targets: Dict[str, Target],
     config: Optional[ScreeningConfig] = None,
     top_n: int = 100,
-    verbose: bool = True
+    verbose: bool = True,
+    max_case_num: Optional[int] = None
 ) -> ScreeningResult:
     """
     Screen ensemble against validation targets.
@@ -452,6 +497,8 @@ def screen_ensemble(
     config = config or ScreeningConfig()
     config.data_dir = Path(data_dir)
     config.top_n = top_n
+    if max_case_num is not None:
+        config.max_case_num = max_case_num
 
     if verbose:
         print("\n" + "=" * 60)
@@ -491,6 +538,12 @@ def screen_ensemble(
         print("\nRunning optimization...")
 
     opt_result = optimize_ensemble(simulated, targets, opt_config)
+
+    # Attach the real case-number map so saved Set_IDs / indices are correct
+    # even on a PARTIAL ensemble (loaded cases non-contiguous -> array position
+    # != case number). Without this, optimize_function falls back to position+1,
+    # which silently mislabels case numbers when cases are missing.
+    opt_result.case_numbers = np.asarray(case_numbers)
 
     # Get best case
     best_idx = opt_result.best_index
@@ -608,6 +661,10 @@ def main():
                         help='Number of top cases to report')
     parser.add_argument('--output-dir', type=str, default=None,
                         help='Directory for output files')
+    parser.add_argument('--max-case-num', type=int, default=None,
+                        help='Exclude case numbers above this (default: no cap). Set for '
+                             'cross-round comparison to drop out-of-Morris-range experiment '
+                             'cases (e.g. 4890); leave unset for per-round summary graphs.')
     args = parser.parse_args()
 
     # Get data directory
@@ -623,7 +680,8 @@ def main():
     targets = load_kougarok_targets()
 
     # Run screening
-    result = screen_ensemble(data_dir, targets, top_n=args.top_n)
+    result = screen_ensemble(data_dir, targets, top_n=args.top_n,
+                             max_case_num=args.max_case_num)
 
     # Save results if output dir specified
     if args.output_dir:

@@ -68,9 +68,14 @@ from .fates_utils import (
 
 # Import evaluate_case for convenient access
 try:
-    from .evaluate_case import extract_case_values, evaluate_case, find_extracted_nc
+    from .evaluate_case import (
+        extract_case_values, extract_case_series, resolve_obs_index_windows,
+        evaluate_case, find_extracted_nc,
+    )
 except ImportError:
     extract_case_values = None
+    extract_case_series = None
+    resolve_obs_index_windows = None
     evaluate_case = None
     find_extracted_nc = None
 

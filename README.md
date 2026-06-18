@@ -26,6 +26,75 @@ A2MC replaces this with an autonomous, interpretable workflow that:
 </p>
 ---
 
+## Two Ways to Run A2MC
+
+A2MC is **one agent with two runtimes**. The intelligence lives in the repo's shared assets — operating rules, a skills catalog, persistent memory, episodic logs, RAG knowledge, and tools — and two different runtimes consume those same assets:
+
+| | **Autonomous agent** (online) | **Interactive agent** (offline) |
+|---|---|---|
+| Runtime | `python orchestrator.py --run` — Claude API inside a Python state machine | A coding-agent harness (e.g. Claude Code) operating directly in the repo |
+| Driver | Fixed Phase 0→7 state machine | Human conversation, turn-by-turn |
+| Cadence | Unattended, at scale | Human-in-the-loop |
+| Best for | The repetitive, well-defined calibration loop | Open-ended, exploratory, one-off, judgment-heavy tasks |
+| Curated memory | **Proposes** (auto-learned lessons staged for review) | **Promotes** (the sole writer of curated knowledge) |
+
+A2MC is **mode-aware**: the same repo runs ELM with or without FATES, different FATES API milestones, and different nutrient schemes (ECA vs RD). Both runtimes resolve the active configuration (`python tools/describe_mode.py`) and adapt. Both read and write the **same knowledge substrate**, so discoveries made in one mode compound in the other (see [The knowledge loop](#the-knowledge-loop)).
+
+### Using the autonomous agent
+
+The rest of this README's Quick Start covers this mode:
+
+```bash
+source a2mc_config.sh
+source use_cases/<site>/config/<site>_config.sh
+python orchestrator.py --run        # full Phase 0→7 calibration loop
+```
+
+### Using the interactive agent
+
+The interactive agent is any coding-agent harness opened in a clone of this repo. Its **operating contract** is [`AGENTS.md`](AGENTS.md) (harness-neutral). On startup the harness auto-loads the operating rules plus the **capability catalog** of skills in `.claude/skills/` (indexed in [`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md)); each skill declares the run configurations it applies to via `modes:` frontmatter. You then drive it by conversation:
+
+```text
+1. Clone the repo and open it in a coding agent that reads AGENTS.md.
+2. The operating rules (AGENTS.md) and skills (.claude/skills/) load automatically.
+3. Describe the task in natural language — the agent resolves the active mode,
+   matches the task to an applicable skill, or reasons from the shared tools,
+   memory, and RAG knowledge.
+```
+
+Worked examples — each backed by a skill in the capability catalog (most skills are mode-agnostic; the FATES Morris-ensemble analysis skills are `requires_fates: true`). Full index: [`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md).
+
+| Ask the interactive agent to… | Backing skill | Modes |
+|---|---|---|
+| "Catch up — where did we leave off?" | `onboard-session` | any |
+| "Review and promote the pending knowledge proposals" | `curate-knowledge` | any |
+| "Write a dev/analysis/handoff log for this work" | `log` | any |
+| "Is this 'best' case real or contamination?" | `diagnose-forensics` | any |
+| "Investigate whether X correlates with Y, with a figure" | `scientific-analysis` | any |
+| "Restart the jobs that failed in this ensemble" | `restart-failed-jobs` | any (HPC) |
+| "Set up monitoring for the in-flight ensemble" | `arm-hpc-monitoring` | any (HPC) |
+| "Rebuild the RAG index" / "add a curated relationship" | `rebuild-rag` / `inject-knowledge` | any |
+| "Add a new skill for this workflow" | `add-skill` | any |
+| "Summarize round N" / "compare rounds R1…RN" / "run a parameter-sweep experiment" | `summarize-`/`compare-calibration-rounds`, `offline-testing-workflow` | FATES |
+
+> The interactive agent is the tool for work the fixed Phase 0→7 loop cannot do: open-ended forensics, synthesis, triage, and one-off analysis. Because of the curated-memory gate, it is also the **only** writer of vetted knowledge — it promotes the autonomous agent's staged proposals.
+
+### The knowledge loop
+
+The two modes are two writers on **one knowledge substrate** — neither forks the knowledge base, so improvements compound across both:
+
+```
+  Interactive agent  ──writes/promotes──►  dev_logs / ana_logs / curated knowledge / tools
+        ▲                                          │
+        │ reasons over                             │ absorbed by
+        │ phase logs + run state                   ▼
+  Autonomous agent  ◄──reads / PROPOSES──  MemoryManager (propose mode) + RAG + phase logs
+```
+
+The interactive agent writes engineering + analysis logs, curates knowledge (promoting the autonomous agent's proposals), and builds shared tools; the autonomous agent's `MemoryManager` and RAG absorb that vetted knowledge and apply it inside the calibration loop, while emitting phase logs, run state, and proposed lessons that the interactive agent then reasons over. A discovery vetted in either mode is available to the other on the next run.
+
+---
+
 ## Quick Start for New Users
 
 ### Step 1: Create Your Use Case

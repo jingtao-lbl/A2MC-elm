@@ -218,6 +218,7 @@ The restart file from each phase initializes the next: ADSP -> RGSP -> TRANS.
 |--------|----------|---------|
 | `create_parameter_sample.py` | `phases/phase0_design/` | Stage 1 — Morris / Sobol / LHS sampling (NEW v2.100, replaces `create_morris_ensemble.py`) |
 | `create_subset_replay.py` | `phases/phase0_design/` | Stage 1 alternative — replay top-N cases from a prior round with overrides |
+| `apply_param_override.py` | `phases/phase0_design/` | Stage 1 alternative — copy ALL per-case files (NC or JSON) and apply a global override to each (v2.100 follow-up; full-ensemble equivalent of subset_replay) |
 | `generate_parameter_files.py` | `phases/phase0_design/` | Stage 2 — materialize per-case FATES parameter files (NC or JSON, renamed from `create_morris_ensemble.py` in v2.100) |
 | `submit_phase0.py` | `phases/phase0_design/` | Stage 3 — orchestrate write-scripts + pre-flight + build + parallel submit |
 | `create_case.sh` | `tools/` | Build one per-case script (CIME create_newcase + xmlchange + case.submit with `afterok:` chain) |

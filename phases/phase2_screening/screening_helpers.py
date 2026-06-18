@@ -112,17 +112,60 @@ def perform_screening(targets, total_ensemble: int) -> Dict:
 
         logger.info(f"Loading data from: {data_dir}")
 
-        # Load targets (use site-specific targets)
-        screening_targets = load_kougarok_targets()
+        # Load targets generically from the case's targets.yaml (snapshot or time
+        # series, with cost config + time anchor). Fall back to the hardcoded Kougarok
+        # set only if no targets.yaml is resolvable.
+        from tools.targets_loader import load_case_targets
+        screening_targets, cost_cfg, (anchor_y, anchor_m) = load_case_targets(
+            a2mc_config.USE_CASE_DIR
+        )
+        if not screening_targets:
+            logger.info("No targets.yaml found; falling back to hardcoded Kougarok targets")
+            screening_targets = load_kougarok_targets()
+            cost_cfg, anchor_y, anchor_m = {}, 2016, 7
 
-        # Configure screening
+        # Configure screening. obs_year/obs_month are the snapshot anchor (from the
+        # case config); error/aggregation/tolerance come from the case cost_config.
+        cost_cfg = cost_cfg or {}
         config = ScreeningConfig(
             data_dir=data_dir,
             year_start=1901,
             year_end=2019,
-            obs_year=2016,
-            obs_month=7  # July
+            obs_year=anchor_y or 2016,
+            obs_month=anchor_m or 7,
+            error_method=cost_cfg.get('error_method', 'relative_error'),
+            aggregation_method=cost_cfg.get('aggregation_method', 'rmsre'),
+            tolerance=cost_cfg.get('tolerance', 0.2),
         )
+
+        # Pre-flight validation of the targets config (advisory: logs pitfalls but
+        # does not abort). A sample NC supplies n_times + variable presence so the
+        # time-range (T3) and missing-variable (D1) checks are active. ERRORS here
+        # (e.g. a dropped target, an out-of-range timestep) corrupt screening results,
+        # so they are logged loudly. See tools/validate_targets_config.py.
+        try:
+            from tools.targets_loader import resolve_targets_yaml
+            from tools.validate_targets_config import (
+                validate_targets_config, introspect_sample_nc,
+            )
+            yp = resolve_targets_yaml(a2mc_config.USE_CASE_DIR)
+            if yp:
+                y0, y1, nt, vnames = introspect_sample_nc(data_dir)
+                findings = validate_targets_config(
+                    yp, year_start=y0 or 1901, year_end=y1,
+                    n_times=nt, sample_var_names=vnames,
+                )
+                for fnd in findings:
+                    log = logger.error if fnd.level == "ERROR" else logger.warning
+                    log(f"[targets {fnd.code}] {fnd.target}: {fnd.message}")
+                n_err = sum(1 for fnd in findings if fnd.level == "ERROR")
+                if n_err:
+                    logger.error(
+                        f"targets.yaml has {n_err} validation error(s); screening results "
+                        f"may be invalid. Run: python tools/validate_targets_config.py"
+                    )
+        except Exception as e:
+            logger.debug(f"Targets pre-flight validation skipped: {e}")
 
         # Run screening
         result = screen_ensemble(data_dir, screening_targets, config=config, top_n=100)

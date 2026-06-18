@@ -34,7 +34,7 @@
       "id": "l2fr_diagnostic_thresholds",
       "name": "FATES_L2FR Diagnostic Thresholds",
       "description": "FATES_L2FR values outside 0.1-10 range indicate poor calibration or strange dynamics",
-      "mechanism": "L2FR is leaf-to-fineroot target ratio. Very low (<0.1) or high (>10) values are physiologically unrealistic and signal PID instability or nutrient problems.",
+      "mechanism": "L2FR is the target fine-root-C per leaf-C ratio (FATES fates_allom_l2fr, units gC/gC, long_name 'fine root C per leaf C'; target fineroot = leaf*L2FR, FatesAllometryMod.F90:1086). The name 'l2fr'/'leaf-to-fineroot' is misleading: HIGH L2FR = MORE fine root per leaf, low L2FR = almost no fine root. Very low (<0.1) or high (>10) values are physiologically unrealistic and signal PID instability or nutrient problems.",
       "affects": ["FATES_L2FR", "FATES_LEAFC", "FATES_FROOTC"],
       "discovered_by": "Ryan Knox",
       "confidence": 0.95,

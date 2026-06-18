@@ -40,35 +40,53 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-def extract_case_values(
+def resolve_obs_index_windows(target, year_start: int) -> Optional[List[List[int]]]:
+    """
+    Resolve a target's observation points to monthly timestep index-windows.
+
+    Returns one window per observation point — a window is a list of 0-based monthly
+    timestep indices whose simulated monthly means are averaged for that point. A
+    snapshot target yields one window; a time-series target yields one per point.
+
+    Returns None when the target carries no per-point spec (``target.observations``
+    is None), so the caller falls back to a single externally-supplied window
+    (``ScreeningConfig.obs_idxs``), preserving legacy snapshot behavior.
+
+    idx(year, month) = (year - year_start) * 12 + (month - 1)
+    """
+    obs = getattr(target, "observations", None)
+    if not obs:
+        return None
+    return [[(p.year - year_start) * 12 + (m - 1) for m in p.window] for p in obs]
+
+
+def extract_case_series(
     nc_file: Path,
     targets: Dict,
-    obs_idx: int,
-) -> Dict[str, float]:
+    windows_by_target: Dict[str, List[List[int]]],
+) -> Dict[str, np.ndarray]:
     """
-    Extract simulated values for each target from a single extracted NC file.
+    Extract per-observation-point simulated values for each target.
 
-    This is the shared core: read SZPF data, aggregate by PFT, apply unit
-    conversion.  Both bulk-screening and single-experiment evaluation call
-    this so the logic is never duplicated.
+    This is the shared SZPF-reading core for both the snapshot and time-series
+    comparison paths (see docs/24_Generic_Obs_Comparison_Plan.md).
 
     Args:
-        nc_file: Path to the extracted NetCDF file.
-            Expected format: ``{case}_all_variables_monthly_{y0}_{y1}.nc``
-            with SZPF variables of shape ``(time, 156)`` or ``(156, time)``.
-        targets: Validation target dict.
-            Keys are target names like ``"PFT7_leaf"`` or ``"PFT10_fineroot"``.
-            Values can be:
-              - ``Target`` objects (with ``.observed`` attribute)
-              - plain dicts (with ``"observed"`` key)
-              - any object (only the *key name* is used to determine the
-                variable / PFT; the observed value is not needed here)
-        obs_idx: 0-based index of the observation timestep in the monthly
-            time dimension.
+        nc_file: Path to the extracted NetCDF file
+            (``{case}_all_variables_monthly_{y0}_{y1}.nc``; SZPF vars (time,156) or (156,time)).
+        targets: Validation target dict; only the key *name* is used to resolve the
+            variable / PFT (``Target`` object or plain dict both work).
+        windows_by_target: ``{target name -> list of timestep-index windows}``. Each
+            window is a list of 0-based monthly indices whose SZPF-summed values are
+            **averaged** to produce that observation point's simulated value. A snapshot
+            target has one window; a time-series target has one per point. Built by the
+            caller (e.g. ``resolve_obs_index_windows`` for per-target specs, or a single
+            fallback window for legacy snapshots).
 
     Returns:
-        Dict mapping target name → simulated value (in validation units,
-        e.g., g C m⁻²).  Targets that could not be extracted are omitted.
+        ``{target name -> np.ndarray of shape (n_points,)}`` in validation units.
+        Targets whose variable is missing, or any of whose indices are out of range,
+        are omitted (same skip semantics as before).
     """
     if not HAS_NETCDF:
         raise ImportError("netCDF4 is required.  Install with: pip install netCDF4")
@@ -78,20 +96,22 @@ def extract_case_values(
         logger.warning(f"NC file not found: {nc_path}")
         return {}
 
-    # --- Determine which SZPF variables we need for the given targets ---
     target_specs = _parse_target_specs(targets)
     if not target_specs:
         return {}
 
-    # Collect unique NC variables needed
-    needed_vars: Dict[str, np.ndarray] = {}  # nc_var -> loaded data
-
-    simulated: Dict[str, float] = {}
+    needed_vars: Dict[str, np.ndarray] = {}  # nc_var -> loaded (156, n_times) data
+    simulated: Dict[str, np.ndarray] = {}
 
     try:
         with nc.Dataset(str(nc_path), "r") as ds:
             for tname, (nc_var, pft_id, factor) in target_specs.items():
-                # Lazy-load each NC variable once
+                windows = windows_by_target.get(tname)
+                if not windows:
+                    logger.debug(f"No timestep window for target {tname}; skipping")
+                    continue
+
+                # Lazy-load each NC variable once, normalized to (156, n_times)
                 if nc_var not in needed_vars:
                     if nc_var not in ds.variables:
                         logger.debug(f"Variable {nc_var} not in {nc_path.name}")
@@ -99,7 +119,6 @@ def extract_case_values(
                     data = np.asarray(ds.variables[nc_var][:])
                     data = np.squeeze(data)
                     if data.ndim == 2:
-                        # Ensure shape is (n_szpf_levels, n_times)
                         if data.shape[1] == 156:
                             data = data.T
                         elif data.shape[0] != 156:
@@ -118,25 +137,52 @@ def extract_case_values(
                 if data is None:
                     continue
 
-                # Validate obs_idx
-                if obs_idx < 0 or obs_idx >= data.shape[1]:
+                # Validate every index across all of this target's windows.
+                all_idxs = [int(k) for w in windows for k in w]
+                if any(k < 0 or k >= data.shape[1] for k in all_idxs):
                     logger.warning(
-                        f"obs_idx {obs_idx} out of range for {nc_var} "
-                        f"(n_times={data.shape[1]})"
+                        f"obs index out of range for {nc_var} "
+                        f"(n_times={data.shape[1]}, windows={windows})"
                     )
                     continue
 
-                # Aggregate SZPF across size classes for this PFT
+                # One value per observation point: SZPF-sum per timestep, mean over
+                # that point's window, then unit conversion.
                 szpf_start, szpf_end = get_szpf_range(pft_id)
-                value = float(
-                    np.nansum(data[szpf_start : szpf_end + 1, obs_idx])
-                ) * factor
-                simulated[tname] = value
+                point_vals = []
+                for window in windows:
+                    per_t = [float(np.nansum(data[szpf_start : szpf_end + 1, int(k)]))
+                             for k in window]
+                    point_vals.append(float(np.mean(per_t)) * factor)
+                simulated[tname] = np.array(point_vals, dtype=float)
 
     except Exception as e:
         logger.error(f"Failed to read {nc_path}: {e}")
 
     return simulated
+
+
+def extract_case_values(
+    nc_file: Path,
+    targets: Dict,
+    obs_idx: int,
+) -> Dict[str, float]:
+    """
+    Legacy scalar API: one simulated value per target at ``obs_idx``.
+
+    ``obs_idx`` may be a single int OR a sequence of indices to AVERAGE (e.g.
+    [July, August] means). Backward-compatible thin wrapper over
+    :func:`extract_case_series` (single window per target). Returns
+    ``{target name -> float}``; targets that could not be extracted are omitted.
+
+    Used by single-case evaluation (Phase 5) and cross-round comparison; the bulk
+    screening path uses :func:`extract_case_series` with per-target windows.
+    """
+    idxs = ([int(obs_idx)] if isinstance(obs_idx, (int, np.integer))
+            else [int(k) for k in obs_idx])
+    windows_by_target = {name: [idxs] for name in (targets or {})}
+    series = extract_case_series(nc_file, targets, windows_by_target)
+    return {name: float(arr[0]) for name, arr in series.items()}
 
 
 def evaluate_case(
