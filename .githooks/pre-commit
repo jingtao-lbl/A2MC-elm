@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# A2MC pre-commit hook — enforce skill-registry parity.
+#
+# Runs tools/check_skill_registry.py (disk <-> README table <-> catalog, name/dir,
+# ## Changelog) ONLY when skill-system files are staged, so it gates changes to the
+# skill set without blocking unrelated commits on pre-existing state.
+#
+# Activate (once per clone; git does not auto-run hooks from clones):
+#     git config core.hooksPath .githooks
+#
+# Bypass in an emergency:  git commit --no-verify
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+
+# Staged paths that touch the skill system.
+if git diff --cached --name-only --diff-filter=ACMRD \
+     | grep -qE '^\.claude/skills/|^docs/a2mc_reference/skills_catalog\.md$'; then
+    PY="$(command -v python3 || true)"
+    if [[ -z "$PY" ]]; then
+        echo "pre-commit: python3 not found; skipping skill-registry check" >&2
+        exit 0
+    fi
+    if ! "$PY" "$ROOT/tools/check_skill_registry.py"; then
+        echo "" >&2
+        echo "pre-commit: skill-registry drift — fix the above (register in BOTH the README" >&2
+        echo "  'Current skills' table AND docs/a2mc_reference/skills_catalog.md), or use the" >&2
+        echo "  add-skill skill. Bypass with --no-verify only if you know why." >&2
+        exit 1
+    fi
+fi
+exit 0
