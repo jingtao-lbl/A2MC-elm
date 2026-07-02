@@ -9,7 +9,7 @@
 
 ## What This Phase Does
 
-1. Extract relevant variables from simulation output
+1. Read the variables extracted in Phase 1 (Phase 2 does not re-extract; it reads existing outputs)
 2. Compute cost/error metrics against validation targets
 3. Rank ensemble members by aggregate cost
 4. Analyze error patterns across targets
@@ -117,7 +117,7 @@ After Phase 2 completes → **Phase 3 (Diagnosis)**: Root cause analysis
 
 ## When AI Works in This Phase
 
-This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 2, and the interactive (offline) agent navigating here. Offline skills for this phase: `summarize-calibration-round`, `compare-calibration-rounds` (see `docs/a2mc_reference/skills_catalog.md`).
+This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 2, and the interactive (offline) agent navigating here. Offline skills for this phase: `phase2-screening` (primary — the offline analog of `reasoning.analyze_screening_results()`), then `summarize-calibration-round`, `compare-calibration-rounds` (see `docs/a2mc_reference/skills_catalog.md`). The phase skill is a floor, not a ceiling — explore beyond the phase scope when the task warrants.
 
 **Focus on:**
 - Pattern recognition in error distributions

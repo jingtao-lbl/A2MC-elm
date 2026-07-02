@@ -154,17 +154,17 @@ for lesson in lessons:
 
 ## Next Phase / Iteration
 
-**If converged:** → Phase 7 (Final configuration)
+**If all targets met:** → Phase 7 (converged — final configuration).
 
-**If improving:** → Next iteration (Phase 0 with refined bounds)
+**If not met, and the hypothesis was disproven / experiment cycles remain:** → Phase 3 (rethink — revise the diagnosis and try the next hypothesis; the 6→3 experiment-cycle loop).
 
-**If stalled/diverging:** → Return to Phase 3 with new diagnosis focus
+**If not met, and experiment cycles have reached the max / candidates are pinned at bounds:** → Phase 0 (redesign — expand the parameter space, new calibration round; the 6→0 outermost loop).
 
 ---
 
 ## When AI Works in This Phase
 
-This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 6, and the interactive (offline) agent navigating here. Offline skills for this phase: `curate-knowledge`, `inject-knowledge`, `summarize-calibration-round`, `compare-calibration-rounds` (see `docs/a2mc_reference/skills_catalog.md`).
+This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 6, and the interactive (offline) agent navigating here. Offline skills for this phase: `phase6-refinement` (primary — the offline analog of `reasoning.interpret_results()` + `extract_lesson()`, incl. the offline "disposer" write gate), then `curate-knowledge`, `inject-knowledge`, `summarize-calibration-round`, `compare-calibration-rounds` (see `docs/a2mc_reference/skills_catalog.md`). The phase skill is a floor, not a ceiling — explore beyond the phase scope when the task warrants.
 
 **Focus on:**
 - Honest evaluation of hypotheses (don't overstate success)

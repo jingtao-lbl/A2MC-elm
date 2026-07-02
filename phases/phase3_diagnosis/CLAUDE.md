@@ -15,6 +15,7 @@
 4. Reason about root causes of model-data mismatch
 5. Identify parameters and mechanisms responsible
 6. Generate diagnosis report with hypotheses to test
+7. (Skip-testing, Phase 3↔4 inner loop) A hypothesis testable against existing ensemble data can be checked without new simulations before any Phase 5 experiment
 
 ---
 
@@ -47,7 +48,7 @@
 | `analyze_carbon_balance.py` | Detect carbon deficit (GPP vs MR bottleneck) |
 | `analyze_nutrient_balance.py` | Full N/P mass balance, budget closure, PFT competition |
 
-Additional `test_*.py` scripts in this folder (e.g. `test_l2fr_carbon_limitation.py`, `test_p_cascade.py`, `test_graminoid_root_persistence.py`) are **auto-discovered** hypothesis tests — any `test_*.py` exposing `test_hypothesis()` is picked up automatically (see root `CLAUDE.md` §"Diagnostic tools"), so they are not enumerated here. AI-generated custom scripts land in `generated/`.
+Additional `test_*.py` scripts in this folder (e.g. `test_l2fr_carbon_limitation.py`, `test_p_cascade.py`, `test_graminoid_root_persistence.py`) are **auto-discovered** hypothesis tests — any `test_*.py` exposing `test_hypothesis()` is picked up automatically (see root `CLAUDE.md` §"Diagnostic tools"), so they are not enumerated here. AI-generated custom scripts land in `generated/`; a vetted, reusable one is promoted into this permanent library with `tools/promote_diagnostic_script.py --script <name>` (copies it here + registers it in `DIAGNOSTIC_TOOLS_INVENTORY`; human-gated). See `generated/README.md`.
 
 ---
 
@@ -187,7 +188,7 @@ After Phase 3 completes → **Phase 4 (Hypothesis)**: Design experiments
 
 ## When AI Works in This Phase
 
-This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 3, and the interactive (offline) agent navigating here. Offline skills for this phase: `diagnose-forensics`, `scientific-analysis` (see `docs/a2mc_reference/skills_catalog.md`).
+This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 3, and the interactive (offline) agent navigating here. Offline skills for this phase: `phase3-diagnosis` (primary — the offline analog of `reasoning.diagnose()`), then `diagnose-forensics` (reactive anomaly triage), `scientific-analysis` (see `docs/a2mc_reference/skills_catalog.md`). The phase skill is a floor, not a ceiling — explore beyond the phase scope when the task warrants.
 
 **Focus on:**
 - Mechanistic reasoning (not just statistical patterns)

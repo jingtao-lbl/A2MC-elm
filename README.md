@@ -338,6 +338,8 @@ A2MC uses a 7-phase workflow with intelligent iteration paths to minimize HPC co
 
 **Phase 3 Diagnostic Tools:** `analyze_carbon_balance.py`, `analyze_mortality.py`, `analyze_nutrient_balance.py`, `analyze_nutrient_pools.py`, `check_edge_parameters.py`, `compare_case_parameters.py`, `compare_targets.py`, `detect_collapse.py`, `diagnose_pft_limitations.py`, `read_case_parameters.py`, `test_hypothesis_framework.py`
 
+**Self-improving diagnostic library.** When no existing tool can test a hypothesis, Claude writes a custom script into `phases/phase3_diagnosis/generated/`. Any `test_*.py` exposing `test_hypothesis()` there is auto-discovered for the current run. A vetted, reusable one is then **promoted** into the permanent tool library with `tools/promote_diagnostic_script.py --script <name>` (review → `--dry-run` → promote), which copies it to `phases/phase3_diagnosis/` and registers it in the diagnostic-tools inventory so future runs find it automatically. Promotion is human-gated; see `phases/phase3_diagnosis/generated/README.md`.
+
 **Phase 5 Scripts:** `design_experiments.py`, `monitor_experiments.py`, `submit_experiments.py`
 
 ### Iteration Paths

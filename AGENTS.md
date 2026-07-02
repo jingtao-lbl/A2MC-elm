@@ -48,6 +48,13 @@ At a glance — the full set, grouped (one-liners here; the catalog has the deta
 | `restart-failed-jobs` | Restart SLURM jobs that failed in an ensemble/experiment |
 | `arm-hpc-monitoring` | Set up real-time monitoring of an in-flight ensemble at session start |
 | `diagnose-forensics` | Investigate an ensemble anomaly — artifact triage first, then root-cause via the phase3 tools |
+| `phase0-design` | Run Phase 0 (DESIGN) — sample the parameter space, materialize per-case param files, submit + monitor the HPC ensemble |
+| `phase1-exploration` | Run Phase 1 (EXPLORATION) — extract the Y matrix, run Morris sensitivity, interpret μ* (what to tune) |
+| `phase2-screening` | Run Phase 2 (SCREENING) — rank the ensemble vs targets, best/most-targets cases, bias patterns, route to Phase 3 |
+| `phase3-diagnosis` | Run Phase 3 (DIAGNOSIS) — offline analog of `reasoning.diagnose()`: root-cause the round's failing targets via the phase3 tools + RAG + Memory, hand off to Phase 4 |
+| `phase4-hypothesis` | Run Phase 4 (HYPOTHESIS) — testable hypotheses + skip-test against existing Morris data (no HPC), else route to Phase 5 |
+| `phase5-testing` | Run Phase 5 (TESTING) — thin router to `offline-testing-workflow` for HPC experiment execution |
+| `phase6-refinement` | Run Phase 6 (REFINEMENT) — evaluate results, extract lessons, write curated Memory (offline disposer), decide converge/rethink/redesign |
 | `scientific-analysis` | Manuscript-supporting investigation → figure → ana_log (pose, analyze, cite, write) |
 | `curate-knowledge` | Review + promote staged Tier-3 knowledge proposals into the curated KB (human-in-the-loop) |
 | `onboard-session` | Cold-start runbook at session start / after compaction — restore context, check in-flight work, delegate |

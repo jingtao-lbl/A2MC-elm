@@ -2,7 +2,7 @@
 
 **Project:** A2MC (Agentic Adaptive Multi-target Calibration)
 **Purpose:** Autonomous + interactive multi-target calibration of ELM-FATES using Claude API + HPC + Adaptive Memory (two agent modes — see root `AGENTS.md` and README §"Two Ways to Run A2MC")
-**Status:** Implementation Complete (v2.99)
+**Status:** Implementation Complete (v3.00)
 **Last Updated:** July 2, 2026
 ---
 
@@ -80,6 +80,8 @@ Inner loop: Phase 3 ↔ Phase 4 (skip-test with existing data, no HPC)
 - **Phase 6 → Phase 0:** Redesign (expand the parameter space) when experiment cycles **reach the max** without meeting all targets (outermost loop). Phase 7 (CONVERGED) is reserved for true convergence — a terminal state, not on the redesign loop.
 
 **Memory learning (mode-dependent — "online proposes, offline disposes"):** Phase 6 extracts lessons in **both** agent modes, but the two modes have different write authority over curated Adaptive Memory. The **autonomous (online) agent** runs `MemoryManager` in `propose` mode: its extracted discoveries/experiments are staged to `auto_discovered_pending.json` (gitignored run-state) for review — it **cannot** write knowledge directly. Only the **interactive (offline) agent** promotes vetted, human-in-the-loop-curated proposals into the curated Adaptive Memory (`tools/review_pending_knowledge.py` / the `curate-knowledge` skill), and injects human-originated discoveries (`inject-knowledge`). This write gate is what keeps unattended runs from contaminating the knowledge base.
+
+**Diagnostic-tool promotion (Phase 3, same propose/dispose split):** the same "online proposes, offline disposes" pattern governs the diagnosis tool library. When no existing tool can test a hypothesis, the agent writes a custom `test_hypothesis()` script into `phases/phase3_diagnosis/generated/` (staging; auto-discovered for the current run only). A vetted, reusable one is then **promoted by the interactive (offline) agent** into the permanent library with `tools/promote_diagnostic_script.py` (`--list` → `--script <name> --dry-run` → promote), which copies it to `phases/phase3_diagnosis/` and registers it in `DIAGNOSTIC_TOOLS_INVENTORY` so future runs auto-discover it. Human-gated — review before committing. Full contract: `phases/phase3_diagnosis/generated/README.md`.
 
 ---
 
@@ -229,6 +231,7 @@ python orchestrator.py --run --max-iterations 10
 | `memory/manager.py` | MemoryManager class for persistent knowledge. `write_mode` gate (v2.90): online agent runs `propose` (stages to `auto_discovered_pending.json`); only the interactive agent writes curated Tier-3 |
 | `memory/store.py` | JSON persistence utilities |
 | `tools/review_pending_knowledge.py` | Interactive (human-in-the-loop) curation of staged `auto_discovered` proposals: `list`/`promote`/`discard`. Promotes vetted entries from `auto_discovered_pending.json` into the curated KB (v2.90 write gate) |
+| `tools/promote_diagnostic_script.py` | Promote a vetted AI-generated diagnostic script from `phases/phase3_diagnosis/generated/` into the permanent tool library (`--list`/`--script <name>`/`--dry-run`): copies to `phases/phase3_diagnosis/` + registers it in `DIAGNOSTIC_TOOLS_INVENTORY`. Human-gated |
 
 ---
 
@@ -249,6 +252,13 @@ These skills are the **interactive (offline) agent's capability catalog**. The i
 | `curate-knowledge` | Human-in-the-loop review + promotion of staged Tier-3 proposals (`auto_discovered_pending.json` → curated KB). The other half of the v2.90 write gate. Invoke on "review/promote pending knowledge", or at session start when proposals exist |
 | `onboard-session` | Cold-start runbook: re-read CLAUDE.md, read latest handoff, check live HPC processes + run state, delegate to arm-hpc-monitoring / curate-knowledge. Pairs with the G2 SessionStart hook. Invoke at session start / after compaction or "catch up / where did we leave off" |
 | `diagnose-forensics` | Investigate an ensemble anomaly/outlier/failure-cluster: artifact triage (contamination, infra-timing, mislabeled index, NaN) FIRST, then root-cause via phase3 tools. Invoke on "is this real or contamination", "why is case X an outlier", "investigate this anomaly" |
+| `phase0-design` | **Offline phase skill (mirrors online Phase 0):** sample the parameter space, materialize per-case param files, submit + monitor the HPC ensemble. Invoke on "design a new round", "submit the ensemble", "redesign / expand the parameter space" |
+| `phase1-exploration` | **Offline phase skill (Phase 1):** extract the Y matrix, run Morris sensitivity, interpret μ*. Invoke on "run the sensitivity analysis", "which parameters matter", "run Phase 1" |
+| `phase2-screening` | **Offline phase skill (Phase 2):** rank the ensemble vs targets, best/most-targets cases, bias patterns → route to Phase 3. Invoke on "screen the ensemble", "which case is best", "run Phase 2" |
+| `phase3-diagnosis` | **Offline phase skill (Phase 3):** HITL analog of `reasoning.diagnose()` — root-cause the round's failing targets via the phase3 tools + RAG + Memory → ranked root causes, parameter recs, base cases, hypotheses; hand off to Phase 4. Invoke on "diagnose the failing targets", "run Phase 3" |
+| `phase4-hypothesis` | **Offline phase skill (Phase 4):** turn a diagnosis into testable hypotheses + skip-test against existing Morris data (3↔4, no HPC), else route to Phase 5. Invoke on "generate a hypothesis", "what should we test next", "can we test with existing data" |
+| `phase5-testing` | **Offline phase skill (Phase 5):** thin router to `offline-testing-workflow` for HPC experiment execution. Invoke on "run the experiment", "submit the test cases", "run Phase 5" |
+| `phase6-refinement` | **Offline phase skill (Phase 6):** evaluate results, extract lessons, write curated Memory directly + promote staged proposals (offline "disposer"), decide converge / rethink (6→3) / redesign (6→0). Invoke on "evaluate the results", "what did we learn", "converge or iterate" |
 | `scientific-analysis` | Manuscript-supporting investigation → figure → ana_log (pose question, pull data, compute stat, cite evidence). Invoke on "investigate whether X", "is X correlated with Y", "make a manuscript figure". (Standardized reports: summarize-/compare-calibration-rounds) |
 
 **Why in-repo, not user-level:** these encode A2MC-specific conventions (case-naming, dedicated experiment dirs, the dont-touch-the-extractor rule, event-string vocabulary) that must travel with the framework and stay version-locked to it on this `api-31-0` branch. The user-level bucket is for skills that aren't tied to any one project.
@@ -521,6 +531,8 @@ Hybrid retrieval combining ChromaDB vector search (2,581 chunks) and NetworkX kn
 **`chroma_db/chroma.sqlite3` read-churn (per-clone gotcha).** The 16 MB vector store is git-tracked (so a clone ships a working index), but ChromaDB writes internal lock bookkeeping (`acquire_write` rows) on every open, so **merely querying the RAG dirties the file** — the embeddings are byte-identical, it is NOT a re-index. Don't commit that churn (binary bloat + cross-clone conflicts). Each clone (including Perlmutter) should run once: `git update-index --skip-worktree rag/chroma_db/chroma.sqlite3`. **Footgun:** before committing a *real* `scripts/build_rag_index.py` rebuild, run `git update-index --no-skip-worktree rag/chroma_db/chroma.sqlite3` first or the new index won't stage. Transient sidecars (`*.sqlite3-{wal,shm,journal}`) are gitignored. Verified 2026-06-30, `memory/dev_logs/20260630a_*`.
 
 **Diagnostic tools:** Any `test_*.py` script with `test_hypothesis()` in `phases/phase3_diagnosis/` is auto-discovered. Claude can also generate custom scripts stored in `phases/phase3_diagnosis/generated/`.
+
+**Promoting a generated script into the permanent tool library.** A vetted, reusable script in `generated/` is promoted into the formal diagnosis inventory with `tools/promote_diagnostic_script.py` (`--list` to see candidates → `--script <name> --dry-run` to preview → `--script <name>` to promote; optional `--tool-name/--category/--description/--use-when`). Promotion **copies** the script to `phases/phase3_diagnosis/`, **registers** it in `DIAGNOSTIC_TOOLS_INVENTORY` (so future runs auto-discover it), and **preserves** the original in `generated/`. This is a human-gated offline step — review before committing. Full contract: `phases/phase3_diagnosis/generated/README.md`.
 
 **Full details:** `docs/a2mc_reference/rag_reference.md` (running-system overview)
 
@@ -868,7 +880,7 @@ When coding or writing documentation:
 
 Full changelog: **`memory/a2mc_development_history.md`**
 
-Current version: **v2.99** (2026-07-02)
+Current version: **v3.00** (2026-07-02)
 
 ### Git Tags (Stable Checkpoints)
 

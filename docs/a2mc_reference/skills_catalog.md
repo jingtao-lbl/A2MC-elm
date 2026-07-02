@@ -141,6 +141,94 @@ operating contract these skills run under.
   pattern as science before triage is how the #100317 contamination episodes happened
   (`20260610g`). Fix-and-supersede if it's a tooling/data bug.
 
+### `phase0-design`
+- **Purpose:** Run **Phase 0 (DESIGN)** as the offline agent — the HITL analog of
+  `_run_design()`. Sample the parameter space (Morris/Sobol/LHS), materialize one FATES param file
+  per case, generate+build+submit the HPC ensemble, arm monitoring. **First of the Phase 0–6
+  offline phase-skill set** (each mirrors one `_run_<phase>()`; the set is a *floor*, not a ceiling
+  — the offline agent may explore beyond the phase scope).
+- **Invoke when:** "design a new round", "set up / submit the ensemble", "sample the parameters",
+  "expand the parameter space (redesign)".
+- **Backing tools:** `phases/phase0_design/create_parameter_sample.py`, `create_morris_ensemble.py`
+  (or `apply_param_override.py` / `create_subset_replay.py`), `submit_phase0.py`,
+  `tools/validate_submission_plan.py`, `tools/ensemble_auto_monitor.sh`.
+- **Key discipline:** never clobber the committed Morris matrix; site-specific column order;
+  validate before submit; delegate monitoring → `arm-hpc-monitoring`, restart → `restart-failed-jobs`.
+
+### `phase1-exploration`
+- **Purpose:** Run **Phase 1 (EXPLORATION)** as the offline agent — the HITL analog of
+  `reasoning.analyze_sensitivity_results()`. Extract the Y matrix, run Morris sensitivity, and
+  interpret μ* (mechanism attribution, generic vs PFT-specific, edge effects, tuning order).
+- **Invoke when:** "run the sensitivity analysis", "extract the Y matrix", "which parameters
+  matter", "Morris rankings", "run Phase 1".
+- **Backing tools:** `phases/phase1_exploration/extract_sensitivity_outputs.py`,
+  `morris_sensitivity_analysis.py`, `analyze_ensemble.py`; `tools/diagnose_ensemble_status.py` (gate).
+- **Key discipline:** X/Y row-order alignment (SALib), audit NaN rows, attribute mechanisms via RAG
+  not names. Standardized figures → `summarize-calibration-round` / `compare-calibration-rounds`.
+
+### `phase2-screening`
+- **Purpose:** Run **Phase 2 (SCREENING)** as the offline agent — the HITL analog of
+  `reasoning.analyze_screening_results()`. Rank the ensemble vs targets (RMSRE, targets-satisfied),
+  find best/lowest-cost/most-targets cases, read bias/edge/trade-off patterns, route to Phase 3.
+- **Invoke when:** "screen the ensemble", "rank against targets", "which case is best", "how many
+  targets are met", "run Phase 2".
+- **Backing tools:** `phases/phase2_screening/screen_ensemble.py`, `compare_biomass_topcases.py`,
+  `tools/optimize_function.py`, `tools/evaluate_case.py`, `tools/cost_functions.py`.
+- **Key discipline:** `--max-case-num` contamination guard; case-number vs index mislabel; a
+  too-good "best" case → triage with `diagnose-forensics` first. Reports → `summarize-calibration-round`.
+
+### `phase3-diagnosis`
+- **Purpose:** Run **Phase 3 (DIAGNOSIS)** as the offline agent — the human-in-the-loop analog
+  of the orchestrator's `_run_diagnosis()` / `reasoning.diagnose()`. Systematically root-cause why
+  the screening round misses its validation targets: gather diagnostic data with the
+  `phases/phase3_diagnosis/` tools, pull RAG + Adaptive Memory, then reason to a structured
+  diagnosis (failing targets, ranked root causes, parameter recommendations, selected base cases,
+  hypotheses) and hand off to Phase 4.
+- **Invoke when:** "diagnose the failing targets", "run Phase 3", "why aren't the targets
+  calibrating", "root-cause this round", "what's driving the PFTx miss" — after `screen-ensemble`
+  hands off a ranked ensemble.
+- **Backing tools:** `phases/phase3_diagnosis/*` (via `run_diagnostics_scripts.py` / `dispatch.py`),
+  RAG + `memory/manager.py`; logs via `PhaseLogger.log_diagnosis`.
+- **Key discipline:** verify FATES mechanisms against RAG before naming them; honor Memory's failed
+  approaches; systematic per-round (vs `diagnose-forensics`, which is reactive per-anomaly).
+
+### `phase4-hypothesis`
+- **Purpose:** Run **Phase 4 (HYPOTHESIS)** as the offline agent — the HITL analog of
+  `reasoning.generate_hypothesis()`. Turn a diagnosis into testable hypotheses (parameter moves +
+  expected outcomes + success criteria), and **skip-test against the existing Morris ensemble
+  (3↔4, no HPC)** before committing to a Phase 5 experiment.
+- **Invoke when:** "generate a hypothesis", "what should we test next", "design the experiment",
+  "can we test this with existing data", "run Phase 4".
+- **Backing tools:** `phases/phase4_hypothesis/test_with_existing_data.py`, `synthesis.py`; hands
+  the HPC path to `offline-testing-workflow` / `phase5-testing`.
+- **Key discipline:** diversity vs prior experiments; honor failed approaches; quantified success
+  criteria; a hypothesis needing values outside Morris range can't be skip-tested → Phase 5.
+
+### `phase5-testing`
+- **Purpose:** Run **Phase 5 (TESTING)** as the offline agent — a thin phase-router; the full
+  offline execution procedure lives in `offline-testing-workflow`. Exists so the Phase 0–6 set is
+  complete and to route with phase framing intact.
+- **Invoke when:** "run the experiment", "submit the test cases", "test this hypothesis on HPC",
+  "run Phase 5".
+- **Backing tools:** `offline-testing-workflow` (primary); `phases/phase5_testing/design_experiments.py`,
+  `submit_experiments.py`, `monitor_experiments.py`, `tools/modify_fates_parameters.py`.
+- **Key discipline:** `--case-suffix` (never invent Morris case numbers); V0 reproducibility gate
+  before trusting V1+; monitor → `arm-hpc-monitoring`, restart → `restart-failed-jobs`.
+
+### `phase6-refinement`
+- **Purpose:** Run **Phase 6 (REFINEMENT)** as the offline agent — the HITL analog of
+  `reasoning.interpret_results()` + `extract_lesson()`. Evaluate results vs baseline/expected
+  (honestly), extract lessons, and — the offline-specific part — **write curated Memory directly
+  and promote the online agent's staged proposals** ("online proposes, offline disposes"). Decide
+  converge / rethink (6→3) / redesign (6→0).
+- **Invoke when:** "evaluate the results", "did the experiment work", "extract the lessons", "what
+  did we learn", "should we converge or iterate", "run Phase 6".
+- **Backing tools:** `phases/phase6_refinement/evaluate_results.py`, `memory/manager.py`,
+  `tools/review_pending_knowledge.py`; delegates to `curate-knowledge`, `inject-knowledge`,
+  `summarize-calibration-round`, `compare-calibration-rounds`.
+- **Key discipline:** data-reliability gate (silent extraction failures ≠ real FAILED); honest
+  partial-vs-success; the interactive write gate (offline writes curated Tier-3, online only proposes).
+
 ### `scientific-analysis`
 - **Purpose:** A manuscript-supporting investigation that ends in a figure + an `ana_log`
   — pose a falsifiable question, scope + pull the data, compute the statistic/mechanism,

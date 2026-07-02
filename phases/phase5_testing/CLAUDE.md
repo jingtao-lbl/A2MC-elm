@@ -113,7 +113,7 @@ After Phase 5 completes → **Phase 6 (Refinement)**: Evaluate results
 
 ## When AI Works in This Phase
 
-This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 5, and the interactive (offline) agent navigating here. Offline skills for this phase: `offline-testing-workflow`, `arm-hpc-monitoring`, `restart-failed-jobs` (see `docs/a2mc_reference/skills_catalog.md`).
+This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 5, and the interactive (offline) agent navigating here. Offline skills for this phase: `phase5-testing` (primary — a thin router to `offline-testing-workflow`, which owns the execution), `arm-hpc-monitoring`, `restart-failed-jobs` (see `docs/a2mc_reference/skills_catalog.md`). The phase skill is a floor, not a ceiling — explore beyond the phase scope when the task warrants.
 
 **Focus on:**
 - Ensuring parameter files match experiment specs
@@ -131,13 +131,21 @@ This guidance applies to **both** modes — the autonomous orchestrator traversi
 
 ## Experiment Naming Convention
 
+The real convention (from `tools/create_case.sh --case-suffix` + `design_experiments.py`):
+
 ```
-exp_{iteration}_{hypothesis_id}_{experiment_id}/
-    └── fates_params_exp.nc
-    └── case_EXP_001_ADSP/
-    └── case_EXP_001_RGSP/
-    └── case_EXP_001_TRANS/
+# Modified parameter file (design_experiments.py:169): <base param stem>_<suffix>.nc
+    e.g.  fates_params_..._En2678_exp1.nc
+
+# Case name (create_case.sh:228-235): resolve A2MC_CASE_NAME_PATTERN for case N, then
+# append _<suffix>; ADSP → RGSP → TRANS chained per phase.
+    e.g.  ..._En2678_exp1_ADSP
+          ..._En2678_exp1_RGSP
+          ..._En2678_exp1_TRANS
 ```
+
+(The `_<suffix>` / `_exp` convention keeps experiment cases out of the Morris case-number space —
+see root `CLAUDE.md` Rule 7. `offline-testing-workflow` uses the same mechanism, e.g. `_clump02`.)
 
 ---
 

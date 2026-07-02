@@ -158,7 +158,7 @@ echo "Restart submitter PID: $!"
 echo "Log: $LOG"
 ```
 
-`--allow-existing-case-dirs` is required — case dirs on `/pscratch/` are reused; per-case scripts regenerate and resubmit all three phases (ADSP → RGSP → TRANS) with fresh `--dependency=afterok` chaining.
+`--allow-existing-case-dirs` is required — case dirs on `~` are reused; per-case scripts regenerate and resubmit all three phases (ADSP → RGSP → TRANS) with fresh `--dependency=afterok` chaining.
 
 Arm Claude Monitor on the restart submitter log:
 

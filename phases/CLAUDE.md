@@ -14,17 +14,37 @@ The Phase 0→7 workflow below is the **single methodology both A2MC agent modes
 
 The roadmap is **not** a single linear 0→7 pass — it is a nested loop structure (detailed in **Three-Level Iteration Structure** and **Iteration Paths** below).
 
-Each phase's own `CLAUDE.md` lists the **offline skills** that serve it. The mapping at a glance (full index: `docs/a2mc_reference/skills_catalog.md`):
+The offline agent has a **per-phase skill** for each phase (`phase0-design` … `phase6-refinement`),
+each the human-in-the-loop analog of the online agent's `_run_<phase>()` method: it drives the same
+underlying scripts, and reproduces the reasoning `reasoning.py` does online (offline, *the agent is
+the reasoning*). These are the primary entry point for each phase; the other skills below support them.
 
-| Phase | Offline skills |
-|-------|----------------|
-| 0 Design | `arm-hpc-monitoring`, `restart-failed-jobs` |
-| 1 Exploration | `summarize-calibration-round`, `compare-calibration-rounds` |
-| 2 Screening | `summarize-calibration-round`, `compare-calibration-rounds` |
-| 3 Diagnosis | `diagnose-forensics`, `scientific-analysis` |
-| 4 Hypothesis | `offline-testing-workflow`, `scientific-analysis` |
-| 5 Testing | `offline-testing-workflow`, `arm-hpc-monitoring`, `restart-failed-jobs` |
-| 6 Refinement | `curate-knowledge`, `inject-knowledge`, `summarize-calibration-round`, `compare-calibration-rounds` |
+> **The phase skills are a floor, not a ceiling.** The online agent is fenced into a fixed phase
+> scope by design; the offline agent is not. Each phase skill captures what the online agent does so
+> you never do *less* — then the offline agent's value is doing *more*: pull extra data, run
+> analyses no phase tool exists for, cross into an adjacent phase when evidence leads there, or
+> question the round's framing. Seed reasoning with the phase skill; don't let it fence you in.
+
+**Which phases queue new simulations.** Only **Phase 0** (build + submit the ensemble) and **Phase 5**
+(submit experiments) queue new ELM-FATES simulation jobs. Every other phase — extraction, sensitivity,
+screening, diagnosis, refinement — *reads and analyzes existing ensemble outputs* (that is what a
+phase skill means by "**no new simulations**"). Extraction of a large ensemble still reads thousands
+of multi-GB history files and may need a compute node for memory. For calibration/analysis the offline
+agent operates in the Perlmutter clone of the repo, where those outputs and tools live; the Mac dev
+clone is for framework development + the public sync, not for running calibrations.
+
+Each phase's own `CLAUDE.md` lists the offline skills that serve it. The mapping at a glance (full
+index: `docs/a2mc_reference/skills_catalog.md`):
+
+| Phase | Primary phase skill | Supporting skills |
+|-------|---------------------|-------------------|
+| 0 Design | `phase0-design` | `arm-hpc-monitoring`, `restart-failed-jobs` |
+| 1 Exploration | `phase1-exploration` | `summarize-calibration-round`, `compare-calibration-rounds` |
+| 2 Screening | `phase2-screening` | `summarize-calibration-round`, `compare-calibration-rounds` |
+| 3 Diagnosis | `phase3-diagnosis` | `diagnose-forensics`, `scientific-analysis` |
+| 4 Hypothesis | `phase4-hypothesis` | `offline-testing-workflow`, `scientific-analysis` |
+| 5 Testing | `phase5-testing` → `offline-testing-workflow` | `arm-hpc-monitoring`, `restart-failed-jobs` |
+| 6 Refinement | `phase6-refinement` | `curate-knowledge`, `inject-knowledge`, `summarize-calibration-round`, `compare-calibration-rounds` |
 
 Whichever mode is working, **write a log** — `memory/dev_logs/` for engineering, `memory/ana_logs/` for scientific reasoning. The offline agent should log *more*, not less: its conversational input (the human's reasoning, decisions, and discarded alternatives) is ephemeral and is exactly what the autonomous loop cannot capture.
 
@@ -80,13 +100,13 @@ Iteration Paths:
 
 | Phase | Name | Purpose | Key Scripts | AI-Driven? |
 |-------|------|---------|-------------|------------|
-| 0 | Design & Submit | Generate ensemble, submit to HPC | `create_morris_ensemble.py`, `tools/submit_ensemble.sh` | No |
+| 0 | Design & Submit | Generate ensemble, submit simulations | `create_parameter_sample.py`, `create_morris_ensemble.py`, `submit_phase0.py` | No |
 | - | [HPC Wait] | Monitor simulations | `tools/diagnose_ensemble_status.py` | No |
-| 1 | Exploration | Extract Y matrix, Morris analysis, interpret results | `extract_sensitivity_outputs.py`, `morris_sensitivity_analysis.py` | **Yes** |
+| 1 | Exploration | Extract Y matrix, Morris analysis, interpret results | `extract_sensitivity_outputs.py`, `morris_sensitivity_analysis.py`, `analyze_ensemble.py` | **Yes** |
 | 2 | Screening | Rank ensemble by targets | `screen_ensemble.py` | Yes |
 | 3 | Diagnosis | Root cause analysis, edge case detection, results analysis | `run_diagnosis.py` (+ 11 diagnostic tools) | Yes |
 | 4 | Hypothesis | Generate experiments OR test with existing data | `reasoning.py` | Yes |
-| 5 | Testing | Run experiments on HPC | `tools/submit_experiment.sh` | No |
+| 5 | Testing | Run experiments (new simulations) | `tools/submit_experiment.sh` | No |
 | 6 | Refinement | Evaluate results, extract lessons, check equifinality | `reasoning.py`, `memory/manager.py` | Yes |
 | 7 | Converged | Final configuration | - | - |
 
@@ -105,7 +125,7 @@ CALIBRATION ROUND (outermost) — a full Phase 0→7 cycle
   └── EXPERIMENT CYCLE (outer loop) — Phase 3→4→5→6, runs HPC experiments
         6→3 rethink when a hypothesis is disproven; max ~10 cycles
         │
-        └── SKIP-TESTING (inner loop) — Phase 3↔4, NO new HPC
+        └── SKIP-TESTING (inner loop) — Phase 3↔4, NO new simulations
               test hypotheses against existing ensemble data; max ~10;
               exit on confidence ≥ threshold or test_with_existing=false
 ```

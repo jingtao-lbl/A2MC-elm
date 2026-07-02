@@ -178,7 +178,7 @@ When >95% cases complete → **Phase 1 (Exploration)**: Extract data, run sensit
 
 ## When AI Works in This Phase
 
-This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 0, and the interactive (offline) agent navigating here. Offline skills for this phase: `arm-hpc-monitoring`, `restart-failed-jobs` (see `docs/a2mc_reference/skills_catalog.md`).
+This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 0, and the interactive (offline) agent navigating here. Offline skills for this phase: `phase0-design` (primary — the offline analog of `_run_design()`), then `arm-hpc-monitoring`, `restart-failed-jobs` (see `docs/a2mc_reference/skills_catalog.md`). The phase skill is a floor, not a ceiling — explore beyond the phase scope when the task warrants.
 
 **Focus on:**
 - Correct parameter sampling coverage

@@ -14,7 +14,8 @@
 3. Design experiments to test each hypothesis
 4. Specify parameter modifications for each experiment
 5. Define expected outcomes and success criteria
-6. Generate hypothesis report for Phase 5
+6. Generate hypothesis report
+7. (Skip-testing inner loop, Phase 3↔4) If a hypothesis is testable against existing Morris data (`test_with_existing`), test it now — conclude, or loop back to Phase 3; only hypotheses needing new simulations proceed to Phase 5
 
 ---
 
@@ -52,61 +53,55 @@
 
 ## Hypothesis Structure
 
+Fields match the `Hypothesis` dataclass in `reasoning/schemas.py`.
+
 ```yaml
 hypotheses:
-  - id: "H1"
-    statement: "Reducing fates_cnp_pid_kp from 0.5 to 0.3 will reduce FROOT_PFT10 error by >20%"
-    mechanism: "PID_Controller"
-    testable: true
-    experiment_id: "EXP_001"
-    rationale: "Lower Kp reduces overshoot in allocation response"
+  - name: "PID Overshoot Reduction"
+    mechanism: "PID_Controller — lower kp reduces C-allocation overshoot for PFT#10"
+    parameters:                       # list of {name, current, proposed, rationale} (+ pft/organ/bounds)
+      - name: "fates_cnp_pid_kp"
+        pft: 10
+        current: 0.5
+        proposed: 0.3
+        rationale: "Lower Kp reduces overshoot in the allocation response"
+    design_type: "cumulative"         # or "factorial"
+    expected_outcomes: {FROOT_PFT10: 123.0}
+    success_criteria: {FROOT_PFT10: 0.20}     # per-target tolerance
     confidence: 0.75
-
-  - id: "H2"
-    statement: "Increasing fates_cnp_nitr_store_ratio will improve PFT#10 nitrogen status"
-    mechanism: "Storage_Allocation"
-    testable: true
-    experiment_id: "EXP_002"
-    rationale: "More N storage provides buffer against competition"
-    confidence: 0.6
+    test_with_existing: false         # true → test with the existing ensemble (skip-testing), no new sims
+    base_case_id: 3930                # from Phase 2 screening (stamped by the orchestrator)
 ```
 
 ---
 
 ## Experiment Design
 
+Fields match the `Experiment` dataclass in `reasoning/schemas.py`. A `cumulative` design adds one
+parameter per experiment (Exp2 = Exp1's change + the next parameter).
+
 ```yaml
 experiments:
-  - id: "EXP_001"
-    hypothesis_id: "H1"
-    type: "single_parameter"
-    parameters:
-      - name: "fates_cnp_pid_kp"
-        baseline: 0.5
-        test_value: 0.3
-        pft: 10
-    expected_outcome:
-      target: "FROOT_PFT10"
-      direction: "decrease_error"
-      magnitude: ">20%"
-    control: "baseline_set_3930"  # Best set from Phase 2
+  - name: "Exp1"
+    base_case: "case_3930"            # best set from Phase 2 screening
+    modifications:                    # list of {parameter, old_value, new_value}
+      - parameter: "fates_cnp_pid_kp"
+        old_value: 0.5
+        new_value: 0.3
+    expected_results: {FROOT_PFT10: 123.0}
+    success_threshold: 0.20
 
-  - id: "EXP_002"
-    hypothesis_id: "H2"
-    type: "multi_parameter"
-    parameters:
-      - name: "fates_cnp_nitr_store_ratio"
-        baseline: 1.5
-        test_value: 2.0
-        pft: 10
-      - name: "fates_cnp_phos_store_ratio"
-        baseline: 1.5
-        test_value: 2.0
-        pft: 10
-    expected_outcome:
-      target: "LEAF_PFT10"
-      direction: "increase"
-      magnitude: "10-20%"
+  - name: "Exp2"
+    base_case: "case_3930"
+    modifications:
+      - parameter: "fates_cnp_pid_kp"
+        old_value: 0.5
+        new_value: 0.3
+      - parameter: "fates_cnp_nitr_store_ratio"
+        old_value: 1.5
+        new_value: 2.0
+    expected_results: {LEAF_PFT10: 95.0}
+    success_threshold: 0.20
 ```
 
 ---
@@ -144,7 +139,7 @@ After Phase 4 completes → **Phase 5 (Testing)**: Run experiments
 
 ## When AI Works in This Phase
 
-This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 4, and the interactive (offline) agent navigating here. Offline skills for this phase: `offline-testing-workflow`, `scientific-analysis` (see `docs/a2mc_reference/skills_catalog.md`).
+This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 4, and the interactive (offline) agent navigating here. Offline skills for this phase: `phase4-hypothesis` (primary — the offline analog of `reasoning.generate_hypothesis()` + skip-testing), then `offline-testing-workflow` (the HPC path), `scientific-analysis` (see `docs/a2mc_reference/skills_catalog.md`). The phase skill is a floor, not a ceiling — explore beyond the phase scope when the task warrants.
 
 **Focus on:**
 - Generating falsifiable hypotheses

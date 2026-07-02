@@ -214,7 +214,7 @@ After Phase 1 completes → **Phase 2 (Screening)**: Rank ensemble by validation
 
 ## When AI Works in This Phase
 
-This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 1, and the interactive (offline) agent navigating here. Offline skills for this phase: `summarize-calibration-round`, `compare-calibration-rounds` (see `docs/a2mc_reference/skills_catalog.md`).
+This guidance applies to **both** modes — the autonomous orchestrator traversing Phase 1, and the interactive (offline) agent navigating here. Offline skills for this phase: `phase1-exploration` (primary — the offline analog of `reasoning.analyze_sensitivity_results()`), then `summarize-calibration-round`, `compare-calibration-rounds` (see `docs/a2mc_reference/skills_catalog.md`). The phase skill is a floor, not a ceiling — explore beyond the phase scope when the task warrants.
 
 **Focus on:**
 - Diagnosing which cases completed vs failed
