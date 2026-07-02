@@ -15,8 +15,8 @@ Or use the config file method:
     python modify_fates_parameters.py --input input.nc --output output.nc --config modifications.yaml
 
     python modify_fates_parameters.py \
-    --input /Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/FATESparameterfiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam138_Morris/fates_params_api25.5.0_12pft_c230710__PtCNP_En3643_mod4.nc \
-    --output /Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/FATESparameterfiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam138_Morris/fates_params_api25.5.0_12pft_c230710__PtCNP_En3643_mod5a.nc \
+    --input ~/Desktop/Work/NGEE-Arctic/Kougarok/FATESparameterfiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam138_Morris/fates_params_api25.5.0_12pft_c230710__PtCNP_En3643_mod4.nc \
+    --output ~/Desktop/Work/NGEE-Arctic/Kougarok/FATESparameterfiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam138_Morris/fates_params_api25.5.0_12pft_c230710__PtCNP_En3643_mod5a.nc \
      --param fates_alloc_storage_cushion \
      --pft 10 \
      --value 3.0 \

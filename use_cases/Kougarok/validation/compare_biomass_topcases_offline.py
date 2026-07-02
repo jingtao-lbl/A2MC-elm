@@ -43,10 +43,10 @@ OBS_MONTH = 7  # July
 OBS_IDX = (OBS_YEAR - YEAR_START) * 12 + OBS_MONTH - 1  # 0-indexed
 
 # Data directory - 162-parameter Morris ensemble results
-DATA_DIR = Path('/Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Results_PlantTraitsCNPEnsemble_wModPval_noADSP2/Kougarok_PlantTraitsCNPEnsemble162_Morris')
+DATA_DIR = Path('~/Desktop/Work/NGEE-Arctic/Kougarok/Results_PlantTraitsCNPEnsemble_wModPval_noADSP2/Kougarok_PlantTraitsCNPEnsemble162_Morris')
 
 # Output directory
-OUTPUT_DIR = Path('/Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Figures_PlantTraitsCNPEnsemble_wModPval_noADSP2')
+OUTPUT_DIR = Path('~/Desktop/Work/NGEE-Arctic/Kougarok/Figures_PlantTraitsCNPEnsemble_wModPval_noADSP2')
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_DIR = OUTPUT_DIR / 'results'
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)

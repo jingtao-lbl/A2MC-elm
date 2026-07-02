@@ -110,7 +110,7 @@ export A2MC_DOMAIN_FILE="domain_Kougarok_from0.125x0.125_simyr1850_c240309.nc"
 export A2MC_SURFACE_FILE="surfdata_Kougarok_from0.125x0.125_simyr1850_c240309_ModPval.nc"
 
 # CNP soil parameters
-export A2MC_SOILORDER_DIR="/global/homes/j/jingtao/E3SM_Aid/clm_params"
+export A2MC_SOILORDER_DIR="~/E3SM_Aid/clm_params"
 export A2MC_SOILORDER_FILE="CNP_parameters_c180312.nc"
 
 # Forcing data redirects
@@ -190,7 +190,7 @@ export A2MC_ENSEMBLE_PREFIX="Kougarok_ELM-FATES"
 # Case names: append "PrescP" suffix after the case number so R5 case folders
 # don't collide with R2/R3/new-R4 case folders on the shared CIME scripts
 # directory. (Note: old R4 subset_replay also used "PrescP" — its case dirs
-# are still on /global/cfs/cdirs/m2467/jingtao/... and will need cleanup
+# are still on ~/... and will need cleanup
 # before R5 launch, or R5 can pick a different suffix to keep both viewable.)
 export A2MC_CASE_NAME_PATTERN="${A2MC_ENSEMBLE_PREFIX}_PtCNPEn{N}PrescP_{PHASE}"
 
@@ -206,12 +206,12 @@ export A2MC_LOG_DIR="${A2MC_CASE_SCRIPTS}"
 # HPC Paths (NERSC Perlmutter)
 # -----------------------------------------------------------------------------
 # Base FATES parameter file (template — same for all rounds)
-export A2MC_BASE_PARAM_FILE="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_api25.5.0_12pft_c230710.nc"
+export A2MC_BASE_PARAM_FILE="~/E3SM_Aid/FATES-ParameterFiles/fates_params_api25.5.0_12pft_c230710.nc"
 
 # Directory containing FATES parameter files for the R5 ensemble.
 # Built by apply_param_override.py: copies R3's 4890 NCs (each encoding the
 # Morris draws) and applies fates_cnp_prescribed_puptake=1.0 to every PFT.
-export A2MC_PARAM_DIR="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_PrescribedP_EnPlantTraitsCNPparam162"
+export A2MC_PARAM_DIR="~/E3SM_Aid/FATES-ParameterFiles/fates_params_PrescribedP_EnPlantTraitsCNPparam162"
 
 # Parameter file naming pattern ({N} = case number 1-4890)
 export A2MC_PARAM_PATTERN="fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"
@@ -248,7 +248,7 @@ export A2MC_ENSEMBLE_MATRIX_FILE="${A2MC_USE_CASE_DIR}/parameters/FATES_CNPnPlan
 # runtime so the same template covers ADSP, RGSP, and TRANS.
 #
 # R4 bld dirs verified to exist as of 2026-05-12 13:38:
-#   /global/cfs/cdirs/m2467/jingtao/Kougarok_PlantTraitsCNPEnsemble162_Morris_ADSPSupNP/
+#   ~/Kougarok_PlantTraitsCNPEnsemble162_Morris_ADSPSupNP/
 #     Kougarok_ELM-FATES_PtCNPEn1ADSPSupNP_{ADSP,RGSP,TRANS}/bld   (each has e3sm.exe)
 #
 #export A2MC_REUSE_BUILD_EXEROOT_TEMPLATE="${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_Morris_ADSPSupNP/Kougarok_ELM-FATES_PtCNPEn1ADSPSupNP_{PHASE}/bld"

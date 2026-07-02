@@ -42,19 +42,19 @@ Usage
       --base 1304 --suffixes clump00 clump01 clump02 clump03 \
                               clump04 clump05 clump06 clump07 \
       --ensemble-output "$A2MC_ENSEMBLE_OUTPUT" \
-      --extract-dir /global/cfs/cdirs/m2467/jingtao/<Exp>_Extract \
+      --extract-dir ~/<Exp>_Extract \
       --parallel 8
 
   # 2. V0 reproducibility gate: control vs the Morris base case's extract
   python tools/extract_and_plot_selected_cases.py v0check \
       --control-case-id 1304_clump00 \
-      --extract-dir /global/cfs/cdirs/m2467/jingtao/<Exp>_Extract \
+      --extract-dir ~/<Exp>_Extract \
       --ref-nc "$A2MC_EXTRACTED_DATA/Kougarok_ELM-FATES_PtCNPEn1304PrescP_TRANS_all_variables_monthly_1901_2019.nc"
 
   # 3. overlay plot (one line per selected case)
   python tools/extract_and_plot_selected_cases.py plot \
       --base 1304 --suffixes clump00 clump01 ... clump07 \
-      --extract-dir /global/cfs/cdirs/m2467/jingtao/<Exp>_Extract \
+      --extract-dir ~/<Exp>_Extract \
       --output use_cases/<site>/analysis/<Exp>_overlay.png
 
 Author: Jing Tao with Claude on Perlmutter

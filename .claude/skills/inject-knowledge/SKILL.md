@@ -132,8 +132,8 @@ unresolved `code_reference`s.
 
 ## Step 7 — record it
 
-Note what you injected, into which channels, and the evidence basis — a dev log if
-substantial (the `log` skill), a one-line note otherwise. The curated JSONs are hand-vetted
+Note what you injected, into which channels, and the evidence basis — a log if the
+injection is substantial, a one-line note otherwise. The curated JSONs are hand-vetted
 manuscript knowledge (CLAUDE.md Rule 3); the audit trail matters as much as for
 `curate-knowledge`.
 

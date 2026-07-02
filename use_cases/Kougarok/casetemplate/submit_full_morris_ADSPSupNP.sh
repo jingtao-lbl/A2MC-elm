@@ -77,7 +77,7 @@ done
 # Where the per-case scripts live. The user has already placed
 # Kougarok_ELM-FATES_PtCNP162_En1_ADSPSupNP.sh (build-from-scratch, running)
 # and Kougarok_ELM-FATES_PtCNP162_En2_ADSPSupNP.sh (bld-reuse, tested) here.
-CASE_SCRIPTS_DIR=/pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase_ADSPSupNP
+CASE_SCRIPTS_DIR=~/CaseScripts/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase_ADSPSupNP
 
 # Use En2 as the canonical template — it has the bld-reuse structure that
 # every case 3..4890 needs (each reuses the bld compiled by En1 via EXEROOT).

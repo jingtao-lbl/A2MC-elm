@@ -606,7 +606,7 @@ def main():
         output_dir = data_dir / 'OptimizationLeafRoot' / 'results'
     except ImportError:
         import os
-        home = os.environ.get('HOME', '/Users/jingtao')
+        home = os.environ.get('HOME', '~')
         data_dir = Path(f'{home}/Desktop/Work/NGEE-Arctic/Kougarok/Program')
         output_dir = data_dir / 'OptimizationLeafRoot' / 'results'
 

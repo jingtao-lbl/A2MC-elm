@@ -362,12 +362,12 @@ add_feature_box(ax, 12.8, feature_y, feature_box_width, feature_box_height,
 # =============================================================================
 plt.tight_layout()
 
-output_file = '/Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Program/A2MC/plot/A2MC_Workflow_Horizontal.png'
+output_file = '~/Desktop/Work/NGEE-Arctic/Kougarok/Program/A2MC/plot/A2MC_Workflow_Horizontal.png'
 plt.savefig(output_file, dpi=600, bbox_inches='tight', facecolor='white')
 print(f"\n[OK] Horizontal A2MC workflow saved: {output_file}")
 
 # Also save to OptimizationLeafRoot for convenience
-output_file2 = '/Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Program/OptimizationLeafRoot/A2MC_Workflow_Horizontal.png'
+output_file2 = '~/Desktop/Work/NGEE-Arctic/Kougarok/Program/OptimizationLeafRoot/A2MC_Workflow_Horizontal.png'
 plt.savefig(output_file2, dpi=300, bbox_inches='tight', facecolor='white')
 print(f"[OK] Also saved to: {output_file2}")
 

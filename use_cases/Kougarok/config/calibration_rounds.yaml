@@ -176,8 +176,33 @@ rounds:
       RGSP allows soil P pools to equilibrate before the transient run,
       preventing chronic P starvation. Same parameter space and targets
       as Round 2 to isolate the effect of the protocol change.
-    outcome: null
-    status: in_progress
+    outcome: |
+      R3 completed the full 4890-case Morris ensemble on the unpatched
+      fates-cnp-eca build (binary hydraulic-mortality switch). Extending
+      suplP through RGSP loaded soil P enormously during spin-up: R3 ends
+      TRANS with by far the most soil P (SOLUTIONP 2.57, SECONDP 318) and
+      the most plant P uptake of all rounds (FATES_PUPTAKE 5.36 gP/m²/yr).
+      Best-composite case #2939 (NRMSE 0.469, 2/6 targets); max-targets
+      case #86 (3/6). R3 is the best round on cost to date, BUT:
+
+      (1) The structural ceiling holds. Despite abundant, actively-taken-up
+          soil P, R3 still reaches only 3/6 targets and PFT10 fineroot
+          123/382. The P-limitation hypothesis that drove R1→R2→R3 moves
+          biomass a little but cannot break the PFT9↔PFT10 structural wall
+          (corroborated by the clumping, establishment, and multi-round
+          sensitivity analyses).
+      (2) R3's "best" status is confounded. R3 ran on the unpatched binary
+          hydraulic-mortality physics, while R4/R5 carry the gradual-ramp
+          patch. Hydraulic mortality is the largest named mortality term
+          (~34% of total in R3), so R3's biomass/fit is NOT apples-to-apples
+          with R4/R5. A focused top-N rerun on fates-cnp-eca-tj (same R3
+          protocol, V0-gated) is recommended to isolate the model-build axis
+          before anchoring R6 on R3 — see 20260606c §4. Expect refinement,
+          not a 3/6→6/6 breakthrough.
+
+      Detail: memory/ana_logs/20260606c (P pools, cross-regime test, rerun
+      decision), 20260606b (multi-round screening).
+    status: completed
 
   4_subset_replay_PrescP_superseded:
     # SUPERSEDED on 2026-04-28. The R4 slot has been redesigned to a full
@@ -521,5 +546,39 @@ rounds:
       should target allocation parameters (l2fr_10,
       alloc_storage_cushion_10, fates_recruit_init_density_10) rather
       than nutrient pathways.
-    outcome: null
-    status: planned
+    outcome: |
+      R5 is the first clean test of "is P availability the bottleneck for
+      PFT10?": all nutrient supplementation OFF, P uptake prescribed at full
+      demand (fates_cnp_prescribed_puptake=1.0) made real by the
+      prescribed-puptake-fix patch. Ensemble is PARTIAL — ~4530/4890
+      completed; ~272 never-run + ~215 model-failure (mass-balance abort)
+      stragglers remain. Fixing these (raise l2fr_ini lower bound for
+      PFT7/9 and rerun) is the Fork B follow-up on Perlmutter, after which a
+      valid Morris sensitivity can be computed. Best-composite case #1304
+      (NRMSE 0.537, 3/6 targets). Headline findings:
+
+      (1) P WAS NEVER THE BINDING CONSTRAINT. Removing the soil-P limit
+          entirely does not relieve the limitation — PFT10 fineroot still
+          collapses (32/382). R5 has the LOWEST plant P uptake of all five
+          rounds despite "free" prescribed P.
+      (2) WITHIN R5, P UPTAKE IS GROWTH-LIMITED (NPP), NOT STOICHIOMETRY.
+          Spearman r(NPP, P-uptake)=0.944 vs r(stoich_phos, P-uptake)≈0.011;
+          stoich_phos is identical across uptake deciles. Most R5 cases
+          barely grow (bottom decile NPP≈0 → uptake≈0), so uptake tracks
+          carbon growth, not the P-stoichiometry setpoint. High-uptake R5
+          cases exist (#1638=8.84, above any ECA case) but they are the
+          high-GROWTH cases.
+      (3) CHAMPIONS ARE REGIME-BOUND. Cross-regime test (#2939/#302/#1304 ×
+          R3/R4/R5) shows the diagonal wins — each champion is best only in
+          its own regime (clean vmax_p × uptake-mode interaction), so
+          cross-round "best case" comparisons are confounded by regime.
+
+      Implication: future calibration (R6) must target allocation /
+      phenology / establishment (l2fr, alloc_storage_cushion,
+      phen_gddthresh_c, fates_recruit_init_density), NOT nutrient pathways.
+      The nutrient lever (P in R3/R5, N in R4) is exhausted.
+
+      Detail: memory/ana_logs/20260612b (growth-limited correction),
+      20260612a (ensemble verification), 20260606c (mechanism, cross-regime),
+      20260531b (PFT10 tradeoff).
+    status: partial   # ~4530/4890 completed; 272 never-run + ~215 model-failure stragglers pending Fork B rerun

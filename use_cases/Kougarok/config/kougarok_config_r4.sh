@@ -70,7 +70,7 @@ export A2MC_DOMAIN_FILE="domain_Kougarok_from0.125x0.125_simyr1850_c240309.nc"
 export A2MC_SURFACE_FILE="surfdata_Kougarok_from0.125x0.125_simyr1850_c240309_ModPval.nc"
 
 # CNP soil parameters
-export A2MC_SOILORDER_DIR="/global/homes/j/jingtao/E3SM_Aid/clm_params"
+export A2MC_SOILORDER_DIR="~/E3SM_Aid/clm_params"
 export A2MC_SOILORDER_FILE="CNP_parameters_c180312.nc"
 
 # Forcing data redirects
@@ -149,10 +149,10 @@ export A2MC_LOG_DIR="${A2MC_CASE_SCRIPTS}"
 # HPC Paths (NERSC Perlmutter)
 # -----------------------------------------------------------------------------
 # Base FATES parameter file (template)
-export A2MC_BASE_PARAM_FILE="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_api25.5.0_12pft_c230710.nc"
+export A2MC_BASE_PARAM_FILE="~/E3SM_Aid/FATES-ParameterFiles/fates_params_api25.5.0_12pft_c230710.nc"
 
 # Directory containing FATES parameter files for ensemble
-export A2MC_PARAM_DIR="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
+export A2MC_PARAM_DIR="~/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
 
 # Parameter file naming pattern ({N} = case number 1-4890)
 export A2MC_PARAM_PATTERN="fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"

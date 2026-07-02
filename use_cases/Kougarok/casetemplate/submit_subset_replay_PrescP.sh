@@ -29,10 +29,10 @@ TEMPLATE_SCRIPT="${TEMPLATE_DIR}/Kougarok_ELM-FATES_PtCNP162_En2939_PrescP.sh"
 TEMPLATE_CASENUM=2939   # the literal value in `casenumber=2939` inside the template
 
 # Where to put the per-case scripts (mirrors R3 layout)
-CASE_SCRIPTS_DIR=/pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase_PrescribedP
+CASE_SCRIPTS_DIR=~/CaseScripts/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase_PrescribedP
 
 # Where to read the case list from (output of create_subset_replay.py)
-CASE_LIST_FILE=${CASE_LIST_FILE:-/global/cfs/cdirs/m2467/jingtao/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP/subset_replay_case_list.txt}
+CASE_LIST_FILE=${CASE_LIST_FILE:-~/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP/subset_replay_case_list.txt}
 
 # -----------------------------------------------------------------------------
 # Validation

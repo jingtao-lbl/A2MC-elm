@@ -12,8 +12,8 @@
 # - Param files (already generated): fates_params_..._En1304_clump0X.nc
 #
 # Dedicated dirs (per 20260519e §"HPC submission details"):
-#   Output: /global/cfs/cdirs/m2467/jingtao/Kougarok_Clumping_Exp_20260528/
-#   Case scripts: /pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES/ClumpingExp_20260528/
+#   Output: ~/Kougarok_Clumping_Exp_20260528/
+#   Case scripts: ~/CaseScripts/Kougarok_FATES/ClumpingExp_20260528/
 #
 # Author: Jing Tao with Claude on Perlmutter
 # Created: 2026-05-28
@@ -29,17 +29,17 @@ source "$A2MC_ROOT/a2mc_config.sh" > /dev/null 2>&1
 source "$A2MC_ROOT/use_cases/Kougarok/config/kougarok_config_r5.sh" > /dev/null 2>&1
 
 # Override env vars for dedicated dirs (per 20260519e §"HPC submission details")
-export A2MC_ENSEMBLE_OUTPUT="/global/cfs/cdirs/m2467/jingtao/Kougarok_Clumping_Exp_20260528"
-export A2MC_CASE_SCRIPTS="/pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES/ClumpingExp_20260528"
-export A2MC_EXTRACTED_DATA="/global/cfs/cdirs/m2467/jingtao/Kougarok_Clumping_Exp_20260528_Extract"
+export A2MC_ENSEMBLE_OUTPUT="~/Kougarok_Clumping_Exp_20260528"
+export A2MC_CASE_SCRIPTS="~/CaseScripts/Kougarok_FATES/ClumpingExp_20260528"
+export A2MC_EXTRACTED_DATA="~/Kougarok_Clumping_Exp_20260528_Extract"
 
 # Reuse R5 case 1's FATES bld (saves ~4h of compiles across 8 variants). Same FATES binary;
 # param changes are runtime so no recompile is needed. Pattern format: {PHASE} → ADSP/RGSP/TRANS.
-export A2MC_REUSE_BUILD_EXEROOT_TEMPLATE="/global/cfs/cdirs/m2467/jingtao/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP/Kougarok_ELM-FATES_PtCNPEn1PrescP_{PHASE}/bld"
+export A2MC_REUSE_BUILD_EXEROOT_TEMPLATE="~/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP/Kougarok_ELM-FATES_PtCNPEn1PrescP_{PHASE}/bld"
 
 mkdir -p "$A2MC_ENSEMBLE_OUTPUT" "$A2MC_CASE_SCRIPTS" "$A2MC_EXTRACTED_DATA"
 
-PARAM_DIR="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_clumping_exp_20260528"
+PARAM_DIR="~/E3SM_Aid/FATES-ParameterFiles/fates_params_clumping_exp_20260528"
 
 DRY_RUN=""
 while [ $# -gt 0 ]; do

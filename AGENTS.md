@@ -12,7 +12,9 @@ A2MC ("Agentic Adaptive Multi-target Calibration") is an AI-driven calibration f
 - **Autonomous (online) agent** — `python orchestrator.py --run`, a fixed Phase 0→7 state machine that calls the model in a loop. Unattended, at scale.
 - **Interactive (offline) agent** — *you*, a coding-agent harness operating in the repo, driven by conversation. For open-ended, exploratory, judgment-heavy, one-off work the fixed loop cannot do (forensics, synthesis, triage, figures, experiment design, auditing).
 
-Both modes share the same brain and hands — operating rules (this file), the skills catalog (`.claude/skills/`), persistent memory, episodic logs (`memory/dev_logs/` for engineering, `memory/ana_logs/` for scientific analysis), RAG/GraphRAG knowledge, and the shared tools in `tools/`. Findings flow between the two modes through that shared substrate (see §"The knowledge loop").
+Both modes share the same brain and hands — operating rules (this file), the skills catalog (`.claude/skills/`), persistent memory, episodic logs (calibration work → `use_cases/<site>/memory/logs/`, same format as the autonomous agent), RAG/GraphRAG knowledge, and the shared tools in `tools/`. Findings flow between the two modes through that shared substrate (see §"The knowledge loop").
+
+**The Phase 0→7 workflow is the shared calibration roadmap — follow it.** It is documented in [`phases/CLAUDE.md`](phases/CLAUDE.md) (overview + per-phase docs), and it is the methodology *both* modes use, not an orchestrator implementation detail. The online agent *traverses* the phases as a fixed state machine; **you *navigate* the same phases** — enter at the right phase for the task (the Entry Points table in `phases/CLAUDE.md`), apply that phase's discipline and success criteria, and follow the **three-level iteration structure** documented in `phases/CLAUDE.md` rather than a single linear 0→7 pass. The roadmap is nested loops, not a line: an outermost **calibration round** (a full Phase 0→7 cycle; the 6→0 redesign expands the parameter space and starts a new round), within it **experiment cycles** (Phase 3→4→5→6, with the 6→3 rethink when a hypothesis is disproven), and within those a **skip-testing inner loop** (Phase 3↔4 testing hypotheses against existing ensemble data, no new HPC). Your calibration work is phase-aware and iterative, not rigidly sequential, and each phase's `CLAUDE.md` names the skills that serve it. Read the relevant phase doc before working a calibration task, the same way you read a phase folder before editing it (rule 5). Only **off-cycle framework/meta work** (KB build, skill management, auditing) sits outside the 0→7 loop — that is the part the fixed loop genuinely cannot do.
 
 ## Core operating rules
 
@@ -34,7 +36,9 @@ Your reusable capabilities live in `.claude/skills/`, each a folder with a `SKIL
 
 ➡️ **[`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md)**
 
-At a glance:
+At a glance — the full set, grouped (one-liners here; the catalog has the detail). This table is kept complete and in sync with the skills dir by `tools/check_skill_registry.py`:
+
+**Calibration & analysis (core)**
 
 | Skill | Invoke when the user wants to… |
 |---|---|
@@ -43,11 +47,34 @@ At a glance:
 | `offline-testing-workflow` | Design + launch + analyze a parameter-sweep experiment on a Morris base case |
 | `restart-failed-jobs` | Restart SLURM jobs that failed in an ensemble/experiment |
 | `arm-hpc-monitoring` | Set up real-time monitoring of an in-flight ensemble at session start |
-| `log` | Write a dev/analysis/session/handoff log in the repo's two-stream logging system |
-| `curate-knowledge` | Review + promote staged Tier-3 knowledge proposals into the curated KB (human-in-the-loop) |
-| `onboard-session` | Cold-start runbook at session start / after compaction — restore context, check in-flight work, delegate |
 | `diagnose-forensics` | Investigate an ensemble anomaly — artifact triage first, then root-cause via the phase3 tools |
 | `scientific-analysis` | Manuscript-supporting investigation → figure → ana_log (pose, analyze, cite, write) |
+| `curate-knowledge` | Review + promote staged Tier-3 knowledge proposals into the curated KB (human-in-the-loop) |
+| `onboard-session` | Cold-start runbook at session start / after compaction — restore context, check in-flight work, delegate |
+| `calibration-log` | Log calibration work for a site (phase log via PhaseLogger, or free-form session log) under `use_cases/{site}/memory/logs/` |
+
+**Knowledge-base build pipeline**
+
+| Skill | Invoke when the user wants to… |
+|---|---|
+| `build-rag-from-scratch` | Build the whole RAG/GraphRAG layer from scratch — new-model onboarding or disaster recovery |
+| `generate-codebase-wiki` | Produce a source-grounded codebase wiki for a model (step 1 of the KB build) |
+| `rebuild-rag` | Rebuild/repair the RAG index — reindex, bump the wiki commit, refresh after a curated-YAML edit |
+| `inject-knowledge` | Inject a human-originated discovery / parameter / relationship into the curated KB |
+| `validate-rag-chain` | Validate the source→wiki→curated-YAML→RAG chain before shipping |
+
+**Skill management (meta)**
+
+| Skill | Invoke when the user wants to… |
+|---|---|
+| `add-skill` | Scaffold + register a new skill (this procedure) — keeps the registries in sync |
+| `refine-skill` | Improve an existing skill from accumulated evidence, human-gated |
+
+**Utilities**
+
+| Skill | Invoke when the user wants to… |
+|---|---|
+| `markdown-to-pdf` | Convert a Markdown doc (ana_log / report / note) to a shareable PDF or .docx |
 
 When a request matches a skill's trigger, invoke that skill **before** improvising — it encodes conventions (case-naming, dedicated experiment dirs, reproducibility gates) that are easy to get wrong from first principles.
 
@@ -57,21 +84,20 @@ When a request matches a skill's trigger, invoke that skill **before** improvisi
 |---|---|---|
 | `memory/gained_knowledge/` | Generic FATES discoveries, parameters, failed approaches (JSON) | read for context; add vetted discoveries |
 | `use_cases/<site>/memory/gained_knowledge/` | Site-specific knowledge | read for the site you're working on |
-| `memory/dev_logs/` | Engineering changelog — code/infra changes (Markdown, dated) | **read before** starting related work; **write** a dated log for substantive changes |
-| `memory/ana_logs/` | Scientific analysis / working notes — results interpretation, manuscript-supporting reasoning (Markdown, dated) | read for prior analysis on the topic; write a dated note when you interpret results or reason scientifically |
+| `use_cases/<site>/memory/logs/` | Calibration session logs — phase logs (Phase 0–7) + free-form session notes, same format the autonomous agent produces | **write** here via the `calibration-log` skill when you do calibration/analysis work; read prior logs for the site |
 | `rag/` + `docs/fates-knowledge-base/` | FATES knowledge (RAG + static docs) | query before asserting FATES behavior |
 | `tools/` | Shared utilities (extraction, plotting, HPC, cost functions) | reuse rather than re-implement |
 
-**Before starting a task:** grep both `memory/dev_logs/` and `memory/ana_logs/` for prior work on the same topic. Much of the framework's hard-won knowledge is recorded there, and repeating a superseded approach is the most common avoidable mistake.
+**Before starting a task:** grep prior logs for the same topic — calibration work lives in `use_cases/<site>/memory/logs/`. Repeating a superseded approach is the most common avoidable mistake.
 
-**When you finish substantive work:** write a dated log so the next session (and the autonomous agent's knowledge absorption) can build on it — a **dev log** (`memory/dev_logs/`) for engineering/code changes, an **analysis note** (`memory/ana_logs/`) for results interpretation and scientific reasoning.
+**When you finish substantive work:** write a dated log so the next session (and the autonomous agent's knowledge absorption) can build on it. Calibration/analysis work → `use_cases/<site>/memory/logs/` via the `calibration-log` skill (same format as the autonomous agent, so synthesis sees both modes). You should log **more** than the autonomous agent, not less: the human's reasoning, the decisions made in conversation, and the alternatives considered and discarded are ephemeral, and capturing that decision record is exactly what the machine loop cannot do.
 
 ## The knowledge loop
 
 The two modes are two writers on **one knowledge substrate**:
 
 ```
-  Interactive agent  ──writes──►  dev_logs / ana_logs / memories / gained_knowledge / tools
+  Interactive agent  ──writes──►  logs / memories / gained_knowledge / tools
         ▲                                          │
         │ reasons over                             │ absorbed by
         │ phase logs + run state                   ▼

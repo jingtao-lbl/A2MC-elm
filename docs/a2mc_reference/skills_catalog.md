@@ -85,20 +85,18 @@ operating contract these skills run under.
 - **Backing tools:** the config-driven ensemble auto-monitor + milestone-plot
   regeneration; the harness's process listing and log-monitoring facilities.
 
-### `log`
-- **Purpose:** Write a log in the repo's **two-stream logging system** — engineering
-  `memory/dev_logs/` vs scientific `memory/ana_logs/` — picking the right subtype
-  (regular dev log, **session log**, or **Handoff_To_Main**), applying the naming +
-  header + required-section conventions, and running the post-write checklist.
-- **Invoke when:** "/log", "write a log", "log this session", "write a dev log / ana
-  log", "session log", "handoff log", "document what we did", or to record a
-  fix/feature/analysis.
-- **Backing references:** `memory/dev_logs/CLAUDE.md` (authoritative style spec),
-  `memory/a2mc_development_history.md` (changelog target for code-change version bumps).
-- **Key steps:** classify stream+subtype → resolve header (date-letter,
-  author-by-environment, type, version, branch) → draft with required sections + cite
-  explicit evidence → post-write (version bump + changelog for code; Handoff_To_Main for
-  generic; supersede-don't-edit for corrections).
+### `calibration-log`
+- **Purpose:** Log the interactive agent's calibration work for a site under
+  `use_cases/{site}/memory/logs/`, so it sits alongside the autonomous agent's logs and
+  synthesis (`tools/session_report.py`) sees a session in one place.
+- **Invoke when:** "log this phase / diagnosis / experiment", "log this calibration
+  session", "write a session log", "record what I explored".
+- **Backing references:** `tools/phase_logger.py` (owns the phase-log format + naming),
+  `templates/logging/` (section templates), `CLAUDE.md` §"Session Logging Convention".
+- **Key steps:** pick the log type → **phase log** (`PhaseLogger.log_<phase>` →
+  `.../logs/{stamp}/phase{N}_{name}/r{RR}...Title.md`, identical to the online agent) or a
+  free-form **session log** (`.../logs/{stamp}/YYYYMMDDx_Topic.md`) for exploratory work.
+
 
 ### `curate-knowledge`
 - **Purpose:** The human-in-the-loop half of the Tier-3 memory write gate. The
@@ -261,13 +259,13 @@ gate `tools/check_skill_registry.py` (disk ↔ README table ↔ this catalog par
 
 ### `add-skill`
 - **Purpose:** Scaffold a new skill **and** register it so the steps are never half-done.
-  Writes the `SKILL.md` (frontmatter + body + seeded `## Changelog`), registers it in **both**
-  human-facing registries (the README "Current skills" table and this catalog), runs the
-  drift check, and stops for human review before commit.
+  Writes the `SKILL.md` (frontmatter + body + seeded `## Changelog`), registers it in **all
+  three** human-facing registries (the README "Current skills" table, this catalog, and the
+  `AGENTS.md` "At a glance" table), runs the drift check, and stops for human review before commit.
 - **Invoke when:** "add a skill", "create/scaffold a skill", "make this reusable as a skill",
   "distill X into a skill".
-- **Backing tool:** `tools/check_skill_registry.py` (the register-in-both invariant, enforced).
-- **Key discipline:** register in BOTH registries or it drifts; minimal procedure (a one-off
+- **Backing tool:** `tools/check_skill_registry.py` (the register-in-all-three invariant, enforced as 4-way parity).
+- **Key discipline:** register in all THREE registries or it drifts; minimal procedure (a one-off
   isn't a skill); branch-scoped (don't bake `main`/api-43-1 into a `kougarok_fates_demo`
   skill); public-sync aware (no secrets); human-gated.
 
@@ -282,6 +280,23 @@ gate `tools/check_skill_registry.py` (disk ↔ README table ↔ this catalog par
   pattern), not one-offs; surgical edits only (a growing skill is a smell); **`description`
   /trigger edits are highest-risk**; evidence-cited; never self-apply (contract change, like
   `curate-knowledge` / `inject-knowledge`).
+
+---
+
+## Utilities
+
+### `markdown-to-pdf`
+- **Purpose:** Convert a Markdown document to a shareable PDF or Word (`.docx`) — prose,
+  reports, notes (an ana_log → PDF, a report → docx). Not slide decks (those go through Marp).
+- **Invoke when:** "convert markdown to PDF/Word/docx", "render this note/report to PDF",
+  "export markdown to a document", "turn this `.md` into a docx".
+- **Backing tools:** `pandoc` (+ a LaTeX engine — `pdflatex`/`xelatex` — for PDF); `python-docx`
+  for round-trip-safe `.docx` edits that preserve tables / tracked changes / citation fields.
+- **Key discipline:** PDF needs a LaTeX engine; back up `.docx` before overwriting; don't
+  naive-round-trip a `.docx` through markdown (use python-docx). **Self-contained repo copy** of
+  a general user-level converter — depends only on environment-provided tools (pandoc / LaTeX /
+  python-docx, located per machine), not on any user-level skill or `~/.claude/` workflow, so it
+  works on local / Perlmutter / a fresh clone.
 
 ---
 

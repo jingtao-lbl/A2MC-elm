@@ -654,7 +654,7 @@ def main():
     else:
         # Default Kougarok path
         import os
-        home = os.environ.get('HOME', '/Users/jingtao')
+        home = os.environ.get('HOME', '~')
         data_dir = Path(f'{home}/Desktop/Work/NGEE-Arctic/Kougarok/Results_PlantTraitsCNPEnsemble_wModPval_noADSP2/Kougarok_PlantTraitsCNPEnsemble162_Morris')
 
     # Load targets

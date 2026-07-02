@@ -1,16 +1,17 @@
 ---
 name: add-skill
-description: Scaffold and register a new A2MC skill so the steps are never half-done. Use when the user or agent wants to create a new capability — "add a skill", "create/scaffold a skill", "make this reusable as a skill", "distill X into a skill". Writes the SKILL.md with correct frontmatter + a ## Changelog, registers it in BOTH human-facing registries (the README 'Current skills' table AND docs/a2mc_reference/skills_catalog.md), runs the mechanical drift check, and stops for human review before commit. Human-gated.
+description: Scaffold and register a new A2MC skill so the steps are never half-done. Use when the user or agent wants to create a new capability — "add a skill", "create/scaffold a skill", "make this reusable as a skill", "distill X into a skill". Writes the SKILL.md with correct frontmatter + a ## Changelog, registers it in all THREE human-facing registries (the README 'Current skills' table, docs/a2mc_reference/skills_catalog.md, AND the AGENTS.md 'At a glance' table), runs the mechanical drift check, and stops for human review before commit. Human-gated.
 allowed-tools: [Read, Glob, Grep, Write, Edit, Bash]
 ---
 
 # add-skill — scaffold + register a new A2MC skill
 
-A2MC has **two** human-facing registries that must stay in sync with the skills dir (the
-README "Current skills" table and `docs/a2mc_reference/skills_catalog.md`), so the
-"create the SKILL.md and update the registries" step is easy to half-do. This skill does
-all of it and verifies it mechanically. Conventions live in `.claude/skills/README.md`
-("Adding a new skill", "Refining a skill", anti-patterns).
+A2MC has **three** human-facing registries that must stay in sync with the skills dir (the
+README "Current skills" table, `docs/a2mc_reference/skills_catalog.md`, and the "At a
+glance" capability table in the public `AGENTS.md` contract), so the "create the SKILL.md
+and update the registries" step is easy to half-do. This skill does all of it and verifies
+it mechanically. Conventions live in `.claude/skills/README.md` ("Adding a new skill",
+"Refining a skill", anti-patterns).
 
 ## When to fire
 
@@ -38,15 +39,20 @@ all of it and verifies it mechanically. Conventions live in `.claude/skills/READ
    - **Public-sync aware:** skills ship to the public demo via `sync_to_public.sh`. No
      secrets; host-path tokens are advisory-OK on the demo leg (the leak scan), but prefer
      `$PY` / relative paths / `<placeholders>` over hardcoded personal paths.
-4. **Register in BOTH registries (the manual step):**
+4. **Register in all THREE registries (the manual step):**
    - add a row to the **"Current skills" table** in `.claude/skills/README.md`
      (`| [<name>](<name>/SKILL.md) | triggers when… |`);
    - add a **`### \`<name>\`` entry** to `docs/a2mc_reference/skills_catalog.md` (Purpose /
      Invoke when / Backing tools / Key discipline — match the existing entries; if it's part
-     of a group like the KB-build pipeline, place it there).
+     of a group like the KB-build pipeline, place it there);
+   - add a one-line row to the **"At a glance" table** in `AGENTS.md` (the public,
+     harness-neutral contract), under the matching group (core / KB-build / meta / utility).
+     This is the registry that historically drifted because it wasn't on the checklist.
 5. **Verify mechanically:** run `python3 tools/check_skill_registry.py` — it must exit 0
-   (confirms disk ↔ README table ↔ catalog parity, `name:`↔dir, and the `## Changelog`). A
-   DRIFT failure means you missed a registry in step 4.
+   (confirms disk ↔ README table ↔ catalog ↔ AGENTS.md table parity, `name:`↔dir, the `## Changelog`, and that
+   every repo path / sibling-skill the new SKILL.md cites exists — the contract check). A
+   DRIFT failure means you missed a registry in step 4; a DEAD-REF means a cited path/skill
+   is wrong.
 6. **Stop for human review.** Then, after verifying the branch (CLAUDE.md Rule #11), commit
    (`.claude/skills/<name>/` + README + catalog) with a plain no-attribution message, and
    write a brief dev_log (the `log` skill) on why it was extracted and from which logs. Do
@@ -54,9 +60,10 @@ all of it and verifies it mechanically. Conventions live in `.claude/skills/READ
 
 ## Guardrails
 
-- **Register in BOTH or it drifts** — never finish without the README-table row AND the
-  catalog entry. `tools/check_skill_registry.py` (step 5) is the enforceable backstop; wire
-  it into CI / pre-commit so the invariant holds even when this skill isn't used.
+- **Register in all THREE or it drifts** — never finish without the README-table row, the
+  catalog entry, AND the AGENTS.md row. `tools/check_skill_registry.py` (step 5) enforces
+  4-way parity (disk + all three registries) and is the backstop; it's wired into the
+  pre-commit hook so the invariant holds even when this skill isn't used.
 - **Minimal procedure** — if it's one obvious step, it may not need to be a skill.
 - **Branch-scoped** — don't bake `main`/api-43-1/adapter-kit specifics into a
   `kougarok_fates_demo` skill (and vice-versa). Re-evaluate before copying across branches.
@@ -65,6 +72,11 @@ all of it and verifies it mechanically. Conventions live in `.claude/skills/READ
 
 ## Changelog
 
+- 2026-06-28: Third registry added. `AGENTS.md`'s "At a glance" table is now an enforced
+  registry (it had silently drifted to 10/18 when the KB-build + meta skills were added,
+  because it was on no checklist and `check_skill_registry.py` didn't see it). Step 4 now
+  registers in all THREE registries; the checker enforces 4-way parity. Root-cause fix for
+  the AGENTS.md drift.
 - 2026-06-17: Initial version — A2MC counterpart to E2SA's `e2sa-add-skill`
   (`End2EndScienceAgent/docs/design/09_skill_evolution.md`), adapted for A2MC's two-registry
   setup (README table + skills_catalog.md) and the `tools/check_skill_registry.py` drift gate.

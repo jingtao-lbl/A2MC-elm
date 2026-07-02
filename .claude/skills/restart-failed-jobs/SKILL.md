@@ -61,7 +61,7 @@ If any `DependencyNeverSatisfied` jobs are in the queue, clean them up FIRST. Re
 TS=$(date +%Y%m%d_%H%M%S)
 
 # Wave 1
-ZL1=/global/homes/j/jingtao/A2MC/tmp/r5_zombie_jobids_${TS}.txt
+ZL1=~/A2MC/tmp/r5_zombie_jobids_${TS}.txt
 squeue -u $USER -h --format="%i %r" 2>/dev/null \
   | awk '$2=="DependencyNeverSatisfied"{print $1}' > $ZL1
 echo "Wave 1: $(wc -l < $ZL1) zombies"
@@ -69,7 +69,7 @@ echo "Wave 1: $(wc -l < $ZL1) zombies"
 sleep 5
 
 # Wave 2 (cascade — TRANS children of cancelled RGSP zombies)
-ZL2=/global/homes/j/jingtao/A2MC/tmp/r5_zombie_wave2_jobids_${TS}.txt
+ZL2=~/A2MC/tmp/r5_zombie_wave2_jobids_${TS}.txt
 squeue -u $USER -h --format="%i %r" 2>/dev/null \
   | awk '$2=="DependencyNeverSatisfied"{print $1}' > $ZL2
 echo "Wave 2: $(wc -l < $ZL2) zombies"
@@ -93,8 +93,8 @@ END="2026-05-21T13:00:00"        # cluster window end
 TS_LABEL=$(date -d "$START" +%Y%m%d)
 MODE_LABEL="NODE_FAIL CLUSTER"   # or "MODEL FAILURE COHORT", etc.
 
-TSV=/global/homes/j/jingtao/A2MC/tmp/r5_failed_jobs_${TS_LABEL}.tsv
-TXT=/global/homes/j/jingtao/A2MC/tmp/r5_failed_cases_${TS_LABEL}.txt
+TSV=~/A2MC/tmp/r5_failed_jobs_${TS_LABEL}.tsv
+TXT=~/A2MC/tmp/r5_failed_cases_${TS_LABEL}.txt
 BODY=$(mktemp)
 
 # Body: parse sacct → tab-separated rows
@@ -146,10 +146,10 @@ Wait for any in-flight `submit_phase0.py` to finish (or pause it) to avoid hitti
 
 ```bash
 TS=$(date +%Y%m%d_%H%M%S)
-LOG=/global/homes/j/jingtao/A2MC/tmp/r5_rerun_${TS}.log
+LOG=~/A2MC/tmp/r5_rerun_${TS}.log
 
 nohup python3 -u /global/u1/j/jingtao/A2MC/phases/phase0_design/submit_phase0.py \
-    --cases-file /global/homes/j/jingtao/A2MC/tmp/r5_failed_cases_${TS_LABEL}.txt \
+    --cases-file ~/A2MC/tmp/r5_failed_cases_${TS_LABEL}.txt \
     --build-case 1 --skip-build-case \
     --batch-size 10 \
     --submit --allow-existing-case-dirs \
@@ -174,7 +174,7 @@ Per `20260514a` §"Why NOT retry the failed cases with patched params?": the fai
 If the user wants per-mode splits (rare; useful when a fix targets one mode):
 
 ```bash
-RUN_BASE=/pscratch/sd/j/jingtao
+RUN_BASE=~
 for case in $(cat $TXT); do
   LOG=$(find $RUN_BASE -maxdepth 6 -name "atm.log.*" -path "*PtCNPEn${case}PrescP*" 2>/dev/null | head -1)
   [ -z "$LOG" ] && continue

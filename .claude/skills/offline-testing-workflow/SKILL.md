@@ -88,17 +88,17 @@ Per `memory/dev_logs/20260519e` §"HPC submission details", set up FOUR dedicate
 
 | Purpose | Path pattern |
 |---|---|
-| Param files | `/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_<exp_name>_<YYYYMMDD>/` |
-| Case scripts | `/pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES/<ExpName>_<YYYYMMDD>/` |
-| Ensemble output | `/global/cfs/cdirs/m2467/jingtao/Kougarok_<ExpName>_<YYYYMMDD>/` |
-| Extracted NCs | `/global/cfs/cdirs/m2467/jingtao/Kougarok_<ExpName>_<YYYYMMDD>_Extract/` |
+| Param files | `~/E3SM_Aid/FATES-ParameterFiles/fates_params_<exp_name>_<YYYYMMDD>/` |
+| Case scripts | `~/CaseScripts/Kougarok_FATES/<ExpName>_<YYYYMMDD>/` |
+| Ensemble output | `~/Kougarok_<ExpName>_<YYYYMMDD>/` |
+| Extracted NCs | `~/Kougarok_<ExpName>_<YYYYMMDD>_Extract/` |
 
 Set via env-var overrides BEFORE calling `create_case.sh`:
 
 ```bash
-export A2MC_ENSEMBLE_OUTPUT="/global/cfs/cdirs/m2467/jingtao/Kougarok_<ExpName>_<YYYYMMDD>"
-export A2MC_CASE_SCRIPTS="/pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES/<ExpName>_<YYYYMMDD>"
-export A2MC_EXTRACTED_DATA="/global/cfs/cdirs/m2467/jingtao/Kougarok_<ExpName>_<YYYYMMDD>_Extract"
+export A2MC_ENSEMBLE_OUTPUT="~/Kougarok_<ExpName>_<YYYYMMDD>"
+export A2MC_CASE_SCRIPTS="~/CaseScripts/Kougarok_FATES/<ExpName>_<YYYYMMDD>"
+export A2MC_EXTRACTED_DATA="~/Kougarok_<ExpName>_<YYYYMMDD>_Extract"
 mkdir -p "$A2MC_ENSEMBLE_OUTPUT" "$A2MC_CASE_SCRIPTS" "$A2MC_EXTRACTED_DATA"
 ```
 
@@ -107,7 +107,7 @@ To reuse the parent ensemble's FATES build (saves ~30 min compile × N variants)
 ```bash
 export A2MC_REUSE_BUILD_EXEROOT_TEMPLATE="<parent_ensemble_output>/<parent_case1_name_pattern_with_{PHASE}>/bld"
 # For R5 PrescribedP example:
-# "/global/cfs/cdirs/m2467/jingtao/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP/Kougarok_ELM-FATES_PtCNPEn1PrescP_{PHASE}/bld"
+# "~/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP/Kougarok_ELM-FATES_PtCNPEn1PrescP_{PHASE}/bld"
 ```
 
 Verify the parent bld dirs exist before submitting (`ls -d <template>/{ADSP,RGSP,TRANS}/bld`).

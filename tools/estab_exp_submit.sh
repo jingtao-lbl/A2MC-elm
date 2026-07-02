@@ -14,9 +14,9 @@
 # - Param files (already generated + verified): fates_params_..._En488_estab0X.nc
 #
 # Dedicated dirs (per offline-testing-workflow Step 5):
-#   Output:       /global/cfs/cdirs/m2467/jingtao/Kougarok_Estab_Exp_20260604/
-#   Case scripts: /pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES/EstabExp_20260604/
-#   Extract:      /global/cfs/cdirs/m2467/jingtao/Kougarok_Estab_Exp_20260604_Extract/
+#   Output:       ~/Kougarok_Estab_Exp_20260604/
+#   Case scripts: ~/CaseScripts/Kougarok_FATES/EstabExp_20260604/
+#   Extract:      ~/Kougarok_Estab_Exp_20260604_Extract/
 #
 # Author: Jing Tao with Claude on Perlmutter
 # Created: 2026-06-04
@@ -32,16 +32,16 @@ source "$A2MC_ROOT/a2mc_config.sh" > /dev/null 2>&1
 source "$A2MC_ROOT/use_cases/Kougarok/config/kougarok_config_r5.sh" > /dev/null 2>&1
 
 # Dedicated dirs (keep this experiment OFF the R5 Morris paths)
-export A2MC_ENSEMBLE_OUTPUT="/global/cfs/cdirs/m2467/jingtao/Kougarok_Estab_Exp_20260604"
-export A2MC_CASE_SCRIPTS="/pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES/EstabExp_20260604"
-export A2MC_EXTRACTED_DATA="/global/cfs/cdirs/m2467/jingtao/Kougarok_Estab_Exp_20260604_Extract"
+export A2MC_ENSEMBLE_OUTPUT="~/Kougarok_Estab_Exp_20260604"
+export A2MC_CASE_SCRIPTS="~/CaseScripts/Kougarok_FATES/EstabExp_20260604"
+export A2MC_EXTRACTED_DATA="~/Kougarok_Estab_Exp_20260604_Extract"
 
 # Reuse R5 case 1's FATES bld (param changes are runtime; no recompile). {PHASE} -> ADSP/RGSP/TRANS.
-export A2MC_REUSE_BUILD_EXEROOT_TEMPLATE="/global/cfs/cdirs/m2467/jingtao/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP/Kougarok_ELM-FATES_PtCNPEn1PrescP_{PHASE}/bld"
+export A2MC_REUSE_BUILD_EXEROOT_TEMPLATE="~/Kougarok_PlantTraitsCNPEnsemble162_PrescribedP/Kougarok_ELM-FATES_PtCNPEn1PrescP_{PHASE}/bld"
 
 mkdir -p "$A2MC_ENSEMBLE_OUTPUT" "$A2MC_CASE_SCRIPTS" "$A2MC_EXTRACTED_DATA"
 
-PARAM_DIR="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_estab_exp_20260604"
+PARAM_DIR="~/E3SM_Aid/FATES-ParameterFiles/fates_params_estab_exp_20260604"
 BASE_CASE=488
 
 DRY_RUN=""

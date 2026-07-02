@@ -181,7 +181,7 @@ A2MC is **one agent with two runtimes**. The intelligence lives in the repo's sh
 |---|---|---|
 | Runtime | `python orchestrator.py --run` — Claude API inside a Python state machine | A coding-agent harness (e.g. Claude Code) operating directly in the repo |
 | Driver | Fixed Phase 0→7 state machine | Human conversation, turn-by-turn |
-| Cadence | Unattended, at scale | Human-in-the-loop |
+| Cadence | Unattended, at scale (fully autonomous with `--no-review`; checkpointed by default) | Human-in-the-loop |
 | Best for | The repetitive, well-defined calibration loop | Open-ended, exploratory, one-off, judgment-heavy tasks |
 | Examples | Morris → screen → diagnose → hypothesize → test → refine | Ensemble forensics, cross-round synthesis, restart triage, figures, experiment design, auditing |
 
@@ -194,8 +194,11 @@ The rest of this README's Quick Start covers this mode. In short:
 ```bash
 source a2mc_config.sh
 source use_cases/<site>/config/<site>_config.sh
-python orchestrator.py --run        # full Phase 0→7 calibration loop
+python orchestrator.py --run              # Phase 0→7 loop, PAUSING at human review checkpoints
+python orchestrator.py --run --no-review  # fully autonomous — no checkpoints, runs unattended
 ```
+
+By default `--run` stops for a human review at each phase transition; add **`--no-review`** to make it fully autonomous (the "unattended, at scale" cadence in the table above). So "online" spans a spectrum from checkpointed-autonomous to fully-unattended, set by that flag.
 
 ### Using the interactive agent
 
@@ -381,7 +384,7 @@ A2MC uses three nested loops:
 ```bash
 # Control iteration limits
 python orchestrator.py --run \
-    --start-iteration 2 \          # Calibration round (outermost loop)
+    --start-round 2 \          # Calibration round (outermost loop)
     --max-skip-testing 10 \        # Max Phase 3↔4 cycles (default: 10)
     --max-experiments 10 \         # Max full experiment cycles (default: 10)
     --confidence-threshold 0.95    # Exit skip testing threshold (default: 0.95)
@@ -419,10 +422,10 @@ python orchestrator.py --run --start-phase 0
 
 **Command-line usage:**
 ```bash
-python orchestrator.py --run --start-phase 1 --start-iteration 2
+python orchestrator.py --run --start-phase 1 --start-round 2
 # Or equivalently:
-python orchestrator.py --run --start-phase phase1 --start-iteration 2
-python orchestrator.py --run --start-phase exploration --start-iteration 2
+python orchestrator.py --run --start-phase phase1 --start-round 2
+python orchestrator.py --run --start-phase exploration --start-round 2
 ```
 
 #### Phase 2: SCREENING
@@ -830,7 +833,7 @@ orch.run()
 
 ```bash
 # 1. Clone the repository
-cd /global/homes/$USER
+cd ~
 git clone https://github.com/jingtao-lbl/A2MC.git
 cd A2MC
 
@@ -872,7 +875,7 @@ python orchestrator.py --run
 python orchestrator.py --run --no-review
 
 # Start from a specific phase and calibration round
-python orchestrator.py --run --start-phase 2 --start-iteration 2
+python orchestrator.py --run --start-phase 2 --start-round 2
 
 # Resume from a saved checkpoint (state-file auto-detected from config)
 python orchestrator.py --resume
@@ -934,9 +937,9 @@ All workflow state is saved to JSON for resumability:
   "iteration": 3,
   "start_time": "2025-01-06T10:30:00",
   "config": {
-    "work_dir": "/pscratch/sd/j/jingtao/A2MC",
+    "work_dir": "~/A2MC",
     "param_file": "fates_params.nc",
-    "output_root": "/global/cfs/cdirs/m2467/jingtao/A2MC_runs"
+    "output_root": "~/A2MC_runs"
   },
   "design": {
     "method": "morris",           // or "lhs", "sobol", "custom"
@@ -1220,10 +1223,12 @@ A2MC/
 
 
 ---
+## Citation 
+Tao, J. (2026). A2MC: Agentic Adaptive Multi-Target Calibration. Zenodo software release. Autonomous 7-phase calibration framework for E3SM Land Model (ELM) combining LLM reasoning, curated knowledge base, hybrid RAG/GraphRAG retrieval, and persistent adaptive memory. Available from: https://github.com/jingtao-lbl/A2MC-elm. (https://doi.org/10.5281/zenodo.19194999)
 
 ## Contact
 
 **Author:** Jing Tao <br>
 **Email:** jingtao@lbl.gov <br>
-**Project:** NGEE-Arctic ELM-FATES calibration <br>
+**Project:** NGEE-Arctic Phase 4, CC4, ELM-FATES calibration <br>
 **GitHub:** https://github.com/jingtao-lbl/A2MC-elm

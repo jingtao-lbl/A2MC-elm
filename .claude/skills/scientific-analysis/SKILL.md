@@ -46,7 +46,7 @@ Write an `ana_log` via the `/log` skill (`/log ana <topic>` → `memory/ana_logs
 load-bearing rule: **every quantitative claim names its figure / statistic / data file
 inline**, and a section drawing on several artifacts gets an **"Artifacts this section is
 based on"** table. A claim with no cited source is a red flag — find the source or soften
-it. Render to PDF with the `markdown-to-pdf` skill if it's a shareable note.
+it. Render to PDF/docx with the `markdown-to-pdf` skill (pandoc under the hood) if it's a shareable note.
 
 ## Step 5 — land the lesson (optional)
 
@@ -60,8 +60,9 @@ unverified hunch.
   sync.
 - Pairs with: `diagnose-forensics` (triage odd results), `compare-calibration-rounds` /
   `summarize-calibration-round` (standardized figures), `/log` (the ana_log + supersede
-  protocol), `markdown-to-pdf` (render), `curate-knowledge` (land a lesson).
+  protocol), `markdown-to-pdf` (render to PDF/docx), `curate-knowledge` (land a lesson).
 
 ## Changelog
 
 - 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.
+- 2026-06-17: Clarified the PDF/docx render reference to the user-level `markdown-to-pdf` skill (pandoc under the hood). The Tier-1 contract check first flagged it as a dead ref because it only scanned project skills; the check now resolves user-level skills (`~/.claude/skills/`) and only warns on a truly-unknown skill ref, never blocks.

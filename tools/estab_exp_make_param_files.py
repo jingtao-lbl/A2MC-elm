@@ -55,11 +55,11 @@ from tools.modify_fates_parameters import create_modified_parameter_file, verify
 
 # Source param file (R5 case #488's per-case Morris param NC)
 SOURCE_PARAM_DIR = Path(os.environ.get("A2MC_PARAM_DIR",
-    "/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_PrescribedP_EnPlantTraitsCNPparam162"))
+    "~/E3SM_Aid/FATES-ParameterFiles/fates_params_PrescribedP_EnPlantTraitsCNPparam162"))
 
 # Dedicated dir for this experiment's param files (keeps variants OFF the Morris dir)
 TARGET_PARAM_DIR = Path(
-    "/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_estab_exp_20260604")
+    "~/E3SM_Aid/FATES-ParameterFiles/fates_params_estab_exp_20260604")
 
 PARAM_PATTERN = "fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"
 

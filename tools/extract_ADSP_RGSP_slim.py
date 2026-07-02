@@ -141,7 +141,7 @@ def _extract_one(args):
 
 def main() -> int:
     case_file = (sys.argv[1] if len(sys.argv) > 1
-                 else '/global/homes/j/jingtao/A2MC/tmp/completed_cases_20260505_124406.txt')
+                 else '~/A2MC/tmp/completed_cases_20260505_124406.txt')
     n_workers = int(sys.argv[2]) if len(sys.argv) > 2 else 16
 
     case_pattern, ensemble_output, extracted_data = _resolve_paths()

@@ -25,8 +25,8 @@ venv/
 .DS_Store
 Thumbs.db
 
-# AI assistant context (local-only; never push)
-CLAUDE.md
+# NOTE: CLAUDE.md is intentionally tracked in the public repo (shipped through the
+# <!-- private --> block filter by sync_to_public.sh). Do not ignore it here.
 
 # Local-only scientific analysis logs (manuscript working notes)
 memory/ana_logs/

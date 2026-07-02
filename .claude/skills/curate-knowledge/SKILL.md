@@ -72,8 +72,8 @@ genuinely reviewed every open item.
 ## Step 4 — record what you did
 
 Note the curation outcome so it's traceable: which keys were promoted (and why), which
-were discarded (and why). For a substantial curation pass, write a short dev log (the
-`log` skill); for a quick one, a one-line note referencing the session is enough. The
+were discarded (and why). For a substantial curation pass, write a short log; for a
+quick one, a one-line note referencing the session is enough. The
 curated JSONs are hand-vetted manuscript knowledge (CLAUDE.md Rule 3) — the audit trail
 matters.
 

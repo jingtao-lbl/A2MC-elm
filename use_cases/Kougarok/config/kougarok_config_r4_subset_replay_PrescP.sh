@@ -15,7 +15,7 @@
 #
 # Then once HPC simulations complete:
 #   python tools/diagnose_ensemble_status.py
-#   python orchestrator.py --run --start-iteration 4 --start-phase 1 --no-review
+#   python orchestrator.py --run --start-round 4 --start-phase 1 --no-review
 #
 # See: memory/dev_logs/20260410a_Subset_Replay_Sampling_Scheme.md
 #      use_cases/Kougarok/config/calibration_rounds.yaml (Round 4 entry)
@@ -72,7 +72,7 @@ export A2MC_CASE_NAME_PATTERN="${A2MC_ENSEMBLE_PREFIX}_PtCNPEn{N}PrescP_{PHASE}"
 # -----------------------------------------------------------------------------
 # Round 4 parameter file directory (NEW dir) — same filename pattern as R3
 # -----------------------------------------------------------------------------
-export A2MC_PARAM_DIR="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_PrescribedP_EnPlantTraitsCNPparam162_R4"
+export A2MC_PARAM_DIR="~/E3SM_Aid/FATES-ParameterFiles/fates_params_PrescribedP_EnPlantTraitsCNPparam162_R4"
 # A2MC_PARAM_PATTERN is inherited from kougarok_config.sh (same as R3)
 
 # -----------------------------------------------------------------------------
@@ -85,7 +85,7 @@ export A2MC_REPLAY_SOURCE_ROUND=3
 export A2MC_REPLAY_SOURCE_STATE="${A2MC_USE_CASE_DIR}/memory/workflow_state_s0409h20m58.json"
 
 # Where to read source NC parameter files (R3's PARAM_DIR)
-export A2MC_REPLAY_SOURCE_PARAM_DIR="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
+export A2MC_REPLAY_SOURCE_PARAM_DIR="~/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
 
 # Source filename pattern (R3's PARAM_PATTERN)
 export A2MC_REPLAY_SOURCE_PARAM_PATTERN="fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"

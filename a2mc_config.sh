@@ -43,10 +43,10 @@ fi
 # DIRECTORY PATHS (HPC)
 # ========================
 # E3SM/FATES source code
-export A2MC_E3SM_ROOT="/global/cfs/cdirs/m2467/jingtao/E3SM_FATES"
+export A2MC_E3SM_ROOT="~/E3SM_FATES"
 
 # Output root for simulation results
-export A2MC_OUTPUT_ROOT="/global/cfs/cdirs/m2467/jingtao"
+export A2MC_OUTPUT_ROOT="~"
 
 # Scripts directory (where case scripts are generated).
 # MACHINE-LEVEL: parent dir only. The site (Kougarok_FATES) is added by the
@@ -54,7 +54,7 @@ export A2MC_OUTPUT_ROOT="/global/cfs/cdirs/m2467/jingtao"
 # (Fixed 2026-05-12: previously included site-specific "Kougarok_FATES" suffix
 # AND was missing the leading slash, producing a relative-path bug + a doubled
 # segment in A2MC_CASE_SCRIPTS. Now machine-level + absolute.)
-export A2MC_SCRIPTS_DIR="/pscratch/sd/j/jingtao/CaseScripts"
+export A2MC_SCRIPTS_DIR="~/CaseScripts"
 
 # Input data paths
 export A2MC_DIN_LOC_ROOT="/dvs_ro/cfs/cdirs/e3sm/inputdata"

@@ -19,7 +19,7 @@
 
 ```bash
 # Standard rebuild from current tree (FATES + ELM, both KBs):
-cd /Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Program/A2MC
+cd ~/Desktop/Work/NGEE-Arctic/Kougarok/Program/A2MC
 /Library/Frameworks/Python.framework/Versions/3.10/bin/python3 \
     scripts/build_rag_index.py --rebuild --test
 

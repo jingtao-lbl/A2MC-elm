@@ -161,9 +161,9 @@ class WorkflowState:
     current_phase: str = Phase.DESIGN.value
     converged: bool = False
 
-    # Two-level iteration tracking (within a calibration round)
+    # Within-round loop tracking: middle (experiment cycle) + inner (skip-testing)
     skip_testing_count: int = 0    # Inner loop: Phase 3↔4 cycles (resets after HPC)
-    experiment_count: int = 0       # Outer loop: Full experiment cycles (3→4→5→6)
+    experiment_count: int = 0       # Middle loop: Full experiment cycles (3→4→5→6)
 
     started_at: str = ""
     updated_at: str = ""
@@ -321,7 +321,7 @@ class Config:
     poll_interval: int = 300         # seconds
     human_review: bool = True        # Pause for human review at key points
 
-    # Two-level iteration limits
+    # Within-round loop limits: middle (experiment) + inner (skip-testing)
     max_skip_testing: int = 10       # Max Phase 3↔4 skip testing cycles before forcing HPC
     max_experiments: int = 10        # Max Phase 3→4→5→6 full experiment cycles
     hypothesis_confidence_threshold: float = 0.95  # Exit skip testing when confidence >= this
@@ -2077,7 +2077,7 @@ Diagnosis Summary:{skip_header}
 
         # =====================================================================
         # Skip Testing Path: Test hypothesis with existing ensemble data
-        # (Inner Loop of Two-Level Iteration Structure)
+        # (Inner loop of the three-level iteration structure)
         # =====================================================================
         if hypothesis.get('test_with_existing', False):
             logger.info("=" * 60)
@@ -2356,7 +2356,7 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
         logger.info("PHASE 5: TESTING - Execute Experiments on HPC")
         logger.info("=" * 60)
 
-        # Reset skip testing counter when entering HPC testing (outer loop)
+        # Reset skip testing counter when entering HPC testing (inner loop ends, middle loop advances)
         if self.state.skip_testing_count > 0:
             logger.info(f"Completed {self.state.skip_testing_count} skip testing cycles, now running HPC experiments")
             self.state.skip_testing_count = 0
@@ -2956,7 +2956,7 @@ Refinement Summary:
                 }
             )
 
-        # Decision logic (Outer Loop of Two-Level Iteration Structure)
+        # Decision logic (Middle loop of the three-level iteration structure)
         # NOTE: When Phase 6 → Phase 0 redesign is implemented, call
         # self._update_calibration_round_history("redesign") before transitioning.
         if best_targets_met >= total_targets:
@@ -3379,11 +3379,11 @@ Examples:
   python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state_s0309h23m45.json
 
   # Start from specific phase in calibration round 2 (e.g., 162 params)
-  python orchestrator.py --run --start-phase 2 --start-iteration 2
-  python orchestrator.py --run --start-phase screening --start-iteration 2
+  python orchestrator.py --run --start-phase 2 --start-round 2
+  python orchestrator.py --run --start-phase screening --start-round 2
 
   # Start from diagnosis in round 2
-  python orchestrator.py --run --start-phase diagnosis --start-iteration 2
+  python orchestrator.py --run --start-phase diagnosis --start-round 2
 
   # Skip bootstrap check before running
   python orchestrator.py --run --skip-bootstrap
@@ -3432,8 +3432,10 @@ Phase numbers:
     parser.add_argument("--no-reasoning", action="store_true", help="Disable Claude API")
     parser.add_argument("--start-phase", type=parse_phase,
                        help="Start from phase (0-7, phase0-phase7, or name like 'exploration')")
-    parser.add_argument("--start-iteration", type=int, default=None,
-                       help="Calibration round (outermost loop: 1=first ensemble, 2=redesigned, ...)")
+    parser.add_argument("--start-round", "--start-iteration", dest="start_round",
+                       type=int, default=None,
+                       help="Calibration round (outermost loop: 1=first ensemble, 2=redesigned, ...). "
+                            "'--start-iteration' is a deprecated alias kept for backward compatibility.")
     parser.add_argument("--session-id", type=str, default=None,
                        help="Reuse an existing session ID (YYYYMMDD_HHMMSS) to continue "
                             "logging into the same logs/{session_id}/ directory")
@@ -3732,13 +3734,13 @@ Phase numbers:
             orchestrator.state.figures_analyzed_case_id = None
             logger.info(f"Reset iteration counters (iteration=1, skip_testing=0, experiments=0)")
 
-        if args.start_iteration is not None:
-            orchestrator.state.calibration_round = args.start_iteration
-            logger.info(f"Calibration round: {args.start_iteration}")
-            os.environ['A2MC_CALIBRATION_ROUND'] = str(args.start_iteration)
+        if args.start_round is not None:
+            orchestrator.state.calibration_round = args.start_round
+            logger.info(f"Calibration round: {args.start_round}")
+            os.environ['A2MC_CALIBRATION_ROUND'] = str(args.start_round)
 
         # Initialize sampling_design for round 2+ (simulations already complete)
-        if args.start_iteration is not None and args.start_iteration >= 2:
+        if args.start_round is not None and args.start_round >= 2:
             if not orchestrator.state.sampling_design.get('complete', False):
                 try:
                     from tools.config import config as a2mc_config
@@ -3752,7 +3754,7 @@ Phase numbers:
                         'ensemble_output_dir': a2mc_config.ENSEMBLE_OUTPUT,
                         'ensemble_matrix_file': a2mc_config.ENSEMBLE_MATRIX_FILE,
                     }
-                    logger.info(f"Initialized sampling_design for round {args.start_iteration}:")
+                    logger.info(f"Initialized sampling_design for round {args.start_round}:")
                     logger.info(f"  - {a2mc_config.TOTAL_ENSEMBLE} simulations (marked complete)")
                     logger.info(f"  - Extracted data: {a2mc_config.EXTRACTED_DATA}")
                 except ImportError:

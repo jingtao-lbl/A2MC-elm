@@ -13,7 +13,7 @@ Convention (per `memory/dev_logs/20260528b_H1_Case_Naming_Convention_Mistake_And
 - Base case number preserved: param file = fates_params_..._En1304_clump{00..07}.nc
 - Case names (downstream): Kougarok_ELM-FATES_PtCNPEn1304PrescP_clump{00..07}_{PHASE}
 - Dedicated param dir (per `20260519e` §"HPC submission details"):
-    /global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_clumping_exp_20260528/
+    ~/E3SM_Aid/FATES-ParameterFiles/fates_params_clumping_exp_20260528/
   This keeps the variants OFF the R5 Morris param dir.
 
 Variant matrix (from `20260519e`, with MODIS anchor noted in clump02):
@@ -45,11 +45,11 @@ from tools.modify_fates_parameters import create_modified_parameter_file
 
 # Source param file (R5 case #1304's per-case Morris param NC)
 SOURCE_PARAM_DIR = Path(os.environ.get("A2MC_PARAM_DIR",
-    "/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_PrescribedP_EnPlantTraitsCNPparam162"))
+    "~/E3SM_Aid/FATES-ParameterFiles/fates_params_PrescribedP_EnPlantTraitsCNPparam162"))
 
 # Dedicated dir for the clumping experiment param files (per 20260519e)
 TARGET_PARAM_DIR = Path(
-    "/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_clumping_exp_20260528")
+    "~/E3SM_Aid/FATES-ParameterFiles/fates_params_clumping_exp_20260528")
 
 PARAM_PATTERN = "fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"
 

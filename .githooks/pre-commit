@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
-# A2MC pre-commit hook — enforce skill-registry parity.
+# A2MC pre-commit hook — enforce skill-registry parity + phase script-doc parity.
 #
-# Runs tools/check_skill_registry.py (disk <-> README table <-> catalog, name/dir,
-# ## Changelog) ONLY when skill-system files are staged, so it gates changes to the
-# skill set without blocking unrelated commits on pre-existing state.
+# (1) tools/check_skill_registry.py (disk <-> README table <-> catalog <-> AGENTS.md
+# table, name/dir, ## Changelog, + the CONTRACT check that every path/skill a SKILL.md
+# cites exists) when skill-system files OR tools/ OR scripts/ are staged. The tools//scripts/
+# breadth is deliberate: skills cite paths under those dirs, so a rename there can orphan a
+# citation — firing the (fast, static) check on those commits catches it at the rename commit
+# instead of waiting for the next skill-file edit. Unrelated commits are not gated.
+#
+# (2) tools/check_phase_script_docs.py (each phases/phaseN_*/CLAUDE.md "Scripts in This
+# Folder" table <-> the *.py actually on disk) when anything under phases/ is staged. Catches
+# the drift class where a script is renamed/added/extracted but its phase CLAUDE.md table is
+# not updated. Scripts are truth; the table is the stale side.
 #
 # Activate (once per clone; git does not auto-run hooks from clones):
 #     git config core.hooksPath .githooks
@@ -15,7 +23,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 
 # Staged paths that touch the skill system.
 if git diff --cached --name-only --diff-filter=ACMRD \
-     | grep -qE '^\.claude/skills/|^docs/a2mc_reference/skills_catalog\.md$'; then
+     | grep -qE '^\.claude/skills/|^docs/a2mc_reference/skills_catalog\.md$|^AGENTS\.md$|^tools/|^scripts/|^CLAUDE\.md$|^README\.md$'; then
     PY="$(command -v python3 || true)"
     if [[ -z "$PY" ]]; then
         echo "pre-commit: python3 not found; skipping skill-registry check" >&2
@@ -23,9 +31,26 @@ if git diff --cached --name-only --diff-filter=ACMRD \
     fi
     if ! "$PY" "$ROOT/tools/check_skill_registry.py"; then
         echo "" >&2
-        echo "pre-commit: skill-registry drift — fix the above (register in BOTH the README" >&2
-        echo "  'Current skills' table AND docs/a2mc_reference/skills_catalog.md), or use the" >&2
-        echo "  add-skill skill. Bypass with --no-verify only if you know why." >&2
+        echo "pre-commit: skill-registry drift — fix the above (register in all THREE: the" >&2
+        echo "  README 'Current skills' table, docs/a2mc_reference/skills_catalog.md, AND the" >&2
+        echo "  AGENTS.md 'At a glance' table), or use the add-skill skill. Bypass with" >&2
+        echo "  --no-verify only if you know why." >&2
+        exit 1
+    fi
+fi
+
+# Staged paths under phases/ (a *.py add/rename/delete or a phase CLAUDE.md edit).
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^phases/'; then
+    PY="$(command -v python3 || true)"
+    if [[ -z "$PY" ]]; then
+        echo "pre-commit: python3 not found; skipping phase script-doc check" >&2
+        exit 0
+    fi
+    if ! "$PY" "$ROOT/tools/check_phase_script_docs.py"; then
+        echo "" >&2
+        echo "pre-commit: phase script-doc drift — scripts are truth. Update the phase" >&2
+        echo "  CLAUDE.md 'Scripts in This Folder' table to match the *.py on disk (do NOT" >&2
+        echo "  change scripts to match the doc). Bypass with --no-verify only if you know why." >&2
         exit 1
     fi
 fi

@@ -49,7 +49,7 @@ try:
     OUTPUT_DIR = Path(a2mc_config.get_figures_dir())
 except ImportError:
     import os
-    home = os.environ.get('HOME', '/Users/jingtao')
+    home = os.environ.get('HOME', '~')
     DATA_DIR = Path(f'{home}/Desktop/Work/NGEE-Arctic/Kougarok/Results_PlantTraitsCNPEnsemble_wModPval_noADSP2/Kougarok_PlantTraitsCNPEnsemble162_Morris')
     OUTPUT_DIR = Path(f'{home}/Desktop/Work/NGEE-Arctic/Kougarok/Figures_PlantTraitsCNPEnsemble_wModPval_noADSP2')
 

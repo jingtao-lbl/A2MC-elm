@@ -7,7 +7,7 @@
 casenumber=2
 
 #Modified CNP parameter file fsoilordercon with r_desorp[Gelisols=2] increased 10× (0.00022 → 0.0022) 
-#with python script: /Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Program/fates_parameter_modification/modify_cnp_parameters.py
+#with python script: ~/Desktop/Work/NGEE-Arctic/Kougarok/Program/fates_parameter_modification/modify_cnp_parameters.py
 #fsoilorderconfile='CNP_parameters_c180312_Gelisols_rdesorp2x'
 fsoilorderconfile='CNP_parameters_c180312'
 
@@ -17,13 +17,13 @@ testpara='' #added in fates_paramfile name
 # Which phases to run (you can comment out phases you don't need)
 RUN_PHASES=("ADSP" "RGSP" "TRANS")
 
-cd /global/cfs/cdirs/m2467/jingtao/E3SM_FATES/cime/scripts
+cd ~/E3SM_FATES/cime/scripts
 pwd=`pwd`
 rpwd=`readlink -f $pwd`
 CREATE_NEWCASE_COMMAND=`sed "s/\/global\//\/dvs_ro\//g" <<< $rpwd`"/create_newcase"
 
 Script_NAME=Kougarok_ELM-FATES_PtCNPEn${casenumber}
-CIME_OUTPUT_ROOT=/global/cfs/cdirs/m2467/jingtao/Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP/
+CIME_OUTPUT_ROOT=~/Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP/
 
 DIN_LOC_ROOT=/dvs_ro/cfs/cdirs/e3sm/inputdata/
 DIN_LOC_ROOT_CLMFORC=$DIN_LOC_ROOT/atm/datm7
@@ -67,7 +67,7 @@ create_phase_case() {
     fi
 
     # Ensure we're in the scripts directory before creating the case
-    cd /global/cfs/cdirs/m2467/jingtao/E3SM_FATES/cime/scripts
+    cd ~/E3SM_FATES/cime/scripts
 
     rm -rf $CASE_NAME
     rm -rf $CIME_OUTPUT_ROOT$CASE_NAME
@@ -148,7 +148,7 @@ create_phase_case() {
         fates_parteh_mode = 2
         use_fates_nocomp = .false.
         fates_paramfile = '/dvs_ro/u1/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris/fates_params_api25.5.0_12pft_c230710__PtCNP162_En${casenumber}${testpara}.nc'
-        fsoilordercon = '/global/homes/j/jingtao/E3SM_Aid/clm_params/${fsoilorderconfile}.nc'
+        fsoilordercon = '~/E3SM_Aid/clm_params/${fsoilorderconfile}.nc'
         hist_fincl1='FATES_VEGC_ABOVEGROUND_SZPF','FATES_VEGC_SZPF','FATES_VEGN_SZPF','FATES_VEGP_SZPF','FATES_STOREN_TF_CANOPY_SZPF','FATES_STOREN_TF_USTORY_SZPF','FATES_STOREP_TF_CANOPY_SZPF','FATES_STOREP_TF_USTORY_SZPF','FATES_NH4UPTAKE_SZPF','FATES_NO3UPTAKE_SZPF','FATES_PUPTAKE_SZPF','FATES_NEFFLUX_SZPF','FATES_DDBH_CANOPY_SZPF','FATES_DDBH_USTORY_SZPF','FATES_PEFFLUX_SZPF','FATES_NFIX_SYM_SZPF','FATES_NPP_SZPF','FATES_STOREC_TF_CANOPY_SZPF','FATES_STOREC_TF_USTORY_SZPF','FATES_FROOTCTURN_USTORY_SZ','FATES_FROOTCTURN_CANOPY_SZ','FATES_NDEMAND_SZPF','FATES_PDEMAND_SZPF','FATES_LEAFC_SZPF', 'FATES_LEAFN_SZPF','FATES_LEAFP_SZPF','FATES_FROOTC_SZPF','FATES_FROOTN_SZPF','FATES_FROOTP_SZPF','FATES_REPROC_SZPF','FATES_REPRON_SZPF', 'FATES_REPROP_SZPF','FATES_SAPWOODC_SZPF','FATES_SAPWOODN_SZPF','FATES_SAPWOODP_SZPF','FATES_STOREC_SZPF','FATES_STOREN_SZPF','FATES_STOREP_SZPF','FATES_LEAF_ALLOC_SZPF','FATES_SEED_ALLOC_SZPF','FATES_STEM_ALLOC','FATES_FROOT_ALLOC_SZPF','FATES_CROOT_ALLOC','FATES_STORE_ALLOC','FATES_DDBH_SZPF','FATES_BASALAREA_SZPF'
 EOF
 
@@ -203,7 +203,7 @@ submit_phase_case() {
 
     CASE_NAME=$Script_NAME$testcase\_$PHASE
 
-    cd /global/cfs/cdirs/m2467/jingtao/E3SM_FATES/cime/scripts/${CASE_NAME}
+    cd ~/E3SM_FATES/cime/scripts/${CASE_NAME}
 
     # Submit with dependency if applicable
     if [ -z "$DEPEND_JOBID" ]; then
