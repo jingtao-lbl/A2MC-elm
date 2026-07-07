@@ -53,7 +53,7 @@ Ask in grouped rounds (use the harness's structured-question UI where available)
 
 **D. Calibration targets + parameters.**
 - What observations are you calibrating against, per PFT? (e.g. leaf / fine-root / AGB biomass, fluxes, LAI, phenology — value, units, uncertainty, and the measurement year/month.)
-- Do you already have a parameter list + bounds (a `FATES_Parameter_List*.txt` / SALib problem file), or should we start from the Kougarok example's list?
+- **Do you have an initial list of parameters to be calibrated** (a `FATES_Parameter_List*.txt` + SALib problem file), and if so does it have bounds? Three cases: **(a)** you have a vetted list → use it (still vet it against the targets in Step 4b); **(b)** you have a rough/partial list → we vet + complete it; **(c)** no list → **the agent builds one from the mechanisms** in Step 4b. Do not just default to copying the Kougarok 162-parameter list — its *values* and its parameter *set* are Kougarok-specific.
 
 > **Arctic/tundra site?** Offer to seed from `use_cases/Kougarok/` instead of the bare `TEMPLATE/` — it carries a working 3-PFT arctic config, a 162-parameter list, and transferable knowledge (Allocation Paradox, P-limitation). Exact parameter *values* never transfer; the structure does.
 
@@ -99,7 +99,30 @@ Populate from the interview answers:
 
 1. **Site config** `use_cases/$SITE/config/<site>_config.sh` — fill Section 1 (name, lat/lon, surface/domain data), Section 2 (`A2MC_PFT_LIST`), Section 5 mode env vars (`A2MC_ELM_OPTIONS`, `A2MC_FATES_PARTEH_MODE`, Tier-2 flags). These mode vars are what makes retrieval configuration-aware — set them to the user's actual run, not the template defaults.
 2. **Validation targets** `use_cases/$SITE/validation/targets.yaml` — one entry per target. **Key must be `PFT<id>_<vartype>`** (e.g. `PFT10_leaf`, `PFT9_fineroot`); a non-matching key is silently dropped at runtime. Snapshot targets carry a scalar `observed` + `uncertainty` matched at `time_year`/`time_month`; time-series targets use an `observations:` list. Only enter values the user gave you. Format + examples: the seed `targets.yaml` header and `docs/a2mc_reference/user_guide.md` §4.5.
-3. **Parameters** `use_cases/$SITE/parameters/` — use the user's parameter-list + SALib problem file, or the Kougarok list as a starting point (tell the user it is a starting point to prune, not a site-specific truth).
+3. **Parameters** `use_cases/$SITE/parameters/` — drop in the user's list, or build one in **Step 4b** (below). The list defines the entire Morris search space, so it is the highest-leverage design choice here — do not shortcut it by copying Kougarok's set.
+
+## Step 4b — Build (or vet) the parameter list from the mechanisms
+
+The parameter list is the single most consequential decision in setup: it *is* the Morris search space. A list that omits the parameters that actually drive a target guarantees that target can never calibrate; a list padded with irrelevant parameters wastes the ensemble. So when the user has no list (interview D case c), or a rough one (case b), **build/complete it by studying the mechanisms — never by guessing from parameter names** (Calibration Rule #2). When the user has a vetted list (case a), still run the coverage check at the end.
+
+**Work target-by-target.** For each calibration target (a `PFT<id>_<vartype>`, e.g. `PFT10_leaf`), ask: which FATES mechanisms produce this output, and which parameters drive those mechanisms? Answer from the knowledge system, not intuition. RAG ops need the Python-3.10 interpreter (see `docs/a2mc_reference/user_guide.md` §6 / the RAG reference for the exact binary).
+
+1. **Query the knowledge system** for each target output + PFT, filtered to the active mode:
+   ```python
+   from rag import HybridRetriever
+   r = HybridRetriever(auto_build=False)
+   ctx = r.get_calibration_context(
+       outputs=["FATES_LEAFC_SZPF"], pft=10, config_mode=None)  # params/mechanisms/docs for this target
+   info = r.get_parameter_info("fates_leaf_slatop")             # confirm a candidate's effect + direction
+   mech = r.get_mechanism_info("carbon_allocation")             # mechanism → parameters it exposes
+   ```
+   Cross-read the **curated overlay** `rag/data/curated_relationships_<profile>.yaml` (the human-vetted parameter→mechanism→output map for the matched milestone) — it is the source of truth for which parameters matter. For **nutrient-enabled** runs, START at the CNP calibration guide in the active milestone's wiki (`docs/fates-knowledge-base/fates-codebase-wiki-<commit>/advanced/cnp_calibration_guide.md`) for PID gains, `vmax`, stoichiometry, and retranslocation parameters.
+2. **Pull prior experience** from Adaptive Memory: generic `memory/gained_knowledge/parameters.json` (known bounds/sensitivities) and, for a similar site, the reference site's `use_cases/<ref>/memory/gained_knowledge/{parameters,discoveries,failed_approaches}.json` (which parameters were sensitive, which pitfalls to avoid). Mechanistic insight transfers across sites; exact values do not.
+3. **Assemble each entry** with: FATES parameter name, the PFT(s) it applies to (Morris shorthand `{param}_{pft}`, e.g. `alloc_storage_cushion_10`; official FATES names carry no PFT suffix — see `docs/a2mc_reference/fates_data_reference.md`), the target/mechanism it addresses, and **bounds**. Anchor each bound to the FATES default parameter-file value plus a defensible ± range from the knowledge base / literature / the reference list. **Never invent a bound** — an unfounded range silently distorts the whole sensitivity analysis. If a bound is genuinely unknown, mark it `TODO` and flag it to the user.
+4. **Right-size, don't pad.** Morris cost = `n_trajectories × (n_params + 1)`; a broad list is affordable *because Phase 1 sensitivity prunes it* — but every parameter must trace to a target through a named mechanism. No "might as well include it." Flag targets with no driving parameter (a coverage gap) and parameters with no target link (drop them).
+5. **Present the proposed list for review before writing** — per parameter: the target it serves, the mechanism, the source citation, and the bound rationale. This is a human-gated design decision, like curated-knowledge writes. On approval, write both files to `use_cases/$SITE/parameters/` matching the Kougarok examples' format — the parameter list (names + bounds) and the SALib problem file (`num_vars`, names, bounds) — and point `A2MC_PARAM_LIST_FILE` / `A2MC_SALIB_PROBLEM_FILE` at them.
+
+**If the user brought a list (case a/b):** run steps 1–2 as a *coverage check* — confirm every target has ≥1 driving parameter in the list and flag any parameter with no mechanistic tie to a target. Report gaps; do not silently rewrite their list.
 
 ## Step 5 — Validate the setup
 
@@ -127,15 +150,18 @@ Offer to log the setup with `calibration-log` (a free-form session log under `us
 - **Fabricated targets/paths** — the single most damaging first-run error. Placeholders marked `TODO`, never invented numbers.
 - **Clobbering an existing site** — check `use_cases/<site>/` before `cp`; if it exists, this is probably an `onboard-session` case, not `a2mc-init`.
 - **Asserting a milestone without verifying** — always run `rag_match.py`; never name the profile from the folder name or an assumption.
+- **Parameter list guessed from names** — the list defines the entire Morris search space; build it from the knowledge system (curated relationships + RAG + CNP guide + Adaptive Memory), not from what a parameter is called (Calibration Rule #2). Fabricated bounds distort the sensitivity analysis — mark unknown bounds `TODO`. Do not reflexively copy the Kougarok 162-parameter set; it is Kougarok-specific.
 
 ## Cross-references
 
 - `onboard-session` — the resume-an-existing-setup counterpart (route there once configured).
-- `phase0-design` — the immediate hand-off (design + submit the ensemble).
+- `phase0-design` — the immediate hand-off (design + submit the ensemble); consumes the parameter list built in Step 4b.
+- `phase1-exploration` — Morris sensitivity that prunes the Step-4b list (why a broad-but-grounded list is safe).
 - `calibration-log` — record the setup session.
-- `docs/a2mc_reference/user_guide.md` §1–§3 (install/config/run), §4.5 (targets), §6 (knowledge system).
+- `docs/a2mc_reference/user_guide.md` §1–§3 (install/config/run), §4.5 (targets), §6 (knowledge system); `fates_data_reference.md` (parameter naming / Morris shorthand); `rag_reference.md` (RAG query how-to + Python-3.10 binary).
 - `docs/a2mc_reference/version_association_workflow.md`, `mode_aware_workflow.md` — milestone + mode detail.
 
 ## Changelog
 
+- 2026-07-07: **Parameter-list building (Step 4b).** Interview D reworded to "do you have an initial list of parameters to be calibrated?" with a 3-case branch (vetted / rough / none). Added **Step 4b** — when the user has no list (or a rough one), the agent studies the mechanisms via `HybridRetriever.get_calibration_context()` + curated `curated_relationships_<profile>.yaml` + the CNP calibration guide + Adaptive Memory to build a target-driven list with source-anchored bounds (no fabricated values), presented for review before writing; a vetted list gets a coverage check instead. New footgun (list-from-names / fabricated bounds). Requested by the PI.
 - 2026-07-07: Initial version — official first-run setup flow for the offline agent (interview → verify checkout/milestone → create + populate use case → hand off to phase0-design). Fills the gap between "cloned the repo" and `phase0-design`; complements `onboard-session` (which assumes an existing setup). Requested by the PI.

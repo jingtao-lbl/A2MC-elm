@@ -3,7 +3,7 @@
 [![CAF Agent of the Week](https://img.shields.io/badge/CAF-Agent%20of%20the%20Week-blue)](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
 
 **Status:** Implementation Complete <br>
-**Version:** 2.126 <br>
+**Version:** 2.127 <br>
 **Purpose:** Fully autonomous multi-target calibration of ELM (with or without FATES) using AI API + HPC + RAG/GraphRAG + Adaptive Memory
 
 > **New here?** This README is the front door. For the full operational detail — configuration reference, per-phase behavior, module APIs, knowledge-system internals, state persistence, cost, and reporting — see the [**A2MC User Guide**](docs/a2mc_reference/user_guide.md).

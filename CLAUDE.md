@@ -2,7 +2,7 @@
 
 **Project:** A2MC (Agentic Adaptive Multi-target Calibration)
 **Purpose:** Fully autonomous multi-target calibration of ELM (with or without FATES) using AI API + HPC + Adaptive Memory
-**Status:** Implementation Complete (v2.126)
+**Status:** Implementation Complete (v2.127)
 **Last Updated:** July 7, 2026
 ---
 
@@ -798,7 +798,7 @@ grep -r "use_fates_nocomp" docs/fates-knowledge-base/
 
 ## Version History
 
-Current version: **v2.126** (2026-07-07)
+Current version: **v2.127** (2026-07-07)
 
 ### Git Tags (Stable Checkpoints)
 
