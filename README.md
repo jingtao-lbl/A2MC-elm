@@ -110,6 +110,32 @@ Full setup — every config field, provider/model table, installation on NERSC P
 
 ---
 
+## Quick Start (offline agent)
+
+The offline agent is any coding-agent harness (e.g. Claude Code) opened in a clone of this repo. There is nothing to launch — you open the repo and talk to it.
+
+```bash
+# 1. Clone and open the repo in a coding agent that reads AGENTS.md
+git clone https://github.com/jingtao-lbl/A2MC-elm.git && cd A2MC-elm
+
+# 2. (For calibration work) point at your checkout so mode-aware skills resolve
+export A2MC_MODEL_PATH="/path/to/your/E3SM_FATES_checkout"
+```
+
+On startup the harness auto-loads the operating contract ([`AGENTS.md`](AGENTS.md)) and the capability catalog of skills in `.claude/skills/`. Then drive it by conversation — the agent resolves the active mode (`python tools/describe_mode.py`), matches your request to an applicable skill, or reasons from the shared tools, memory, and RAG knowledge:
+
+```text
+"Catch up — where did we leave off?"           -> onboard-session
+"Screen the ensemble and diagnose the misses"  -> phase2-screening / phase3-diagnosis
+"Run a parameter-sweep experiment for X"        -> offline-testing-workflow
+"Review and promote the pending proposals"     -> curate-knowledge
+"Restart the jobs that failed in this ensemble" -> restart-failed-jobs
+```
+
+No API key or `orchestrator.py` run is needed — the reasoning happens in your coding agent. Full skills index: [`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md); operating rules: [`AGENTS.md`](AGENTS.md).
+
+---
+
 ## Knowledge system
 
 A2MC encodes the same FATES/ELM knowledge in three tiers so the AI can reach it via multiple paths:
