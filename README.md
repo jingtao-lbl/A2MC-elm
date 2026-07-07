@@ -62,46 +62,9 @@ A discovery vetted by either agent is available to the other on the next run.
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                            A2MC FRAMEWORK                                   │
-│  ┌────────────────────────────────────────────────────────────────────────┐ │
-│  │                    ORCHESTRATOR (orchestrator.py)                      │ │
-│  │                                                                        │ │
-│  │   7-Phase State Machine with Iteration Paths:                          │ │
-│  │                                                                        │ │
-│  │   ┌─────────┐    ┌─────────────┐    ┌───────────┐    ┌───────────┐     │ │
-│  │   │ Phase 0 │───►│   Phase 1   │───►│  Phase 2  │───►│  Phase 3  │     │ │
-│  │   │ DESIGN  │    │ EXPLORATION │    │ SCREENING │    │ DIAGNOSIS │     │ │
-│  │   └────▲────┘    └─────────────┘    └───────────┘    └─────┬─────┘     │ │
-│  │        │                                                   │           │ │
-│  │        │ Redesign:                       ┌─────────────────┤           │ │
-│  │        │ Expand params                   │                 │           │ │
-│  │        │                                 │           ┌─────▼─────┐     │ │
-│  │   ┌────┴────┐    ┌──────────────┐    ┌───────────┐    │  Phase 4  │     │ │
-│  │   │ Phase 7 │◄───│   Phase 6    │◄───│  Phase 5  │◄───│HYPOTHESIS │     │ │
-│  │   │CONVERGED│    │  REFINEMENT  │    │  TESTING  │    └─────┬─────┘     │ │
-│  │   └─────────┘    └──────┬───────┘    └───────────┘          │           │ │
-│  │                         │                                   │           │ │
-│  │                Rethink: │                      Skip test:   │           │ │
-│  │                Hypothesis                      Use existing │           │ │
-│  │                proven wrong                                 │           │ │
-│  │                         └───────────────────────┬───────────┘           │ │
-│  │                                                 ▼                      │ │
-│  │                                         Back to Phase 3                │ │
-│  └────────────────────────────────────────────────────────────────────────┘ │
-│            ┌─────────────────────────┬─────────────────────────┐            │
-│            ▼                         ▼                         ▼            │
-│  ┌──────────────────┐    ┌───────────────────┐    ┌──────────────────┐      │
-│  │    REASONING     │    │   PHASE SCRIPTS   │    │   SHARED TOOLS   │      │
-│  │  (reasoning/)    │    │   (phases/)       │    │   (tools/)       │      │
-│  │  diagnose()      │    │  phase0…phase6    │◄──►│  modify_fates_   │      │
-│  │  hypothesize()   │    │                   │    │  parameters.py   │      │
-│  │  design_exp()    │    │  Claude API       │    │  hpc_utils.py    │      │
-│  │  interpret()     │    │  (configurable)   │    │  cost_functions  │      │
-│  └──────────────────┘    └───────────────────┘    └──────────────────┘      │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/jingtao-lbl/A2MC-elm/main/plot/A2MC_Architecture.png" width="100%" alt="A2MC architecture: orchestrator state machine over reasoning, phase scripts, and shared tools">
+</p>
 
 ## The 7-phase workflow
 
