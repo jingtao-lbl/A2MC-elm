@@ -54,12 +54,25 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
   after launching a new submitter/restart job.
 - **Modes:** `any` (HPC) — monitors any in-flight A2MC ensemble/experiment; model-agnostic.
 
+### `a2mc-init`
+- **Purpose:** First-run setup for the offline agent — the official "getting started" flow the
+  first time A2MC is used in a repo/site. Interviews the user (checkout path, FATES on/off,
+  carbon-only vs nutrient-enabled PARTEH, ECA/RD, site + PFTs + targets), verifies the checkout
+  against the RAG milestone registry (`rag_match.py`), creates + populates the use case (site
+  config + `targets.yaml` + parameter list), validates (`describe_mode.py`,
+  `validate_targets_config.py`), and hands off to `phase0-design`.
+- **Invoke when:** "set up A2MC", "first time using A2MC", "help me get started / onboard me to
+  A2MC", "initialize a new site / use case", "configure A2MC for my site", "calibrate a new site".
+- **Modes:** `any` — model-agnostic; resolves FATES/nutrient mode from the interview. **Distinct
+  from `onboard-session`**, which resumes an already-configured setup.
+
 ### `onboard-session`
 - **Purpose:** Cold-start runbook — orient at the start of a session or after a context
   reset/compaction (read the latest handoff, re-read CLAUDE.md, check live HPC processes +
   run state, check pending knowledge), delegating to `arm-hpc-monitoring` / `curate-knowledge`.
 - **Invoke when:** a session begins/resumes/compacts; "catch up", "where did we leave off", "onboard".
-- **Modes:** `any` — model-agnostic. Pairs with the `SessionStart` hook.
+- **Modes:** `any` — model-agnostic. Pairs with the `SessionStart` hook. For a **first-run** (no
+  config yet), use `a2mc-init` instead.
 
 ### `curate-knowledge`
 - **Purpose:** Review + promote staged Tier-3 knowledge proposals — the human-in-the-loop half

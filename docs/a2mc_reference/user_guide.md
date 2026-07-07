@@ -224,7 +224,7 @@ A2MC uses a 7-phase workflow with intelligent iteration paths to minimize HPC co
 
 | Phase | Name | Purpose | AI-Driven? | Scripts |
 |-------|------|---------|------------|---------|
-| 0 | DESIGN | Morris/Sobol sampling, create cases, submit to HPC | No | `create_morris_ensemble.py` |
+| 0 | DESIGN | Morris/Sobol sampling, create cases, submit to HPC | Yes | `create_morris_ensemble.py` |
 | 1 | EXPLORATION | Extract Y matrix, run sensitivity analysis | **Yes** | `extract_sensitivity_outputs.py`, `morris_sensitivity_analysis.py` |
 | 2 | SCREENING | Rank ensemble by validation targets | Yes | `screen_ensemble.py` |
 | 3 | DIAGNOSIS | Root cause analysis, edge case detection | Yes | `run_diagnosis.py` (+ 11 diagnostic tools) |

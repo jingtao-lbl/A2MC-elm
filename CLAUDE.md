@@ -2,8 +2,8 @@
 
 **Project:** A2MC (Agentic Adaptive Multi-target Calibration)
 **Purpose:** Fully autonomous multi-target calibration of ELM (with or without FATES) using AI API + HPC + Adaptive Memory
-**Status:** Implementation Complete (v2.125)
-**Last Updated:** July 6, 2026
+**Status:** Implementation Complete (v2.126)
+**Last Updated:** July 7, 2026
 ---
 
 
@@ -236,6 +236,7 @@ These skills are the **interactive (offline) agent's capability catalog** (the o
 
 | Skill | Modes | When to use |
 |-------|-------|-------------|
+| `a2mc-init` | any | First-run setup: interview + create/populate a use case, then hand off to `phase0-design` (distinct from `onboard-session`, which resumes an existing setup) |
 | `onboard-session` | any | Cold-start: orient at session start or after a compaction/reset |
 | `curate-knowledge` | any | Review + promote staged Tier-3 knowledge proposals (the write-gate loop) |
 | `inject-knowledge` | any | Inject a human-originated discovery / parameter / relationship into curated knowledge |
@@ -797,7 +798,7 @@ grep -r "use_fates_nocomp" docs/fates-knowledge-base/
 
 ## Version History
 
-Current version: **v2.125** (2026-07-06)
+Current version: **v2.126** (2026-07-07)
 
 ### Git Tags (Stable Checkpoints)
 

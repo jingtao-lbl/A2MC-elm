@@ -36,6 +36,7 @@ FATES Morris-ensemble analysis skills (`summarize-`/`compare-calibration-rounds`
 | Skill | Modes | Triggers when |
 |---|---|---|
 | [calibration-log](calibration-log/SKILL.md) | any | Log interactive calibration/exploration work for a site (PhaseLogger phase logs + free-form session logs). |
+| [a2mc-init](a2mc-init/SKILL.md) | any | First-run setup — interview + create/populate a use case the first time you use A2MC ("set up A2MC", "get started", "configure my site"), then hand off to phase0-design. Distinct from onboard-session (which resumes an existing setup). |
 | [onboard-session](onboard-session/SKILL.md) | any | Cold-start runbook — orient at session start or after a compaction/reset ("catch up", "where did we leave off"). |
 | [curate-knowledge](curate-knowledge/SKILL.md) | any | Review + promote staged Tier-3 knowledge proposals (the human-in-the-loop half of the memory write gate). |
 | [arm-hpc-monitoring](arm-hpc-monitoring/SKILL.md) | any (HPC) | Session starts (or resumes after compaction) while an HPC ensemble is in flight. |

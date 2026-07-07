@@ -3,7 +3,7 @@
 [![CAF Agent of the Week](https://img.shields.io/badge/CAF-Agent%20of%20the%20Week-blue)](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
 
 **Status:** Implementation Complete <br>
-**Version:** 2.125 <br>
+**Version:** 2.126 <br>
 **Purpose:** Fully autonomous multi-target calibration of ELM (with or without FATES) using AI API + HPC + RAG/GraphRAG + Adaptive Memory
 
 > **New here?** This README is the front door. For the full operational detail — configuration reference, per-phase behavior, module APIs, knowledge-system internals, state persistence, cost, and reporting — see the [**A2MC User Guide**](docs/a2mc_reference/user_guide.md).
@@ -70,8 +70,8 @@ A discovery vetted by either agent is available to the other on the next run.
 
 | Phase | Name | Purpose | AI-Driven? |
 |-------|------|---------|------------|
-| 0 | DESIGN | Morris/Sobol sampling, create cases, submit to HPC | No |
-| 1 | EXPLORATION | Extract Y matrix, run sensitivity analysis | **Yes** |
+| 0 | DESIGN | Morris/Sobol sampling, create cases, submit to HPC | Yes |
+| 1 | EXPLORATION | Extract Y matrix, run sensitivity analysis | Yes |
 | 2 | SCREENING | Rank ensemble by validation targets | Yes |
 | 3 | DIAGNOSIS | Root cause analysis, edge case detection | Yes |
 | 4 | HYPOTHESIS | Generate experiments OR test with existing data | Yes |
@@ -122,9 +122,12 @@ git clone https://github.com/jingtao-lbl/A2MC-elm.git && cd A2MC-elm
 export A2MC_MODEL_PATH="/path/to/your/E3SM_FATES_checkout"
 ```
 
+**First time?** Just tell the agent **"set up A2MC"** (or "help me get started"). That runs the [`a2mc-init`](.claude/skills/a2mc-init/SKILL.md) skill, which interviews you (checkout location, FATES on/off, carbon-only vs nutrient-enabled, site, PFTs, calibration targets), verifies your checkout against the RAG milestone, creates and populates your use case, and hands off to Phase 0.
+
 On startup the harness auto-loads the operating contract ([`AGENTS.md`](AGENTS.md)) and the capability catalog of skills in `.claude/skills/`. Then drive it by conversation — the agent resolves the active mode (`python tools/describe_mode.py`), matches your request to an applicable skill, or reasons from the shared tools, memory, and RAG knowledge:
 
 ```text
+"Set up A2MC" (first-time setup)                -> a2mc-init
 "Catch up — where did we leave off?"           -> onboard-session
 "Screen the ensemble and diagnose the misses"  -> phase2-screening / phase3-diagnosis
 "Run a parameter-sweep experiment for X"        -> offline-testing-workflow

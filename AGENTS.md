@@ -68,6 +68,7 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 | Skill | Modes | Invoke when the user wants to… |
 |---|---|---|
 | `calibration-log` | any | Log interactive calibration/exploration work for a site (PhaseLogger + session logs) |
+| `a2mc-init` | any | First-run setup — interview + create/populate a use case, then hand off to phase0-design (distinct from onboard-session) |
 | `onboard-session` | any | Cold-start: orient at session start or after a compaction/reset |
 | `curate-knowledge` | any | Review + promote staged Tier-3 knowledge proposals (the write-gate loop) |
 | `arm-hpc-monitoring` | any (HPC) | Set up real-time monitoring of an in-flight ensemble at session start |
