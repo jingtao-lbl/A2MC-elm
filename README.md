@@ -3,8 +3,10 @@
 [![CAF Agent of the Week](https://img.shields.io/badge/CAF-Agent%20of%20the%20Week-blue)](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
 
 **Status:** Implementation Complete <br>
-**Version:** 2.111 <br>
+**Version:** 2.125 <br>
 **Purpose:** Fully autonomous multi-target calibration of ELM (with or without FATES) using AI API + HPC + RAG/GraphRAG + Adaptive Memory
+
+> **New here?** This README is the front door. For the full operational detail — configuration reference, per-phase behavior, module APIs, knowledge-system internals, state persistence, cost, and reporting — see the [**A2MC User Guide**](docs/a2mc_reference/user_guide.md).
 
 ---
 
@@ -12,7 +14,7 @@
 
 Earth system models like ELM-FATES contain hundreds of parameters that must be calibrated against observations at each study site. Traditional calibration is a months-long manual process of running ensembles on HPC, inspecting sensitivity analyses, and making expert decisions about which parameters to adjust. Black-box optimizers (genetic algorithms, gradient descent) work well when the parameter space already contains viable solutions, but for novel model configurations where no prior successful calibration exists (e.g., ELM-FATES CNP at Arctic sites), the initial ensemble may entirely miss observational ranges. In these cases, numerical optimization alone cannot identify the mechanistic barriers preventing calibration. A2MC addresses this by combining optimization with interpretable, hypothesis-driven reasoning that diagnoses *why* the model fails and proposes targeted fixes.
 
-A2MC replaces this with an autonomous, interpretable workflow that:
+A2MC replaces the manual process with an autonomous, interpretable workflow that:
 
 - **Leverages a model-specific knowledge base** through hybrid RAG/GraphRAG retrieval over documentation, codebase wikis, and curated parameter-mechanism-output relationships
 - **Diagnoses root causes** of calibration failures using LLM reasoning augmented with retrieved knowledge
@@ -24,6 +26,7 @@ A2MC replaces this with an autonomous, interpretable workflow that:
 <p align="center">
   <img src="https://raw.githubusercontent.com/jingtao-lbl/A2MC-elm/main/plot/A2MC_Workflow_Horizontal_Finalized_A2MC-ELM.png" width="100%" alt="A2MC 7-phase calibration workflow">
 </p>
+
 ---
 
 ## Two Ways to Run A2MC
@@ -38,50 +41,12 @@ A2MC is **one agent you run two ways**. The intelligence lives in the repo's sha
 | Best for | The repetitive, well-defined calibration loop | Open-ended, exploratory, one-off, judgment-heavy tasks |
 | Curated memory | **Proposes** (auto-learned lessons staged for review) | **Promotes** (the sole writer of curated knowledge) |
 
-A2MC is **mode-aware**: the same repo runs ELM with or without FATES, different FATES API milestones, and different nutrient schemes (ECA vs RD). Both runtimes resolve the active configuration (`python tools/describe_mode.py`) and adapt. Both read and write the **same knowledge substrate**, so discoveries made by one agent compound in the other (see [The knowledge loop](#the-knowledge-loop)).
+A2MC is **mode-aware**: the same repo runs ELM with or without FATES, different FATES API milestones, and different nutrient schemes (ECA vs RD). Both runtimes resolve the active configuration (`python tools/describe_mode.py`) and adapt, and both read and write the **same knowledge substrate**, so discoveries made by one agent compound in the other.
 
-### Using the online autonomous agent
+- **Online agent:** the Quick Start below. `python orchestrator.py --run` drives the full Phase 0→7 loop.
+- **Offline agent:** any coding-agent harness opened in a clone of this repo. Its operating contract is [`AGENTS.md`](AGENTS.md) (harness-neutral); on startup the harness auto-loads the operating rules plus the capability catalog of skills in `.claude/skills/` (indexed in [`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md)), then you drive it by conversation. It is the tool for work the fixed loop cannot do (forensics, synthesis, triage, one-off analysis) and, because of the curated-memory gate, the **only** writer of vetted knowledge.
 
-The rest of this README's Quick Start covers the autonomous agent:
-
-```bash
-source a2mc_config.sh
-source use_cases/<site>/config/<site>_config.sh
-python orchestrator.py --run        # full Phase 0→7 calibration loop
-```
-
-### Using the offline interactive agent
-
-The interactive agent is any coding-agent harness opened in a clone of this repo. Its **operating contract** is [`AGENTS.md`](AGENTS.md) (harness-neutral). On startup the harness auto-loads the operating rules plus the **capability catalog** of skills in `.claude/skills/` (indexed in [`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md)); each skill declares the run configurations it applies to via `modes:` frontmatter. You then drive it by conversation:
-
-```text
-1. Clone the repo and open it in a coding agent that reads AGENTS.md.
-2. The operating rules (AGENTS.md) and skills (.claude/skills/) load automatically.
-3. Describe the task in natural language — the agent resolves the active mode,
-   matches the task to an applicable skill, or reasons from the shared tools,
-   memory, and RAG knowledge.
-```
-
-Worked examples — each backed by a skill in the capability catalog (most skills are mode-agnostic; the FATES Morris-ensemble analysis skills are `requires_fates: true`). Full index: [`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md).
-
-| Ask the interactive agent to… | Backing skill | Modes |
-|---|---|---|
-| "Catch up — where did we leave off?" | `onboard-session` | any |
-| "Review and promote the pending knowledge proposals" | `curate-knowledge` | any |
-| "Log this calibration/exploration work for the site" | `calibration-log` | any |
-| "Is this 'best' case real or contamination?" | `diagnose-forensics` | any |
-| "Investigate whether X correlates with Y, with a figure" | `scientific-analysis` | any |
-| "Restart the jobs that failed in this ensemble" | `restart-failed-jobs` | any (HPC) |
-| "Set up monitoring for the in-flight ensemble" | `arm-hpc-monitoring` | any (HPC) |
-| "Rebuild the RAG index" / "add a curated relationship" | `rebuild-rag` / `inject-knowledge` | any |
-| "Add a new skill for this workflow" | `add-skill` | any |
-| "Summarize round N" / "compare rounds R1…RN" / "run a parameter-sweep experiment" | `summarize-calibration-round` / `compare-calibration-rounds`, `offline-testing-workflow` | FATES |
-
-> The interactive agent is the tool for work the fixed Phase 0→7 loop cannot do: open-ended forensics, synthesis, triage, and one-off analysis. Because of the curated-memory gate, it is also the **only** writer of vetted knowledge — it promotes the autonomous agent's staged proposals.
-
-### The knowledge loop
-
-The two agents are two writers on **one knowledge substrate** — neither forks the knowledge base, so improvements compound across both:
+**The knowledge loop** — the two agents are two writers on one knowledge substrate, so improvements compound across both:
 
 ```
   Interactive agent  ──writes/promotes──►  calibration logs / curated knowledge / tools
@@ -91,180 +56,7 @@ The two agents are two writers on **one knowledge substrate** — neither forks 
   Autonomous agent  ◄──reads / PROPOSES──  MemoryManager (propose mode) + RAG + phase logs
 ```
 
-The interactive agent writes calibration/analysis logs, curates knowledge (promoting the autonomous agent's proposals), and builds shared tools; the autonomous agent's `MemoryManager` and RAG absorb that vetted knowledge and apply it inside the calibration loop, while emitting phase logs, run state, and proposed lessons that the interactive agent then reasons over. A discovery vetted by either agent is available to the other on the next run.
-
----
-
-## Quick Start for New Users
-
-### Step 1: Create Your Use Case
-
-```bash
-# Copy the Kougarok example (recommended) or the minimal template
-cp -r use_cases/Kougarok use_cases/YourSite
-# OR
-cp -r use_cases/TEMPLATE use_cases/YourSite
-```
-
-### Step 2: Configure Site-Specific Settings
-
-Edit your site configuration file with ALL site-specific settings:
-
-```bash
-vim use_cases/YourSite/config/yoursite_config.sh
-
-# Key settings to modify:
-# ========================
-# SITE INFORMATION
-export A2MC_SITE_NAME="YourSite"
-export A2MC_SITE_LAT=45.0
-export A2MC_SITE_LON=-120.0
-
-# PFT CONFIGURATION
-export A2MC_PFTS="1,2,3"                  # Your target PFTs
-export A2MC_PFT_NAMES="PFT1,PFT2,PFT3"
-
-# DOMAIN AND SURFACE DATA
-export A2MC_DOMAIN_FILE="domain_yoursite.nc"
-export A2MC_SURFACE_FILE="surfdata_yoursite.nc"
-
-# PARAMETER CONFIGURATION
-export A2MC_N_PARAMS=100                  # Number of parameters
-export A2MC_N_TRAJECTORIES=30             # For Morris method
-export A2MC_PARAM_LIST_FILE="${A2MC_USE_CASE_DIR}/parameters/your_param_list.txt"
-
-# VALIDATION
-export A2MC_VALIDATION_FILE="${A2MC_USE_CASE_DIR}/validation/your_targets.txt"
-
-# HPC PATHS (ensemble output, parameter files)
-export A2MC_PARAM_DIR="/path/to/fates_param_files"
-export A2MC_ENSEMBLE_OUTPUT="${A2MC_OUTPUT_ROOT}/YourEnsemble"
-```
-
-### Step 3: Define Parameters and Validation Targets
-
-Create these files in your use case folder:
-
-```bash
-# Parameter list with bounds
-vim use_cases/YourSite/parameters/your_param_list.txt
-
-# SALib problem definition (optional, for sensitivity analysis)
-vim use_cases/YourSite/parameters/salib_problem.txt
-
-# Validation targets
-vim use_cases/YourSite/validation/your_targets.txt
-```
-
-### Step 4: Modify Machine Settings
-
-Only edit `a2mc_config.sh` if you need to change HPC-level settings:
-
-```bash
-vim a2mc_config.sh
-
-# Settings that might need changing:
-export A2MC_PROJECT="your_project"        # HPC allocation
-export A2MC_E3SM_ROOT="/path/to/E3SM"     # E3SM source code
-export A2MC_OUTPUT_ROOT="/path/to/output" # Simulation output root
-
-# REQUIRED for version-aware RAG (v2.90+): point at your E3SM/ELM-FATES checkout
-# A2MC reads the FATES + ELM commits and selects the matching RAG profile
-export A2MC_MODEL_PATH="/path/to/your/E3SM_FATES_checkout"
-
-# Optional for configuration-aware retrieval (v2.92+): override mode env vars
-# Defaults match ELM namelist_defaults.xml (vanilla SP run, no FATES)
-# Set in your site config to enable FATES with CNP + ECA, etc.
-export A2MC_ELM_OPTIONS="-bgc fates -nutrient cnp -nutrient_comp_pathway eca"
-export A2MC_FATES_PARTEH_MODE=2           # 1=carbon-only, 2=CNP
-# Tier 2 FATES feature flags (default false):
-#   A2MC_FATES_SPITFIRE_MODE, A2MC_USE_FATES_PLANTHYDRO,
-#   A2MC_USE_FATES_LOGGING, A2MC_USE_FATES_SP, etc.
-# See docs/a2mc_reference/mode_aware_workflow.md for the full 20-dim schema
-
-# Optional for auto-rebuild on drift (v2.98+):
-# When the orchestrator detects your checkout has drifted off the matched
-# milestone, this opts in to automatic rebuild for T2 / T3-near drift
-# (subprocess + validator gate; rollback to <profile>.previous/ on failure).
-# T3-distant drift always emits a prompt-pack and aborts regardless.
-export A2MC_RAG_AUTO_REBUILD="false"      # default false (warn-and-continue)
-export A2MC_RAG_T3_AUTO_DISTANCE=100      # default 100 = one major epoch step
-# See docs/a2mc_reference/version_association_howto.md "Drift handling".
-```
-
-### Step 5: Configure AI Settings
-
-AI reasoning is required for phases 2, 3, 4, and 6. Two things to configure:
-
-**5a. Choose your AI provider** — edit `A2MC_AI_PROVIDER` in `a2mc_config.sh` (one-time):
-
-```bash
-# In a2mc_config.sh, set ONE of these (default is anthropic):
-export A2MC_AI_PROVIDER="anthropic"   # Direct Anthropic API (default)
-# export A2MC_AI_PROVIDER="openai"    # Direct OpenAI API
-# export A2MC_AI_PROVIDER="cborg"     # Berkeley Lab CBorg proxy
-```
-
-Each provider has a default model (set automatically when you source `a2mc_config.sh`):
-
-| Provider | Default Model | Other Models |
-|----------|---------------|--------------|
-| `anthropic` | `claude-opus-4-20250514` | `claude-sonnet-4-20250514`, `claude-haiku-3-20240307` |
-| `openai` | `gpt-4o` | `gpt-4o-mini`, `o3-mini` |
-| `cborg` | `anthropic/claude-sonnet` | `openai/gpt-4o`, `openai/gpt-4o-mini`, `lbl/llama` |
-
-To override the model, set `A2MC_AI_MODEL` in `a2mc_config.sh`.
-
-**5b. Set your API key** — add to `~/.bashrc` (one-time, must be done before sourcing `a2mc_config.sh`):
-
-```bash
-# Add the API key for your chosen provider to ~/.bashrc:
-echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.bashrc   # for anthropic
-# echo 'export OPENAI_API_KEY="sk-..."' >> ~/.bashrc        # for openai
-# echo 'export CBORG_API_KEY="sk-..."' >> ~/.bashrc         # for cborg
-
-# Then reload:
-source ~/.bashrc
-```
-
-**Note:** Keep your API key visible only to yourself (e.g., `chmod 600 ~/.bashrc`).
-
-### Step 6: Run A2MC
-
-```bash
-# Source BOTH configuration files
-source a2mc_config.sh
-source use_cases/YourSite/config/yoursite_config.sh
-print_config  # Verify settings
-
-# Run calibration (with human review checkpoints between phases)
-python orchestrator.py --run
-
-# Run fully autonomous (no human review checkpoints)
-python orchestrator.py --run --no-review
-```
-
-**Configuration hierarchy:**
-- `a2mc_config.sh` - Machine-level defaults (HPC paths, COMPSET, Python env, simulation protocol, AI provider)
-- `use_cases/{site}/config/{site}_config.sh` - Site-specific overrides (PFTs, parameters, validation targets, protocol overrides)
-
-See "Running the Workflow" section below for more options.
-
----
-
-## Overview
-
-A2MC is an autonomous calibration framework that combines:
-- **Morris/Sobol sensitivity analysis** for parameter space exploration
-- **AI API reasoning** for diagnosis and hypothesis generation
-- **HPC-native execution** for efficient simulation management
-- **Multi-objective optimization** for simultaneous PFT calibration
-- **Adaptive Memory System** for learning from experiments and avoiding repeated failures
-- **Version-aware RAG** that auto-detects the user's E3SM/ELM-FATES checkout and loads the matching knowledge profile (v2.90+)
-- **Configuration-aware retrieval** that filters knowledge chunks based on the active simulation mode (FATES on/off, PARTEH carbon-only vs CNP, ECA vs RD competition, fire/hydraulics/logging on/off, etc.) so the AI sees only mode-applicable content (v2.91 / v2.92)
-- **Auto-rebuild on drift** with a tier-aware policy — T1 always auto-refreshes metadata; T2 and near-T3 can auto-rebuild on opt-in (`A2MC_RAG_AUTO_REBUILD=true`) with snapshot + validator gate + rollback; distant T3 always emits a prompt-pack for human-supervised regen (v2.98)
-
-The framework runs entirely on NERSC HPC (no SSH tunneling) and uses the Anthropic Claude API for intelligent decision-making. The Adaptive Memory System enables the AI agent to persistently store and retrieve knowledge across sessions.
+A discovery vetted by either agent is available to the other on the next run.
 
 ---
 
@@ -295,1076 +87,116 @@ The framework runs entirely on NERSC HPC (no SSH tunneling) and uses the Anthrop
 │  │                Hypothesis                      Use existing │           │ │
 │  │                proven wrong                                 │           │ │
 │  │                         └───────────────────────┬───────────┘           │ │
-│  │                                                 │                      │ │
 │  │                                                 ▼                      │ │
 │  │                                         Back to Phase 3                │ │
 │  └────────────────────────────────────────────────────────────────────────┘ │
-│                                      │                                      │
-│            ┌─────────────────────────┼─────────────────────────┐            │
+│            ┌─────────────────────────┬─────────────────────────┐            │
 │            ▼                         ▼                         ▼            │
 │  ┌──────────────────┐    ┌───────────────────┐    ┌──────────────────┐      │
 │  │    REASONING     │    │   PHASE SCRIPTS   │    │   SHARED TOOLS   │      │
 │  │  (reasoning/)    │    │   (phases/)       │    │   (tools/)       │      │
-│  │                  │    │                   │    │                  │      │
-│  │ • diagnose()     │    │ • phase0_design/  │    │ modify_fates_    │      │
-│  │ • hypothesize()  │    │ • phase1_explor/  │    │   parameters.py  │      │
-│  │ • design_exp()   │    │ • phase2_screen/  │◄──►│                  │      │
-│  │ • interpret()    │    │ • phase3_diag/    │    │ extract_monthly_ │      │
-│  │ • synthesize()   │    │ • phase4_hypo/    │    │   variables.py   │      │
-│  │                  │    │ • phase5_test/    │    │                  │      │
-│  │  Claude API      │    │ • phase6_refine/  │    │ hpc_utils.py     │      │
-│  │  (configurable)  │    │                   │    │ cost_functions.py │      │
+│  │  diagnose()      │    │  phase0…phase6    │◄──►│  modify_fates_   │      │
+│  │  hypothesize()   │    │                   │    │  parameters.py   │      │
+│  │  design_exp()    │    │  Claude API       │    │  hpc_utils.py    │      │
+│  │  interpret()     │    │  (configurable)   │    │  cost_functions  │      │
 │  └──────────────────┘    └───────────────────┘    └──────────────────┘      │
-│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Tech Notes
+## The 7-phase workflow
 
-### Install Anthropic and OpenAI on NERSC Perlmutter
+| Phase | Name | Purpose | AI-Driven? |
+|-------|------|---------|------------|
+| 0 | DESIGN | Morris/Sobol sampling, create cases, submit to HPC | No |
+| 1 | EXPLORATION | Extract Y matrix, run sensitivity analysis | **Yes** |
+| 2 | SCREENING | Rank ensemble by validation targets | Yes |
+| 3 | DIAGNOSIS | Root cause analysis, edge case detection | Yes |
+| 4 | HYPOTHESIS | Generate experiments OR test with existing data | Yes |
+| 5 | TESTING | Run designed experiments on HPC | No |
+| 6 | REFINEMENT | Evaluate results, extract lessons, check equifinality | Yes |
+| 7 | CONVERGED | Final optimal configuration | - |
 
-```bash
-# Load Python module
-module load python
+Non-linear iteration paths avoid unnecessary HPC computation: **Phase 4 → Phase 3** (skip testing when existing data can test the hypothesis), **Phase 6 → Phase 3** (rethink when results disprove the hypothesis), **Phase 6 → Phase 0** (redesign when the parameter space needs expansion). These are organized as three nested loops — calibration round (Phase 0→7), experiment cycle (Phase 3→4→5→6→3), and skip-testing (Phase 3↔4).
 
-# Create a virtual environment (one-time setup)
-python -m venv ~/a2mc_env
-source ~/a2mc_env/bin/activate
-
-# Install A2MC dependencies (including RAG)
-# anthropic SDK for Anthropic provider; openai SDK for OpenAI/CBorg providers
-pip install anthropic openai numpy pandas xarray netCDF4 scipy SALib networkx chromadb sentence-transformers pyyaml Pillow
-
-# Set your API key (add to ~/.bashrc for persistence)
-# Use the env var matching your provider: ANTHROPIC_API_KEY, OPENAI_API_KEY, or CBORG_API_KEY
-export ANTHROPIC_API_KEY="your-api-key-here"
-
-# Verify installation
-python -c "import anthropic; print('anthropic', anthropic.__version__)"
-python -c "import openai; print('openai', openai.__version__)"
-```
-
-**Note:** The virtual environment is auto-activated when you `source a2mc_config.sh`.
+Full per-phase behavior, diagnostic-tool inventory, and the three-level iteration counters are in the [User Guide → 7-phase workflow](docs/a2mc_reference/user_guide.md#4-the-7-phase-workflow-in-detail).
 
 ---
 
-## 7-Phase Workflow
-
-A2MC uses a 7-phase workflow with intelligent iteration paths to minimize HPC costs while maximizing learning.
-
-### Phase Overview
-
-| Phase | Name | Purpose | AI-Driven? | Scripts |
-|-------|------|---------|------------|---------|
-| 0 | DESIGN | Morris/Sobol sampling, create cases, submit to HPC | No | `create_morris_ensemble.py` |
-| 1 | EXPLORATION | Extract Y matrix, run sensitivity analysis | **Yes** | `extract_sensitivity_outputs.py`, `morris_sensitivity_analysis.py` |
-| 2 | SCREENING | Rank ensemble by validation targets | Yes | `screen_ensemble.py` |
-| 3 | DIAGNOSIS | Root cause analysis, edge case detection | Yes | `run_diagnosis.py` (+ 11 diagnostic tools) |
-| 4 | HYPOTHESIS | Generate experiments OR test with existing data | Yes | `reasoning/`, `phases/phase4_hypothesis/` |
-| 5 | TESTING | Run designed experiments on HPC | No | `submit_experiments.py` (+ design, monitor) |
-| 6 | REFINEMENT | Evaluate results, extract lessons, check equifinality | Yes | `reasoning/`, `phases/phase6_refinement/` |
-| 7 | CONVERGED | Final optimal configuration | - | - |
-
-**Phase 3 Diagnostic Tools:** `analyze_carbon_balance.py`, `analyze_mortality.py`, `analyze_nutrient_balance.py`, `analyze_nutrient_pools.py`, `check_edge_parameters.py`, `compare_case_parameters.py`, `compare_targets.py`, `detect_collapse.py`, `diagnose_pft_limitations.py`, `read_case_parameters.py`, `test_hypothesis_framework.py`
-
-**Self-improving diagnostic library.** When no existing tool can test a hypothesis, the agent writes a custom `test_*.py` (exposing `test_hypothesis()`) into `phases/phase3_diagnosis/generated/`, auto-discovered for the current run. A vetted, reusable one is then **promoted** into the permanent tool library with `tools/promote_diagnostic_script.py` (copies it to `phases/phase3_diagnosis/` and registers it in the diagnostic-tools inventory; human-gated).
-
-**Phase 5 Scripts:** `design_experiments.py`, `monitor_experiments.py`, `submit_experiments.py`
-
-### Iteration Paths
-
-A2MC supports non-linear iteration to avoid unnecessary HPC computation:
-
-```
-Normal Flow:
-  Phase 0 → [HPC] → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5 → [HPC] → Phase 6 → Phase 7
-
-Iteration Paths:
-  Phase 4 → Phase 3: Skip testing when existing data can test hypothesis
-  Phase 6 → Phase 3: Rethink hypothesis when experiment results disprove it
-  Phase 6 → Phase 0: Redesign when parameter space needs expansion
-```
-
-**Phase 4 → Phase 3 (Skip Testing):**
-When a hypothesis can be tested using existing ensemble data (e.g., P mass balance analysis, comparing PFT responses), skip the HPC testing phase and return to diagnosis with new insights.
-
-**Phase 6 → Phase 3 (Rethink Hypothesis):**
-When experiment results disprove the hypothesis, return to diagnosis to revise understanding and generate new hypotheses.
-
-**Phase 6 → Phase 0 (Redesign):**
-When all parameter candidates are at bounds and calibration fails, expand parameter ranges and run a new ensemble.
-
-### Three-Level Iteration Structure
-
-A2MC uses three nested loops (outermost → middle → inner):
-
-**Calibration Round (Outermost):** Full Phase 0 → 7 cycle. Counter: `calibration_round`
-- Round 1: e.g., 138 parameters, 4170 simulations
-- Round 2: e.g., 162 parameters, 4890 simulations (expanded parameter space)
-- Incremented when Phase 6 → Phase 0 redesign is needed (experiment cycles reach max without meeting all targets)
-
-**Middle Loop (Experiment Cycle):** Phase 3 → 4 → 5 → 6 → 3, max 10 cycles. Counter: `experiment_count`
-- Run full HPC experiments to test hypotheses
-- Exit when targets met (→ Phase 7 CONVERGED) OR experiment cycles reach max (→ Phase 0 redesign)
-
-**Inner Loop (Skip Testing):** Phase 3 ↔ 4, max 10 cycles. Counter: `skip_testing_count`
-- Test hypotheses with existing ensemble data (no HPC cost)
-- Exit when confidence threshold met OR max cycles reached
-- Counter resets when entering Phase 5 (HPC)
+## Quick Start (online agent)
 
 ```bash
-# Control iteration limits
-python orchestrator.py --run \
-    --start-round 2 \          # Calibration round (outermost loop)
-    --max-skip-testing 10 \        # Max Phase 3↔4 cycles (default: 10)
-    --max-experiments 10 \         # Max full experiment cycles (default: 10)
-    --confidence-threshold 0.95    # Exit skip testing threshold (default: 0.95)
-```
+# 1. Create a use case (copy the Kougarok example or the minimal template)
+cp -r use_cases/Kougarok use_cases/YourSite      # or use_cases/TEMPLATE
 
-### Phase Details
+# 2. Configure site + machine settings
+vim use_cases/YourSite/config/yoursite_config.sh # PFTs, parameters, validation, HPC paths
+vim a2mc_config.sh                               # HPC project, A2MC_MODEL_PATH, AI provider
 
-#### Phase 0: DESIGN
-**Purpose:** Create initial parameter sampling design and submit to HPC
+# 3. Set the API key for your provider (one-time)
+echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.bashrc && source ~/.bashrc
 
-```bash
-# Morris method: n_trajectories × (n_params + 1) simulations
-# Example: 30 trajectories × 163 params = 4890 simulations
-python orchestrator.py --run --start-phase 0
-```
-
-**Outputs:**
-- Morris ensemble matrix (X matrix): `phases/phase0_design/FATES_*_Morris_*sets.txt`
-- Modified parameter files for each ensemble member
-- HPC jobs submitted to queue
-
-#### Phase 1: EXPLORATION
-**Purpose:** Extract results and run Morris sensitivity analysis
-
-**Key operations:**
-1. Extract Y matrix (model outputs) from completed simulations
-2. Run Morris sensitivity analysis using SALib
-3. Rank parameters by μ* (mean absolute effect) and σ (interaction effect)
-4. Generate sensitivity plots and CSV rankings
-
-**Outputs:**
-- Y matrices: `MorrisLeafbiomass_*.txt`, `MorrisFineroootbiomass_*.txt`, `MorrisAbgbiomass_*.txt`
-- Sensitivity rankings by PFT (top parameters with μ*, σ values)
-- Sensitivity plots (PNG)
-
-**Command-line usage:**
-```bash
-python orchestrator.py --run --start-phase 1 --start-round 2
-# Or equivalently:
-python orchestrator.py --run --start-phase phase1 --start-round 2
-python orchestrator.py --run --start-phase exploration --start-round 2
-```
-
-#### Phase 2: SCREENING
-**Purpose:** Rank ensemble members against validation targets
-
-**Analysis:**
-- Calculate cost metrics (RMSRE, NRMSE) across all targets
-- Rank all simulations by multi-objective performance
-- Identify which targets are met/failed for each case
-- Detect edge cases (parameters at bounds)
-
-**Outputs:**
-- Ranked case list with composite cost
-- Per-target error statistics
-- Edge parameter analysis
-
-#### Phase 3: DIAGNOSIS
-**Purpose:** Root cause analysis of calibration failures
-
-**Claude API tasks:**
-- Analyze which targets are failing and why
-- Identify mechanistic causes (e.g., P-limitation, allocation issues)
-- Find cross-PFT parameter conflicts
-- Compare best vs worst cases to identify key differences
-- Generate parameter adjustment recommendations
-
-**Output:** Diagnosis report with root causes, affected mechanisms, and priority rankings
-
-#### Phase 4: HYPOTHESIS
-**Purpose:** Generate testable hypotheses
-
-**Claude API tasks:**
-- Create named hypotheses (e.g., "PFT10 P-starvation hypothesis")
-- Specify parameters to modify and expected direction
-- Define expected outcomes and success criteria
-- Choose approach:
-  - **Run experiments:** Submit new simulations to test hypothesis
-  - **Use existing data:** Test hypothesis with existing ensemble (e.g., mass balance analysis)
-
-**Output:** Hypothesis with modification plan or analysis plan
-
-#### Phase 5: TESTING
-**Purpose:** Run designed experiments on HPC
-
-**Key operations:**
-- Create modified parameter files based on hypothesis
-- Submit experiment simulations to HPC
-- Extract and evaluate results
-- Compare actual outcomes to expected outcomes
-
-#### Phase 6: REFINEMENT
-**Purpose:** Evaluate results and extract lessons
-
-**Decision logic:**
-- If hypothesis confirmed → apply changes, check if more targets remain
-- If partially confirmed → adjust hypothesis, return to Phase 4
-- If rejected → record failed approach, return to Phase 3
-- If all targets met → advance to CONVERGED
-- If parameter bounds too restrictive → return to Phase 0 (redesign)
-
-**Adaptive Memory Learning:**
-- Extract lessons from experiment outcomes
-- Store successful discoveries in `gained_knowledge/discoveries.json`
-- Record failed approaches in `gained_knowledge/failed_approaches.json`
-- Update parameter knowledge for future reasoning
-- Check for equifinality (multiple parameter sets achieving same targets)
-
-#### Phase 7: CONVERGED
-**Purpose:** Finalize calibration
-
-**Outputs:**
-- Best parameter configuration
-- Final calibration report
-- Complete experiment history
-- Extracted knowledge for future calibrations
-
----
-
-## Validation Targets
-
-Validation targets are site-specific and defined in `use_cases/{site}/README.md`.
-
-**Typical target types:**
-- **Biomass:** Leaf, fine root, AGB by PFT (g C/m²)
-- **Ecosystem fluxes:** GPP, NPP, NEE (g C/m²/yr)
-- **Structure:** LAI, canopy height
-- **Phenology:** Leaf-on/off dates
-
-**See example:** `use_cases/Kougarok/README.md` for a complete target specification.
-
----
-
-## Module Reference
-
-### orchestrator.py
-
-Main workflow controller with state persistence. Configuration is loaded from environment variables set by `a2mc_config.sh` and site config.
-
-```python
-from orchestrator import CalibrationOrchestrator, Config
-
-# Config auto-detects paths from A2MC_USE_CASE_DIR environment variable
-config = Config(
-    use_memory=True,           # Enable Adaptive Memory
-    use_reasoning=True,        # Enable Claude API reasoning
-    max_iterations=10,
-    max_skip_testing=10,       # Max Phase 3↔4 skip testing cycles
-    max_experiments=10,        # Max Phase 3→4→5→6 experiment cycles
-)
-orch = CalibrationOrchestrator(config)
-orch.run()
-```
-
-**Key Classes:**
-- `Config` - All settings (paths, HPC, sampling, AI, iteration limits)
-- `Phase` - Enum of 8 workflow phases
-- `WorkflowState` - Persistent state with full history
-- `CalibrationOrchestrator` - Main controller
-
-### reasoning/ package
-
-Claude API interface for intelligent reasoning (split into `schemas.py`, `prompts.py`, `base.py`, `methods.py`).
-
-```python
-from reasoning import ReasoningModule, Diagnosis, Hypothesis
-
-# Initialize (uses provider-specific API key env var and A2MC_AI_MODEL config)
-reasoning = ReasoningModule()
-
-# Diagnose calibration failure
-diagnosis = reasoning.diagnose(
-    results={"leaf_pft10": 45.2, ...},
-    targets={"leaf_pft10": {"mean": 82.7, "uncertainty": 0.20}, ...},
-    sensitivity_rankings={"leaf_pft10": [{"param": "...", "mu_star": 0.45}]},
-    iteration=1
-)
-
-# Generate hypothesis
-hypothesis = reasoning.generate_hypothesis(
-    diagnosis=diagnosis,
-    sensitivity_data={...},
-    previous_experiments=[]
-)
-
-# Design experiment
-experiments = reasoning.design_experiments(
-    hypothesis=hypothesis,
-    base_case={"case_id": 2678, "parameters": {...}}
-)
-
-# Interpret results
-interpretation = reasoning.interpret_results(
-    experiment=experiments[0],
-    actual_results={...},
-    targets={...}
-)
-```
-
-**Output Structures:**
-- `Diagnosis` - Failing targets, causes, parameter/protocol recommendations, requested diagnostics
-- `Hypothesis` - Name, mechanism, parameter modifications, test plan
-- `Experiment` - Base case, modifications, expected results
-
-### tools/hpc_utils.py
-
-HPC-native interfaces for simulation management.
-
-```python
-from tools.hpc_utils import HPCConfig, HPCExecutor, ParameterManager
-
-# HPCConfig reads from A2MC_* environment variables
-config = HPCConfig()
-
-# Modify parameters
-param_mgr = ParameterManager(config)
-new_param_file = param_mgr.create_modified_file(
-    base_file="fates_params.nc",
-    modifications=[
-        {"parameter": "fates_alloc_storage_cushion", "pft": 10, "value": 3.0}
-    ],
-    output_file="fates_params_modified.nc"
-)
-
-# Submit jobs
-executor = HPCExecutor(config)
-job_id = executor.submit_case(case_name="PtCNPEn100_TRANS")
-
-# Wait for completion
-results = executor.wait_for_jobs([job_id], poll_interval=300)
-```
-
-**Key Classes:**
-- `HPCConfig` - HPC paths, project, QOS (from env vars)
-- `HPCExecutor` - Direct sbatch/squeue execution
-- `ParameterManager` - Wraps modify_fates_parameters.py
-
----
-
-## Three-Tier FATES Knowledge System
-
-A2MC uses a three-tier architecture for FATES knowledge, ensuring the AI has access via multiple retrieval paths:
-
-| Tier | Location | Format | Purpose |
-|------|----------|--------|---------|
-| **Static Documentation** | `docs/fates-knowledge-base/` (per-commit subdirs) | Markdown | Human reference, RAG indexing |
-| **RAG/GraphRAG** | `rag/{chroma_db,graphs,metadata}/<profile>/` | ChromaDB + JSON graph | AI semantic search, graph traversal — version-aware (per-milestone) and configuration-aware (per simulation mode) |
-| **Adaptive Memory** | `memory/gained_knowledge/` | JSON | AI reasoning context, learned discoveries |
-
-**Key resources for CNP calibration:**
-- **START HERE:** `docs/fates-knowledge-base/fates-codebase-wiki/advanced/cnp_calibration_guide.md` (Knox 2026)
-- PID controller: `docs/fates-knowledge-base/fates-codebase-wiki/plant-physiology/parteh/cnp_allocation.md`
-- ECA/RD competition: `docs/fates-knowledge-base/fates-codebase-wiki/advanced/nutrient_competition.md`
-- Nutrient uptake: `docs/fates-knowledge-base/fates-codebase-wiki/plant-physiology/parteh/soil_plant_interface.md`
-
----
-
-## Version-Aware and Configuration-Aware Retrieval
-
-The RAG/GraphRAG tier is **version-aware** (v2.90+), **configuration-aware** (v2.91 / v2.92), and **drift-aware** (v2.98). A2MC auto-detects the user's E3SM/ELM-FATES checkout and the active simulation mode, loads the right knowledge profile, filters out content that doesn't apply, and (with opt-in) auto-rebuilds the profile when the checkout drifts off the matched milestone. The AI sees only the FATES/ELM source for the correct version, in the modes the user is actually running.
-
-### Version association (v2.90)
-
-A2MC reads the user's `A2MC_MODEL_PATH` (E3SM checkout root), detects the FATES + ELM commit hashes, and matches against the milestone registry at `rag/milestones.json`. Each milestone owns a self-contained profile: ChromaDB index, NetworkX graph, metadata, and a frozen per-milestone curated YAML.
-
-| Milestone | FATES tag | FATES commit | ELM commit | Param file | Status |
-|---|---|---|---|---|---|
-| `api-43-1` | `sci.1.91.1_api.43.1.0` | `e027a40` | `d40b843` | JSON | Canonical (active development) |
-| `api-31-0` | `sci.1.68.2_api.31.0.0` | `e85d997` | `60d9aad` | CDL | Legacy / Kougarok manuscript reproducibility |
-
-**End-user workflow:**
-
-```bash
-# Set in your site config (use_cases/<site>/config/<site>_config.sh):
-export A2MC_MODEL_PATH="/path/to/your/E3SM_FATES_checkout"
-
-# A2MC auto-detects on startup, picks the right RAG profile, and aligns or warns
+# 4. Source both configs and run
 source a2mc_config.sh
-source use_cases/Kougarok/config/kougarok_config.sh
-python orchestrator.py --run
+source use_cases/YourSite/config/yoursite_config.sh
+python orchestrator.py --run                     # add --no-review for fully autonomous
 ```
 
-**Diagnostic CLIs:**
+`A2MC_MODEL_PATH` (your E3SM/ELM-FATES checkout root) is **required** — A2MC reads the FATES + ELM commits and selects the matching RAG profile. AI reasoning (phases 2, 3, 4, 6) needs the API key for your chosen provider (`anthropic`, `openai`, or `cborg`).
 
-```bash
-# List registered milestones
-python scripts/rag_list.py
-
-# Diagnose which milestone matches a checkout
-python scripts/rag_match.py --model-path /path/to/E3SM_FATES
-
-# Bump to a new milestone (T1 metadata refresh, T2 param-only delta, T3 new epoch)
-python scripts/rag_bump.py --tier T2 --new-version sci.1.91.4_api.43.1.0 --mode prompt-pack
-
-# Validate Phase 4 capabilities (24 content gates + 9 smoke tests)
-python scripts/verify_phase4.py
-```
-
-Per-milestone YAML reproducibility: each milestone owns `rag/data/curated_relationships_<profile>.yaml`. The canonical YAML is treated as active development; rebuilding a milestone always uses its frozen YAML, preventing silent corruption when the canonical evolves. Full workflow: `docs/a2mc_reference/version_association_workflow.md`.
-
-### Configuration-aware retrieval (v2.91 / v2.92)
-
-A2MC parses the user's `A2MC_ELM_OPTIONS` and Tier 2 env vars into a 20-dimension `ConfigMode`. The RAG retriever builds a ChromaDB `where` clause from this and filters every chunk: PARTEH=1 retrieval no longer surfaces CNP allocation theory, fire chunks are filtered when SPITFIRE is off, ELM-only runs see only ELM content.
-
-**The 20 dimensions** (defaults match ELM `namelist_defaults.xml` — a vanilla SP run):
-
-- **Tier 1 primary (7):** `bgc_mode` (sp/cn/bgc/fates), `use_fates` (derived), `parteh_mode` (1=carbon-only / 2=CNP), `use_fates_nocomp`, `nutrient` (c/cn/cnp), `nutrient_comp_pathway` (rd/eca), `soil_decomp` (ctc/century)
-- **Tier 2 FATES feature flags (6):** `fates_spitfire_mode`, `use_fates_planthydro`, `use_fates_logging`, `use_fates_sp`, `use_fates_ed_prescribed_phys`, `use_fates_fixed_biogeog`
-- **Tier 3 secondary compset modifiers (7):** `crop`, `dynamic_vegetation`, `methane`, `hydrstress`, `topounit`, `irrig`, `solar_rad_scheme`
-
-**Three independent metadata sources tag chunks during the build:**
-
-1. **YAML curation** — `applies_in:` blocks on parameters / mechanisms / outputs in the curated YAML. 17 mode-restricted parameters + 3 mechanisms tagged in the canonical YAML.
-2. **Path-prefix table** — 11 patterns covering 22+ wiki docs hard-coded in `rag/loader.py:_WIKI_PATH_PREFIX_TAGS`. Includes inverse-tagged docs (e.g., `biophysics/transpiration.md` applies when hydraulics is OFF).
-3. **Default-permissive sweep** — any chunk/node not tagged by the above two ends up `applies_universal: True` (passes any filter).
-
-**Example config: Kougarok PARTEH=2 + ECA + CNP**
-
-```bash
-export A2MC_ELM_OPTIONS="-bgc fates -nutrient cnp -nutrient_comp_pathway eca"
-export A2MC_FATES_PARTEH_MODE=2
-# Optional Tier 2 (default off):
-# export A2MC_FATES_SPITFIRE_MODE=1
-# export A2MC_USE_FATES_PLANTHYDRO=true
-```
-
-A2MC's reasoning module reads `ConfigMode.from_env()` once per Phase 3/4 retrieval call and threads the where clause through `HybridRetriever.get_targeted_context()`, `get_calibration_context()`, and `get_context()` to the ChromaDB layer.
-
-### Auto-rebuild on drift (v2.98)
-
-When the orchestrator's startup hook detects that the user's checkout has drifted off the matched milestone, it dispatches via `tools/auto_rebuild.py:handle_drift()` per the tier policy:
-
-| Tier | Condition | Action | Flag-gated? |
-|---|---|---|---|
-| **T1** | No drift, all SHAs match | In-process metadata refresh via `tools/rag_refresh.py` | No (always auto) |
-| **T2** | Same epoch, FATES parameter file SHA differs | Subprocess `rag_bump.py --mode auto` + in-process validator gate; rollback to `<profile>.previous/` snapshot on Red verdict | Yes (`A2MC_RAG_AUTO_REBUILD=true`) |
-| **T3-near** | `epoch_distance ≤ A2MC_RAG_T3_AUTO_DISTANCE` (default 100) | Same as T2 (full pipeline) | Yes |
-| **T3-distant** | `epoch_distance > A2MC_RAG_T3_AUTO_DISTANCE` | Always emit prompt-pack at `Offline/bump_pack_<target>/` and abort startup | No (always manual) |
-
-`epoch_distance` formula: `|major_a − major_b| × 100 + |minor_a − minor_b|`. So api-43-1 → api-44-0 = 100 (auto-eligible); api-31-0 → api-43-1 = 1201 (always manual).
-
-Concurrency is enforced by a file lock at `<rag_dir>/.bump.lock`. Mode-aware safety: T1 only writes metadata; T2/T3 rebuilds run against source-pinned wikis + per-milestone curated YAML, with the same five-validator harness (below) gating the result. A Red verdict triggers automatic rollback to `<profile>.previous/`; the broken build is preserved at `<profile>.failed_<UTC-timestamp>/` for forensics.
-
-End-user how-to: `docs/a2mc_reference/version_association_howto.md` "Drift handling" section.
-
-### Validation — five layers
-
-Started as a three-tier triangle (codebase_wiki + yaml_wiki + rag_diff), gained Tier 4 for mode-metadata propagation in v2.92, and added three more validators in v2.95 to close coverage gaps:
-
-| Layer | Validator | Asserts |
-|---|---|---|
-| **Tier 1** | `tools/codebase_wiki_validator.py` | Wiki claims match source (per-commit) |
-| **Tier 2** | `tools/yaml_wiki_validator.py` (incl. Dim F for `applies_in:`) | Curated YAML entries present in wiki + parameter file; mode tags valid |
-| **Tier 3** | `tools/rag_diff.py` | Diff between two RAG profiles (e.g., milestone bump) |
-| **Tier 4** | `tools/mode_metadata_validator.py` (v2.92) | YAML `applies_in:` propagates correctly to chunks + graph nodes |
-| **Snapshot** | `tools/snapshot_validator.py` (v2.95) | End-to-end integration test: mode block + filter both fire correctly across 5 fixture ConfigModes |
-| **Profile completeness** | `tools/profile_completeness_validator.py` (v2.95) | 5-category statistical coverage: chunk-tagging distribution, wiki-dir coverage, YAML-entity coverage, Tier 2 axis distribution, per-mode golden chunk counts |
-| **Cross-milestone** | `tools/cross_milestone_validator.py` (v2.95) | `applies_in:` drift between milestone YAMLs (DRIFT vs WARN coverage) |
-
-**Verification on api-43-1 (current main):** 61/61 unittest fixtures + 6/6 smoke tests + four named-validator Greens — all GREEN.
-
-```bash
-# Unified harness — runs all five layers + the orchestrator-side gate (v2.98)
-python scripts/verify_mode_aware.py
-# Verdict: GREEN
-
-# Per-layer validators all have standalone CLI entry points; see
-# docs/a2mc_reference/rag_validation_workflow.md for the full playbook.
-```
-
-The same `run_all_validators(profile)` function is used by the v2.98 auto-rebuild path as a post-rebuild gate — a Red verdict triggers automatic rollback to `<profile>.previous/`.
-
-### Reference docs
-
-- **Comprehensive workflow:** `docs/a2mc_reference/mode_aware_workflow.md` (schema, recipes, curation guide, troubleshooting, file map)
-- **Quick how-to:** `docs/a2mc_reference/mode_aware_howto.md`
-- **ELM compset reference:** `docs/a2mc_reference/elm_compset_reference.md` (fills the wiki gap on `cime_config/` + `bld/`)
-- **Version association workflow:** `docs/a2mc_reference/version_association_workflow.md`
-- **Version association quick how-to:** `docs/a2mc_reference/version_association_howto.md`
-- **Validation playbook:** `docs/a2mc_reference/rag_validation_workflow.md`
+Full setup — every config field, provider/model table, installation on NERSC Perlmutter, and all run/resume options — is in the [User Guide → Installation](docs/a2mc_reference/user_guide.md#1-installation-and-setup-nersc-perlmutter), [Configuration](docs/a2mc_reference/user_guide.md#2-configuration-reference), and [Running the workflow](docs/a2mc_reference/user_guide.md#3-running-the-workflow).
 
 ---
 
-## Adaptive Memory System
+## Knowledge system
 
-Two-tier knowledge architecture enabling learning across sessions while keeping site-specific knowledge separate.
+A2MC encodes the same FATES/ELM knowledge in three tiers so the AI can reach it via multiple paths:
 
-### Architecture
+| Tier | Location | Purpose |
+|------|----------|---------|
+| **Static Documentation** | `docs/fates-knowledge-base/` | Human reference, RAG indexing |
+| **RAG/GraphRAG** | `rag/{chroma_db,graphs,metadata}/<profile>/` | AI semantic search + graph traversal — **version-aware** and **configuration-aware** |
+| **Adaptive Memory** | `memory/gained_knowledge/` | AI reasoning context, learned discoveries |
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                   A2MC Knowledge System                          │
-├─────────────────────────────────────────────────────────────────┤
-│  GENERIC KNOWLEDGE (memory/gained_knowledge/)                   │
-│  ─────────────────────────────────────────────                  │
-│  • General FATES mechanistic insights                           │
-│  • Applies to all sites                                         │
-│                                                                  │
-│  SITE-SPECIFIC KNOWLEDGE (use_cases/{site}/memory/)             │
-│  ─────────────────────────────────────────────                  │
-│  • Site-specific discoveries and experiments                    │
-│  • Phase execution logs with AI reasoning                       │
-│  • Lessons learned from site calibration                        │
-│                                                                  │
-│  KNOWLEDGE PROMOTION                                            │
-│  ─────────────────────────────────────────────                  │
-│  • AI evaluates site-specific discoveries                       │
-│  • Generalizable lessons promoted to generic knowledge          │
-└─────────────────────────────────────────────────────────────────┘
-```
+The RAG/GraphRAG tier auto-detects the user's E3SM/ELM-FATES checkout (via `A2MC_MODEL_PATH`) and loads the matching knowledge profile (**version-aware**, v2.90+), filters every chunk to the active simulation mode — FATES on/off, PARTEH carbon-only vs CNP, ECA vs RD, fire/hydraulics/logging on/off (**configuration-aware**, v2.91/v2.92), and can auto-rebuild the profile when the checkout drifts (**drift-aware**, v2.98). Two milestones ship: `api-43-1` (canonical) and `api-31-0` (legacy / Kougarok manuscript reproducibility).
 
-### Memory Stores
+The **Adaptive Memory** system learns across sessions: generic FATES insights in `memory/gained_knowledge/` and site-specific discoveries under `use_cases/{site}/memory/`, with generalizable lessons promoted from site to generic. At diagnosis/hypothesis time, RAG knowledge, adaptive memory, and current task data are combined into the reasoning prompt (failed approaches marked "DO NOT REPEAT").
 
-**Generic Knowledge** (`memory/gained_knowledge/`):
-
-| Store | Purpose |
-|-------|---------|
-| `discoveries.json` | General FATES mechanistic insights |
-| `experiments.json` | Generic experiment patterns |
-| `parameters.json` | Parameter knowledge (not site-specific) |
-| `failed_approaches.json` | Generic approaches to NOT repeat |
-
-**Site-Specific Knowledge** (`use_cases/{site}/memory/gained_knowledge/`):
-
-| Store | Purpose |
-|-------|---------|
-| `discoveries.json` | Site-specific insights (e.g., "Kougarok Allocation Paradox") |
-| `experiments.json` | Site experiments with outcomes |
-| `failed_approaches.json` | Site-specific approaches to NOT repeat |
-
-**Phase Execution Logs** (`use_cases/{site}/memory/logs/`):
-
-| Directory | Purpose |
-|-----------|---------|
-| `phase2_screening/` | Screening analysis logs (Markdown) |
-| `phase3_diagnosis/` | Root cause analysis with AI reasoning |
-| `phase4_hypothesis/` | Hypothesis generation logs |
-| `phase6_refinement/` | Lessons learned and knowledge extraction |
-
-### MemoryManager API
-
-```python
-from memory import MemoryManager
-
-# Generic knowledge
-memory = MemoryManager("memory/gained_knowledge")
-
-# Site-specific knowledge
-memory = MemoryManager("use_cases/Kougarok/memory/gained_knowledge")
-
-# Query methods
-context = memory.get_relevant_context(targets, parameters, phase)
-failed = memory.get_failed_experiments(parameters)
-knowledge = memory.get_parameter_knowledge("fates_alloc_storage_cushion")
-stats = memory.stats()
-
-# Update methods
-memory.record_experiment(experiment_id, base_case, modifications, results, outcome)
-memory.add_discovery(name, description, mechanism, affects, confidence)
-memory.add_failed_approach(approach, experiment_id, why_failed, severity, alternatives)
-memory.update_parameter_knowledge(param_name, knowledge)
-```
-
-### Integration with Reasoning
-
-The `ReasoningModule` automatically queries memory during:
-- **Diagnosis:** Retrieves relevant discoveries and parameter knowledge
-- **Hypothesis Generation:** Checks failed approaches to avoid repetition
-- **Refinement:** Extracts lessons and updates memory with new discoveries
-
-### Knowledge Integration in AI Prompts
-
-When A2MC performs diagnosis or generates hypotheses, three knowledge sources are combined into the Claude API prompt:
-
-| Source | Content | Role |
-|--------|---------|------|
-| **RAG/GraphRAG** | FATES + ELM source documentation (per-milestone profile; e.g. api-43-1 ≈ 6,300 chunks, api-31-0 ≈ 2,600) | General knowledge - "how does the PID controller work?" |
-| **Adaptive Memory** | Discoveries, failed approaches, parameter insights | Learned knowledge - "what failed before? what worked?" |
-| **Task Data** | Results, targets, sensitivity rankings | Current context - "what are we trying to calibrate?" |
-
-**Prompt Structure (in order):**
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  ## FATES Knowledge Base Context (RAG/GraphRAG)             │
-│  [Vector search results from docs + Graph traversal]        │
-│                                                             │
-│  ## Adaptive Memory Context                                 │
-│  [Relevant discoveries, FAILED APPROACHES - DO NOT REPEAT]  │
-│                                                             │
-│  ## Current Data                                            │
-│  [Simulation results, validation targets, sensitivity]      │
-│                                                             │
-│  ## Task Instructions + Response Format                     │
-└─────────────────────────────────────────────────────────────┘
-```
-
-**Key Safeguard:** The system explicitly marks failed approaches with "DO NOT REPEAT" and instructs Claude to avoid proposing them unless there's strong justification.
-
-**No strict priority** - the sources serve complementary roles:
-- RAG provides the "textbook" knowledge (how FATES mechanisms work)
-- Memory provides the "experience" (what we learned from previous iterations)
-- Both inform the AI's reasoning about the current task data
-
-### Referencing Knowledge from Similar Sites
-
-When calibrating a new site, you can reference knowledge from existing sites with similar characteristics:
-
-| Your Site Type | Reference Site | Transferable Knowledge |
-|----------------|----------------|------------------------|
-| Arctic/tundra | `use_cases/Kougarok/` | Allocation Paradox, P-limitation dynamics, graminoid-shrub competition |
-| CNP-enabled | `use_cases/Kougarok/` | PID controller behavior, ECA competition, vmax calibration strategies |
-
-**What transfers:** Mechanistic insights, diagnostic patterns, failed approaches to avoid
-**What doesn't transfer:** Exact parameter values (these are site-specific)
-
-```python
-# Reference another site's knowledge
-from memory import MemoryManager
-
-# Load Kougarok knowledge for reference
-kougarok_memory = MemoryManager("use_cases/Kougarok/memory/gained_knowledge")
-
-# Check discoveries relevant to your calibration
-discoveries = kougarok_memory.discoveries.get('discoveries', [])
-for d in discoveries:
-    print(f"- {d['name']}: {d['description'][:80]}...")
-
-# Check failed approaches to avoid
-failed = kougarok_memory.failed_approaches.get('failed_approaches', [])
-for f in failed:
-    print(f"AVOID: {f['approach']}")
-```
-
-**See also:** `use_cases/Kougarok/README.md` → "Reference for Similar Sites" section for detailed applicability guidance.
-
-### Seeding Memory
-
-To seed memory with curated knowledge:
-
-```bash
-# Create curated_knowledge.yaml from template
-cp scripts/curated_knowledge_template.yaml scripts/curated_knowledge.yaml
-# Edit with your discoveries...
-
-# Run seeding script
-python scripts/seed_memory_from_yaml.py --input scripts/curated_knowledge.yaml
-```
-
-### Configuration
-
-Enable memory in the orchestrator (paths auto-detected from environment):
-
-```python
-from orchestrator import CalibrationOrchestrator, Config
-
-config = Config(
-    use_memory=True,           # Enable Adaptive Memory (site + generic)
-    use_reasoning=True,        # Enable Claude API reasoning
-    max_skip_testing=10,       # Max Phase 3↔4 skip testing cycles
-    max_experiments=10,        # Max full experiment cycles
-)
-orch = CalibrationOrchestrator(config)
-orch.run()
-```
+Details: [User Guide → Knowledge system](docs/a2mc_reference/user_guide.md#6-knowledge-system) and [Adaptive Memory](docs/a2mc_reference/user_guide.md#7-adaptive-memory-system).
 
 ---
 
-## Installation & Setup
+## Documentation
 
-### On NERSC Perlmutter
-
-```bash
-# 1. Clone the repository
-cd /global/homes/$USER
-git clone https://github.com/jingtao-lbl/A2MC.git
-cd A2MC
-
-# 2. Set up Python environment (one-time setup)
-module load python
-python -m venv ~/a2mc_env
-source ~/a2mc_env/bin/activate
-pip install anthropic openai netCDF4 numpy scipy SALib pandas networkx chromadb sentence-transformers pyyaml Pillow
-
-# 3. Set API key (add to ~/.bashrc for persistence)
-# Use the env var matching your provider (see a2mc_config.sh → A2MC_AI_PROVIDER):
-#   anthropic → ANTHROPIC_API_KEY, openai → OPENAI_API_KEY, cborg → CBORG_API_KEY
-echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.bashrc
-source ~/.bashrc
-
-# 4. Verify setup
-python -c "import anthropic; print('Anthropic SDK OK')"
-python -c "from orchestrator import CalibrationOrchestrator; print('Orchestrator OK')"
-```
-
-**Note:** After initial setup, the virtual environment is auto-activated when you `source a2mc_config.sh`.
-
-### Running the Workflow
-
-Before running, modify the two configuration files for your setup:
-
-1. **`a2mc_config.sh`** — Machine-level settings (HPC project, E3SM path, output root, Python env, **AI provider**)
-2. **`use_cases/{site}/config/{site}_config.sh`** — Site-specific settings (PFTs, parameters, validation targets, case naming)
-
-```bash
-# Source both configuration files (required before every run)
-source a2mc_config.sh
-source use_cases/Kougarok/config/kougarok_config.sh
-
-# Start a new calibration run (with human review checkpoints)
-python orchestrator.py --run
-
-# Run fully autonomous (no interactive prompts)
-python orchestrator.py --run --no-review
-
-# Start from a specific phase and calibration round
-python orchestrator.py --run --start-phase 2 --start-round 2
-
-# Resume from a saved checkpoint (state-file auto-detected from config)
-python orchestrator.py --resume
-
-# Resume Phase 5 after HPC experiments complete, continuing the same session
-# (checks job status, extracts results, evaluates, then proceeds to Phase 6)
-python orchestrator.py --resume --start-phase 5 --session-id 20260331_030000
-
-# Re-run from Phase 2 using the same session's Phase 1 results
-# (backs up state file and downstream phase_results, then re-runs Phase 2+)
-python orchestrator.py --resume --start-phase 2 --session-id 20260405_145259
-```
-
-**Tip:** Use `screen` or `tmux` for long-running sessions on HPC.
-
-```bash
-# Monitor progress (main log file saved to use_cases/{site}/)
-tail -f use_cases/Kougarok/a2mc_run_*.log
-```
-
-All screen output is automatically saved to `use_cases/{site}/a2mc_run_{timestamp}.log`.
+- [**A2MC User Guide**](docs/a2mc_reference/user_guide.md) — full operational reference (config, phases, modules, knowledge system, state, cost, reporting)
+- [`AGENTS.md`](AGENTS.md) — operating contract for the offline interactive agent
+- [`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md) — offline-agent skills catalog
+- `docs/a2mc_reference/` — mode-aware workflow, version association, validation playbook, RAG build roadmap, FATES data reference
+- `docs/fates-knowledge-base/` — FATES documentation (official docs + codebase wiki)
+- `use_cases/Kougarok/README.md` — a complete worked example (Arctic tundra, NGEE-Arctic)
 
 ---
 
-## Experimental Design Strategies
+## Citation
 
-### Cumulative Design
-Test parameters sequentially, adding one at a time:
+If you use A2MC in your work, please cite the software release:
 
-```
-Exp1: param_A only
-Exp2: param_A + param_B
-Exp3: param_A + param_B + param_C
-```
+> Tao, J. (2026). *A2MC: Agentic Adaptive Multi-Target Calibration.* Zenodo software release. Autonomous 7-phase calibration framework for the E3SM Land Model (ELM) combining LLM reasoning, a curated knowledge base, hybrid RAG/GraphRAG retrieval, and persistent adaptive memory. https://doi.org/10.5281/zenodo.19194999
 
-**Use when:** Parameters act through sequential mechanisms (A → B → C)
-
-### Factorial Design
-Test all combinations of parameters:
-
-```
-Exp1: param_A=low,  param_B=low
-Exp2: param_A=low,  param_B=high
-Exp3: param_A=high, param_B=low
-Exp4: param_A=high, param_B=high
-```
-
-**Use when:** Parameters may interact (synergistic or antagonistic effects)
-
----
-
-## State Persistence
-
-All workflow state is saved to JSON for resumability:
-
-```json
-{
-  "phase": "DIAGNOSIS",
-  "iteration": 3,
-  "start_time": "2025-01-06T10:30:00",
-  "config": {
-    "work_dir": "~/A2MC",
-    "param_file": "fates_params.nc",
-    "output_root": "~/A2MC_runs"
-  },
-  "design": {
-    "method": "morris",           // or "lhs", "sobol", "custom"
-    "n_params": 162,
-    "n_trajectories": 30,         // Morris: total = traj × (params+1)
-    "n_samples": 1000,            // LHS/Sobol
-    "total_ensemble": 4890        // Auto-calculated from scheme
-  },
-  "screening": {
-    "top_cases": [2678, 845, 3930],
-    "best_composite_nrmse": 0.493
-  },
-  "experiments": [
-    {
-      "name": "Exp1_storage_cushion",
-      "base_case": 2678,
-      "modifications": [...],
-      "results": {...},
-      "interpretation": {...}
-    }
-  ],
-  "phase_history": [
-    {"phase": "DESIGN", "completed": "2025-01-06T11:00:00"},
-    {"phase": "EXPLORATION", "completed": "2025-01-08T14:30:00"}
-  ]
+```bibtex
+@software{tao_a2mc_2026,
+  author    = {Tao, Jing},
+  title     = {{A2MC}: Agentic Adaptive Multi-Target Calibration},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.19194999},
+  url       = {https://github.com/jingtao-lbl/A2MC-elm},
+  note      = {Autonomous 7-phase calibration framework for the E3SM Land Model (ELM)
+               combining LLM reasoning, a curated knowledge base, hybrid RAG/GraphRAG
+               retrieval, and persistent adaptive memory}
 }
 ```
 
----
-
-## Integration with Existing Tools
-
-A2MC wraps existing well-tested tools rather than reimplementing:
-
-### Parameter Modification
-```
-modify_fates_parameters.py
-├── create_modified_parameter_file(input, output, modifications)
-├── Handles 1D/2D parameters
-├── Supports absolute values or percent changes
-└── Verifies modifications after applying
-```
-
-### Data Extraction
-```
-extract_monthly_variables_FATES.py
-├── Extracts site-level, PFT-level, SZPF-level variables
-├── Outputs NetCDF (all vars) + CSV (site/PFT only)
-├── Processes yearly files (12 months each)
-└── ~50-100× faster than daily extraction
-```
-
-### Job Submission
-```
-Direct SLURM commands:
-├── sbatch case.submit
-├── squeue -u $USER
-├── scancel job_id
-└── sacct -j job_id --format=...
-```
-
----
-
-## Error Handling
-
-### Job Failures
-- Automatic retry with exponential backoff
-- Maximum 3 retries per job
-- Log failed jobs for manual inspection
-
-### API Errors
-- Rate limiting with automatic backoff
-- Fallback to rule-based reasoning if API unavailable
-- Cache repeated queries to reduce costs
-
-### Missing Data
-- Verify expected files before proceeding
-- Clear error messages with suggested fixes
-- Option to skip incomplete cases
-
----
-
-## Cost Management
-
-### Claude API Usage
-- **Diagnosis:** ~2K tokens input, ~1K output
-- **Hypothesis:** ~3K tokens input, ~1K output
-- **Experiment design:** ~2K tokens input, ~500 output
-- **Interpretation:** ~2K tokens input, ~1K output
-
-**Estimated cost per iteration:** ~$0.10-0.20 (Sonnet)
-
-### HPC Resources
-- **Morris ensemble (4890 sims):** ~50K node-hours
-- **Single experiment:** ~10 node-hours
-- **Data extraction:** ~0.1 node-hours per case
-
----
-
-## Session Reports and Presentations
-
-A2MC includes offline tools for generating session reports, presentation slides, and narrated videos from calibration session logs. These are not part of the automated workflow and can be run at any time (even while Phase 5 simulations are still running).
-
-### Session Report
-
-The orchestrator automatically generates a Markdown session report at the end of Phase 6 via `tools/session_report.py`. The report is saved to `use_cases/{site}/memory/logs/{session_id}/session_report_{session_id}.md`.
-
-### Presentation Pipeline
-
-`tools/reports/generate_presentation.py` provides a complete pipeline from session logs to narrated video:
-
-```
-Session logs + report + figures
-  → AI-generated manuscript-style technical report (.md)
-  → AI-generated Marp slides (.md)
-  → AI-generated narration script (.json)
-  → PDF + PPTX (marp-cli)
-  → Narrated MP4 video (TTS + ffmpeg)
-```
-
-**Important:** Stages 1-4 (collect, report, slides, narration) can run on Perlmutter since they only need the AI API. Stages 5-6 (PDF, video) require marp-cli, ffmpeg, and poppler which are only available locally. Use `--stop-after narration` on Perlmutter, then `--start-from pdf` on your local machine.
-
-```bash
-# === On Perlmutter: generate report + slides + narration ===
-source a2mc_config.sh
-source use_cases/Kougarok/config/kougarok_config.sh
-
-python tools/reports/generate_presentation.py --session-id 20260330_135435 \
-    --author "Dr. Jing Tao (Lawrence Berkeley National Laboratory)" \
-    --stop-after narration
-
-# Manuscript report only (no slides/video)
-python tools/reports/generate_presentation.py --session-id 20260330_135435 \
-    --stop-after report
-
-# Review and edit the generated report, slides, and narration
-
-# === On local machine: build PDF + video ===
-source ~/a2mc_env/bin/activate  # for openai TTS
-python tools/reports/generate_presentation.py --session-id 20260330_135435 \
-    --start-from pdf
-```
-
-| Stage | What | AI API? | Where |
-|-------|------|---------|-------|
-| collect | Gather session report, raw logs, figures | No | Perlmutter or local |
-| report | Manuscript-style technical report | Yes | Perlmutter or local |
-| slides | Generate Marp slide deck | Yes | Perlmutter or local |
-| narration | Generate TTS narration per slide | Yes | Perlmutter or local |
-| pdf | Build PDF and PPTX with marp-cli | No | **Local only** |
-| video | Build narrated MP4 with TTS audio | No (TTS API) | **Local only** |
-
-The AI uses both the session report and raw phase logs as source material. The manuscript report follows journal-quality scientific writing standards (precision, transparency, quantified uncertainty, no filler). Narration follows a reporting-agent style ("Hello. I'm an A2MC reporting agent, curated by...").
-
-**Local prerequisites:** marp-cli (`npm install -g @marp-team/marp-cli`), poppler (`brew install poppler`), ffmpeg (`brew install ffmpeg`), openai Python package (in `~/a2mc_env`).
-
-**Detailed workflow:** See `tools/reports/WORKFLOW.md`.
-
----
-
-## Directory Structure
-
-```
-A2MC/
-├── README.md              # This file
-├── a2mc_config.sh         # Machine-level configuration (HPC paths, defaults)
-├── orchestrator.py        # Main workflow controller
-├── reasoning/             # Claude API interface (package)
-│   ├── __init__.py        # Backward-compatible re-exports
-│   ├── schemas.py         # Diagnosis, Hypothesis, Experiment dataclasses
-│   ├── prompts.py         # DIAGNOSTIC_TOOLS_INVENTORY, CUSTOM_SCRIPT_TEMPLATE
-│   ├── base.py            # ReasoningModule class core (init, query, RAG)
-│   ├── methods.py         # Phase methods (diagnose, hypothesis, etc.)
-│   └── validation.py      # Hypothesis validation and AI self-review
-│
-├── use_cases/             # Site-specific case studies
-│   ├── README.md          # Overview and instructions
-│   ├── TEMPLATE/          # Template for new sites
-│   └── Kougarok/          # Kougarok, Alaska (NGEE-Arctic)
-│       ├── README.md      # Site description and discoveries
-│       ├── config/
-│       │   └── kougarok_config.sh  # ALL site-specific settings
-│       ├── parameters/
-│       │   ├── FATES_Parameter_List_Full_162_Finalized.txt
-│       │   └── salib_problem_162params.txt
-│       ├── validation/
-│       │   └── validation_targets_leafroot.txt
-│       └── memory/        # SITE-SPECIFIC KNOWLEDGE
-│           ├── logs/      # Phase execution logs (session-scoped)
-│           │   └── {session_id}/          # e.g., 20260310_143052/
-│           │       ├── phase2_screening/
-│           │       ├── phase3_diagnosis/
-│           │       ├── phase4_hypothesis/
-│           │       ├── phase5_testing/
-│           │       └── phase6_refinement/
-│           ├── phase_results/  # Phase outputs (session-scoped)
-│           │   └── {session_id}/
-│           │       ├── phase1_exploration/  # Sensitivity analysis results
-│           │       ├── phase2_screening/    # Ranking plots, CSVs
-│           │       ├── phase3_diagnosis/    # Diagnostic figures
-│           │       ├── phase5_testing/      # Experiment scripts, params
-│           │       └── phase6_refinement/   # Comparison plots
-│           ├── extracted/ # Extracted lessons (YAML)
-│           └── gained_knowledge/  # Site-specific knowledge (JSON)
-│               ├── discoveries.json
-│               ├── experiments.json
-│               └── failed_approaches.json
-│
-├── phases/                # Phase-specific scripts
-│   ├── CLAUDE.md          # Phase overview for AI assistants
-│   ├── phase0_design/     # Morris sampling, case creation
-│   ├── phase1_exploration/# Sensitivity analysis
-│   ├── phase2_screening/  # Ensemble ranking
-│   ├── phase3_diagnosis/  # Root cause analysis
-│   ├── phase4_hypothesis/ # Hypothesis generation
-│   ├── phase5_testing/    # Run experiments
-│   └── phase6_refinement/ # Learn from results
-│
-├── tools/                 # Shared utilities
-│   ├── config.py          # Python config loader (reads a2mc_config.sh)
-│   ├── phase_logger.py    # Site-specific Markdown logging (session-scoped)
-│   ├── workflow_status.py # Master workflow status
-│   ├── cost_functions.py  # Error metrics (RE, RMSE, NSE, KGE)
-│   ├── evaluate_case.py   # Case evaluation against validation targets
-│   ├── optimize_function.py  # Ensemble ranking
-│   ├── fates_utils.py     # FATES data utilities
-│   ├── fates_output_variables.py  # FATES output variable registry
-│   ├── hpc_utils.py       # HPCConfig, HPCExecutor, ParameterManager
-│   ├── modify_fates_parameters.py
-│   ├── diagnose_ensemble_status.py
-│   ├── populate_experiments.py  # Phase 6 resume tool
-│   ├── submit_experiment.sh    # Submit single experiment to HPC
-│   ├── create_case.sh          # Create CIME case (sources config vars)
-│   └── extract_knowledge.py    # Knowledge extraction from logs
-│
-├── memory/                # GENERIC KNOWLEDGE (framework-level)
-│   ├── __init__.py        # Package exports
-│   ├── store.py           # JSON persistence utilities
-│   ├── manager.py         # MemoryManager class
-│   ├── gained_knowledge/  # Generic FATES knowledge (JSON)
-│   │   ├── discoveries.json
-│   │   ├── experiments.json
-│   │   ├── parameters.json
-│   │   └── failed_approaches.json
-│   ├── extracted/         # Generic extracted lessons (YAML)
-│   └── workflow_log.json  # Master workflow status
-│
-├── rag/                   # RAG/GraphRAG System (generic FATES knowledge)
-│   ├── loader.py          # Document loading
-│   ├── vector_store.py    # ChromaDB wrapper
-│   ├── knowledge_graph.py # NetworkX graph
-│   ├── graph_builder.py   # Build from YAML
-│   ├── hybrid_retriever.py# Combined retrieval
-│   ├── data/
-│   │   └── curated_relationships.yaml  # Knowledge source of truth
-│   └── chroma_db/         # Vector index
-│
-├── docs/                  # Documentation
-│   └── fates-knowledge-base/  # FATES documentation (official + wiki)
-│
-├── scripts/               # Utility scripts
-│   ├── seed_memory_from_yaml.py
-│   ├── build_rag_index.py
-│   └── curated_knowledge_template.yaml
-│
-└── plot/                  # Visualization scripts
-    └── visualize_a2mc_horizontal.py
-```
+A dedicated methods paper on A2MC is in preparation; this section will be updated with the article citation once it is available.
 
 ---
 
@@ -1375,7 +207,6 @@ A2MC/
 - [ELM-FATES Technical Reference](https://fates-users-guide.readthedocs.io/)
 - [SALib Morris Sensitivity](https://salib.readthedocs.io/)
 - [CAF Agent of the Week #7 — A2MC](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
-
 
 
 ---
