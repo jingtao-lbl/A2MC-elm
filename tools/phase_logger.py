@@ -113,7 +113,8 @@ class PhaseLogger:
     def __init__(self, site_dir: str = None, site_name: str = None,
                  session_id: str = None,
                  calibration_round: int = None, iteration: int = None,
-                 experiment_count: int = None, skip_testing_count: int = None):
+                 experiment_count: int = None, skip_testing_count: int = None,
+                 agent_mode: str = None):
         """
         Initialize the phase logger.
 
@@ -164,6 +165,13 @@ class PhaseLogger:
         # When set, replaces date+letter in filenames AND adds session_id subdirectory
         self.session_id = session_id if session_id else None
 
+        # Agent mode: 'offline' (interactive) uses the date-led flat topic-stem layout
+        # (docs/31); 'online' (default) uses the autonomous session_id/phase layout.
+        self.agent_mode = (agent_mode
+                           or os.environ.get('A2MC_AGENT_MODE', 'online')).lower()
+        self._offline = self.agent_mode == 'offline'
+        self._offline_stems = {}  # (phase, clean_descriptor) -> cached stem for this session
+
         # Fallback: date+letter tracking (used when session_id is not set)
         self._session_letter = 'a'  # For same-day logs: a, b, c, ...
         self._last_date = None
@@ -194,7 +202,14 @@ class PhaseLogger:
             self.skip_testing_count = int(os.environ.get('A2MC_SKIP_TESTING_COUNT', '0'))
 
     def _ensure_directories(self):
-        """Create log directories for each phase (session-scoped when session_id set)"""
+        """Create log directories for each phase (session-scoped when session_id set).
+
+        Offline mode writes flat logs directly in log_dir (no phase subdirs), so it only
+        ensures log_dir exists.
+        """
+        if self._offline:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            return
         base = self.log_dir
         if self.session_id:
             base = base / self.session_id
@@ -218,7 +233,14 @@ class PhaseLogger:
         EE = experiment_count (outer loop experiment cycle)
         II = iteration (Phase 3&4: skip_testing_count+1; Phase 5&6: overall iteration)
         session_id = YYYYMMDD_HHMMSS timestamp matching the run log
+
+        Offline mode (docs/31): returns the flat topic stem {stem}.md where
+        stem = YYYYMMDDx_phase{N}_{name}_r{RR}[_c{EE}[_iter{II}]]_{descriptor}
+        (the title becomes the descriptor).
         """
+        if self._offline:
+            return self.topic_stem(phase, title) + ".md"
+
         # Determine date portion: session_id or date+letter fallback
         if self.session_id:
             date_part = self.session_id
@@ -256,12 +278,82 @@ class PhaseLogger:
         return filename
 
     def _get_phase_dir(self, phase: int) -> Path:
-        """Get directory for a specific phase (session-scoped when session_id set)"""
+        """Get directory for a specific phase (session-scoped when session_id set).
+
+        Offline mode writes flat in log_dir (phase is encoded in the filename stem,
+        not a subdirectory), so it returns log_dir directly.
+        """
+        if self._offline:
+            return self.log_dir
         phase_name = PHASES.get(phase, "unknown")
         base = self.log_dir
         if self.session_id:
             base = base / self.session_id
         return base / f"phase{phase}_{phase_name}"
+
+    # ---- Offline topic-stem helpers (docs/31) ----
+
+    @staticmethod
+    def _clean_descriptor(descriptor: str) -> str:
+        """Normalize a title/descriptor to lower_snake_case for the stem."""
+        s = descriptor.strip().lower().replace('/', ' ').replace('-', ' ')
+        s = ''.join(c if (c.isalnum() or c == ' ') else '' for c in s)
+        s = '_'.join(s.split())
+        return s[:60] or 'topic'
+
+    def _offline_letter(self, today: str) -> str:
+        """Next free same-day sequence letter, scanning logs/ + phase_results/ + this session."""
+        used = set()
+        for p in self.log_dir.glob(f"{today}?_*.md"):
+            used.add(p.name[8:9])
+        pr = self.site_dir / "memory" / "phase_results"
+        if pr.exists():
+            for p in pr.glob(f"{today}?_*"):
+                used.add(p.name[8:9])
+        for stem in self._offline_stems.values():
+            if stem.startswith(today):
+                used.add(stem[8:9])
+        for c in "abcdefghijklmnopqrstuvwxyz":
+            if c not in used:
+                return c
+        return "z"
+
+    def topic_stem(self, phase: int, descriptor: str) -> str:
+        """Build (and cache) the offline topic stem for (phase, descriptor).
+
+        stem = YYYYMMDDx_phase{N}_{name}_r{RR}[_c{EE}[_iter{II}]]_{descriptor}
+        Cached per (phase, clean descriptor) so the paired log + artifact folder share it.
+        """
+        desc = self._clean_descriptor(descriptor)
+        key = (phase, desc)
+        if key in self._offline_stems:
+            return self._offline_stems[key]
+        today = datetime.now().strftime("%Y%m%d")
+        letter = self._offline_letter(today)
+        phase_name = PHASES.get(phase, "unknown")
+        phase_tok = f"phase{phase}_{phase_name}"
+        rr = f"r{self.calibration_round:02d}"
+        if phase in (3, 4):
+            loop = f"_c{self.experiment_count:02d}_iter{self.skip_testing_count + 1:02d}"
+        elif phase in (5, 6):
+            loop = f"_c{self.experiment_count:02d}"
+        else:
+            loop = ""
+        stem = f"{today}{letter}_{phase_tok}_{rr}{loop}_{desc}"
+        self._offline_stems[key] = stem
+        return stem
+
+    def topic_artifact_dir(self, phase: int, descriptor: str, create: bool = True) -> Path:
+        """Offline per-topic artifact folder use_cases/{site}/memory/phase_results/{stem}/.
+
+        Shares the stem with the calibration log (topic_stem). Results go here; reusable
+        diagnostic scripts go to phases/phase3_diagnosis/generated/ (docs/31).
+        """
+        stem = self.topic_stem(phase, descriptor)
+        d = self.site_dir / "memory" / "phase_results" / stem
+        if create:
+            d.mkdir(parents=True, exist_ok=True)
+        return d
 
     def set_iteration(self, iteration: int):
         """Set the current workflow iteration (backward compatible)."""

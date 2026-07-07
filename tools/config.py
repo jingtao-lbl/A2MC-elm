@@ -56,19 +56,19 @@ class A2MCConfig:
     def E3SM_ROOT(self) -> str:
         """E3SM/FATES source code root"""
         return os.environ.get('A2MC_E3SM_ROOT',
-            '/global/cfs/cdirs/m2467/jingtao/E3SM_FATES')
+            '~/E3SM_FATES')
 
     @property
     def OUTPUT_ROOT(self) -> str:
         """Output root for simulation results"""
         return os.environ.get('A2MC_OUTPUT_ROOT',
-            '/global/cfs/cdirs/m2467/jingtao')
+            '~')
 
     @property
     def SCRIPTS_DIR(self) -> str:
         """Scripts directory (where case scripts are generated)"""
         return os.environ.get('A2MC_SCRIPTS_DIR',
-            '/pscratch/sd/j/jingtao/CaseScripts')
+            '~/CaseScripts')
 
     @property
     def PARAM_DIR(self) -> str:
@@ -435,6 +435,22 @@ class A2MCConfig:
         if session_id:
             return base / session_id / phase_name
         return base / phase_name
+
+    def phase_topic_dir(self, stem: str, create: bool = True) -> Path:
+        """Offline-agent per-topic artifact folder (docs/31).
+
+        Returns (and by default creates) {USE_CASE_DIR}/memory/phase_results/{stem}/
+        where stem = YYYYMMDDx_phase{N}_{name}_r{RR}[_c{EE}[_iter{II}]]_{descriptor}.
+
+        Flat + date-led (the offline analog of the session-scoped phase_results_dir):
+        the interactive agent has no A2MC_SESSION_ID and organizes by topic, not by run.
+        Results (figures, CSVs, case lists, data) live here; reusable diagnostic scripts
+        go to phases/phase3_diagnosis/generated/ instead.
+        """
+        d = Path(self.USE_CASE_DIR) / "memory" / "phase_results" / stem
+        if create:
+            d.mkdir(parents=True, exist_ok=True)
+        return d
 
     def is_configured(self) -> bool:
         """Check if site configuration has been loaded"""

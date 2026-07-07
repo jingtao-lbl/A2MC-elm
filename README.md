@@ -3,8 +3,8 @@
 [![CAF Agent of the Week](https://img.shields.io/badge/CAF-Agent%20of%20the%20Week-blue)](https://github.com/AI-ModCon/BaseCAF_agent_of_the_week/blob/main/AotW-05-A2MC.md)
 
 **Status:** Implementation Complete <br>
-**Version:** 2.100 <br>
-**Purpose:** Fully autonomous multi-target calibration of ELM using AI API + HPC + RAG/GraphRAG + Adaptive Memory
+**Version:** 2.111 <br>
+**Purpose:** Fully autonomous multi-target calibration of ELM (with or without FATES) using AI API + HPC + RAG/GraphRAG + Adaptive Memory
 
 ---
 
@@ -28,21 +28,21 @@ A2MC replaces this with an autonomous, interpretable workflow that:
 
 ## Two Ways to Run A2MC
 
-A2MC is **one agent with two runtimes**. The intelligence lives in the repo's shared assets — operating rules, a skills catalog, persistent memory, episodic logs, RAG knowledge, and tools — and two different runtimes consume those same assets:
+A2MC is **one agent you run two ways**. The intelligence lives in the repo's shared assets — operating rules, a skills catalog, persistent memory, episodic logs, RAG knowledge, and tools — and two different runtimes consume those same assets:
 
 | | **Autonomous agent** (online) | **Interactive agent** (offline) |
 |---|---|---|
-| Runtime | `python orchestrator.py --run` — Claude API inside a Python state machine | A coding-agent harness (e.g. Claude Code) operating directly in the repo |
+| Runtime | `python orchestrator.py --run` — AI API inside a Python state machine | A coding-agent harness (e.g. Claude Code) operating directly in the repo |
 | Driver | Fixed Phase 0→7 state machine | Human conversation, turn-by-turn |
-| Cadence | Unattended, at scale | Human-in-the-loop |
+| Cadence | Unattended, at scale (`--run` checkpoints by default; `--no-review` = fully autonomous) | Human-in-the-loop |
 | Best for | The repetitive, well-defined calibration loop | Open-ended, exploratory, one-off, judgment-heavy tasks |
 | Curated memory | **Proposes** (auto-learned lessons staged for review) | **Promotes** (the sole writer of curated knowledge) |
 
-A2MC is **mode-aware**: the same repo runs ELM with or without FATES, different FATES API milestones, and different nutrient schemes (ECA vs RD). Both runtimes resolve the active configuration (`python tools/describe_mode.py`) and adapt. Both read and write the **same knowledge substrate**, so discoveries made in one mode compound in the other (see [The knowledge loop](#the-knowledge-loop)).
+A2MC is **mode-aware**: the same repo runs ELM with or without FATES, different FATES API milestones, and different nutrient schemes (ECA vs RD). Both runtimes resolve the active configuration (`python tools/describe_mode.py`) and adapt. Both read and write the **same knowledge substrate**, so discoveries made by one agent compound in the other (see [The knowledge loop](#the-knowledge-loop)).
 
-### Using the autonomous agent
+### Using the online autonomous agent
 
-The rest of this README's Quick Start covers this mode:
+The rest of this README's Quick Start covers the autonomous agent:
 
 ```bash
 source a2mc_config.sh
@@ -50,7 +50,7 @@ source use_cases/<site>/config/<site>_config.sh
 python orchestrator.py --run        # full Phase 0→7 calibration loop
 ```
 
-### Using the interactive agent
+### Using the offline interactive agent
 
 The interactive agent is any coding-agent harness opened in a clone of this repo. Its **operating contract** is [`AGENTS.md`](AGENTS.md) (harness-neutral). On startup the harness auto-loads the operating rules plus the **capability catalog** of skills in `.claude/skills/` (indexed in [`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md)); each skill declares the run configurations it applies to via `modes:` frontmatter. You then drive it by conversation:
 
@@ -68,30 +68,30 @@ Worked examples — each backed by a skill in the capability catalog (most skill
 |---|---|---|
 | "Catch up — where did we leave off?" | `onboard-session` | any |
 | "Review and promote the pending knowledge proposals" | `curate-knowledge` | any |
-| "Write a dev/analysis/handoff log for this work" | `log` | any |
+| "Log this calibration/exploration work for the site" | `calibration-log` | any |
 | "Is this 'best' case real or contamination?" | `diagnose-forensics` | any |
 | "Investigate whether X correlates with Y, with a figure" | `scientific-analysis` | any |
 | "Restart the jobs that failed in this ensemble" | `restart-failed-jobs` | any (HPC) |
 | "Set up monitoring for the in-flight ensemble" | `arm-hpc-monitoring` | any (HPC) |
 | "Rebuild the RAG index" / "add a curated relationship" | `rebuild-rag` / `inject-knowledge` | any |
 | "Add a new skill for this workflow" | `add-skill` | any |
-| "Summarize round N" / "compare rounds R1…RN" / "run a parameter-sweep experiment" | `summarize-`/`compare-calibration-rounds`, `offline-testing-workflow` | FATES |
+| "Summarize round N" / "compare rounds R1…RN" / "run a parameter-sweep experiment" | `summarize-calibration-round` / `compare-calibration-rounds`, `offline-testing-workflow` | FATES |
 
 > The interactive agent is the tool for work the fixed Phase 0→7 loop cannot do: open-ended forensics, synthesis, triage, and one-off analysis. Because of the curated-memory gate, it is also the **only** writer of vetted knowledge — it promotes the autonomous agent's staged proposals.
 
 ### The knowledge loop
 
-The two modes are two writers on **one knowledge substrate** — neither forks the knowledge base, so improvements compound across both:
+The two agents are two writers on **one knowledge substrate** — neither forks the knowledge base, so improvements compound across both:
 
 ```
-  Interactive agent  ──writes/promotes──►  dev_logs / ana_logs / curated knowledge / tools
+  Interactive agent  ──writes/promotes──►  calibration logs / curated knowledge / tools
         ▲                                          │
         │ reasons over                             │ absorbed by
         │ phase logs + run state                   ▼
   Autonomous agent  ◄──reads / PROPOSES──  MemoryManager (propose mode) + RAG + phase logs
 ```
 
-The interactive agent writes engineering + analysis logs, curates knowledge (promoting the autonomous agent's proposals), and builds shared tools; the autonomous agent's `MemoryManager` and RAG absorb that vetted knowledge and apply it inside the calibration loop, while emitting phase logs, run state, and proposed lessons that the interactive agent then reasons over. A discovery vetted in either mode is available to the other on the next run.
+The interactive agent writes calibration/analysis logs, curates knowledge (promoting the autonomous agent's proposals), and builds shared tools; the autonomous agent's `MemoryManager` and RAG absorb that vetted knowledge and apply it inside the calibration loop, while emitting phase logs, run state, and proposed lessons that the interactive agent then reasons over. A discovery vetted by either agent is available to the other on the next run.
 
 ---
 
@@ -189,7 +189,7 @@ export A2MC_FATES_PARTEH_MODE=2           # 1=carbon-only, 2=CNP
 # T3-distant drift always emits a prompt-pack and aborts regardless.
 export A2MC_RAG_AUTO_REBUILD="false"      # default false (warn-and-continue)
 export A2MC_RAG_T3_AUTO_DISTANCE=100      # default 100 = one major epoch step
-# See docs/22_Auto_Rebuild_Tier_Policy_Implementation.md.
+# See docs/a2mc_reference/version_association_howto.md "Drift handling".
 ```
 
 ### Step 5: Configure AI Settings
@@ -256,7 +256,7 @@ See "Running the Workflow" section below for more options.
 
 A2MC is an autonomous calibration framework that combines:
 - **Morris/Sobol sensitivity analysis** for parameter space exploration
-- **Claude API reasoning** for diagnosis and hypothesis generation
+- **AI API reasoning** for diagnosis and hypothesis generation
 - **HPC-native execution** for efficient simulation management
 - **Multi-objective optimization** for simultaneous PFT calibration
 - **Adaptive Memory System** for learning from experiments and avoiding repeated failures
@@ -367,6 +367,8 @@ A2MC uses a 7-phase workflow with intelligent iteration paths to minimize HPC co
 
 **Phase 3 Diagnostic Tools:** `analyze_carbon_balance.py`, `analyze_mortality.py`, `analyze_nutrient_balance.py`, `analyze_nutrient_pools.py`, `check_edge_parameters.py`, `compare_case_parameters.py`, `compare_targets.py`, `detect_collapse.py`, `diagnose_pft_limitations.py`, `read_case_parameters.py`, `test_hypothesis_framework.py`
 
+**Self-improving diagnostic library.** When no existing tool can test a hypothesis, the agent writes a custom `test_*.py` (exposing `test_hypothesis()`) into `phases/phase3_diagnosis/generated/`, auto-discovered for the current run. A vetted, reusable one is then **promoted** into the permanent tool library with `tools/promote_diagnostic_script.py` (copies it to `phases/phase3_diagnosis/` and registers it in the diagnostic-tools inventory; human-gated).
+
 **Phase 5 Scripts:** `design_experiments.py`, `monitor_experiments.py`, `submit_experiments.py`
 
 ### Iteration Paths
@@ -394,26 +396,26 @@ When all parameter candidates are at bounds and calibration fails, expand parame
 
 ### Three-Level Iteration Structure
 
-A2MC uses three nested loops:
+A2MC uses three nested loops (outermost → middle → inner):
 
-**Calibration Round (Outermost):** Full Phase 0 → 7 cycle
+**Calibration Round (Outermost):** Full Phase 0 → 7 cycle. Counter: `calibration_round`
 - Round 1: e.g., 138 parameters, 4170 simulations
 - Round 2: e.g., 162 parameters, 4890 simulations (expanded parameter space)
-- Incremented when Phase 6 → Phase 0 redesign is needed
+- Incremented when Phase 6 → Phase 0 redesign is needed (experiment cycles reach max without meeting all targets)
 
-**Inner Loop (Skip Testing):** Phase 3 ↔ 4, max 10 cycles
+**Middle Loop (Experiment Cycle):** Phase 3 → 4 → 5 → 6 → 3, max 10 cycles. Counter: `experiment_count`
+- Run full HPC experiments to test hypotheses
+- Exit when targets met (→ Phase 7 CONVERGED) OR experiment cycles reach max (→ Phase 0 redesign)
+
+**Inner Loop (Skip Testing):** Phase 3 ↔ 4, max 10 cycles. Counter: `skip_testing_count`
 - Test hypotheses with existing ensemble data (no HPC cost)
 - Exit when confidence threshold met OR max cycles reached
 - Counter resets when entering Phase 5 (HPC)
 
-**Outer Loop (Experiments):** Phase 3 → 4 → 5 → 6, max 10 cycles
-- Run full HPC experiments
-- Exit when targets met OR max experiments reached
-
 ```bash
 # Control iteration limits
 python orchestrator.py --run \
-    --start-iteration 2 \          # Calibration round (outermost loop)
+    --start-round 2 \          # Calibration round (outermost loop)
     --max-skip-testing 10 \        # Max Phase 3↔4 cycles (default: 10)
     --max-experiments 10 \         # Max full experiment cycles (default: 10)
     --confidence-threshold 0.95    # Exit skip testing threshold (default: 0.95)
@@ -451,10 +453,10 @@ python orchestrator.py --run --start-phase 0
 
 **Command-line usage:**
 ```bash
-python orchestrator.py --run --start-phase 1 --start-iteration 2
+python orchestrator.py --run --start-phase 1 --start-round 2
 # Or equivalently:
-python orchestrator.py --run --start-phase phase1 --start-iteration 2
-python orchestrator.py --run --start-phase exploration --start-iteration 2
+python orchestrator.py --run --start-phase phase1 --start-round 2
+python orchestrator.py --run --start-phase exploration --start-round 2
 ```
 
 #### Phase 2: SCREENING
@@ -675,7 +677,7 @@ A2MC uses a three-tier architecture for FATES knowledge, ensuring the AI has acc
 
 The RAG/GraphRAG tier is **version-aware** (v2.90+), **configuration-aware** (v2.91 / v2.92), and **drift-aware** (v2.98). A2MC auto-detects the user's E3SM/ELM-FATES checkout and the active simulation mode, loads the right knowledge profile, filters out content that doesn't apply, and (with opt-in) auto-rebuilds the profile when the checkout drifts off the matched milestone. The AI sees only the FATES/ELM source for the correct version, in the modes the user is actually running.
 
-### Version association (v2.90, Doc 18 Phases 1–4)
+### Version association (v2.90)
 
 A2MC reads the user's `A2MC_MODEL_PATH` (E3SM checkout root), detects the FATES + ELM commit hashes, and matches against the milestone registry at `rag/milestones.json`. Each milestone owns a self-contained profile: ChromaDB index, NetworkX graph, metadata, and a frozen per-milestone curated YAML.
 
@@ -714,7 +716,7 @@ python scripts/verify_phase4.py
 
 Per-milestone YAML reproducibility: each milestone owns `rag/data/curated_relationships_<profile>.yaml`. The canonical YAML is treated as active development; rebuilding a milestone always uses its frozen YAML, preventing silent corruption when the canonical evolves. Full workflow: `docs/a2mc_reference/version_association_workflow.md`.
 
-### Configuration-aware retrieval (v2.91 / v2.92, Docs 20+21)
+### Configuration-aware retrieval (v2.91 / v2.92)
 
 A2MC parses the user's `A2MC_ELM_OPTIONS` and Tier 2 env vars into a 20-dimension `ConfigMode`. The RAG retriever builds a ChromaDB `where` clause from this and filters every chunk: PARTEH=1 retrieval no longer surfaces CNP allocation theory, fire chunks are filtered when SPITFIRE is off, ELM-only runs see only ELM content.
 
@@ -742,7 +744,7 @@ export A2MC_FATES_PARTEH_MODE=2
 
 A2MC's reasoning module reads `ConfigMode.from_env()` once per Phase 3/4 retrieval call and threads the where clause through `HybridRetriever.get_targeted_context()`, `get_calibration_context()`, and `get_context()` to the ChromaDB layer.
 
-### Auto-rebuild on drift (v2.98, Doc 22)
+### Auto-rebuild on drift (v2.98)
 
 When the orchestrator's startup hook detects that the user's checkout has drifted off the matched milestone, it dispatches via `tools/auto_rebuild.py:handle_drift()` per the tier policy:
 
@@ -757,7 +759,7 @@ When the orchestrator's startup hook detects that the user's checkout has drifte
 
 Concurrency is enforced by a file lock at `<rag_dir>/.bump.lock`. Mode-aware safety: T1 only writes metadata; T2/T3 rebuilds run against source-pinned wikis + per-milestone curated YAML, with the same five-validator harness (below) gating the result. A Red verdict triggers automatic rollback to `<profile>.previous/`; the broken build is preserved at `<profile>.failed_<UTC-timestamp>/` for forensics.
 
-Full design: `docs/22_Auto_Rebuild_Tier_Policy_Implementation.md`. End-user how-to: `docs/a2mc_reference/version_association_howto.md` "Drift handling" section.
+End-user how-to: `docs/a2mc_reference/version_association_howto.md` "Drift handling" section.
 
 ### Validation — five layers
 
@@ -794,8 +796,6 @@ The same `run_all_validators(profile)` function is used by the v2.98 auto-rebuil
 - **Version association workflow:** `docs/a2mc_reference/version_association_workflow.md`
 - **Version association quick how-to:** `docs/a2mc_reference/version_association_howto.md`
 - **Validation playbook:** `docs/a2mc_reference/rag_validation_workflow.md`
-- **Auto-rebuild tier policy (v2.98):** `docs/22_Auto_Rebuild_Tier_Policy_Implementation.md`
-- **Design plans:** `docs/18_ELM_FATES_Version_Association_Plan.md`, `docs/20_Mode_Aware_RAG_Retrieval_Plan.md`, `docs/21_Mode_Aware_RAG_Phase_B_Implementation.md`
 
 ---
 
@@ -892,7 +892,7 @@ When A2MC performs diagnosis or generates hypotheses, three knowledge sources ar
 
 | Source | Content | Role |
 |--------|---------|------|
-| **RAG/GraphRAG** | FATES + ELM documentation (2,707 doc chunks + 560 CDL definitions) | General knowledge - "how does the PID controller work?" |
+| **RAG/GraphRAG** | FATES + ELM source documentation (per-milestone profile; e.g. api-43-1 ≈ 6,300 chunks, api-31-0 ≈ 2,600) | General knowledge - "how does the PID controller work?" |
 | **Adaptive Memory** | Discoveries, failed approaches, parameter insights | Learned knowledge - "what failed before? what worked?" |
 | **Task Data** | Results, targets, sensitivity rankings | Current context - "what are we trying to calibrate?" |
 
@@ -1032,7 +1032,7 @@ python orchestrator.py --run
 python orchestrator.py --run --no-review
 
 # Start from a specific phase and calibration round
-python orchestrator.py --run --start-phase 2 --start-iteration 2
+python orchestrator.py --run --start-phase 2 --start-round 2
 
 # Resume from a saved checkpoint (state-file auto-detected from config)
 python orchestrator.py --resume
@@ -1094,9 +1094,9 @@ All workflow state is saved to JSON for resumability:
   "iteration": 3,
   "start_time": "2025-01-06T10:30:00",
   "config": {
-    "work_dir": "/pscratch/sd/j/jingtao/A2MC",
+    "work_dir": "~/A2MC",
     "param_file": "fates_params.nc",
-    "output_root": "/global/cfs/cdirs/m2467/jingtao/A2MC_runs"
+    "output_root": "~/A2MC_runs"
   },
   "design": {
     "method": "morris",           // or "lhs", "sobol", "custom"
@@ -1341,7 +1341,6 @@ A2MC/
 │   │   ├── experiments.json
 │   │   ├── parameters.json
 │   │   └── failed_approaches.json
-│   ├── logs/              # A2MC DEVELOPMENT session logs (Markdown)
 │   ├── extracted/         # Generic extracted lessons (YAML)
 │   └── workflow_log.json  # Master workflow status
 │
@@ -1385,5 +1384,5 @@ A2MC/
 
 **Author:** Jing Tao <br>
 **Email:** jingtao@lbl.gov <br>
-**Project:** NGEE-Arctic ELM-FATES calibration <br>
+**Project:** NGEE-Arctic Phase 4, CC4, ELM-FATES calibration <br>
 **GitHub:** https://github.com/jingtao-lbl/A2MC-elm

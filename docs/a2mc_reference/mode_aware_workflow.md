@@ -98,7 +98,7 @@ This ordering reflects the principle that **user-set env vars are intent** (what
 |---|---|---|
 | `A2MC_ELM_OPTIONS` | parsed | Tier 1 (`bgc`, `nutrient`, `nutrient_comp_pathway`, `soil_decomp`) and Tier 3 (`crop`, `methane`, `hydrstress`, `topounit`, `irrig`, `solar_rad_scheme`) parsed from this string |
 | `A2MC_BGC_MODE` | `bgc_mode` | Override Tier 1 dimension if not in `A2MC_ELM_OPTIONS`; `use_fates` derives from this |
-| `A2MC_USE_FATES` | `use_fates` | DEPRECATED as input — derived from `bgc_mode`. Setting it inconsistently raises. |
+| `A2MC_USE_FATES` | `use_fates` | **Live input to case construction** — `tools/create_case.sh` writes `use_fates=${A2MC_USE_FATES}` into `user_nl_elm` (the namelist-override layer). On the **Python `ConfigMode`** side (RAG-mode selection) `use_fates` is *derived* from `bgc_mode` and this var is only a cross-check: set it consistently with `-bgc` (both FATES-on, e.g. `-bgc fates` + `.true.`; or both FATES-off, e.g. `-bgc bgc` + `.false.`), or `from_env()` raises. Not deprecated. See `memory/dev_logs/20260701a_A2MC_USE_FATES_Live_Input_Not_Deprecated.md`. |
 | `A2MC_FATES_PARTEH_MODE` | `parteh_mode` | 1 = carbon-only; 2 = CNP |
 | `A2MC_USE_FATES_NOCOMP` | `use_fates_nocomp` | bool string |
 | `A2MC_FATES_SPITFIRE_MODE` | `fates_spitfire_mode` | int 0/1/2 |

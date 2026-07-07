@@ -1,4 +1,4 @@
-#!/Users/jingtao/a2mc_env/bin/python3
+#!~/a2mc_env/bin/python3
 """
 Kougarok Demo Presentation Video Generator
 Converts PDF slides + speaker scripts into a narrated MP4 video.

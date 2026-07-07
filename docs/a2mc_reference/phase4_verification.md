@@ -8,7 +8,7 @@ Per docs/18 §16 content-correctness gates plus end-to-end smoke tests of the mi
 
 ## Manifest summary
 
-- Manifest path: `/Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Program/A2MC/rag/milestones.json`
+- Manifest path: `~/Desktop/Work/NGEE-Arctic/Kougarok/Program/A2MC/rag/milestones.json`
 - Registered milestones: 2
 
 - **api-43-1** — `sci.1.91.1_api.43.1.0` (epoch 43.1)  [canonical, local]

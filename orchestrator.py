@@ -161,7 +161,7 @@ class WorkflowState:
     current_phase: str = Phase.DESIGN.value
     converged: bool = False
 
-    # Two-level iteration tracking (within a calibration round)
+    # Three-level iteration tracking (within a calibration round)
     skip_testing_count: int = 0    # Inner loop: Phase 3↔4 cycles (resets after HPC)
     experiment_count: int = 0       # Outer loop: Full experiment cycles (3→4→5→6)
 
@@ -321,7 +321,7 @@ class Config:
     poll_interval: int = 300         # seconds
     human_review: bool = True        # Pause for human review at key points
 
-    # Two-level iteration limits
+    # Three-level iteration limits
     max_skip_testing: int = 10       # Max Phase 3↔4 skip testing cycles before forcing HPC
     max_experiments: int = 10        # Max Phase 3→4→5→6 full experiment cycles
     hypothesis_confidence_threshold: float = 0.95  # Exit skip testing when confidence >= this
@@ -2220,7 +2220,7 @@ Diagnosis Summary:{skip_header}
 
         # =====================================================================
         # Skip Testing Path: Test hypothesis with existing ensemble data
-        # (Inner Loop of Two-Level Iteration Structure)
+        # (Inner loop of the three-level iteration structure)
         # =====================================================================
         if hypothesis.get('test_with_existing', False):
             logger.info("=" * 60)
@@ -2981,7 +2981,11 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
         Delegates evaluation to phases/phase6_refinement/evaluate_results.py.
         Keeps loop control (phase transitions, counter updates) here.
         """
-        from phases.phase6_refinement import evaluate_experiments, determine_refinement_action
+        from phases.phase6_refinement import (
+            evaluate_experiments,
+            determine_refinement_action,
+            all_experiments_unreliable,
+        )
 
         logger.info("Evaluating experiment results...")
 
@@ -3005,6 +3009,25 @@ Hypothesis: {hypothesis.get('name', 'Unknown')}
             self.state.iteration += 1
             self.state.current_phase = Phase.DIAGNOSIS.value
             return
+
+        # Refuse to advance when NO experiment in this cycle produced usable data —
+        # otherwise Phase 6's "no improvement, try a different hypothesis" decision would
+        # run on phantom 0/N readings, the failure mode behind the c00/c01 contamination
+        # cascade (see dev_log 20260519a). Stay in REFINEMENT so --resume re-enters here
+        # after the operator fixes the upstream extraction/submission cause.
+        if all_experiments_unreliable(eval_result['outcomes']):
+            n_total = len(eval_result['outcomes'])
+            logger.error(
+                f"All {n_total} experiments in cycle {self.state.experiment_count} "
+                f"returned unreliable data. Refusing to advance to the next cycle. "
+                f"Common causes: extraction pipeline failure, missing case directories, "
+                f"job submission issues. Investigate before resuming with --resume."
+            )
+            self.state.save(str(self.state_path))
+            raise RuntimeError(
+                f"All {n_total} experiments in cycle {self.state.experiment_count} "
+                f"returned no usable data"
+            )
 
         best_exp = eval_result['best_experiment']
         best_targets_met = eval_result['best_targets_met']
@@ -3077,7 +3100,7 @@ Refinement Summary:
                 }
             )
 
-        # Decision logic (Outer Loop of Two-Level Iteration Structure)
+        # Decision logic (Middle loop of the three-level iteration structure)
         # NOTE: When Phase 6 → Phase 0 redesign is implemented, call
         # self._update_calibration_round_history("redesign") before transitioning.
         if best_targets_met >= total_targets:
@@ -3500,11 +3523,11 @@ Examples:
   python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state_s0309h23m45.json
 
   # Start from specific phase in calibration round 2 (e.g., 162 params)
-  python orchestrator.py --run --start-phase 2 --start-iteration 2
-  python orchestrator.py --run --start-phase screening --start-iteration 2
+  python orchestrator.py --run --start-phase 2 --start-round 2
+  python orchestrator.py --run --start-phase screening --start-round 2
 
   # Start from diagnosis in round 2
-  python orchestrator.py --run --start-phase diagnosis --start-iteration 2
+  python orchestrator.py --run --start-phase diagnosis --start-round 2
 
   # Skip bootstrap check before running
   python orchestrator.py --run --skip-bootstrap
@@ -3532,8 +3555,10 @@ Phase numbers:
                        help="State file path (default: auto-detected from A2MC_USE_CASE_DIR)")
     parser.add_argument("--output-dir", type=str, default=None,
                        help="Output directory (default: auto-detected from A2MC_USE_CASE_DIR)")
-    parser.add_argument("--max-iterations", type=int, default=10,
-                       help="Max total iterations (backward compatibility)")
+    parser.add_argument("--max-iterations", type=int, default=None,
+                       help="DEPRECATED and ignored — accepted for backward compatibility but has "
+                            "no effect. Run length is bounded by --max-experiments (experiment "
+                            "cycles) and --max-skip-testing (skip-testing cycles).")
     parser.add_argument("--max-skip-testing", type=int,
                        default=int(os.environ.get("A2MC_MAX_SKIP_TESTING", "10")),
                        help="Max Phase 3↔4 skip testing cycles (default: from A2MC_MAX_SKIP_TESTING or 10)")
@@ -3553,8 +3578,10 @@ Phase numbers:
     parser.add_argument("--no-reasoning", action="store_true", help="Disable Claude API")
     parser.add_argument("--start-phase", type=parse_phase,
                        help="Start from phase (0-7, phase0-phase7, or name like 'exploration')")
-    parser.add_argument("--start-iteration", type=int, default=None,
-                       help="Calibration round (outermost loop: 1=first ensemble, 2=redesigned, ...)")
+    parser.add_argument("--start-round", "--start-iteration", dest="start_round",
+                       type=int, default=None,
+                       help="Calibration round (outermost loop: 1=first ensemble, 2=redesigned, ...). "
+                            "'--start-iteration' is a deprecated alias kept for backward compatibility.")
     parser.add_argument("--session-id", type=str, default=None,
                        help="Reuse an existing session ID (YYYYMMDD_HHMMSS) to continue "
                             "logging into the same logs/{session_id}/ directory")
@@ -3572,6 +3599,13 @@ Phase numbers:
                        help="Number of parameters (override config)")
 
     args = parser.parse_args()
+
+    # --max-iterations is deprecated and no longer controls the loop (the legacy
+    # `iteration <= max_iterations` cap was removed; see run() loop). Warn if passed.
+    if args.max_iterations is not None:
+        logger.warning("--max-iterations is DEPRECATED and ignored; run length is bounded by "
+                       "--max-experiments (experiment cycles) and --max-skip-testing (skip-testing "
+                       "cycles). Remove it from your command.")
 
     # Determine output directory and state file (use site memory if available)
     output_dir = args.output_dir
@@ -3662,7 +3696,7 @@ Phase numbers:
     config = Config(
         state_file=state_file,
         output_dir=output_dir,
-        max_iterations=args.max_iterations,
+        max_iterations=args.max_iterations if args.max_iterations is not None else 10,
         max_skip_testing=args.max_skip_testing,
         max_experiments=args.max_experiments,
         hypothesis_confidence_threshold=args.confidence_threshold,
@@ -3853,13 +3887,13 @@ Phase numbers:
             orchestrator.state.figures_analyzed_case_id = None
             logger.info(f"Reset iteration counters (iteration=1, skip_testing=0, experiments=0)")
 
-        if args.start_iteration is not None:
-            orchestrator.state.calibration_round = args.start_iteration
-            logger.info(f"Calibration round: {args.start_iteration}")
-            os.environ['A2MC_CALIBRATION_ROUND'] = str(args.start_iteration)
+        if args.start_round is not None:
+            orchestrator.state.calibration_round = args.start_round
+            logger.info(f"Calibration round: {args.start_round}")
+            os.environ['A2MC_CALIBRATION_ROUND'] = str(args.start_round)
 
         # Initialize sampling_design for round 2+ (simulations already complete)
-        if args.start_iteration is not None and args.start_iteration >= 2:
+        if args.start_round is not None and args.start_round >= 2:
             if not orchestrator.state.sampling_design.get('complete', False):
                 try:
                     from tools.config import config as a2mc_config
@@ -3873,7 +3907,7 @@ Phase numbers:
                         'ensemble_output_dir': a2mc_config.ENSEMBLE_OUTPUT,
                         'ensemble_matrix_file': a2mc_config.ENSEMBLE_MATRIX_FILE,
                     }
-                    logger.info(f"Initialized sampling_design for round {args.start_iteration}:")
+                    logger.info(f"Initialized sampling_design for round {args.start_round}:")
                     logger.info(f"  - {a2mc_config.TOTAL_ENSEMBLE} simulations (marked complete)")
                     logger.info(f"  - Extracted data: {a2mc_config.EXTRACTED_DATA}")
                 except ImportError:

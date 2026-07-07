@@ -7,12 +7,12 @@
 
 ## What you are
 
-A2MC ("Agentic Adaptive Multi-target Calibration") is an AI-driven calibration framework for **ELM — with or without FATES**. It runs as **one agent in two modes** — read [`README.md` §"Two Ways to Run A2MC"](README.md):
+A2MC ("Agentic Adaptive Multi-target Calibration") is an AI-driven calibration framework for **ELM — with or without FATES**. It runs as **one agent, two ways** — read [`README.md` §"Two Ways to Run A2MC"](README.md):
 
 - **Autonomous (online) agent** — `python orchestrator.py --run`, a fixed Phase 0→7 state machine that calls the model in a loop. Unattended, at scale.
 - **Interactive (offline) agent** — *you*, a coding-agent harness operating in the repo, driven by conversation. For open-ended, exploratory, judgment-heavy, one-off work the fixed loop cannot do (forensics, synthesis, triage, figures, experiment design, auditing). You are also the **only writer of curated knowledge**: the autonomous agent runs its memory in "propose" mode (stages proposals); *you* review and promote them (see §"Memory & knowledge conventions").
 
-Both modes share the same brain and hands — operating rules (this file), the skills catalog (`.claude/skills/`), persistent memory, episodic logs (`memory/dev_logs/` for engineering, `memory/ana_logs/` for scientific analysis), RAG/GraphRAG knowledge, and the shared tools in `tools/`. Findings flow between the two modes through that shared substrate (see §"The knowledge loop").
+Both agents share the same brain and hands — operating rules (this file), the skills catalog (`.claude/skills/`), persistent memory, episodic logs (`use_cases/<site>/memory/logs/` — phase + session logs), RAG/GraphRAG knowledge, and the shared tools in `tools/`. Findings flow between the two agents through that shared substrate (see §"The knowledge loop").
 
 ## Resolve your mode first
 
@@ -40,6 +40,22 @@ These are the site- and framework-agnostic rules. Follow them on every task.
 7. **No AI attribution in commits.** Never add `Co-Authored-By` or any AI-attribution trailer to git commit messages. Use the project's author convention for authored files.
 8. **Check structure before writing paths.** Verify actual folder/file names by listing or reading existing code; never guess directory names.
 9. **Confirm before destructive or hard-to-reverse actions.**
+10. **Drive the workflow; pause only at forks + hard stops.** Given a goal, advance it — you are the superset of the autonomous loop, which drives itself with no per-phase prompt. Execute the resume brain's next action (extract, monitor, run a planned experiment, advance a phase); surface results + proposals, not "shall I…?" for mechanical steps. **Pause** for: a Phase-6 converge/redesign/stop decision, a curated-KB write, an expensive/irreversible action, or a standing hard stop (rule 9). See the `onboard-session` skill's drive-vs-pause list.
+
+## Offline-Agent Operating Discipline
+
+The interactive (offline) agent has **four recurring failure modes** — judgment lapses at unguarded
+checkpoints. Each has one **checkable habit** and a **gate** that enforces it. This is the canonical
+stance; the individual `feedback_*` memories carry the detail. *A new correction updates this section
+(or a linked memory) — it does not spawn a free-floating memory.*
+
+| Failure mode | The habit | Enforced by |
+|---|---|---|
+| **Verify before claiming.** A restated log / an unverified "load-bearing" number / a KB write on a mechanism-story. | Every load-bearing number cites a script + output produced **this session**; confidence ≤ what was tested; no curated-KB write without a verification link. | `tools/check_offline_log_evidence.py` (analysis-log gate) + `add_discovery(verified_by=…)` / `promote --verified-by` gate + `check_rag_coverage.py`. |
+| **Track the objective.** Crash-debugging displacing the fit; escalating to "stop → model" too early. | Before converge / redesign / **stop**, state the binding target + the next targeted experiment; "stop → model-dev" must be *earned*. | `WorkflowStateOffline.validate_phase6_decision()` (blocks a premature escalation). |
+| **Drive, don't wait.** Asking permission for mechanical steps. | Execute the resume brain's next action; pause only at forks + hard stops. | Core rule 10 + the SessionStart `► NEXT:` line + `onboard-session` drive-vs-pause list. |
+| **Trust the skill.** A memory that drifts from / shadows a SKILL; acting on a truncated skill. | A SKILL is authoritative over a memory; read the full SKILL before acting; never encode a memory that contradicts one. | Review discipline + `check_memory_bucket.py` dead-link backstop. |
+
 
 ## Capability catalog (skills)
 
@@ -51,16 +67,31 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 
 | Skill | Modes | Invoke when the user wants to… |
 |---|---|---|
-| `log` | any | Write a dev/analysis/session/handoff log in the two-stream logging system |
+| `calibration-log` | any | Log interactive calibration/exploration work for a site (PhaseLogger + session logs) |
 | `onboard-session` | any | Cold-start: orient at session start or after a compaction/reset |
 | `curate-knowledge` | any | Review + promote staged Tier-3 knowledge proposals (the write-gate loop) |
 | `arm-hpc-monitoring` | any (HPC) | Set up real-time monitoring of an in-flight ensemble at session start |
 | `restart-failed-jobs` | any (HPC) | Restart SLURM jobs that failed in an ensemble/experiment |
 | `diagnose-forensics` | any | Investigate an anomaly — real or artifact? — then root-cause it |
 | `scientific-analysis` | any | Run an investigation → figure → ana_log |
-| `build-rag-from-scratch` · `rebuild-rag` · `generate-codebase-wiki` · `validate-rag-chain` · `inject-knowledge` | any | Construct / refresh / validate the RAG/GraphRAG knowledge layer |
-| `add-skill` · `refine-skill` | any | Scaffold/register a new skill, or refine an existing one (human-gated) |
-| `summarize-calibration-round` · `compare-calibration-rounds` · `offline-testing-workflow` | **FATES** | Summarize/compare calibration rounds, or run a parameter-sweep experiment (FATES Morris ensembles) |
+| `markdown-to-pdf` | any | Convert a markdown ana_log/report/note to a shareable PDF or Word doc |
+| `build-rag-from-scratch` | any | Build the RAG/GraphRAG knowledge layer from scratch (new model or full reconstruction) |
+| `rebuild-rag` | any | Rebuild/repair the RAG index — reindex, bump wiki commit, refresh the graph |
+| `generate-codebase-wiki` | any | Produce a source-grounded codebase wiki for a model |
+| `validate-rag-chain` | any | Validate the source → wiki → curated-YAML → RAG chain before shipping |
+| `inject-knowledge` | any | Inject a human-originated discovery / parameter / relationship into curated knowledge |
+| `add-skill` | any | Scaffold + register a new skill (4-way registry parity) |
+| `refine-skill` | any | Refine an existing skill from accumulated evidence (human-gated) |
+| `summarize-calibration-round` | **FATES** | Summarize one calibration round (whole-ensemble biomass + evaluation report) |
+| `compare-calibration-rounds` | **FATES** | Compare calibration rounds (top-N, μ* sensitivity, cross-round overlays) |
+| `offline-testing-workflow` | **FATES** | Design + launch + analyze a parameter-sweep HPC experiment |
+| `phase0-design` | any | Offline Phase 0 — design/sample/submit the ensemble |
+| `phase1-exploration` | any | Offline Phase 1 — extract Y matrix + Morris sensitivity |
+| `phase2-screening` | any | Offline Phase 2 — rank ensemble vs validation targets |
+| `phase3-diagnosis` | any | Offline Phase 3 — root-cause the failing targets |
+| `phase4-hypothesis` | any | Offline Phase 4 — hypotheses + skip-test on existing data |
+| `phase5-testing` | any | Offline Phase 5 — run HPC experiments (routes to offline-testing-workflow) |
+| `phase6-refinement` | any | Offline Phase 6 — evaluate, learn, converge/iterate |
 
 When a request matches a skill's trigger **and** the active mode satisfies its `modes:` block, invoke that skill **before** improvising — it encodes conventions (case-naming, dedicated experiment dirs, reproducibility gates) that are easy to get wrong from first principles.
 
@@ -70,31 +101,30 @@ When a request matches a skill's trigger **and** the active mode satisfies its `
 |---|---|---|
 | `memory/gained_knowledge/` | Generic model discoveries, parameters, failed approaches (JSON) | read for context; **promote** vetted proposals here (you are the curator) |
 | `use_cases/<site>/memory/gained_knowledge/` | Site-specific knowledge | read for the site you're working on |
-| `memory/dev_logs/` | Engineering changelog — code/infra changes (Markdown, dated) | **read before** starting related work; **write** a dated log for substantive changes |
-| `memory/ana_logs/` | Scientific analysis / working notes — results interpretation, manuscript-supporting reasoning (Markdown, dated) | read for prior analysis on the topic; write a dated note when you interpret results or reason scientifically |
+| `use_cases/<site>/memory/logs/` | Calibration/exploration logs for a site — phase logs (via PhaseLogger) + free-form session notes | read a session's prior logs for context; **write** here via the `calibration-log` skill |
 | `rag/` + `docs/fates-knowledge-base/` | Model knowledge (RAG + static docs), per milestone | query (active milestone) before asserting model behavior |
 | `tools/` | Shared utilities (extraction, plotting, HPC, cost functions) | reuse rather than re-implement |
 
 **Curated-knowledge gate:** the autonomous agent runs its `MemoryManager` in `propose` mode — its auto-learned discoveries are staged to `auto_discovered_pending.json`, not written to the curated JSONs. You (the interactive agent) review and promote vetted entries via `tools/review_pending_knowledge.py`. This keeps the knowledge that shapes every future diagnosis human-vetted.
 
-**Before starting a task:** grep both `memory/dev_logs/` and `memory/ana_logs/` for prior work on the same topic. Much of the framework's hard-won knowledge is recorded there, and repeating a superseded approach is the most common avoidable mistake.
+**Before starting a task:** read the site's prior session logs under `use_cases/<site>/memory/logs/` for work on the same site/round. Repeating a superseded approach is the most common avoidable mistake.
 
-**When you finish substantive work:** write a dated log so the next session can build on it — a **dev log** (`memory/dev_logs/`) for engineering/code changes, an **analysis note** (`memory/ana_logs/`) for results interpretation and scientific reasoning.
+**When you finish substantive work:** write a log via the `calibration-log` skill — a phase log or a free-form session note under `use_cases/<site>/memory/logs/` — so the next session can build on it.
 
 ## The knowledge loop
 
-The two modes are two writers on **one knowledge substrate**:
+The two agents are two writers on **one knowledge substrate**:
 
 ```
-  Interactive agent  ──writes/promotes──►  dev_logs / ana_logs / curated knowledge / tools
+  Interactive agent  ──writes/promotes──►  calibration logs / curated knowledge / tools
         ▲                                          │
         │ reasons over                             │ absorbed by
         │ phase logs + run state                   ▼
   Autonomous agent  ◄──reads / PROPOSES──  MemoryManager (propose mode) + RAG + phase logs
 ```
 
-The interactive agent writes engineering + analysis logs, curates knowledge (promoting the autonomous agent's proposals), and builds tools; the autonomous agent's `MemoryManager` and RAG absorb that vetted knowledge and apply it in the calibration loop, while emitting phase logs, run state, and *proposed* lessons that the interactive agent then reasons over and promotes. Neither mode forks the knowledge base — improvements compound across both.
+The interactive agent writes calibration/analysis logs, curates knowledge (promoting the autonomous agent's proposals), and builds tools; the autonomous agent's `MemoryManager` and RAG absorb that vetted knowledge and apply it in the calibration loop, while emitting phase logs, run state, and *proposed* lessons that the interactive agent then reasons over and promotes. Neither agent forks the knowledge base — improvements compound across both.
 
 ---
 
-*This is the public, harness-neutral operating contract. For the development-repo superset (clone topology, sync workflow, host-specific run paths), Claude Code reads the private `CLAUDE.md` when present — that content is intentionally not part of this shareable file.*
+*This is the public, harness-neutral operating contract. When a project-specific `CLAUDE.md` is present, Claude Code reads it for any additional detail that file provides.*

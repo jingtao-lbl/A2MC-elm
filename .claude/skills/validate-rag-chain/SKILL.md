@@ -89,6 +89,19 @@ is "small reorder + a handful of renames."** Unexpectedly large removed-nodes/ed
 something dropped; large added = something duplicated or mis-categorized → root-cause back
 in Step 1/2.
 
+## Step 4 (post-rebuild) — index coverage self-test  (`check_rag_coverage.py`)
+
+The three validators above check the *source→wiki→YAML→graph* chain; they do **not** catch a whole
+knowledge base silently missing from the **vector index** (the 2026-07-05/06 ELM-wiki-absent bug — the
+retriever answered FATES-only with no error). After a rebuild, run:
+
+```bash
+python tools/check_rag_coverage.py --profile <profile>   # docs/33 §3c
+```
+
+It asserts every expected `kb_source` is present above a floor and canary wiki files appear (config:
+`rag/canary_queries.yaml`). Metadata-only, no embedding model; ERRORs if a `kb_source` count is 0.
+
 ## Verdict scheme & triage
 
 Banding (all three validators): **Green** ≥90% every dimension · **Yellow** any dim 70–90% ·

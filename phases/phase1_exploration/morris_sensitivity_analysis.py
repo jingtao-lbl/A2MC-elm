@@ -746,7 +746,7 @@ Examples:
     if config is not None and config.is_configured():
         x_matrix_path = args.x_matrix or config.ENSEMBLE_MATRIX_FILE
         problem_path = args.problem or config.SALIB_PROBLEM_FILE
-        data_dir = args.data_dir or '/Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Program'
+        data_dir = args.data_dir or '~/Desktop/Work/NGEE-Arctic/Kougarok/Program'
     else:
         x_matrix_path = args.x_matrix
         problem_path = args.problem

@@ -1,9 +1,9 @@
 # Wiki-Source Validation: fates-codebase-wiki-e027a40 vs fates
 
-**Generated:** 2026-04-28T04:42:22Z
+**Generated:** 2026-07-06T23:34:41Z
 
 **Wiki:** `docs/fates-knowledge-base/fates-codebase-wiki-e027a40`
-**Source:** `/Users/jingtao/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES_api43-1/components/elm/src/external_models/fates`
+**Source:** `~/E3SM_FATES_api43/components/elm/src/external_models/fates`
 **Parameter file:** `docs/fates-knowledge-base/fates_params_info_e027a40.json`
 
 ---

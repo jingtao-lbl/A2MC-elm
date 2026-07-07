@@ -42,17 +42,23 @@ fi
 # ========================
 # DIRECTORY PATHS (HPC)
 # ========================
-# E3SM/FATES source code
-export A2MC_E3SM_ROOT="/global/cfs/cdirs/m2467/jingtao/E3SM_FATES"
+# E3SM/FATES source code (canonical api-43-1 checkout: FATES e027a40 / ELM d40b843)
+export A2MC_E3SM_ROOT="~/E3SM_FATES_api43"
 
 # ========================
 # RAG / VERSION ASSOCIATION (Phase 4 — see docs/18)
 # ========================
 # A2MC_MODEL_PATH: absolute path to the user's E3SM/ELM-FATES checkout root.
 # Required by the RAG version-association infrastructure to detect ELM + FATES
-# commits and select the matching milestone profile. Set in your SITE config
-# (e.g., use_cases/<site>/config/<site>_config.sh), NOT here, because the
-# checkout location is per-user/per-site, not per-machine.
+# commits and select the matching milestone profile. This machine-level DEFAULT
+# points at the canonical api-43-1 checkout (FATES e027a40 / ELM d40b843). A
+# site config sourced afterward (use_cases/<site>/config/<site>_config.sh)
+# overrides it; a shell export before sourcing overrides both.
+# Precedence: shell export > site config > this machine default.
+if [ -z "${A2MC_MODEL_PATH:-}" ]; then
+    export A2MC_MODEL_PATH="~/E3SM_FATES_api43"
+    export _A2MC_MODEL_PATH_IS_DEFAULT=1
+fi
 #
 # A2MC_RAG_DIR: root of the RAG storage tree. Default: ${A2MC_ROOT}/rag.
 export A2MC_RAG_DIR="${A2MC_ROOT}/rag"
@@ -66,7 +72,7 @@ export A2MC_RAG_DIR="${A2MC_ROOT}/rag"
 export A2MC_RAG_AUTO_REBUILD="false"
 
 # Output root for simulation results
-export A2MC_OUTPUT_ROOT="/global/cfs/cdirs/m2467/jingtao"
+export A2MC_OUTPUT_ROOT="~"
 
 # Scripts directory (where case scripts are generated)
 export A2MC_SCRIPTS_DIR="pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES"

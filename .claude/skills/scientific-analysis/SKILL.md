@@ -31,7 +31,7 @@ from names.
 ## Step 2 — pull + analyze
 
 Reuse the analysis tooling rather than re-deriving:
-- `use_cases/Kougarok/analysis/` scripts (attribution, contrast, forcing comparison) and
+- `use_cases/<site>/analysis/` scripts (attribution, contrast, forcing comparison) and
   `tools/plot_ensemble_cases.py` / `tools/extract_ADSP_RGSP_slim.py` for ensemble data.
 - Compute the actual statistic (correlation r, attribution, regression) — quote the
   number, don't hand-wave. If a tiny/odd subset is involved, run `diagnose-forensics`
@@ -39,7 +39,7 @@ Reuse the analysis tooling rather than re-deriving:
 
 ## Step 3 — make the figure (filename convention)
 
-Save figures under `use_cases/Kougarok/analysis/` with the **round + axis-mode + case
+Save figures under `use_cases/<site>/analysis/` with the **round + axis-mode + case
 count** embedded in the name (memory: plot filename convention) — e.g.
 `R4_combined_519yr_top50_<topic>.png` — to avoid the `ensemble_biomass_all_cases.png`
 ambiguity from past sessions. Figures are gitignored, so the filename is the only durable

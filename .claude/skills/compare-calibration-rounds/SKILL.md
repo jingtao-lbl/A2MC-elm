@@ -11,9 +11,10 @@ modes:
 # Compare Calibration Rounds
 
 Cross-round comparison of A2MC calibration rounds: best-achievable biomass per round vs the
-validation targets, and Morris μ* sensitivity per round. The canonical bundle lives at
-`use_cases/Kougarok/analysis/multiround_top50_sensitivity_20260606/` (self-locating scripts; figures
-versioned beside them). Read `README.md` there + the originating dev/ana log (findings) and
+validation targets, and Morris μ* sensitivity per round. The canonical bundle lives under a
+site's analysis dir, `use_cases/<site>/analysis/multiround_*/` (self-locating scripts; figures
+versioned beside them; the Kougarok reference instance is `multiround_top50_sensitivity_20260606/`).
+Read `README.md` there + the originating dev/ana log (findings) and
 the originating dev/ana log (procedure) first.
 
 ## When to use

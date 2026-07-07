@@ -489,7 +489,9 @@ class MemoryManager:
                      do_not_repeat: Optional[List[str]] = None,
                      source: str = "auto_discovered",
                      confidence: float = 0.6,
-                     references: Optional[List[str]] = None) -> None:
+                     references: Optional[List[str]] = None,
+                     verified: Optional[bool] = None,
+                     verified_by: str = "") -> None:
         """
         Add a new discovery to memory.
 
@@ -504,11 +506,30 @@ class MemoryManager:
             source: "curated" or "auto_discovered"
             confidence: 0-1 confidence score (default 0.6 for auto)
             references: List of reference file paths
+            verified: Explicit verified flag (docs/33 §3b). When None, defaults to
+                source == "curated" (legacy behavior). A diagnosis/hypothesis is NOT
+                verified until a Phase-5 test confirms it — pass verified=True ONLY
+                with a verified_by link (feedback_no_kb_injection_before_verified_test).
+            verified_by: The Phase-5 test / experiment id / topic-stem that verified this
+                finding. Required for verified=True; recorded for provenance.
         """
+        # docs/33 §3b gate: an EXPLICIT verified=True must cite what verified it.
+        # verified=None keeps legacy behavior (source == "curated") so existing callers
+        # are grandfathered; the gate applies to the updated promote/inject paths that pass
+        # verified explicitly.
+        if verified is True and not verified_by:
+            raise ValueError(
+                f"add_discovery('{name}'): verified=True requires a verified_by link "
+                f"(a Phase-5 test / experiment id). A diagnosis or hypothesis is a "
+                f"hypothesis until a test confirms it — pass verified_by, or write it "
+                f"unverified (verified=False). See feedback_no_kb_injection_before_verified_test."
+            )
+        is_verified = verified if verified is not None else (source == "curated")
         entry = {
             "source": source,
             "confidence": confidence,
-            "verified": source == "curated",
+            "verified": is_verified,
+            "verified_by": verified_by,
             "date_added": datetime.now().isoformat(),
             "description": description,
             "mechanism": mechanism,

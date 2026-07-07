@@ -97,8 +97,13 @@ def cmd_list(memory_dir, args):
           f"Use 'promote'/'discard' with --key, --index, or --all.")
 
 
-def _promote_one(mm, item, confidence):
-    """Write one staged entry into the curated KB via an interactive MemoryManager."""
+def _promote_one(mm, item, confidence, verified_by=""):
+    """Write one staged entry into the curated KB via an interactive MemoryManager.
+
+    docs/33 §3b: a promotion is only marked verified=True when a --verified-by link (a
+    Phase-5 test / experiment id) is supplied. Without it the entry is promoted UNVERIFIED
+    — a curated hypothesis, not a confirmed fact (feedback_no_kb_injection_before_verified_test).
+    """
     kind = item.get("kind")
     entry = item.get("entry", {})
     if kind == "discovery":
@@ -110,10 +115,12 @@ def _promote_one(mm, item, confidence):
             implications=entry.get("implications", []),
             parameters_involved=entry.get("parameters_involved", []),
             do_not_repeat=entry.get("do_not_repeat", []),
-            source="curated",                      # promoted => verified
+            source="curated",
             confidence=confidence if confidence is not None
             else entry.get("confidence", 0.6),
             references=entry.get("references", []),
+            verified=bool(verified_by),
+            verified_by=verified_by,
         )
     elif kind == "failed_approach":
         mm.add_failed_approach(
@@ -145,12 +152,19 @@ def cmd_promote(memory_dir, args):
     targets = select_indices(items, args)
     # Interactive-mode manager actually writes the curated JSONs.
     mm = MemoryManager(str(memory_dir), write_mode="interactive")
+    verified_by = getattr(args, "verified_by", "") or ""
     for i in targets:
         it = items[i]
-        _promote_one(mm, it, args.confidence)
+        _promote_one(mm, it, args.confidence, verified_by)
         it["promoted"] = True
         it["promoted_at"] = datetime.now().isoformat()
-        print(f"  [promoted] {it.get('kind')} '{it.get('key')}' -> curated KB (verified)")
+        if verified_by:
+            it["verified_by"] = verified_by
+            print(f"  [promoted] {it.get('kind')} '{it.get('key')}' -> curated KB "
+                  f"(VERIFIED by {verified_by})")
+        else:
+            print(f"  [promoted] {it.get('kind')} '{it.get('key')}' -> curated KB "
+                  f"(UNVERIFIED — pass --verified-by <phase5-test-id> once a test confirms it)")
     save_json(path, pending)
     print(f"Promoted {len(targets)} entr{'y' if len(targets)==1 else 'ies'}.")
 
@@ -184,6 +198,9 @@ def main():
     g.add_argument("--all", action="store_true", help="promote all open entries")
     pp.add_argument("--confidence", type=float, default=None,
                     help="override confidence for promoted discoveries")
+    pp.add_argument("--verified-by", dest="verified_by", default="",
+                    help="Phase-5 test / experiment id / topic-stem that verified this finding "
+                         "(docs/33 §3b). Sets verified=True; omit to promote UNVERIFIED.")
 
     pd = sub.add_parser("discard", help="discard staged proposals")
     gd = pd.add_mutually_exclusive_group(required=True)

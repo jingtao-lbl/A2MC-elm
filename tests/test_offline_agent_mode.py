@@ -133,7 +133,7 @@ class TestAgentSurfaceValidator(unittest.TestCase):
         (d / "docs/a2mc_reference").mkdir(parents=True)
         (d / "AGENTS.md").write_text(
             "# A\nsee [cat](docs/a2mc_reference/skills_catalog.md)\n"
-            "leak /pscratch/sd/j/jingtao/x\n[dead](nope/missing.md)\n"
+            "leak ~/x\n[dead](nope/missing.md)\n"
         )
         (d / ".claude/skills/goodskill/SKILL.md").write_text(
             "---\nname: wrongname\ndescription: d\n"
@@ -141,9 +141,68 @@ class TestAgentSurfaceValidator(unittest.TestCase):
         )
         (d / "docs/a2mc_reference/skills_catalog.md").write_text("# cat\n[phantom](phantom/SKILL.md)\n")
         codes = {(f.level, f.code) for f in validate_agent_surface(d)}
-        for need in [("ERROR", "L1"), ("ERROR", "F4"), ("ERROR", "F5"),
-                     ("ERROR", "C2"), ("ERROR", "D1"), ("WARN", "C1")]:
+        for need in [("ERROR", "L1"), ("ERROR", "F4"), ("ERROR", "F5"), ("ERROR", "D1")]:
             self.assertIn(need, codes, f"validator failed to fire {need}")
+        # Registry/catalog parity (C1/C2) moved to check_skill_registry.py (D1 de-dup, v2.107):
+        # validate_agent_surface no longer fires them; check_skill_registry owns that (see
+        # TestRegistryAndPhaseDocGates below).
+        self.assertNotIn(("ERROR", "C2"), codes)
+        self.assertNotIn(("WARN", "C1"), codes)
+
+
+class TestRegistryAndPhaseDocGates(unittest.TestCase):
+    """The ported integrity checkers (v2.107) stay green on the real repo, and the
+    registry is genuinely 4-way (disk ↔ README ↔ catalog ↔ AGENTS.md)."""
+
+    def _run(self, script):
+        import subprocess
+        return subprocess.run([sys.executable, str(_REPO_ROOT / script)],
+                              cwd=str(_REPO_ROOT), capture_output=True, text=True)
+
+    def test_skill_registry_clean(self):
+        r = self._run("tools/check_skill_registry.py")
+        self.assertEqual(r.returncode, 0, f"registry drift:\n{r.stdout}\n{r.stderr}")
+
+    def test_phase_script_docs_clean(self):
+        r = self._run("tools/check_phase_script_docs.py")
+        self.assertEqual(r.returncode, 0, f"phase script-doc drift:\n{r.stdout}\n{r.stderr}")
+
+    def test_registry_is_four_way(self):
+        # AGENTS.md 'At a glance' table is a real 4th registry: 1:1 with skills on disk.
+        import importlib
+        csr = importlib.import_module("tools.check_skill_registry")
+        disk = set(csr.skills_on_disk())
+        self.assertEqual(csr.agents_table_names(), disk,
+                         "AGENTS.md 'At a glance' table is not 1:1 with skills on disk")
+        self.assertEqual(csr.readme_table_names(), disk)
+        self.assertEqual(csr.catalog_names(), disk)
+
+    def test_contract_and_marker_clean(self):
+        # The new contract_check (cited paths/skills exist) + marker_check (balanced
+        # <!-- private --> blocks) pass on the real surface.
+        import importlib
+        csr = importlib.import_module("tools.check_skill_registry")
+        self.assertEqual(csr.contract_check(csr.skills_on_disk()), [],
+                         "a shipped skill cites a path/skill that does not exist")
+        self.assertEqual(csr.marker_check(), [], "unbalanced/inline <!-- private --> markers")
+
+    def test_cited_paths_survives_code_fence(self):
+        # Regression (20260702f): a ``` code fence must NOT desync backtick pairing and
+        # hide a real path citation that follows it. cited_paths pairs line-by-line.
+        import importlib
+        csr = importlib.import_module("tools.check_skill_registry")
+        fence = "`" * 3
+        text = (
+            "Intro cites `tools/real_a.py`.\n"
+            f"{fence}\n"
+            "code with `inline` and `spans` inside a fence\n"
+            f"{fence}\n"
+            "After the fence, `tools/real_b.py` must still be detected.\n"
+        )
+        paths = csr.cited_paths(text)
+        self.assertIn("tools/real_a.py", paths)
+        self.assertIn("tools/real_b.py", paths,
+                      "path cited after a code fence was dropped (fence-desync bug)")
 
 
 if __name__ == "__main__":

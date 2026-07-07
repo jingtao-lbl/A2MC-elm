@@ -34,6 +34,14 @@ gives the *data*; this skill is what you *do* with it.
    anything still mid-flight.
 3. **Verify branch:** `git branch --show-current` → confirm it matches your intended working branch (`main` or your feature branch).
    `git status -s` for uncommitted work the previous session left.
+4. **Read the offline resume brain** (docs/31/34) — the SessionStart snapshot prints an `Offline state:`
+   line from the highest-round `workflow_state_offline_r{RR}.json` (position + `next_action` + any
+   `phase6_decision` binding target). If a round is mid-refinement, note the **binding target + next
+   targeted experiment** — that is the objective to drive toward (`feedback_performance_experiment_is_the_objective`),
+   not the loudest crash thread.
+5. **Recall the operating discipline.** Skim `AGENTS.md` §"Offline-Agent Operating Discipline" — the four
+   recurring failure modes (verify before claiming · track the objective · drive, don't wait · trust the
+   skill) and the gate enforcing each. Lead memory: `feedback_offline_agent_operating_discipline`.
 
 ## Step 2 — check for in-flight HPC work
 
@@ -57,12 +65,25 @@ invoke the **`curate-knowledge`** skill to review + promote/discard them. Online
 stage proposals here; they only enter the curated KB when a human-in-the-loop session
 curates them.
 
-## Step 4 — summarize + propose, don't just relay
+## Step 4 — drive the next action, don't wait (docs/35)
 
-Close the onboarding with a short state summary and **proposed next actions**, not a bare
-readout (memory: `react to events with proposals, not just relay`): e.g. "round R{N} has
-M/4890 done, K failed → propose restart of the infra failures via `restart-failed-jobs`";
-"3 pending proposals → curate"; "previous session left X uncommitted → commit or discard".
+Close the onboarding by **advancing the workflow**, not with a bare readout. When the offline resume
+brain (`workflow_state_offline`) holds an active goal + a `next_action` (the SessionStart `► NEXT:`
+line), **execute it** — you are the superset of the autonomous orchestrator, which drives itself with no
+per-phase prompt ([[feedback_offline_agent_drives_the_workflow]]). Lead with: *"Round R{N}, phase X;
+next action = `<...>`. Proceeding with it — will pause only at a fork or hard stop."* Then do it.
+
+**DRIVE (just do it — surface results, not permission requests):**
+- arm/re-arm monitors; extract completed data; run a **planned** experiment; skip-test on existing data;
+  advance to the next phase per the 7-phase workflow + iteration rules; regenerate a plot; commit routine work.
+
+**PAUSE for the human (a genuine fork or hard stop):**
+- a **Phase-6** converge / redesign / **stop→model-dev** decision (the `docs/34` objective gate — a hard pause);
+- a **curated-KB write** (`inject-knowledge` / `curate-knowledge` promote — Tier-3, human-gated);
+- an **expensive / irreversible** action (a full-ensemble redesign, a large HPC spend, anything hard to undo);
+- the standing hard stops: destructive / outside-repo actions, a claim about the user, an ambiguous instruction.
+
+Everything not in the PAUSE list, you drive. Surface **proposals + results**, not "shall I…?" for mechanical steps.
 
 ## What this skill does NOT do
 - It does not replace the **G2 SessionStart hook** (that runs automatically and surfaces
@@ -73,4 +94,10 @@ M/4890 done, K failed → propose restart of the infra failures via `restart-fai
 
 ## Changelog
 
+- 2026-07-06: Point Step 1 at `AGENTS.md` §"Offline-Agent Operating Discipline" — the consolidated
+  4-failure-mode stance (docs/36, reinforcement #4); lead memory `feedback_offline_agent_operating_discipline`.
+- 2026-07-06: Cold-start **driving** reinforcement (docs/35, FM-3): Step 1 reads the offline resume brain
+  (`workflow_state_offline` + `phase6_decision`); Step 4 reframed from "summarize + propose" to "**drive the
+  next action, don't wait**" with an explicit DRIVE-vs-PAUSE list. Pairs with the SessionStart `► NEXT:` line
+  + AGENTS.md core rule 10. See `feedback_offline_agent_drives_the_workflow`.
 - 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

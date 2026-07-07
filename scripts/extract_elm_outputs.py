@@ -251,7 +251,7 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Extract ELM history-output registry")
     ap.add_argument(
         "--elm-src", type=Path,
-        default=Path("/Users/jingtao/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES_api43-1/components/elm/src"),
+        default=Path("~/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES_api43-1/components/elm/src"),
         help="Path to components/elm/src in your E3SM checkout",
     )
     ap.add_argument(

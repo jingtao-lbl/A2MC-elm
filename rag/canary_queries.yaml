@@ -1,0 +1,22 @@
+# RAG coverage canaries (docs/33 §3c). Catches the "a kb_source or a key wiki file was
+# silently dropped from the index" bug class — the 2026-07-05/06 bug where the ELM wiki was
+# entirely absent from the index despite DEFAULT_KNOWLEDGE_BASES listing it. Metadata-only
+# (kb_source counts + source-file presence); no embedding model needed.
+#
+# Floors are deliberately loose — the failure mode drops a count to 0, not to "a bit low".
+# Update after a legitimate rebuild (the counts move; the *presence* invariant should not).
+collection: fates_knowledge
+profiles:
+  api-43-1:
+    min_total: 4000
+    kb_sources:            # each MUST be present with >= floor chunks (0 = the drift bug)
+      fates: 500
+      elm: 500
+    must_contain_sources:  # wiki .md source paths that MUST appear in the index
+      - core/fates_interface.md          # ELM host <-> FATES interface wiki (ELM side)
+      - output/history/variables.md      # FATES output-variable wiki (FATES side)
+  api-31-0:                # legacy Kougarok-manuscript profile (frozen; FATES-only historically)
+    min_total: 1000
+    kb_sources:
+      fates: 500
+    must_contain_sources: []

@@ -1,9 +1,9 @@
 # Wiki-Source Validation: elm-codebase-wiki-d40b843 vs src
 
-**Generated:** 2026-04-28T04:42:29Z
+**Generated:** 2026-07-06T23:34:52Z
 
 **Wiki:** `docs/elm-knowledge-base/elm-codebase-wiki-d40b843`
-**Source:** `/Users/jingtao/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES_api43-1/components/elm/src`
+**Source:** `~/E3SM_FATES_api43/components/elm/src`
 **Parameter file:** none
 
 ---
@@ -11,7 +11,7 @@
 ## Sanity assessment
 
 - Total wiki .md files: 42
-- Total source .F90 files: 409
+- Total source .F90 files: 777
 - Total wiki citations extracted: 542
 - Total parameter mentions: 194 (23 unique)
 - Total module-file mentions: 106 unique

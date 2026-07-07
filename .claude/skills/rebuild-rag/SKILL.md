@@ -39,8 +39,8 @@ $PY scripts/build_rag_index.py --rebuild --test
 ```
 
 Reads `docs/fates-knowledge-base/` + `docs/elm-knowledge-base/`, parses the two CDLs,
-overlays `rag/data/curated_relationships.yaml`, writes `rag/chroma_db/` +
-`rag/fates_knowledge_graph.json`. Local, ~2 min, $0 (embeddings are local
+overlays `rag/data/curated_relationships.yaml`, writes `rag/chroma_db/<profile>/` +
+`rag/graphs/<profile>.json`. Local, ~2 min, $0 (embeddings are local
 sentence-transformers, not an API call).
 
 ## Step 1b — Recipe 1: bumping the wiki to a new commit-pinned tree
@@ -84,6 +84,10 @@ print(r.get_targeted_context(param_names=['fates_cnp_pid_kp'],
   Feb-2026 index): phenology defaults `-68 / 638 / -0.01`, transpiration units in `mm`,
   and the phantom `fates_cnp_nfix` parameter **absent**. Open a matched `.md` and confirm
   it's the new commit's content, not legacy.
+- **Coverage self-test (docs/33 §3c):** `$PY tools/check_rag_coverage.py --profile <profile>` —
+  asserts every expected `kb_source` is present above a floor and canary wiki files appear.
+  This catches the ELM-wiki-absent bug class (a whole KB silently dropped: `kb_source 'elm' = 0`).
+  Update `rag/canary_queries.yaml` floors after a legitimate rebuild; the *presence* invariant should hold.
 
 ## Step 3 — graph-only rebuild after a curated-YAML edit
 
@@ -101,7 +105,7 @@ re-indexes what's already authored.)
 ## Step 4 — when the index "just stopped working"
 
 1. Wrong Python (must be 3.10 from python.org). 2. `rag/chroma_db/` exists and non-empty.
-3. `rag/fates_knowledge_graph.json` exists. 4. `--test` the existing index. 5. Still
+3. `rag/graphs/<profile>.json` exists. 4. `--test` the existing index. 5. Still
 broken → `--rebuild`. Cross-CWD failures (Perlmutter) trace to path resolution
 (`rag/hybrid_retriever.py` `_resolve_path`) and the NetworkX `edges="links"` JSON-key
 compat fix (`20260204a`).

@@ -85,7 +85,7 @@ Three properties every variant matrix must have:
    - H2 (asymmetry) confirmed: target_metric_ratio < 1.5 in {variant_D}
    - H3 (no-harm) confirmed: secondary_metric_ratio > 0.7 in {variant_A..C}
 
-Encode the variant matrix as a Python list of tuples (variant_id, list of parameter overrides). Use the generator pattern from `tools/clumping_exp_make_param_files.py`.
+Encode the variant matrix as a Python list of tuples (variant_id, list of parameter overrides), then map each tuple to a per-case FATES parameter file via `tools/modify_fates_parameters.py`.
 
 ## Step 5 — Dedicated output directories (avoid contamination)
 
@@ -155,7 +155,7 @@ for variant_id, overrides in VARIANTS:
         create_modified_parameter_file(in_file, out_file, mods, verbose=False)
 ```
 
-Also write a flat manifest TSV (`tmp/<exp_name>_manifest_<YYYYMMDD>.tsv`) so downstream analysis can map variant_id → overrides → nc_file deterministically. Pattern documented in `tools/clumping_exp_make_param_files.py`.
+Also write a flat manifest TSV (`tmp/<exp_name>_manifest_<YYYYMMDD>.tsv`) so downstream analysis can map variant_id → overrides → nc_file deterministically.
 
 ## Step 7 — Verify parameter modifications (FAILED VERIFICATION = HALT, don't submit)
 
@@ -285,7 +285,7 @@ If the validator fails, fix BEFORE submitting. Same rule as Step 7: cheap to fix
 
 ### 9b — Loop create_case.sh per variant in a small bash wrapper
 
-Pattern documented in `tools/clumping_exp_submit.sh`. Each variant's invocation:
+Submit each variant via `tools/create_case.sh` (`--case-suffix`) — see `phases/phase5_testing/submit_experiments.py`. Each variant's invocation:
 
 ```bash
 ./tools/create_case.sh \
@@ -379,6 +379,8 @@ Cross-link from:
 
 7. **Don't skip Step 7 (parameter file verification) before submitting.** The cost of finding a generator bug after 24+ hours of HPC compute is much higher than the cost of catching it in a 30-second ncdump check. A common failure mode: 0-based vs 1-based PFT index confusion silently modifies the wrong PFT.
 
+8. **Don't pass a RELATIVE `--param-file` to `create_case.sh`.** The path is written *verbatim* into the case namelist and later read from the case *run* dir (a different CWD), so a relative path silently fails to resolve and the run dies partway. Always resolve to absolute first (`D="$(cd <topic_dir> && pwd)"`, pass `"$D/…"`) and verify with `grep '^PARAM_FILE=' <generated>.sh` → an absolute path that `[ -f ]` exists.
+
 ## Cross-references
 
 ### In-repo authoritative docs (READ FIRST when in doubt)
@@ -408,4 +410,5 @@ Cross-link from:
 
 ## Changelog
 
+- 2026-07-06: Added anti-pattern #8 — the `--param-file` **absolute-path footgun** (`create_case.sh` writes the path verbatim; a relative path silently fails from the run dir). Ported the generic HPC fix from demo, scrubbed of the Kougarok Fork-B worked example. (Build-reuse + monitoring are already covered by Step 5 / Step 9 on main.)
 - 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

@@ -417,6 +417,17 @@ def _resolve_citation(path: str, source: SourceIndex) -> Optional[str]:
     return None
 
 
+def _resolve_candidates(path: str, source: SourceIndex) -> List[str]:
+    """All source rel-paths a cited path could refer to. A basename-only citation
+    may match multiple files (e.g. the real ``biogeochem/PhosphorusStateType.F90``
+    and an ``external_models/sbetr/src/stub_clm/`` shadow of the same name), so
+    line-bound checks must consider all of them, not just the first."""
+    if source.has_path(path):
+        return [path]
+    base = path.rsplit("/", 1)[-1]
+    return list(source.by_basename.get(base, []))
+
+
 def validate_file_citations(citations: List[Tuple[str, int]],
                             source: SourceIndex,
                             corpus: WikiCorpus) -> DimensionResult:
@@ -445,17 +456,19 @@ def validate_line_bounds(citations: List[Tuple[str, int]],
     """
     result = DimensionResult()
     for path, line in citations:
-        resolved = _resolve_citation(path, source)
-        if resolved is None:
+        cands = _resolve_candidates(path, source)
+        if not cands:
             continue
         result.total += 1
-        n_lines = source.line_count(resolved, source_root)
-        if line <= n_lines:
+        # A basename-only citation may match multiple files (real module vs an
+        # sBeTR/stub_clm shadow); it is valid if the line fits in ANY candidate.
+        max_lines = max(source.line_count(c, source_root) for c in cands)
+        if line <= max_lines:
             result.pass_count += 1
         else:
             origin = find_citation_origin(corpus, path, line)
             result.rows.append(
-                (f"{path}:{line}", n_lines, line - n_lines, origin)
+                (f"{path}:{line}", max_lines, line - max_lines, origin)
             )
     return result
 

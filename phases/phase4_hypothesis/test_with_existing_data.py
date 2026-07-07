@@ -4,7 +4,7 @@ Phase 4: Skip Testing - Test Hypotheses with Existing Ensemble Data
 
 Test hypotheses using existing Morris ensemble data instead of running
 new HPC experiments. This implements the Skip Testing path (inner loop)
-of the two-level iteration structure.
+of the three-level iteration structure.
 
 Methods:
 - comparison: Compare high vs low parameter groups

@@ -25,22 +25,20 @@ export A2MC_SITE_CONFIG="${SCRIPT_DIR}/$(basename "${BASH_SOURCE[0]}")"
 # -----------------------------------------------------------------------------
 # Absolute path to the E3SM/ELM-FATES checkout used to RUN this case. The
 # RAG infrastructure detects ELM + FATES commits from this path and selects
-# the matching milestone profile (api-31-0 for the Kougarok manuscript;
-# api-43-1 for E3SM-master-pinned work).
+# the matching milestone profile. On this (main) branch the case runs against
+# the canonical api-43-1 checkout (FATES e027a40 / ELM d40b843); the api-31-0
+# manuscript-reproducibility checkout lives on the kougarok_fates_demo branch.
 #
 # On Perlmutter:
-#   /global/cfs/cdirs/m2467/jingtao/E3SM_FATES   (api-31, Kougarok manuscript)
-# Locally (override per developer):
-#   $HOME/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES   (api-31)
+#   ~/E3SM_FATES_api43   (api-43-1, canonical — this case)
+#   ~/E3SM_FATES         (api-31-0, Kougarok manuscript — demo branch)
 #
-# If you maintain multiple checkouts, switch between them by editing this line
-# OR by exporting A2MC_MODEL_PATH in your shell BEFORE sourcing this file.
-if [ -z "${A2MC_MODEL_PATH:-}" ]; then
-    if [ -d "$HOME/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES" ]; then
-        export A2MC_MODEL_PATH="$HOME/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES"
-    else
-        export A2MC_MODEL_PATH="${A2MC_E3SM_ROOT}"
-    fi
+# Precedence: a shell export of A2MC_MODEL_PATH before sourcing wins; otherwise
+# this site value overrides a2mc_config.sh's machine-level default. To switch
+# checkouts, edit the path below or shell-export A2MC_MODEL_PATH beforehand.
+if [ -z "${A2MC_MODEL_PATH:-}" ] || [ "${_A2MC_MODEL_PATH_IS_DEFAULT:-}" = "1" ]; then
+    export A2MC_MODEL_PATH="~/E3SM_FATES_api43"
+    unset _A2MC_MODEL_PATH_IS_DEFAULT
 fi
 
 # -----------------------------------------------------------------------------
@@ -71,7 +69,7 @@ export A2MC_DOMAIN_FILE="domain_Kougarok_from0.125x0.125_simyr1850_c240309.nc"
 export A2MC_SURFACE_FILE="surfdata_Kougarok_from0.125x0.125_simyr1850_c240309_ModPval.nc"
 
 # CNP soil parameters
-export A2MC_SOILORDER_DIR="/global/homes/j/jingtao/E3SM_Aid/clm_params"
+export A2MC_SOILORDER_DIR="~/E3SM_Aid/clm_params"
 export A2MC_SOILORDER_FILE="CNP_parameters_c180312.nc"
 
 # Forcing data redirects
@@ -119,7 +117,8 @@ export A2MC_ELM_OPTIONS="-nutrient cnp -nutrient_comp_pathway eca -soil_decomp c
 # Ensemble Paths
 # -----------------------------------------------------------------------------
 #export A2MC_ENSEMBLE_NAME="Kougarok_PlantTraitsCNPEnsemble162_Morris"
-export A2MC_ENSEMBLE_NAME="Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP" #3rd round of calibration
+#export A2MC_ENSEMBLE_NAME="Kougarok_PlantTraitsCNPEnsemble162_Morris_RGSPsuplP" #3rd round of calibration (api-31-0)
+export A2MC_ENSEMBLE_NAME="Kougarok_FATESapi43_CNPECA_Para162" # api-43-1 canonical run (FATES e027a40 / ELM d40b843)
 export A2MC_ENSEMBLE_PREFIX="Kougarok_ELM-FATES"
 export A2MC_CASE_NAME_PATTERN="${A2MC_ENSEMBLE_PREFIX}_PtCNPEn{N}_{PHASE}"
 export A2MC_ENSEMBLE_OUTPUT="${A2MC_OUTPUT_ROOT}/${A2MC_ENSEMBLE_NAME}"
@@ -165,14 +164,17 @@ export A2MC_LOG_DIR="${A2MC_CASE_SCRIPTS}"
 # -----------------------------------------------------------------------------
 # HPC Paths (NERSC Perlmutter)
 # -----------------------------------------------------------------------------
-# Base FATES parameter file (template)
-export A2MC_BASE_PARAM_FILE="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_api25.5.0_12pft_c230710.nc"
+# Base FATES parameter file (template).
+# api-43-1 uses JSON natively (FATES switched from NetCDF/CDL to JSON at api.43).
+# NOTE: this JSON base + the ensemble below do NOT exist yet — see TODO.md
+# ("Create the api-43 JSON FATES parameter files").
+export A2MC_BASE_PARAM_FILE="~/E3SM_Aid/FATES-ParameterFiles/fates_params_api43.1.0_12pft_e027a40.json"
 
 # Directory containing FATES parameter files for ensemble
-export A2MC_PARAM_DIR="/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
+export A2MC_PARAM_DIR="~/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris_api43"
 
 # Parameter file naming pattern ({N} = case number 1-4890)
-export A2MC_PARAM_PATTERN="fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"
+export A2MC_PARAM_PATTERN="fates_params_api43.1.0_12pft_e027a40__PtCNP162_En{N}.json"
 
 # Morris ensemble matrix (4890 x 162) - site-specific data
 # Note: A2MC_ROOT is two levels up from use_cases/Kougarok/config/

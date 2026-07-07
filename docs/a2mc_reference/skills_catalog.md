@@ -25,15 +25,14 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 
 ## Skills (mode-agnostic — available now)
 
-### `log`
-- **Purpose:** Write a development or analysis log in the repo's two-stream logging
-  system — picks the stream (`memory/dev_logs/` for engineering vs `memory/ana_logs/`
-  for scientific analysis) and subtype (regular / session / `Handoff_To_Main`), applies
-  the naming + header + required-section conventions, and runs the post-write checklist
-  (version bump, changelog, handoff, supersede protocol).
-- **Invoke when:** "/log", "write a log", "log this session", "write a dev log / ana_log",
-  "session log", "handoff log", "document what we did", or to record a fix/feature/analysis.
-- **Modes:** `any` — logging convention; model-agnostic.
+
+
+### `calibration-log`
+- **Purpose:** Log interactive calibration/exploration work for a site under
+  `use_cases/{site}/memory/logs/` — a PHASE log via `tools/phase_logger.py` (identical to the
+  autonomous agent) or a free-form SESSION log, so both modes' logs synthesize together.
+- **Invoke when:** "log this / this phase / this diagnosis / this experiment", "log this calibration session", "write a session log", "record what I explored".
+- **Modes:** `any` — model-agnostic (PhaseLogger).
 
 ### `restart-failed-jobs`
 - **Purpose:** Restart SLURM jobs that failed in an ensemble/experiment. Diagnoses failure
@@ -82,6 +81,13 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
   evidence → write an ana_log.
 - **Invoke when:** "investigate whether X", "is X correlated with Y", "analyze the mechanism", "make a manuscript figure for X".
 - **Modes:** `any` — model-agnostic; examples are FATES/Kougarok.
+
+### `markdown-to-pdf`
+- **Purpose:** Convert a markdown document (an ana_log, report, or note) to a shareable PDF
+  or Word `.docx` via pandoc (+ a LaTeX engine for PDF; python-docx for round-trip-safe docx).
+  Prose only — slide decks go through Marp. Self-contained repo copy (no user-level dependency).
+- **Invoke when:** "convert/render markdown to PDF/Word/docx", "render this ana_log/report to PDF", "make a PDF of this", "turn this .md into a docx".
+- **Modes:** `any` — model-agnostic.
 
 ### `build-rag-from-scratch`
 - **Purpose:** Construct the RAG/GraphRAG knowledge layer from scratch (new model or fresh build).
@@ -147,3 +153,40 @@ ADSP/RGSP/TRANS spinup, Morris μ*). The `modes:` gate keeps them out of ELM-onl
   decision tree → KB injection.
 - **Invoke when:** "test the X hypothesis", "parameter sweep", "<param> sensitivity experiment".
 - **Modes:** `requires_fates: true` — FATES parameter files + HPC submission.
+
+## Offline phase skills (per-phase, mirror online Phase 0–6)
+
+### `phase0-design`
+- **Purpose:** Offline analog of online Phase 0 — sample the parameter space, materialize per-case FATES param files, generate + build + submit the ensemble, arm monitoring.
+- **Invoke when:** "design a new round", "submit the ensemble", "sample the parameters", "expand/redesign the parameter space".
+- **Modes:** `any` — calibration-workflow phase skill (mode resolved at runtime).
+
+### `phase1-exploration`
+- **Purpose:** Offline analog of Phase 1 — extract the Y matrix, run Morris sensitivity, interpret μ*.
+- **Invoke when:** "run the sensitivity analysis", "which parameters matter", "run Phase 1".
+- **Modes:** `any`.
+
+### `phase2-screening`
+- **Purpose:** Offline analog of Phase 2 — rank the ensemble vs targets, find best/most-targets cases, read bias patterns, route to Phase 3.
+- **Invoke when:** "screen the ensemble", "which case is best", "how many targets met", "run Phase 2".
+- **Modes:** `any`.
+
+### `phase3-diagnosis`
+- **Purpose:** Offline analog of Phase 3 (`reasoning.diagnose`) — root-cause the failing targets via the phase3 tools + RAG + Adaptive Memory → structured diagnosis; hand off to Phase 4.
+- **Invoke when:** "diagnose the failing targets", "why aren't the targets calibrating", "run Phase 3".
+- **Modes:** `any`.
+
+### `phase4-hypothesis`
+- **Purpose:** Offline analog of Phase 4 — turn a diagnosis into testable hypotheses + skip-test against existing Morris data (3↔4, no HPC); route to Phase 5 if new sims needed.
+- **Invoke when:** "generate a hypothesis", "what should we test next", "can we test with existing data", "run Phase 4".
+- **Modes:** `any`.
+
+### `phase5-testing`
+- **Purpose:** Offline analog of Phase 5 — thin router to `offline-testing-workflow` for HPC experiment execution.
+- **Invoke when:** "run the experiment", "submit the test cases", "run Phase 5".
+- **Modes:** `any`.
+
+### `phase6-refinement`
+- **Purpose:** Offline analog of Phase 6 — evaluate results vs baseline/expected, extract lessons, update Adaptive Memory, decide converge / rethink (6→3) / redesign (6→0).
+- **Invoke when:** "evaluate the results", "what did we learn", "converge or iterate", "run Phase 6".
+- **Modes:** `any`.

@@ -18,18 +18,80 @@ Author: Jing Tao with Claude
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# Offline (interactive-agent) topic-stem: YYYYMMDDx_phase{N}_{name}_r{RR}[...]_{descriptor}.md
+# (docs/31). The phase + round are in the filename; the log is flat in logs/ (no session_id level).
+OFFLINE_STEM_RE = re.compile(r"^\d{8}[a-z]_(phase\d+_[a-z]+)_r(\d+)")
 
-def collect_session_artifacts(site_dir: str, session_id: str) -> Dict:
+
+def collect_offline_artifacts(site_dir: str, calibration_round: int = None) -> Dict:
+    """Collect flat offline topic-stem logs + figures so they fold into synthesis (docs/31).
+
+    The autonomous agent's logs are session-scoped (logs/{session_id}/{phase}/); the
+    interactive agent's are flat topic-stems (logs/{stem}.md) with the phase in the name.
+    This groups them by phase like collect_session_artifacts, so build_report_prompt picks
+    them up unchanged. Optionally filter to one calibration round.
+
+    Figure rel paths assume the report is written at logs/ root (the natural home for an
+    offline round synthesis): ../phase_results/{stem}/.
+
+    Args:
+        site_dir: use_cases/{site}/ directory
+        calibration_round: if set, only include logs whose stem carries _r{RR}
+    Returns:
+        {logs: {phase: [ {filename, content} ]}, figures: {...}, figure_rel_paths: {...}}
+    """
+    site_path = Path(site_dir)
+    logs_dir = site_path / "memory" / "logs"
+    pr_dir = site_path / "memory" / "phase_results"
+    out = {"logs": {}, "figures": {}, "figure_rel_paths": {}}
+    if not logs_dir.exists():
+        return out
+
+    # glob("*.md") is non-recursive → flat offline logs only, not session_id/ subdirs.
+    for lf in sorted(logs_dir.glob("*.md")):
+        m = OFFLINE_STEM_RE.match(lf.name)
+        if not m:
+            continue
+        phase_name, rr = m.group(1), int(m.group(2))
+        if calibration_round is not None and rr != int(calibration_round):
+            continue
+        try:
+            content = lf.read_text(encoding="utf-8")
+        except Exception as e:
+            logger.warning(f"Could not read offline log {lf}: {e}")
+            continue
+        out["logs"].setdefault(phase_name, []).append(
+            {"filename": lf.name, "content": content})
+
+        # Paired artifact folder phase_results/{stem}/ (stem = filename without .md)
+        topic = pr_dir / lf.stem
+        if topic.exists():
+            figs = sorted(topic.glob("*.png"))
+            if figs:
+                out["figures"].setdefault(phase_name, []).extend(str(f) for f in figs)
+                rel = f"../phase_results/{lf.stem}"
+                out["figure_rel_paths"].setdefault(phase_name, []).extend(
+                    f"{rel}/{f.name}" for f in figs)
+    return out
+
+
+def collect_session_artifacts(site_dir: str, session_id: str,
+                              include_offline: bool = False,
+                              calibration_round: int = None) -> Dict:
     """Collect all logs and figure paths for a session.
 
     Args:
         site_dir: Path to use_cases/{site}/ directory
         session_id: Session timestamp (YYYYMMDD_HHMMSS)
+        include_offline: also fold in flat offline topic-stem logs (docs/31), grouped by
+                         the same phase buckets so build_report_prompt picks them up.
+        calibration_round: when include_offline, restrict offline logs to this round.
 
     Returns:
         Dict with keys: logs (Dict[phase_name, List[str]]),
@@ -98,6 +160,13 @@ def collect_session_artifacts(site_dir: str, session_id: str) -> Dict:
             artifacts["figure_rel_paths"]["phase1_exploration"] = [
                 f"{rel_dir}/{f.name}" for f in fig_files
             ]
+
+    # Fold in flat offline topic-stem logs/figures (docs/31) so both agent modes synthesize.
+    if include_offline:
+        off = collect_offline_artifacts(site_dir, calibration_round)
+        for key in ("logs", "figures", "figure_rel_paths"):
+            for phase_name, items in off[key].items():
+                artifacts[key].setdefault(phase_name, []).extend(items)
 
     return artifacts
 

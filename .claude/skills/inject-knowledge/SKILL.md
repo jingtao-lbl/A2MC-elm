@@ -32,8 +32,14 @@ Before injecting, satisfy yourself — and state the basis in the entry's `refer
   duplicate or let a weaker entry shadow a better-established one.
 - **Scrutinize any `do_not_repeat`.** Highest-risk field — inject "never do X" only if X is a
   demonstrated dead end, not one failed attempt.
-- **Set `verified` honestly.** Default **`verified: false`** unless the fact is independently
-  confirmed; flip to `true` only on real evidence. Pick a `confidence` you can defend.
+- **Set `verified` honestly — and cite what verified it (docs/33 §3b gate).** Default
+  **`verified: false`**. Flip to `true` **only** with a `verified_by` link — the Phase-5 test /
+  experiment id / topic-stem that confirmed it. A Phase-3 diagnosis or Phase-4 hypothesis is a
+  *hypothesis* (`verified: false`) no matter how well-supported by enrichment stats + source reading;
+  only a run earns `verified: true`. `MemoryManager.add_discovery(verified=True, ...)` **raises**
+  without a `verified_by`, and `review_pending_knowledge.py promote` marks entries UNVERIFIED unless
+  `--verified-by <id>` is passed (`feedback_no_kb_injection_before_verified_test`). Pick a `confidence`
+  you can defend.
 
 If you can't clear Step 0, stop — the right outcome may be "don't inject yet."
 
@@ -58,6 +64,7 @@ Add one entry keyed by a descriptive `snake_case` name (schema matches existing 
   "source": "curated",
   "confidence": 0.85,
   "verified": false,
+  "verified_by": "",
   "date_added": "2026-06-17T00:00:00",
   "description": "...",
   "mechanism": "...",

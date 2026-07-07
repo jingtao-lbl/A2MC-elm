@@ -35,13 +35,14 @@ FATES Morris-ensemble analysis skills (`summarize-`/`compare-calibration-rounds`
 
 | Skill | Modes | Triggers when |
 |---|---|---|
-| [log](log/SKILL.md) | any | Write a dev_log / ana_log / session log / Handoff_To_Main in the two-stream logging system. Invoke on "/log", "write a log", "log this session". |
+| [calibration-log](calibration-log/SKILL.md) | any | Log interactive calibration/exploration work for a site (PhaseLogger phase logs + free-form session logs). |
 | [onboard-session](onboard-session/SKILL.md) | any | Cold-start runbook — orient at session start or after a compaction/reset ("catch up", "where did we leave off"). |
 | [curate-knowledge](curate-knowledge/SKILL.md) | any | Review + promote staged Tier-3 knowledge proposals (the human-in-the-loop half of the memory write gate). |
 | [arm-hpc-monitoring](arm-hpc-monitoring/SKILL.md) | any (HPC) | Session starts (or resumes after compaction) while an HPC ensemble is in flight. |
 | [restart-failed-jobs](restart-failed-jobs/SKILL.md) | any (HPC) | Jobs failed in an ensemble/experiment and need restart (or archive if model failure). |
 | [diagnose-forensics](diagnose-forensics/SKILL.md) | any | Investigate an anomaly/outlier/too-good "best" case — real or artifact? — then root-cause it. |
 | [scientific-analysis](scientific-analysis/SKILL.md) | any | Manuscript-supporting investigation → figure → ana_log (question → data → statistic → figure → evidence). |
+| [markdown-to-pdf](markdown-to-pdf/SKILL.md) | any | Convert a markdown ana_log/report/note to a shareable PDF or Word `.docx` via pandoc. Prose, not slide decks (use Marp). |
 | [build-rag-from-scratch](build-rag-from-scratch/SKILL.md) | any | Construct the RAG/GraphRAG knowledge layer from scratch (for a new model or a fresh build). |
 | [rebuild-rag](rebuild-rag/SKILL.md) | any | Rebuild/refresh the RAG/GraphRAG index (wiki bump, curated-YAML graph-only refresh). |
 | [generate-codebase-wiki](generate-codebase-wiki/SKILL.md) | any | Generate a source-grounded codebase wiki for a model. |
@@ -52,6 +53,13 @@ FATES Morris-ensemble analysis skills (`summarize-`/`compare-calibration-rounds`
 | [summarize-calibration-round](summarize-calibration-round/SKILL.md) | FATES | One-round summary: ensemble figures + evaluation + Morris μ* sensitivity → markdown/PDF. |
 | [compare-calibration-rounds](compare-calibration-rounds/SKILL.md) | FATES | Compare rounds R1…RN + targets (top-N biomass + per-target Morris μ* overlays). |
 | [offline-testing-workflow](offline-testing-workflow/SKILL.md) | FATES | Design + launch + analyze an offline HPC parameter-sweep experiment on a Morris base case. |
+| [phase0-design](phase0-design/SKILL.md) | any | Offline Phase 0 — design/sample/submit the ensemble (analog of `_run_design`). |
+| [phase1-exploration](phase1-exploration/SKILL.md) | any | Offline Phase 1 — extract Y matrix + Morris sensitivity. |
+| [phase2-screening](phase2-screening/SKILL.md) | any | Offline Phase 2 — rank ensemble vs targets; best/most-targets cases. |
+| [phase3-diagnosis](phase3-diagnosis/SKILL.md) | any | Offline Phase 3 — root-cause the failing targets (analog of `reasoning.diagnose`). |
+| [phase4-hypothesis](phase4-hypothesis/SKILL.md) | any | Offline Phase 4 — hypotheses + skip-test on existing data. |
+| [phase5-testing](phase5-testing/SKILL.md) | any | Offline Phase 5 — run HPC experiments (routes to offline-testing-workflow). |
+| [phase6-refinement](phase6-refinement/SKILL.md) | any | Offline Phase 6 — evaluate, learn, converge/iterate. |
 
 ## Skills vs dev_logs
 

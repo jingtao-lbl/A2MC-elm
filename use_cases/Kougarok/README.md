@@ -174,19 +174,19 @@ All screen output is automatically saved to `use_cases/Kougarok/a2mc_run_{timest
 
 ```
 # FATES parameter files (4890 NetCDF files)
-/global/homes/j/jingtao/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris/
+~/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris/
 
 # Ensemble matrix (4890 x 162 parameter values)
-/global/cfs/cdirs/m2467/jingtao/SALib_FATES/FATES_CNPnPlantTraits_162param_Morris_4890sets.txt
+~/SALib_FATES/FATES_CNPnPlantTraits_162param_Morris_4890sets.txt
 
 # Simulation outputs
-/global/cfs/cdirs/m2467/jingtao/Kougarok_PlantTraitsCNPEnsemble162_Morris/
+~/Kougarok_PlantTraitsCNPEnsemble162_Morris/
 
 # Extracted monthly data
-/global/cfs/cdirs/m2467/jingtao/Kougarok_PlantTraitsCNPEnsemble162_Morris/extracted_monthly_data/
+~/Kougarok_PlantTraitsCNPEnsemble162_Morris/extracted_monthly_data/
 
 # Case scripts
-/pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase/
+~/CaseScripts/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase/
 ```
 
 ---

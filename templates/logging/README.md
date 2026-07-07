@@ -112,5 +112,5 @@ Logging templates define HOW to document it.
 ## Source Files
 
 These templates are based on patterns from the first (offline) calibration iteration:
-- `/Users/jingtao/Desktop/Work/SourceCode/ELM_FATES/fates_knowledge_base/memory/`
+- `~/Desktop/Work/SourceCode/ELM_FATES/fates_knowledge_base/memory/`
 - See `A2MC/Backup/curated_list.txt` for the full list
