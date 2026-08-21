@@ -40,6 +40,15 @@ use_cases/ELM-FATES_Kougarok/memory/extracted/
 use_cases/*/config/*_config.sh
 !use_cases/ELM-FATES_Kougarok/config/
 !use_cases/TEMPLATE/
+# The two negations above end in "/", and a trailing-slash pattern matches DIRECTORIES ONLY --
+# so neither ever re-included the *_config.sh FILES excluded by the line above them. Effect:
+# rsync copied kougarok_config.sh and template_config.sh into the public clone, `git add -A`
+# silently skipped them as ignored, and they never reached GitHub. The public repo shipped a
+# config/ directory with its site config missing -- for BOTH the worked reference and the
+# TEMPLATE that user_guide.md 2.1 tells new users to copy. Confirmed 2026-08-21 with
+# `git check-ignore -v`, which named line 40 as the matching rule. File-level negations:
+!use_cases/ELM-FATES_Kougarok/config/*_config.sh
+!use_cases/TEMPLATE/config/*_config.sh
 *.bak
 
 # Large data files

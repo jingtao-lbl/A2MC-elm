@@ -60,7 +60,7 @@ rounds:
       milestone: api-43-1
       fates_commit: 6f61d42
       elm_commit: 938f765
-      checkout: ~/E3SM_FATES_api43
+      checkout: /global/cfs/cdirs/<your_project>/<your_user>/E3SM_FATES_api43
       patches:
       - 'A2MCapi43port17 (#17): fates_phen_gddthresh_c + cold-phenology state promoted
         site-scalar -> per-PFT. Promoted to the FATES working model 2026-07-16 (fork

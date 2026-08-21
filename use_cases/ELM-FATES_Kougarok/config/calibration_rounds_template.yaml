@@ -36,7 +36,7 @@ rounds:
       ensemble_name: "Kougarok_PlantTraitsCNPEnsemble162_ADSPSupNP"
       ensemble_output: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_ADSPSupNP"
       extracted_data: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_ADSPSupNP_Extract"
-      param_dir: "~/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
+      param_dir: "/global/homes/<x>/<your_user>/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
       param_pattern: "fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"
       case_name_pattern: "Kougarok_ELM-FATES_PtCNPEn{N}ADSPSupNP_{PHASE}"
       case_scripts: "${A2MC_SCRIPTS_DIR}/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase_ADSPSupNP"
