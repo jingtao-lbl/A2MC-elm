@@ -792,10 +792,20 @@ def load_parameter_descriptions(
 
                 chunk = {
                     'content': content,
-                    'source': f'fates_params_info.cdl::{name}',
+                    # Derived from the file actually parsed, NOT hardcoded. These two
+                    # were the literals 'fates_params_info.cdl::{name}' and 'cdl', so
+                    # every parameter chunk in every profile claimed a CDL origin
+                    # whatever it was built from. api-43-1 is built from
+                    # fates_params_info_e027a40.json, so its chunks asserted a
+                    # provenance that was simply false — and on 2026-08-21 that label
+                    # was read as evidence the api-43 index had been built from the
+                    # api-31 parameter file, a false alarm that took a full trace to
+                    # put down (dev_logs/20260821b). `parser.format` is the parser's
+                    # own detected format, so the label cannot drift from the parse.
+                    'source': f'{Path(param_cdl_path).name}::{name}',
                     'type': 'parameter_definition',
                     'title': f'Parameter: {name}',
-                    'format': 'cdl',
+                    'format': parser.format,
                     'kb_source': 'fates',  # FATES parameter file
                     'chunk_id': f'param_def::{name}',
                     'entity_type': 'parameter',
@@ -871,10 +881,15 @@ def load_parameter_descriptions(
 
                 chunk = {
                     'content': content,
+                    # `source` was already per-variable; `format` was the literal 'cdl',
+                    # which is currently CORRECT (both output files are .cdl) and so
+                    # would go wrong silently the day an output registry ships as JSON,
+                    # exactly as the parameter side did. Derive it from the same
+                    # filename `source` uses, so the two cannot disagree.
                     'source': f'{sources.get(name, "output.cdl")}::{name}',
                     'type': 'output_definition',
                     'title': f'Output: {name}',
-                    'format': 'cdl',
+                    'format': Path(sources.get(name, "output.cdl")).suffix.lstrip('.').lower() or 'cdl',
                     # is_fates is set per output variable in FATESOutputParser:
                     # output CDL contains both FATES_* (FATES) and ELM bare-name vars (ELM)
                     'kb_source': 'fates' if var.is_fates else 'elm',
