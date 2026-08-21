@@ -765,14 +765,25 @@ class MemoryManager:
 
     @staticmethod
     def _strip_pft_suffix(name: str) -> str:
-        """Strip trailing PFT suffix (_7, _9, _10) from parameter names for matching.
+        """Strip a trailing PFT suffix from a parameter name, for key matching.
 
-        Morris shorthand uses suffixes like 'pid_kp_10' but official FATES names
-        don't include PFT suffixes. This enables matching queries like
-        'fates_cnp_pid_kp_10' against stored key 'fates_cnp_pid_kp'.
+        Stored knowledge keys are bare parameter names (`fates_cnp_pid_kp`); PFT
+        specificity lives in separate fields, never in the key. A *query* may still
+        arrive suffixed (`fates_cnp_pid_kp_10`), so normalize it before lookup.
+
+        Matches any trailing `_<digits>`, deliberately: the previous form hardcoded
+        `_(?:7|9|10)$` — the api-31 arctic PFT ids — so on api-43, whose arctic PFTs
+        are 10/11/12, queries for PFT 11 and 12 silently failed to match while 10
+        worked only because the two eras happen to share it. PFT ids are not stable
+        across model versions, so enumerating them here is always wrong for some
+        version (`feedback_verify_pft_identity_across_versions`,
+        `feedback_derive_pft_count_never_hardcode`).
+
+        Safe against real names: no parameter in the api-43 list, and no stored key,
+        ends in `_<digits>` (checked 2026-08-19 — 0 of 58 names, 0 of 49 keys).
         """
         import re
-        return re.sub(r'_(?:7|9|10)$', '', name)
+        return re.sub(r'_\d+$', '', name)
 
     def _discovery_entries(self) -> Dict[str, Dict]:
         """Return discovery entries as {name: dict}, handling both storage formats.

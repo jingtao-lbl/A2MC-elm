@@ -1,5 +1,7 @@
 ---
 name: generate-codebase-wiki
+visibility: public
+category: kb-build
 description: Produce a source-grounded codebase wiki for a model (FATES, ELM, EcoSim, ReSOM, or a new target) by fanning out parallel subagents that read actual source and cite (file:line) — the foundation every downstream A2MC artifact (RAG vector index, knowledge graph, calibration prompts) is built on. Use when the user asks to "generate/build a codebase wiki", "the deepwiki/cursor wiki is wrong — rewrite it", "audit the wiki against source", "bump the wiki to commit X", or "add model Y to A2MC" (wiki is step 1). Picks Workflow A (greenfield) vs B (audit-then-rewrite), enforces the fabrication/citation gates and commit-pinned output convention. Distilled from docs/a2mc_reference/codebase_wiki_generation_roadmap.md and the FATES/ELM/EcoSIM wiki dev logs.
 modes:
   requires_fates: false

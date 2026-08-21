@@ -9,6 +9,8 @@ A skill is a folder under `.claude/skills/` containing a `SKILL.md` with YAML fr
 ```yaml
 ---
 name: <skill-name>
+visibility: public | private
+category: phase | calibration | model-dev | meta | kb-build | authoring
 description: <when to use this skill — Claude reads this to decide if it's relevant>
 modes:                       # which run configurations this skill applies to
   requires_fates: false      # true => only meaningful when use_fates
@@ -26,6 +28,33 @@ and honor its own `modes:` block — skip or branch when the case's mode doesn't
 
 When Claude Code starts in this repo, the skills are auto-discovered. The `description` field is what Claude uses to decide whether to invoke the skill for a given user request — write it as a triggering description, not a summary.
 
+**Frontmatter schema (`name` + `visibility` + `category` required and enum-validated by `tools/check_skill_registry.py`; `description` + `modes` as above):**
+
+| Field | Values | What it means / drives |
+|---|---|---|
+| `name` | = the skill dir name | the `/<name>` invocation; must match the directory |
+| `visibility` | `public` \| `private` | **`private` = A2MC-dev-only, excluded from the public demo** — `sync_to_public.sh` derives its exclude list from this field (a new private skill needs no sync edit), and the skill's registry rows must be wrapped in a private-comment block (stripped from the shipped registries by `filter_private`). `public` ships to the demo. Today's private skills: `log`, `manage-auto-memory`, `manuscript-writing-style`, `memory-checkup`, `adopt-from-adapter-kit`. See the note below on citing them. |
+| `category` | `phase` \| `calibration` \| `model-dev` \| `meta` \| `kb-build` \| `authoring` | machine-readable grouping (mirrors the `skills_catalog.md` groups): `phase` = the 7 offline phase skills; `calibration` = calibration-support utilities; `model-dev` = ELM/FATES source-change skills; `meta` = skill/session management (`add-skill`, `refine-skill`, `onboard-session`, `a2mc-init`); `kb-build` = the RAG/wiki construction pipeline; `authoring` = doc/report/log writing. |
+
+(The schema mirrors the memory-bucket frontmatter idea — metadata worth adding because something reads it: `visibility` drives the sync, both are validated by the drift check.)
+
+### A public skill may reference a private one — that is fine
+
+Several shipped skills mention a private skill by name (`add-skill`, `curate-knowledge`,
+`inject-knowledge` cite `log`; `literature-review` and `write-report` cite
+`manuscript-writing-style`). The private skill is not in this release, so the reference does not
+resolve here.
+
+**That is intentional, not a broken link.** Those are the maintainer's own
+A2MC-*development* skills — the two-stream dev/analysis logging system, the git-tracked
+auto-memory bucket, the branch-transfer contract, the manuscript-writing workflow. They are
+scoped to developing A2MC itself rather than to calibrating a site, so they are kept out of the
+release rather than shipped half-usable.
+
+The reference is left in place deliberately: it tells you the capability exists and what it
+covers. **If one would be useful to you, contact Jing Tao (jingtao@lbl.gov)** — they can be
+shared on request.
+
 ## Current skills
 
 Each skill declares a `modes:` block (see below) so the agent can check it against the active
@@ -37,23 +66,33 @@ FATES Morris-ensemble analysis skills (`summarize-`/`compare-calibration-rounds`
 |---|---|---|
 | [calibration-log](calibration-log/SKILL.md) | any | Log interactive calibration/exploration work for a site (PhaseLogger phase logs + free-form session logs). |
 | [a2mc-init](a2mc-init/SKILL.md) | any | First-run setup — interview + create/populate a use case the first time you use A2MC ("set up A2MC", "get started", "configure my site"), then hand off to phase0-design. Distinct from onboard-session (which resumes an existing setup). |
+| [onboard-case](onboard-case/SKILL.md) | any | Add a NEW case/site to an already-configured clone — the repeatable half of getting started. Resolves case SCALE first (transect/regional are a HARD STOP: this branch is single-point) |
+| [setup-discipline](setup-discipline/SKILL.md) | any | Definition-of-done for a setup stage — is `a2mc-init` / `onboard-case` actually finished, or does it only look finished? A checked box means the check was RUN |
 | [onboard-session](onboard-session/SKILL.md) | any | Cold-start runbook — orient at session start or after a compaction/reset ("catch up", "where did we leave off"). |
+| [calibration-goal](calibration-goal/SKILL.md) | any | The run-to-convergence DRIVER — conductor above the phase skills; advances the offline 7-phase loop to CONVERGED, pausing only at the human gates ("run the calibration", "drive to convergence"). Harness-neutral (docs/38). |
+| [calibration-discipline](calibration-discipline/SKILL.md) | any | The per-cycle/per-round DISCIPLINE checklist (definition-of-done) that keeps a long offline campaign stable — log each phase + self-documenting phase_results, arm monitors after every launch, validate state, per-cycle report, round summary WITH next-round plan. HABITS layer the driver honors; distinct from calibration-goal (loop mechanics). |
 | [curate-knowledge](curate-knowledge/SKILL.md) | any | Review + promote staged Tier-3 knowledge proposals (the human-in-the-loop half of the memory write gate). |
 | [arm-hpc-monitoring](arm-hpc-monitoring/SKILL.md) | any (HPC) | Session starts (or resumes after compaction) while an HPC ensemble is in flight. |
 | [restart-failed-jobs](restart-failed-jobs/SKILL.md) | any (HPC) | Jobs failed in an ensemble/experiment and need restart (or archive if model failure). |
 | [diagnose-forensics](diagnose-forensics/SKILL.md) | any | Investigate an anomaly/outlier/too-good "best" case — real or artifact? — then root-cause it. |
 | [scientific-analysis](scientific-analysis/SKILL.md) | any | Manuscript-supporting investigation → figure → ana_log (question → data → statistic → figure → evidence). |
 | [markdown-to-pdf](markdown-to-pdf/SKILL.md) | any | Convert a markdown ana_log/report/note to a shareable PDF or Word `.docx` via pandoc. Prose, not slide decks (use Marp). |
+| [literature-review](literature-review/SKILL.md) | any | Cited literature review via `paper-search-mcp` (search → triage → extract → synthesis). PARAMETER-BOUNDS mode (published value ranges → refine a FATES param list's `lower`/`upper`) or MANUSCRIPT topic review. Validated DOIs, no fabrication. NOT a single-citation lookup. |
+| [plotting](plotting/SKILL.md) | any | Clean, readable, overlap-free matplotlib figures — verify by viewing the saved PNG. |
+| [write-report](write-report/SKILL.md) | any | Integrated, self-contained report for a zero-context human reader (facts-first, embedded figures, provenance). |
 | [build-rag-from-scratch](build-rag-from-scratch/SKILL.md) | any | Construct the RAG/GraphRAG knowledge layer from scratch (for a new model or a fresh build). |
 | [rebuild-rag](rebuild-rag/SKILL.md) | any | Rebuild/refresh the RAG/GraphRAG index (wiki bump, curated-YAML graph-only refresh). |
 | [generate-codebase-wiki](generate-codebase-wiki/SKILL.md) | any | Generate a source-grounded codebase wiki for a model. |
 | [validate-rag-chain](validate-rag-chain/SKILL.md) | any | Validate the RAG chain with the three validators, in order. |
 | [inject-knowledge](inject-knowledge/SKILL.md) | any | Inject curated domain knowledge into the KB via the curated-YAML overlay. |
+| [port-param-file](port-param-file/SKILL.md) | any | Port a calibrated/tuned param file across model/API versions (e.g. api-31 `.nc` → api-43 `.json`) — remap PFT identity by functional type, transfer overlapping tuned values. Invoke on "port/migrate/convert params to api-XX". |
 | [add-skill](add-skill/SKILL.md) | any | Scaffold + register a new skill (frontmatter + ## Changelog + both registries + drift check). |
 | [refine-skill](refine-skill/SKILL.md) | any | Refine an existing skill from accumulated evidence, human-gated (propose → approve → apply). |
 | [summarize-calibration-round](summarize-calibration-round/SKILL.md) | FATES | One-round summary: ensemble figures + evaluation + Morris μ* sensitivity → markdown/PDF. |
 | [compare-calibration-rounds](compare-calibration-rounds/SKILL.md) | FATES | Compare rounds R1…RN + targets (top-N biomass + per-target Morris μ* overlays). |
 | [offline-testing-workflow](offline-testing-workflow/SKILL.md) | FATES | Design + launch + analyze an offline HPC parameter-sweep experiment on a Morris base case. |
+| [add-fates-parameter](add-fates-parameter/SKILL.md) | FATES | Model-dev: wire a new FATES parameter into EDParamsMod + the parameter file (experiment branch, default-off, V0-at-equality). |
+| [model-evolution](model-evolution/SKILL.md) | any | Model-dev umbrella: the workflow for evolving ELM/FATES source (branch, default-off, paired verify, fork-only push). |
 | [phase0-design](phase0-design/SKILL.md) | any | Offline Phase 0 — design/sample/submit the ensemble (analog of `_run_design`). |
 | [phase1-exploration](phase1-exploration/SKILL.md) | any | Offline Phase 1 — extract Y matrix + Morris sensitivity. |
 | [phase2-screening](phase2-screening/SKILL.md) | any | Offline Phase 2 — rank ensemble vs targets; best/most-targets cases. |

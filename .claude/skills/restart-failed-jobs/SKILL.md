@@ -1,6 +1,8 @@
 ---
 name: restart-failed-jobs
-description: Restart SLURM jobs that failed in an A2MC ensemble or experiment. Use when failures appear mid-run (NODE_FAIL, PartitionDown, SIGKILL clusters) or at end-of-run (model failures like runaway recruitment, FATES mass-balance, PARTEH abort). Distinguishes infrastructure (restart-eligible) from model failures (NOT restart-eligible without parameter/model fix). Picks between `tools/diagnose_ensemble_status.py` (quiescent ensemble) and the `sacct`-based TSV pathway (in-flight ensemble). Generates audit TSV + flat case-list, handles two-wave zombie cleanup, and submits restart via `submit_phase0.py --cases-file`.
+visibility: public
+category: calibration
+description: Restart SLURM jobs or a single case that failed/TIMED OUT in an A2MC ensemble OR an ad-hoc offline-testing experiment. Use on any restart/resume — mid-run failures (NODE_FAIL, PartitionDown, SIGKILL clusters), end-of-run model failures (runaway recruitment, FATES mass-balance, PARTEH abort), or a TIMEOUT that must resume where it stopped. Routes THREE ways — a single suffixed experiment case → `tools/restart_experiment_case.py` (self-contained; also auto-repairs the downstream chain), a quiescent ensemble → `tools/diagnose_ensemble_status.py`, an in-flight ensemble → the `sacct`-based TSV pathway. This project resumes via `finidat` + `RUN_STARTDATE` + `STOP_N`, NEVER `CONTINUE_RUN`. Distinguishes infrastructure (restart-eligible) from model failures (NOT restart-eligible without parameter/model fix).
 modes:
   requires_fates: false      # the SLURM restart workflow is model-agnostic
   nutrient_pathway: any
@@ -20,10 +22,48 @@ Each Bash invocation is a fresh shell on the HPC login node; env vars don't pers
 source a2mc_config.sh
 source use_cases/<site>/config/<site>_config.sh   # your site (and round) config
 ROUND=r1                          # label for this round's audit files (adjust)
-TMP="$A2MC_ROOT/tmp"; mkdir -p "$TMP"   # scratch for audit TSV/txt (gitignored)
+STEM="$(date +%Y%m%d)_restart_audit_${ROUND}"
+TMP="$A2MC_USE_CASE_DIR/memory/phase_results/$STEM"; mkdir -p "$TMP"
+# ^ durable, repo-tracked audit record (the TSV/txt/zombie-lists, Steps 3-4, Recipe B) -- NOT
+#   $A2MC_ROOT/tmp. One folder per round per day; multiple invocations the same day share it since
+#   every filename below already carries its own $TS/$TS_LABEL timestamp, so nothing collides.
+TMPLOG="$A2MC_ROOT/tmp"; mkdir -p "$TMPLOG"
+# ^ separate, deliberately scratch -- the restart SUBMITTER's live process log (Recipe A's $LOG)
+#   is the ensemble-scale operational log arm-hpc-monitoring already documents at this exact path
+#   (its own Step 1 table names the pattern tmp/r5_rerun_<TS>.log), not the durable forensic
+#   record $TMP holds. Don't move it to $TMP -- these are two different artifact classes.
 ```
 
 ## Step 1 — Pick the right entry point
+
+**Ask this FIRST — is this an ensemble at all?** The two branches below both assume the numbered Morris
+ensemble. A single ad-hoc **offline-testing-workflow** case (a suffixed name like
+`..._p169v6rffixRGnone_RGSP`, not a bare `{N}_{PHASE}`) is NOT one, and the ensemble machinery cannot
+address it: `diagnose_ensemble_status.py` derives case names from `A2MC_CASE_NAME_PATTERN` and output
+root from `A2MC_ENSEMBLE_OUTPUT`, neither of which matches a suffixed experiment case.
+
+```
+┌─ One ad-hoc / suffixed experiment case (offline-testing-workflow)?
+│
+└─► YES → `tools/restart_experiment_case.py --case-dir <case>`  (preview; add --execute)
+          Skip the rest of this skill.
+```
+
+It is self-contained — case name, phase, output root, forcing-cycle length and last-completed year all
+come from the case's own files — and `--execute` additionally walks the ENTIRE downstream chain and
+re-chains it, which is what stops a restart from stranding a queued phase on
+`DependencyNeverSatisfied`. Save the plan durably with `--output-script
+use_cases/<site>/memory/phase_results/{stem}/restart_<case>_<YYYYMMDD>.sh`, and check that folder for
+prior `restart_*.sh` from the same experiment — they are the authoritative precedent for its convention.
+
+**Do NOT hand-roll the restart from `xmlquery` output.** This project resumes by pointing `finidat` at
+an explicit restart file plus `RUN_STARTDATE` + `STOP_N`; cases run with `CONTINUE_RUN=FALSE`, so the
+generic-CIME instinct to set `CONTINUE_RUN=TRUE` is wrong here, and a plain resubmit without these edits
+silently re-runs from the original `RUN_STARTDATE`. Cycle-snap-back of the resume year applies to
+**ADSP/RGSP only, never TRANS** (TRANS writes a restart every year, so there is no partially-replayed
+forcing cycle to snap back from). See [[feedback_restart_via_finidat_not_continue_run]].
+
+Otherwise, for the numbered Morris ensemble:
 
 ```
 ┌─ Is the ensemble quiescent?
@@ -35,7 +75,23 @@ TMP="$A2MC_ROOT/tmp"; mkdir -p "$TMP"   # scratch for audit TSV/txt (gitignored)
 └─► NO  → Use the sacct-based TSV pathway (this skill, Steps 2+)
 ```
 
-When `diagnose_ensemble_status.py` applies, just run it — it writes `restart_incomplete_<TS>.sh` + companion txt files and auto-invokes `tools/validate_restart_script.py` (checks filesystem state, STOP_N math, finidat consistency, chain wiring). Then `bash restart_incomplete_<TS>.sh` to submit. Skip the rest of this skill.
+When `diagnose_ensemble_status.py` applies, run it with `--output-dir "$TMP"` (Step 0) — it writes
+`restart_incomplete_<TS>.sh` + companion txt files there, durably (see anti-pattern #4), and auto-invokes
+`tools/validate_restart_script.py` (checks filesystem state, STOP_N math, finidat consistency, chain
+wiring). Then `bash restart_incomplete_<TS>.sh` to submit. Skip the rest of this skill.
+
+> **Special case — a `restart_*.sh` that hit the QOS submit limit *partway***. If an auto-generated
+> `restart_incomplete_<TS>.sh` aborted mid-run on `QOSMaxSubmitJobPerUserLimit` (or any `sbatch` error),
+> some cases are in a **prepped-but-not-submitted** state — the script already did the per-case edits
+> (`xmlchange`, `user_nl_elm` sed, `finidat` append, `case.setup`) but `case.submit` never reached SLURM.
+> **Do NOT re-run the original `restart_*.sh`** — it re-does that prep and can clobber the already-correct
+> state. Instead run **`tools/diagnose_qos_failures.py --restart-script <the restart_*.sh> --start-time <T>
+> --output-dir "$TMP"`**: it diffs what the script prepped vs what actually reached the queue, and emits a
+> **resubmit-only** script for the un-submitted `(case, phase)` set (add `--verify-prep` to confirm each
+> case's prep is intact first). `--output-dir "$TMP"` makes this diagnosis durable too, same as everything
+> else this skill writes (Step 0) — without it, the tool defaults to scratch `<dir-of-restart-script>/tmp/`.
+> Filesystem-state-based like `diagnose_ensemble_status.py` but keyed on *submission reach*, not
+> *run output* — the two answer different questions.
 
 ## Step 2 — Diagnose failure mode (CRITICAL)
 
@@ -153,7 +209,7 @@ Wait for any in-flight `submit_phase0.py` to finish (or pause it) to avoid hitti
 
 ```bash
 TS=$(date +%Y%m%d_%H%M%S)
-LOG=$TMP/${ROUND}_rerun_${TS}.log
+LOG=$TMPLOG/${ROUND}_rerun_${TS}.log
 
 nohup python3 -u phases/phase0_design/submit_phase0.py \
     --cases-file $TMP/${ROUND}_failed_cases_${TS_LABEL}.txt \
@@ -185,9 +241,11 @@ RUN_BASE=$SCRATCH        # ensemble run-dir base (NERSC: $SCRATCH)
 for case in $(cat $TXT); do
   LOG=$(find $RUN_BASE -maxdepth 6 -name "atm.log.*" -path "*PtCNPEn${case}PrescP*" 2>/dev/null | head -1)
   [ -z "$LOG" ] && continue
-  if grep -q "EDMainMod.F90:1010" "$LOG"; then echo $case >> /tmp/rerun_mode1_runaway.txt
-  elif grep -q "PRTAllometricCNPMod.F90:1757" "$LOG"; then echo $case >> /tmp/rerun_mode2_parteh.txt
-  elif grep -q "FatesPlantRespPhotosynthMod.F90:910" "$LOG"; then echo $case >> /tmp/rerun_mode3_canopy.txt
+  # Route through $TMP, not a raw /tmp/ -- writing outside $HOME on Perlmutter is a hard NERSC rule,
+  # and these per-mode case lists are as much a durable audit record as the Step 4 TSV.
+  if grep -q "EDMainMod.F90:1010" "$LOG"; then echo $case >> $TMP/${ROUND}_rerun_mode1_runaway_${TS_LABEL}.txt
+  elif grep -q "PRTAllometricCNPMod.F90:1757" "$LOG"; then echo $case >> $TMP/${ROUND}_rerun_mode2_parteh_${TS_LABEL}.txt
+  elif grep -q "FatesPlantRespPhotosynthMod.F90:910" "$LOG"; then echo $case >> $TMP/${ROUND}_rerun_mode3_canopy_${TS_LABEL}.txt
   fi
 done
 ```
@@ -211,7 +269,17 @@ Jobs in `NODE_FAIL` state (distinct from `FAILED`) are typically auto-requeued b
 1. **Do NOT** run `tools/diagnose_ensemble_status.py` while the ensemble is in flight — running cases look identical to incomplete cases on disk; you'll get spurious restart entries.
 2. **Do NOT** union failure cohorts of different modes into one restart submission. Restarting model-failure cases wastes compute and pollutes the auto-discovered knowledge stream.
 3. **Do NOT** skip the two-wave zombie cleanup. Wave 1 alone leaves cascade children sitting in queue indefinitely.
-4. **Do NOT** add the TSV/txt to git — they're gitignored per CLAUDE.md Rule #4 and regenerate cleanly.
+4. **Do NOT leave this skill's own audit TSV/txt/zombie-list files untracked in `$A2MC_ROOT/tmp`.**
+   They live in `$A2MC_USE_CASE_DIR/memory/phase_results/{stem}/` (Step 0) and are the durable
+   forensic record of a restart cohort — `git add` + commit them, the same as any other
+   `phase_results/{stem}/` artifact. **Same rule now applies to `diagnose_ensemble_status.py`'s and
+   `diagnose_qos_failures.py`'s own outputs** (`completed_cases_*.txt`, `restart_incomplete_*.sh`,
+   `restart_qos_resubmit_*.sh`, etc.) — as of 2026-08-14 (CLAUDE.md Operating Rule #3) they're
+   gitignored **only** at their scratch default (repo root / `<script-dir>/tmp/`); pass
+   `--output-dir "$TMP"` (both tools support it, shown in Step 1 above) to make a given invocation's
+   output durable instead. A quick ad-hoc status check with no `--output-dir` is still fine to leave
+   as scratch — the point is that a restart decision's audit trail should not be, and now has a real
+   way to not be.
 5. **Do NOT** push `tools/diagnose_ensemble_status.py` as the answer mid-flight. The user pushed back on this exact suggestion on 2026-05-22 — it's the canonical tool but only for quiescent ensembles.
 
 ## Cross-references
@@ -225,4 +293,54 @@ Jobs in `NODE_FAIL` state (distinct from `FAILED`) are typically auto-requeued b
 
 ## Changelog
 
+- 2026-08-20 — **Added the ad-hoc-case fork as Step 1's FIRST question, and named it in the
+  frontmatter description.** `restart_experiment_case.py` previously appeared in this skill ONLY
+  inside a 2026-08-14 changelog entry — never as a routing step — while the description named just
+  the two ensemble pathways. So for a single suffixed experiment case the routing layer pointed at
+  machinery that structurally cannot address it (the tool exists precisely because
+  `A2MC_CASE_NAME_PATTERN`/`A2MC_ENSEMBLE_OUTPUT` don't match a suffixed case), and the fallback was
+  generic CIME knowledge — i.e. `CONTINUE_RUN`. Also states the finidat/RUN_STARTDATE/STOP_N
+  mechanism and the ADSP/RGSP-only scope of cycle-snap-back inline. Signal: PI correction 2026-08-20
+  — *"why when it comes to restarting a run, you always go to check CONTINUE_RUN and are going to
+  hand-roll the restart? ... this actually happened many times already"*, plus a second correction
+  that cycle-snap-back is spin-up-only. Companion memory:
+  `feedback_restart_via_finidat_not_continue_run`. Remedy shape follows the 2026-08-16 precedent
+  (`reflection/20260816a_*`): fix the mechanism/routing, don't just document harder.
+
+- 2026-08-14 (b): **Extended the durable-artifact treatment to `diagnose_ensemble_status.py` and
+  `diagnose_qos_failures.py`'s own outputs** (Step 1, anti-pattern #4). These were previously
+  described as "genuinely gitignored" (the (a) entry below drew that as the contrast case) — now,
+  per PI request, `--output-dir "$TMP"` makes a given invocation's `completed_cases_*.txt`,
+  `restart_incomplete_*.sh`, `restart_qos_resubmit_*.sh`, etc. durable and git-trackable, same as
+  this skill's own sacct TSVs. The scratch default (repo root / `<script-dir>/tmp/`) is unchanged
+  for a quick ad-hoc status check with no `--output-dir`. Required a `.gitignore` fix beyond the
+  obvious one: the existing `use_cases/ELM-FATES_Kougarok/memory/phase_results/**` negation (2026-07-21)
+  already un-ignores that whole tree, but the broader filename-pattern block
+  (`completed_cases_*.txt` etc.) is declared *after* it in the file, so under gitignore's
+  last-match-wins rule it was silently re-ignoring anything with these names placed there — added a
+  second, more specific negation after the filename block itself to win the tie-break; verified
+  empirically with `git check-ignore` before committing (durable-location files un-ignored,
+  repo-root/`tmp/` files still ignored). Also fixed a pre-existing citation error found while
+  touching this text: anti-pattern #4 (and this file's own (a) entry below) cited "CLAUDE.md Rule
+  #4" for the transient-outputs policy; the actual rule is **Rule #3** — Rule #4 in that numbered
+  list is `A2MC_MODEL_PATH` being required, an unrelated rule. CLAUDE.md's own Rule #3 text updated
+  in the same commit. Signal: PI request, direct follow-on to the same-day (a) fix below.
+- 2026-08-14 (a): **This skill's own sacct-based audit TSV/txt/zombie-lists moved from scratch
+  `$A2MC_ROOT/tmp` to durable `$A2MC_USE_CASE_DIR/memory/phase_results/{stem}/`** (`$TMP`, Step 0,
+  Steps 3-4, Recipe B, anti-pattern #4). They are the forensic record of a restart cohort, not
+  regenerable ensemble-scale scratch — conflating them with `diagnose_ensemble_status.py`'s own
+  gitignored outputs (`completed_cases_*.txt`, `restart_incomplete_*.sh`, covered by CLAUDE.md Rule
+  #4) was the error; those two mechanisms are different, and only one of them is meant to be thrown
+  away. **Kept Recipe A's restart-submitter process log (`$LOG`) in scratch**, via a new separate
+  `$TMPLOG="$A2MC_ROOT/tmp"` — that log is the ensemble-scale operational artifact
+  `arm-hpc-monitoring` already documents at exactly this path (its own Step 1 table names the
+  pattern `tmp/r5_rerun_<TS>.log`), a different class from the durable TSV/txt; an early draft of
+  this fix pointed it at the new `$TMP` too, which would have contradicted that existing convention
+  — caught on a full re-read before committing. Also fixed a genuine NERSC-rule violation found in
+  the same pass: Recipe B's per-mode case-split loop wrote to a raw `/tmp/rerun_mode*.txt` (writing
+  outside `$HOME` on Perlmutter), now routed through the durable `$TMP`. Signal: PI correction,
+  prompted directly by the `offline-testing-workflow` Step 9d fix earlier the same session
+  (`20260814j`) that gave `restart_experiment_case.py` an `--output-script` destination — the PI
+  then asked for the same audit here.
+- 2026-07-15: Named `tools/diagnose_qos_failures.py` (Step 1 special case) — for a `restart_*.sh` that hit `QOSMaxSubmitJobPerUserLimit` partway (cases prepped but `case.submit` never reached SLURM); emits a resubmit-only script without re-doing the prep. Ported from demo `ce7dc47` (tool copied from demo — it's generic, zero site hardcoding).
 - 2026-06-13 — Ported to `main` (v2.103, Phase 1): scrubbed for the generic public repo, added `modes:` frontmatter.

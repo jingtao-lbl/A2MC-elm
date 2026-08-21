@@ -4,7 +4,7 @@
 # =============================================================================
 # WHAT THIS IS
 # =============================================================================
-# Config-driven generalization of use_cases/Kougarok/analysis/regen_milestone_plot.sh.
+# Config-driven generalization of use_cases/ELM-FATES_Kougarok/analysis/regen_milestone_plot.sh.
 # Counts fresh extracted TRANS NCs (mtime > launch), rounds down to the nearest
 # case-count milestone, and (re)generates whichever ensemble-plot variants don't
 # yet exist. Idempotent per variant: skips if the target file exists or a plot
@@ -85,7 +85,7 @@ done
 # -----------------------------------------------------------------------------
 LAUNCH="$A2MC_LAUNCH_TIME"
 MILESTONE_STEP="${POS_STEP:-${A2MC_MILESTONE_STEP:-250}}"
-USE_CASE_DIR="${A2MC_USE_CASE_DIR:-$A2MC_ROOT/use_cases/Kougarok}"
+USE_CASE_DIR="${A2MC_USE_CASE_DIR:-$A2MC_ROOT/use_cases/ELM-FATES_Kougarok}"
 OUTPUT_DIR="${A2MC_PLOT_OUTPUT_DIR:-${USE_CASE_DIR}/analysis}"
 SCRIPT_DIR="${A2MC_PLOT_SCRIPT_DIR:-${USE_CASE_DIR}/analysis}"
 LOG_DIR="${A2MC_AUTOMON_LOG_DIR:-${A2MC_ROOT}/tmp}"

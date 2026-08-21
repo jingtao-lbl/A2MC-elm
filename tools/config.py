@@ -20,7 +20,7 @@ Usage:
 
 Before running Python scripts, source both configs:
     source a2mc_config.sh
-    source use_cases/Kougarok/config/kougarok_config.sh
+    source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
     python tools/your_script.py
 
 Author: A2MC Framework
@@ -31,6 +31,37 @@ import re
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
+
+
+def _required_env(name: str, what: str) -> str:
+    """Return env var `name`, or raise with an actionable message.
+
+    These are MACHINE/SITE settings, supplied by `a2mc_config.sh` +
+    `use_cases/{site}/config/{site}_config.sh`. They used to fall back to the
+    maintainer's own absolute paths, which failed three ways at once:
+
+      - CLAUDE.md rule 8 (no hardcoded paths) — a default nobody else can use;
+      - it SHIPPED: `scripts/sync_to_public.sh` genericizes host paths to `~`,
+        so the public copy read `os.environ.get('A2MC_OUTPUT_ROOT', '~')` —
+        and Python does NOT expand `~`, so an unconfigured public user silently
+        got a directory literally named `~` instead of an error;
+      - it hid the real problem. Falling back to a path that exists only on one
+        machine turns "you forgot to source the configs" into a confusing
+        wrong-directory failure much later, instead of a clear one here.
+
+    Raising matches the existing `MODEL_PATH` precedent in this class.
+    """
+    v = os.environ.get(name, '')
+    if not v:
+        raise EnvironmentError(
+            f"{name} is required but not set ({what}).\n"
+            f"  Source the two config layers first, in this order:\n"
+            f"    source a2mc_config.sh\n"
+            f"    source use_cases/<site>/config/<site>_config.sh\n"
+            f"  (the site config for the ACTIVE round is named by that site's "
+            f"config/calibration_rounds.yaml -> round.config_file)"
+        )
+    return v
 
 
 @dataclass
@@ -54,21 +85,18 @@ class A2MCConfig:
 
     @property
     def E3SM_ROOT(self) -> str:
-        """E3SM/FATES source code root"""
-        return os.environ.get('A2MC_E3SM_ROOT',
-            '~/E3SM_FATES')
+        """E3SM/FATES source code root. Required — set by a2mc_config.sh."""
+        return _required_env('A2MC_E3SM_ROOT', 'your E3SM/ELM-FATES source root')
 
     @property
     def OUTPUT_ROOT(self) -> str:
-        """Output root for simulation results"""
-        return os.environ.get('A2MC_OUTPUT_ROOT',
-            '~')
+        """Output root for simulation results. Required — set by a2mc_config.sh."""
+        return _required_env('A2MC_OUTPUT_ROOT', 'where simulation output should be written')
 
     @property
     def SCRIPTS_DIR(self) -> str:
-        """Scripts directory (where case scripts are generated)"""
-        return os.environ.get('A2MC_SCRIPTS_DIR',
-            '~/CaseScripts')
+        """Scripts dir (where case scripts are generated). Required — set by a2mc_config.sh."""
+        return _required_env('A2MC_SCRIPTS_DIR', 'where generated case scripts should go')
 
     @property
     def PARAM_DIR(self) -> str:
@@ -112,14 +140,7 @@ class A2MCConfig:
         ELM + FATES commits, which the RAG infrastructure uses to select the
         correct milestone profile. See docs/18 §4.1.
         """
-        v = os.environ.get('A2MC_MODEL_PATH', '')
-        if not v:
-            raise EnvironmentError(
-                "A2MC_MODEL_PATH is required but not set. Set it in your "
-                "site config (e.g., use_cases/Kougarok/config/kougarok_config.sh) "
-                "to your E3SM checkout root."
-            )
-        return v
+        return _required_env('A2MC_MODEL_PATH', 'your E3SM/ELM-FATES checkout root')
 
     @property
     def RAG_DIR(self) -> str:
@@ -189,6 +210,18 @@ class A2MCConfig:
         """Extracted monthly data directory"""
         return os.environ.get('A2MC_EXTRACTED_DATA',
             f'{self.ENSEMBLE_OUTPUT}/extracted_monthly_data')
+
+    @property
+    def FIGURES_DIR(self) -> str:
+        """Directory for generated figures.
+
+        Added because the screening/comparison plotters had no config-backed
+        figures location and each hardcoded the maintainer's own
+        `Figures_<ensemble>` directory instead. Derived from OUTPUT_ROOT so it
+        follows the site wherever its output lives.
+        """
+        return os.environ.get('A2MC_FIGURES_DIR',
+            f'{self.OUTPUT_ROOT}/Figures_{self.ENSEMBLE_NAME}')
 
     @property
     def CASE_SCRIPTS(self) -> str:
@@ -456,13 +489,25 @@ class A2MCConfig:
         """Check if site configuration has been loaded"""
         return bool(self.SITE_NAME)
 
+    def _try(self, name: str) -> Optional[str]:
+        """Read a property, returning None if its required env var is unset.
+
+        Diagnostics must survive an unconfigured clone: `validate_paths` and
+        `print_config` exist precisely to tell you what is missing, so they
+        cannot be the thing that raises when something is missing.
+        """
+        try:
+            return getattr(self, name)
+        except EnvironmentError:
+            return None
+
     def validate_paths(self) -> dict:
         """Validate that key paths exist"""
         paths_to_check = [
-            ('ENSEMBLE_OUTPUT', self.ENSEMBLE_OUTPUT),
-            ('EXTRACTED_DATA', self.EXTRACTED_DATA),
-            ('CASE_SCRIPTS', self.CASE_SCRIPTS),
-            ('PARAM_DIR', self.PARAM_DIR),
+            ('ENSEMBLE_OUTPUT', self._try('ENSEMBLE_OUTPUT')),
+            ('EXTRACTED_DATA', self._try('EXTRACTED_DATA')),
+            ('CASE_SCRIPTS', self._try('CASE_SCRIPTS')),
+            ('PARAM_DIR', self._try('PARAM_DIR')),
         ]
 
         results = {}
@@ -490,12 +535,9 @@ class A2MCConfig:
 
         print("")
         print("HPC Paths:")
-        print(f"  E3SM_ROOT:       {self.E3SM_ROOT}")
-        print(f"  OUTPUT_ROOT:     {self.OUTPUT_ROOT}")
-        print(f"  SCRIPTS_DIR:     {self.SCRIPTS_DIR}")
-        print(f"  ENSEMBLE_OUTPUT: {self.ENSEMBLE_OUTPUT}")
-        print(f"  EXTRACTED_DATA:  {self.EXTRACTED_DATA}")
-        print(f"  CASE_SCRIPTS:    {self.CASE_SCRIPTS}")
+        for _n in ('E3SM_ROOT', 'OUTPUT_ROOT', 'SCRIPTS_DIR',
+                   'ENSEMBLE_OUTPUT', 'EXTRACTED_DATA', 'CASE_SCRIPTS'):
+            print(f"  {_n + ':':16} {self._try(_n) or '(not set — source the configs)'}")
         print("")
         print("Parameter Files:")
         print(f"  PARAM_DIR:          {self.PARAM_DIR}")

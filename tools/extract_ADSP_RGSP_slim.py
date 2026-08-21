@@ -15,7 +15,7 @@ Skip-if-exists: any case that already has the canonical NC (e.g. the
 switch) is left alone. The plot script reads only the 2 vars it needs;
 those existing files have all 155 vars including the 2 we care about.
 
-Promoted from use_cases/Kougarok/analysis/ to tools/ on 2026-05-31 so both
+Promoted from use_cases/ELM-FATES_Kougarok/analysis/ to tools/ on 2026-05-31 so both
 ONLINE Phase 0 (orchestrator-driven Morris ensembles) and OFFLINE Phase-0-
 mimic submissions can reuse it without a per-site copy. It is fully env-var-
 driven (A2MC_CASE_NAME_PATTERN / A2MC_ENSEMBLE_OUTPUT / A2MC_EXTRACTED_DATA)

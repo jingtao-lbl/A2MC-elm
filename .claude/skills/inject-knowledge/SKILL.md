@@ -1,5 +1,7 @@
 ---
 name: inject-knowledge
+visibility: public
+category: calibration
 description: Inject a human-originated domain fact (a discovery, a parameter insight, a mechanism/relationship) into A2MC's curated knowledge so the calibration agent surfaces it — placing it correctly across the up-to-three channels (site discoveries.json, generic parameters.json, curated_relationships.yaml), validating, and rebuilding the graph. Use when the user says "add this finding/parameter knowledge to A2MC's AI", "inject the X discovery into the KB", "make the agent aware of X", "author a curated relationship for X", or wants a manuscript/literature insight to reach the reasoning pipeline. This is the HUMAN-originated counterpart to curate-knowledge (which promotes run-originated proposals); both are Tier-3 curated writes and you (the human-in-the-loop) own the truth call. Distilled from graphrag_curated_yaml_roadmap.md + dev log 20260519d (the clumping_index injection).
 modes:
   requires_fates: false
@@ -22,6 +24,12 @@ the validation gates, and reaches every trigger path — the mechanics that fail
 > human-originated fact to the **same bar** `curate-knowledge` holds a run-originated one.
 
 ## Step 0 — the truth call (human, before any file edit)
+
+> **Paths are relative to the repo root.** The KB files you edit (`use_cases/<site>/memory/gained_knowledge/`,
+> `memory/gained_knowledge/parameters.json`, `rag/data/curated_relationships.yaml`) assume your cwd is the
+> A2MC repo root. If unsure, anchor first — `A2MC_ROOT="${A2MC_ROOT:-$(git rev-parse --show-toplevel)}";
+> cd "$A2MC_ROOT"` — so you don't edit a stray copy under the wrong cwd. Never write `$A2MC_ROOT/…` while
+> `A2MC_ROOT` is empty (that expands to the filesystem root).
 
 Before injecting, satisfy yourself — and state the basis in the entry's `references`:
 
@@ -120,11 +128,11 @@ in the param file / output CDL, or the graph builder **silently drops that edge*
 
 ```bash
 PY=/Library/Frameworks/Python.framework/Versions/3.10/bin/python3
-$PY -c "import json; json.load(open('use_cases/Kougarok/memory/gained_knowledge/discoveries.json'))"
+$PY -c "import json; json.load(open('use_cases/ELM-FATES_Kougarok/memory/gained_knowledge/discoveries.json'))"
 $PY -c "import json; json.load(open('memory/gained_knowledge/parameters.json'))"
 $PY -c "import yaml; yaml.safe_load(open('rag/data/curated_relationships.yaml'))"
 # Memory smoke test — the new discovery surfaces for its targets:
-$PY -c "from memory import MemoryManager; m=MemoryManager('use_cases/Kougarok/memory/gained_knowledge'); print(m.get_relevant_context(failing_targets=['FATES_GPP_PF']))"
+$PY -c "from memory import MemoryManager; m=MemoryManager('use_cases/ELM-FATES_Kougarok/memory/gained_knowledge'); print(m.get_relevant_context(failing_targets=['FATES_GPP_PF']))"
 ```
 
 ## Step 6 — rebuild the graph + validate the chain
@@ -162,5 +170,8 @@ manuscript knowledge (CLAUDE.md Rule 3); the audit trail matters as much as for
 
 ## Changelog
 
+- 2026-07-08: Added a **repo-root path-anchoring note** to Step 0 — the KB files you edit are relative to the
+  repo root; anchor via `A2MC_ROOT="${A2MC_ROOT:-$(git rev-parse --show-toplevel)}"` so you don't edit a stray
+  copy under the wrong cwd. Parallels the same hardening in `a2mc-init` / `add-skill`.
 - 2026-06-17: Initial version — distilled from graphrag_curated_yaml_roadmap.md + dev log 20260519d (clumping_index injection).
 - 2026-06-17: Verify-pass fix — removed invalid `phase=` kwarg from the Step 5 memory smoke-test command (TypeError on copy-paste).

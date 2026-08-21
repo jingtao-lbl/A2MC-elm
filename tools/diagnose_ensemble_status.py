@@ -437,6 +437,18 @@ def get_case_script_path(case_num):
     return os.path.join(CASE_SCRIPTS_DIR, script_name)
 
 
+def _read_nl_carbon_only_years(case_path):
+    """Current integer value of nyears_ad_carbon_only in case_path/user_nl_elm, or None if absent.
+    Read BEFORE any edit -- used to decide whether an ADSP restart year is still inside the
+    carbon-only window, which the window's own boundary decides, not the restart mechanism."""
+    nl_path = os.path.join(case_path, 'user_nl_elm')
+    if not os.path.isfile(nl_path):
+        return None
+    with open(nl_path) as f:
+        m = re.search(r'^nyears_ad_carbon_only\s*=\s*(\d+)', f.read(), re.M)
+    return int(m.group(1)) if m else None
+
+
 def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_year=None,
                                    prev_jobid_var=None, capture_jobid_var=None):
     """Generate shell commands to submit a single phase.
@@ -457,6 +469,7 @@ def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_ye
     case_path = os.path.join(SCRIPT_DIR, case_name)
 
     # Calculate restart year and STOP_N
+    bare_resubmit = False
     if restart_type == 'fresh':
         restart_year = phase_info['start_year']
     else:
@@ -470,13 +483,19 @@ def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_ye
             elapsed = restart_year - start
             aligned_elapsed = (elapsed // FORCING_CYCLE_LENGTH) * FORCING_CYCLE_LENGTH
             aligned_year = start + aligned_elapsed
-            if aligned_year != restart_year:
+            # No progress beyond the FIRST forcing cycle: aligned_year == start, so a
+            # "continue" plan would discard everything and resume at the case's own original
+            # start point -- numerically identical to a fresh run, but reached via namelist
+            # surgery that only adds risk for zero benefit. PI, 2026-08-14: just resubmit as-is.
+            if aligned_year == start:
+                bare_resubmit = True
+            elif aligned_year != restart_year:
                 restart_year = aligned_year
 
-    stop_n = phase_info['end_year'] - restart_year + 1
-
-    if stop_n <= 0:
-        return []
+    if not bare_resubmit:
+        stop_n = phase_info['end_year'] - restart_year + 1
+        if stop_n <= 0:
+            return []
 
     restart_yearstr = f"{restart_year:04d}"
 
@@ -490,7 +509,11 @@ def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_ye
     else:
         batch_args = f'-q {queue} --mem={memory}'
 
-    if restart_type == 'fresh' and phase == 'ADSP':
+    if bare_resubmit:
+        cmd_lines.append(
+            f"# No progress beyond the first {FORCING_CYCLE_LENGTH}-year forcing cycle "
+            f"(last restart year {last_year}) -- resubmitting as-is, no namelist changes")
+    elif restart_type == 'fresh' and phase == 'ADSP':
         # ADSP fresh start - just resubmit
         cmd_lines.append(f"# Fresh start - just resubmit")
     elif restart_type == 'fresh':
@@ -504,7 +527,7 @@ def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_ye
             f"# Fresh start from previous phase's restart file",
             f"./xmlchange STOP_N={stop_n}",
             f"./xmlchange RUN_STARTDATE={restart_yearstr}-01-01",
-            f"sed -i '$ d' ./user_nl_elm",
+            f"sed -i '/^finidat/d' ./user_nl_elm",
             f"echo \"finidat = '{prev_restart_file}'\" >> user_nl_elm",
             f"./case.setup",
         ])
@@ -512,10 +535,21 @@ def generate_phase_submit_command(case_num, phase, restart_type='fresh', last_ye
         # Continue from partial run
         restart_file = f"{OUTPUT_ROOT}/{case_name}/run/{case_name}.elm.r.{restart_yearstr}-01-01-00000.nc"
 
+        # Target the lines by NAME, not position. A positional "delete the last N lines"
+        # (the previous approach) silently corrupts any case whose user_nl_elm has a manual
+        # append AFTER the generic template's trailing finidat/nyears_ad_carbon_only lines --
+        # e.g. a namelist flag added for a one-off experiment with no --write-script CLI flag
+        # yet (use_fates_rootfinesfrag_fix, 2026-08). Positional deletion would strip that flag
+        # instead of the stale finidat line, with no error, silently invalidating the run.
+        sed_targets = ["/^finidat/d"]
         if phase == 'ADSP':
-            sed_cmd = "sed -i '$ d' ./user_nl_elm && sed -i '$ d' ./user_nl_elm"
-        else:
-            sed_cmd = "sed -i '$ d' ./user_nl_elm"
+            # Only drop nyears_ad_carbon_only if the (possibly cycle-snapped-back) restart
+            # year has moved past the case's own carbon-only window -- if it's still inside
+            # that window, the restart must stay in carbon-only mode too. PI, 2026-08-14.
+            k = _read_nl_carbon_only_years(case_path)
+            if k is None or restart_year > k:
+                sed_targets.append("/^nyears_ad_carbon_only/d")
+        sed_cmd = "sed -i '" + "; ".join(sed_targets) + "' ./user_nl_elm"
 
         cmd_lines.extend([
             f"# Continue from year {restart_year}",

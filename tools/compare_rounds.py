@@ -13,7 +13,7 @@ against validation targets.
 Usage (CLI):
     python tools/compare_rounds.py \\
         --source-round 3 --target-round 4 \\
-        --yaml use_cases/Kougarok/config/calibration_rounds.yaml \\
+        --yaml use_cases/ELM-FATES_Kougarok/config/calibration_rounds.yaml \\
         --output-dir /tmp/cross_round/
 
 Usage (Python API):

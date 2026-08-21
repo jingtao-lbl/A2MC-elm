@@ -1,5 +1,7 @@
 ---
 name: build-rag-from-scratch
+visibility: public
+category: kb-build
 description: Construct the entire RAG/GraphRAG knowledge layer from scratch when the index AND/OR its inputs don't exist yet — either reconstructing an existing model's full layer from source (api-31-0 reproducibility / disaster recovery) or bootstrapping a brand-new model (EcoSim, ReSOM, …) into A2MC. This is the orchestrator that sequences the four step-skills (generate-codebase-wiki → build → inject-knowledge/curated-YAML → validate-rag-chain) plus the glue none of them own (loader registration, per-model parsers, separate persist dirs, milestone registration). Use when the user says "build the RAG/GraphRAG from scratch", "set up RAG for a new model", "add EcoSim/ReSOM to A2MC", "reconstruct the whole knowledge layer", "bootstrap the knowledge base from nothing". For reindexing inputs that already exist, use rebuild-rag instead. Distilled from rag_build_roadmap.md (Recipe 2) + codebase_wiki_generation_roadmap.md (Recipe B3).
 modes:
   requires_fates: false

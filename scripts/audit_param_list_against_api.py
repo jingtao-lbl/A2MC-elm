@@ -60,9 +60,19 @@ def suggest_replacements(missing_name: str, available_names: list[str],
 
 def audit(param_list_file: Path, api_json_file: Path) -> dict:
     """Run the audit. Returns a result dict suitable for rendering."""
-    lookup = build_param_lookup(param_list_file)
-    # build_param_lookup keys by shorthand; values have 'fates_name' field
-    unique_names = sorted({v["fates_name"] for v in lookup.values()})
+    from tools.modify_fates_parameters import _is_new_param_list_format
+    if _is_new_param_list_format(param_list_file):
+        # docs/37 CSV → unique real fates_names (virtual derived-param coords are NOT model params,
+        # so exclude them or they'd be false-flagged as "missing" from the api file).
+        from tools.param_spec import load_param_spec
+        specs = load_param_spec(str(param_list_file))
+        unique_names = sorted({s.fates_name for s in specs if not s.is_virtual})
+        n_rows = len(specs)
+    else:
+        lookup = build_param_lookup(param_list_file)
+        # build_param_lookup keys by shorthand; values have 'fates_name' field
+        unique_names = sorted({v["fates_name"] for v in lookup.values()})
+        n_rows = len(lookup)
 
     api_params = load_api_params(api_json_file)
     available = sorted(api_params.keys())
@@ -79,7 +89,7 @@ def audit(param_list_file: Path, api_json_file: Path) -> dict:
         "param_list_file": str(param_list_file),
         "api_json_file": str(api_json_file),
         "total_unique_params": len(unique_names),
-        "total_in_list_file": len(lookup),
+        "total_in_list_file": n_rows,
         "present": present,
         "missing": missing,
         "suggestions": suggestions,

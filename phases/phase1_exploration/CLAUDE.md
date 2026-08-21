@@ -121,8 +121,8 @@ python extract_sensitivity_outputs.py --output-var abg_biomass --cases 1-4890
 python morris_sensitivity_analysis.py \
     --output-var leaf_biomass \
     --y-matrix ./sensitivity_results/MorrisLeafbiomass_4890cases_2010_2019.txt \
-    --problem use_cases/Kougarok/parameters/salib_problem_162params.json \
-    --x-matrix use_cases/Kougarok/parameters/FATES_CNPnPlantTraits_162param_Morris_4890sets.txt \
+    --problem use_cases/ELM-FATES_Kougarok/parameters/salib_problem_162params.json \
+    --x-matrix use_cases/ELM-FATES_Kougarok/parameters/FATES_CNPnPlantTraits_162param_Morris_4890sets.txt \
     --output-dir ./sensitivity_results
 ```
 

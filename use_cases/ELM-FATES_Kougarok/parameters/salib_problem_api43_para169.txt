@@ -1,0 +1,351 @@
+SALib Problem Definition - 169 Parameters (morris)
+================================================================================
+
+num_vars: 169
+
+Method: morris
+  trajectories: 30
+  num_levels: 8
+  seed: 123
+
+Parameter names:
+    1. fates_cnp_eca_decompmicc#p10
+    2. fates_cnp_eca_km_nh4#p10
+    3. fates_cnp_eca_km_no3#p10
+    4. fates_cnp_eca_km_p#p10
+    5. fates_cnp_eca_km_ptase#p10
+    6. fates_cnp_vmax_nh4#p10
+    7. fates_cnp_vmax_no3#p10
+    8. fates_cnp_vmax_p#p10
+    9. fates_cnp_eca_vmax_ptase#p10
+   10. fates_cnp_pid_kp#p10
+   11. fates_allom_l2fr#p10
+   12. fates_cnp_turnover_nitr_retrans#p10#o1-2
+   13. fates_cnp_turnover_phos_retrans#p10#o1-2
+   14. fates_stoich_nitr#p10#o1
+   15. fates_stoich_phos#p10#o1
+   16. fates_stoich_nitr#p10#o2
+   17. fates_stoich_phos#p10#o2
+   18. fates_cnp_eca_decompmicc#p11
+   19. fates_cnp_eca_km_nh4#p11
+   20. fates_cnp_eca_km_no3#p11
+   21. fates_cnp_eca_km_p#p11
+   22. fates_cnp_eca_km_ptase#p11
+   23. fates_cnp_vmax_nh4#p11
+   24. fates_cnp_vmax_no3#p11
+   25. fates_cnp_vmax_p#p11
+   26. fates_cnp_eca_vmax_ptase#p11
+   27. fates_cnp_pid_kp#p11
+   28. fates_allom_l2fr#p11
+   29. fates_cnp_nfix1#p11
+   30. fates_cnp_turnover_nitr_retrans#p11#o1-2
+   31. fates_cnp_turnover_phos_retrans#p11#o1-2
+   32. fates_stoich_nitr#p11#o1
+   33. fates_stoich_phos#p11#o1
+   34. fates_stoich_nitr#p11#o2
+   35. fates_stoich_phos#p11#o2
+   36. fates_cnp_eca_decompmicc#p12
+   37. fates_cnp_eca_km_nh4#p12
+   38. fates_cnp_eca_km_no3#p12
+   39. fates_cnp_eca_km_p#p12
+   40. fates_cnp_eca_km_ptase#p12
+   41. fates_cnp_vmax_nh4#p12
+   42. fates_cnp_vmax_no3#p12
+   43. fates_cnp_vmax_p#p12
+   44. fates_cnp_eca_vmax_ptase#p12
+   45. fates_cnp_pid_kp#p12
+   46. fates_allom_l2fr#p12
+   47. fates_cnp_turnover_nitr_retrans#p12#o1-2
+   48. fates_cnp_turnover_phos_retrans#p12#o1-2
+   49. fates_stoich_nitr#p12#o1
+   50. fates_stoich_phos#p12#o1
+   51. fates_stoich_nitr#p12#o2
+   52. fates_stoich_phos#p12#o2
+   53. fates_allom_d2bl1#p10
+   54. fates_allom_d2bl2#p10
+   55. fates_allom_agb2#p10
+   56. fates_allom_agb3#p10
+   57. fates_allom_d2h1#p10
+   58. fates_allom_d2h2#p10
+   59. fates_recruit_height_min#p10
+   60. fates_allom_dbh_maxheight#p10
+   61. fates_allom_d2ca_coefficient_min#p10
+   62. fates_alloc_store_priority_frac#p10
+   63. fates_alloc_storage_cushion#p10
+   64. fates_leaf_slatop#p10
+   65. fates_leaf_vcmax25top#p10
+   66. fates_grperc#p10
+   67. fates_mort_scalar_hydrfailure#p10
+   68. fates_mort_scalar_cstarvation#p10
+   69. fates_mort_scalar_coldstress#p10
+   70. fates_mort_bmort#p10
+   71. fates_mort_hf_sm_threshold#p10
+   72. fates_mort_freezetol#p10
+   73. seed_repro_fraction#p10
+   74. seed_alloc_fraction#p10
+   75. fates_recruit_seed_dbh_repro_threshold#p10
+   76. fates_frag_seed_decay_rate#p10
+   77. fates_recruit_seed_germination_rate#p10
+   78. fates_recruit_seed_supplement#p10
+   79. fates_recruit_init_density#p10
+   80. fates_phen_mindaysoff#p10
+   81. fates_allom_d2bl1#p11
+   82. fates_allom_d2bl2#p11
+   83. fates_allom_agb2#p11
+   84. fates_allom_agb3#p11
+   85. fates_allom_d2h1#p11
+   86. fates_allom_d2h2#p11
+   87. fates_recruit_height_min#p11
+   88. fates_allom_dbh_maxheight#p11
+   89. fates_allom_d2ca_coefficient_min#p11
+   90. fates_alloc_store_priority_frac#p11
+   91. fates_alloc_storage_cushion#p11
+   92. fates_leaf_slatop#p11
+   93. fates_leaf_vcmax25top#p11
+   94. fates_grperc#p11
+   95. fates_mort_scalar_hydrfailure#p11
+   96. fates_mort_scalar_cstarvation#p11
+   97. fates_mort_scalar_coldstress#p11
+   98. fates_mort_bmort#p11
+   99. fates_mort_hf_sm_threshold#p11
+  100. fates_mort_freezetol#p11
+  101. seed_repro_fraction#p11
+  102. seed_alloc_fraction#p11
+  103. fates_recruit_seed_dbh_repro_threshold#p11
+  104. fates_frag_seed_decay_rate#p11
+  105. fates_recruit_seed_germination_rate#p11
+  106. fates_recruit_seed_supplement#p11
+  107. fates_recruit_init_density#p11
+  108. fates_phen_mindaysoff#p11
+  109. fates_allom_d2bl1#p12
+  110. fates_allom_d2bl2#p12
+  111. fates_allom_agb2#p12
+  112. fates_allom_agb3#p12
+  113. fates_allom_d2h1#p12
+  114. fates_allom_d2h2#p12
+  115. fates_recruit_height_min#p12
+  116. fates_allom_dbh_maxheight#p12
+  117. fates_allom_d2ca_coefficient_min#p12
+  118. fates_alloc_store_priority_frac#p12
+  119. fates_alloc_storage_cushion#p12
+  120. fates_leaf_slatop#p12
+  121. fates_leaf_vcmax25top#p12
+  122. fates_grperc#p12
+  123. fates_mort_scalar_hydrfailure#p12
+  124. fates_mort_scalar_cstarvation#p12
+  125. fates_mort_scalar_coldstress#p12
+  126. fates_mort_bmort#p12
+  127. fates_mort_hf_sm_threshold#p12
+  128. fates_mort_freezetol#p12
+  129. seed_repro_fraction#p12
+  130. seed_alloc_fraction#p12
+  131. fates_recruit_seed_dbh_repro_threshold#p12
+  132. fates_frag_seed_decay_rate#p12
+  133. fates_recruit_seed_germination_rate#p12
+  134. fates_recruit_seed_supplement#p12
+  135. fates_recruit_init_density#p12
+  136. fates_phen_mindaysoff#p12
+  137. fates_maintresp_nonleaf_baserate
+  138. fates_phen_chilltemp
+  139. fates_phen_coldtemp
+  140. fates_phen_ncolddayslim
+  141. fates_phen_gddthresh_c#p11
+  142. fates_phen_gddthresh_c#p12
+  143. fates_turnover_fnrt#p10
+  144. fates_turnover_fnrt#p11
+  145. fates_turnover_fnrt#p12
+  146. fates_turnover_leaf_canopy#p10
+  147. fates_turnover_leaf_ustory#p10
+  148. fates_turnover_leaf_canopy#p11
+  149. fates_turnover_leaf_ustory#p11
+  150. fates_turnover_leaf_canopy#p12
+  151. fates_turnover_leaf_ustory#p12
+  152. fates_allom_fnrt_prof_a#p10
+  153. fates_allom_fnrt_prof_a#p11
+  154. fates_allom_fnrt_prof_a#p12
+  155. fates_allom_fnrt_prof_b#p10
+  156. fates_allom_fnrt_prof_b#p11
+  157. fates_allom_fnrt_prof_b#p12
+  158. fates_cnp_pid_ki#p10
+  159. fates_cnp_pid_ki#p11
+  160. fates_cnp_pid_ki#p12
+  161. fates_cnp_pid_kd#p10
+  162. fates_cnp_pid_kd#p11
+  163. fates_cnp_pid_kd#p12
+  164. fates_cnp_phos_store_ratio#p10
+  165. fates_cnp_phos_store_ratio#p11
+  166. fates_cnp_phos_store_ratio#p12
+  167. fates_cnp_nitr_store_ratio#p10
+  168. fates_cnp_nitr_store_ratio#p11
+  169. fates_cnp_nitr_store_ratio#p12
+
+Bounds:
+    1. fates_cnp_eca_decompmicc#p10    [140, 600]
+    2. fates_cnp_eca_km_nh4#p10        [0.07, 0.21]
+    3. fates_cnp_eca_km_no3#p10        [0.135, 0.405]
+    4. fates_cnp_eca_km_p#p10          [0.05, 0.15]
+    5. fates_cnp_eca_km_ptase#p10      [0.5, 1.5]
+    6. fates_cnp_vmax_nh4#p10          [2.5e-10, 0.00025]
+    7. fates_cnp_vmax_no3#p10          [2.5e-10, 0.00025]
+    8. fates_cnp_vmax_p#p10            [5e-11, 5e-05]
+    9. fates_cnp_eca_vmax_ptase#p10    [5e-10, 0.0005]
+   10. fates_cnp_pid_kp#p10            [5e-06, 0.005]
+   11. fates_allom_l2fr#p10            [0.01, 2.95662]
+   12. fates_cnp_turnover_nitr_retrans#p10#o1-2  [0.4, 0.7]
+   13. fates_cnp_turnover_phos_retrans#p10#o1-2  [0.6, 0.9]
+   14. fates_stoich_nitr#p10#o1        [0.0186763, 0.0387293]
+   15. fates_stoich_phos#p10#o1        [0.00103437, 0.00284793]
+   16. fates_stoich_nitr#p10#o2        [0.0145252, 0.0200004]
+   17. fates_stoich_phos#p10#o2        [0.000804464, 0.00147072]
+   18. fates_cnp_eca_decompmicc#p11    [140, 600]
+   19. fates_cnp_eca_km_nh4#p11        [0.07, 0.21]
+   20. fates_cnp_eca_km_no3#p11        [0.135, 0.405]
+   21. fates_cnp_eca_km_p#p11          [0.05, 0.15]
+   22. fates_cnp_eca_km_ptase#p11      [0.5, 1.5]
+   23. fates_cnp_vmax_nh4#p11          [2.5e-10, 0.00025]
+   24. fates_cnp_vmax_no3#p11          [2.5e-10, 0.00025]
+   25. fates_cnp_vmax_p#p11            [5e-11, 5e-05]
+   26. fates_cnp_eca_vmax_ptase#p11    [5e-10, 0.0005]
+   27. fates_cnp_pid_kp#p11            [5e-06, 0.005]
+   28. fates_allom_l2fr#p11            [0.01, 18.3115]
+   29. fates_cnp_nfix1#p11             [0, 1]
+   30. fates_cnp_turnover_nitr_retrans#p11#o1-2  [0.4, 0.7]
+   31. fates_cnp_turnover_phos_retrans#p11#o1-2  [0.6, 0.8]
+   32. fates_stoich_nitr#p11#o1        [0.0378352, 0.0581891]
+   33. fates_stoich_phos#p11#o1        [0.00209547, 0.00427889]
+   34. fates_stoich_nitr#p11#o2        [0.0125305, 0.0281319]
+   35. fates_stoich_phos#p11#o2        [0.000693992, 0.00206866]
+   36. fates_cnp_eca_decompmicc#p12    [140, 600]
+   37. fates_cnp_eca_km_nh4#p12        [0.07, 0.21]
+   38. fates_cnp_eca_km_no3#p12        [0.135, 0.405]
+   39. fates_cnp_eca_km_p#p12          [0.05, 0.15]
+   40. fates_cnp_eca_km_ptase#p12      [0.5, 1.5]
+   41. fates_cnp_vmax_nh4#p12          [2.5e-10, 0.00025]
+   42. fates_cnp_vmax_no3#p12          [2.5e-10, 0.00025]
+   43. fates_cnp_vmax_p#p12            [5e-11, 5e-05]
+   44. fates_cnp_eca_vmax_ptase#p12    [5e-10, 0.0005]
+   45. fates_cnp_pid_kp#p12            [5e-06, 0.005]
+   46. fates_allom_l2fr#p12            [1.11517, 9.87904]
+   47. fates_cnp_turnover_nitr_retrans#p12#o1-2  [0.6, 0.7]
+   48. fates_cnp_turnover_phos_retrans#p12#o1-2  [0.7, 0.9]
+   49. fates_stoich_nitr#p12#o1        [0.0166287, 0.0407255]
+   50. fates_stoich_phos#p12#o1        [0.000920964, 0.00299472]
+   51. fates_stoich_nitr#p12#o2        [0.0128051, 0.0170775]
+   52. fates_stoich_phos#p12#o2        [0.000709198, 0.00125578]
+   53. fates_allom_d2bl1#p10           [0.03729, 0.100693]
+   54. fates_allom_d2bl2#p10           [0.679199, 1.89795]
+   55. fates_allom_agb2#p10            [0.303316, 0.850738]
+   56. fates_allom_agb3#p10            [1.00979, 2.8238]
+   57. fates_allom_d2h1#p10            [0.329375, 0.959375]
+   58. fates_allom_d2h2#p10            [0.195298, 0.521396]
+   59. fates_recruit_height_min#p10    [0.392212, 1.09534]
+   60. fates_allom_dbh_maxheight#p10   [1.57471, 4.48096]
+   61. fates_allom_d2ca_coefficient_min#p10  [0.179952, 0.502875]
+   62. fates_alloc_store_priority_frac#p10  [0.441895, 0.948145]
+   63. fates_alloc_storage_cushion#p10  [0.611133, 5]
+   64. fates_leaf_slatop#p10           [0.0101057, 0.0172492]
+   65. fates_leaf_vcmax25top#p10       [58.3744, 99.3842]
+   66. fates_grperc#p10                [0.0578467, 0.164409]
+   67. fates_mort_scalar_hydrfailure#p10  [0.05, 0.848145]
+   68. fates_mort_scalar_cstarvation#p10  [0.15, 0.89707]
+   69. fates_mort_scalar_coldstress#p10  [1.72119, 4.40918]
+   70. fates_mort_bmort#p10            [0.00714356, 0.0208291]
+   71. fates_mort_hf_sm_threshold#p10  [1e-08, 1.44482e-06]
+   72. fates_mort_freezetol#p10        [-89.5898, -34.5117]
+   73. seed_repro_fraction#p10         [0.2, 0.6]
+   74. seed_alloc_fraction#p10         [0.01, 1]
+   75. fates_recruit_seed_dbh_repro_threshold#p10  [1.5, 3.5]
+   76. fates_frag_seed_decay_rate#p10  [0.1, 0.763755]
+   77. fates_recruit_seed_germination_rate#p10  [0.256592, 0.740723]
+   78. fates_recruit_seed_supplement#p10  [0.000439453, 0.0488037]
+   79. fates_recruit_init_density#p10  [0.10498, 0.29248]
+   80. fates_phen_mindaysoff#p10       [51.709, 148.584]
+   81. fates_allom_d2bl1#p11           [0.0398193, 0.101069]
+   82. fates_allom_d2bl2#p11           [0.742676, 1.84146]
+   83. fates_allom_agb2#p11            [0.319236, 0.828395]
+   84. fates_allom_agb3#p11            [1.09599, 2.85411]
+   85. fates_allom_d2h1#p11            [0.358125, 0.958125]
+   86. fates_allom_d2h2#p11            [0.193311, 0.529888]
+   87. fates_recruit_height_min#p11    [0.396606, 1.10376]
+   88. fates_allom_dbh_maxheight#p11   [1.00293, 2.94043]
+   89. fates_allom_d2ca_coefficient_min#p11  [0.183749, 0.485706]
+   90. fates_alloc_store_priority_frac#p11  [0.405566, 0.974805]
+   91. fates_alloc_storage_cushion#p11  [0.887109, 5]
+   92. fates_leaf_slatop#p11           [0.0172672, 0.0316478]
+   93. fates_leaf_vcmax25top#p11       [58.3744, 99.3842]
+   94. fates_grperc#p11                [0.0564502, 0.161025]
+   95. fates_mort_scalar_hydrfailure#p11  [0.05, 0.880957]
+   96. fates_mort_scalar_cstarvation#p11  [0.15, 0.866602]
+   97. fates_mort_scalar_coldstress#p11  [1.51465, 4.46631]
+   98. fates_mort_bmort#p11            [0.00725293, 0.020877]
+   99. fates_mort_hf_sm_threshold#p11  [1e-08, 1.4209e-06]
+  100. fates_mort_freezetol#p11        [-115.234, -42.7344]
+  101. seed_repro_fraction#p11         [0.2, 0.6]
+  102. seed_alloc_fraction#p11         [0.01, 1]
+  103. fates_recruit_seed_dbh_repro_threshold#p11  [1, 3]
+  104. fates_frag_seed_decay_rate#p11  [0.1, 0.730884]
+  105. fates_recruit_seed_germination_rate#p11  [0.318848, 0.742676]
+  106. fates_recruit_seed_supplement#p11  [0.0032959, 0.0452637]
+  107. fates_recruit_init_density#p11  [0.102148, 0.289648]
+  108. fates_phen_mindaysoff#p11       [51.709, 148.584]
+  109. fates_allom_d2bl1#p12           [0.019, 0.15]
+  110. fates_allom_d2bl2#p12           [0.59, 2.14]
+  111. fates_allom_agb2#p12            [1.20326, 1.42264]
+  112. fates_allom_agb3#p12            [0.986104, 2.88063]
+  113. fates_allom_d2h1#p12            [0.370312, 0.950313]
+  114. fates_allom_d2h2#p12            [0.234321, 0.54687]
+  115. fates_recruit_height_min#p12    [0.0653076, 0.185669]
+  116. fates_allom_dbh_maxheight#p12   [0.191748, 0.519873]
+  117. fates_allom_d2ca_coefficient_min#p12  [0.170872, 0.500729]
+  118. fates_alloc_store_priority_frac#p12  [0.401758, 0.986523]
+  119. fates_alloc_storage_cushion#p12  [0.685547, 5]
+  120. fates_leaf_slatop#p12           [0.00852634, 0.0289584]
+  121. fates_leaf_vcmax25top#p12       [58.3744, 99.3842]
+  122. fates_grperc#p12                [0.0553223, 0.162529]
+  123. fates_mort_scalar_hydrfailure#p12  [0.05, 0.890332]
+  124. fates_mort_scalar_cstarvation#p12  [0.15, 0.887988]
+  125. fates_mort_scalar_coldstress#p12  [1.58496, 4.27588]
+  126. fates_mort_bmort#p12            [0.00792285, 0.0206855]
+  127. fates_mort_hf_sm_threshold#p12  [1e-08, 1.44238e-06]
+  128. fates_mort_freezetol#p12        [-118.984, -42.8516]
+  129. seed_repro_fraction#p12         [0.2, 0.999999]
+  130. seed_alloc_fraction#p12         [0.01, 1]
+  131. fates_recruit_seed_dbh_repro_threshold#p12  [0.1, 1]
+  132. fates_frag_seed_decay_rate#p12  [0.1, 0.750806]
+  133. fates_recruit_seed_germination_rate#p12  [0.26416, 0.747803]
+  134. fates_recruit_seed_supplement#p12  [0.00102539, 0.0479004]
+  135. fates_recruit_init_density#p12  [0.100195, 0.280664]
+  136. fates_phen_mindaysoff#p12       [51.709, 148.584]
+  137. fates_maintresp_nonleaf_baserate  [1.29568e-06, 3.66926e-06]
+  138. fates_phen_chilltemp            [-4.58008, 4.99023]
+  139. fates_phen_coldtemp             [-7.45605, 7.0752]
+  140. fates_phen_ncolddayslim         [2.57324, 6.94824]
+  141. fates_phen_gddthresh_c#p11      [-0.014917, -0.00516602]
+  142. fates_phen_gddthresh_c#p12      [-0.014917, -0.00516602]
+  143. fates_turnover_fnrt#p10         [0.5, 5]
+  144. fates_turnover_fnrt#p11         [0.5, 5]
+  145. fates_turnover_fnrt#p12         [0.5, 5]
+  146. fates_turnover_leaf_canopy#p10  [0.3, 2]
+  147. fates_turnover_leaf_ustory#p10  [0.3, 2]
+  148. fates_turnover_leaf_canopy#p11  [0.3, 2]
+  149. fates_turnover_leaf_ustory#p11  [0.3, 2]
+  150. fates_turnover_leaf_canopy#p12  [0.3, 2]
+  151. fates_turnover_leaf_ustory#p12  [0.3, 2]
+  152. fates_allom_fnrt_prof_a#p10     [11.17, 33.51]
+  153. fates_allom_fnrt_prof_a#p11     [9.16, 27.48]
+  154. fates_allom_fnrt_prof_a#p12     [5.75, 17.27]
+  155. fates_allom_fnrt_prof_b#p10     [5.18, 15.53]
+  156. fates_allom_fnrt_prof_b#p11     [9.14, 27.43]
+  157. fates_allom_fnrt_prof_b#p12     [3.26, 9.78]
+  158. fates_cnp_pid_ki#p10            [0, 0.001]
+  159. fates_cnp_pid_ki#p11            [0, 0.001]
+  160. fates_cnp_pid_ki#p12            [0, 0.001]
+  161. fates_cnp_pid_kd#p10            [0.01, 0.5]
+  162. fates_cnp_pid_kd#p11            [0.01, 0.5]
+  163. fates_cnp_pid_kd#p12            [0.01, 0.5]
+  164. fates_cnp_phos_store_ratio#p10  [1, 5]
+  165. fates_cnp_phos_store_ratio#p11  [1, 5]
+  166. fates_cnp_phos_store_ratio#p12  [1, 5]
+  167. fates_cnp_nitr_store_ratio#p10  [1, 5]
+  168. fates_cnp_nitr_store_ratio#p11  [1, 5]
+  169. fates_cnp_nitr_store_ratio#p12  [1, 5]

@@ -1,0 +1,120 @@
+# Kougarok Validation Targets
+# ============================
+#
+# Source: Field measurements from July 2016 campaign
+# Data Reference: ValidationData.txt from NGEE-Arctic
+#
+# Uncertainty: ±20% of observed mean (see validation_targets_leafroot.txt for justification)
+# Units: g C/m² (dry mass × 0.5)
+#
+# Note: AGB excluded due to data inconsistency (graminoid AGB < leaf biomass)
+#
+# PFT ids are api-43 (12-PFT arctic ordering): evergreen shrub = PFT10, deciduous
+# shrub = PFT11, graminoid = PFT12. (Were 7/9/10 on the api-31 12-PFT base file.)
+# The target-name PFT number drives the SZPF extraction slice
+# (tools/evaluate_case.py:_parse_target_specs -> get_szpf_range), so these keys must
+# match the model's PFT positions. Observed values are unchanged from the api-31 set
+# (same functional types, relabeled). See dev_log 20260710o + 20260710p.
+
+# Metadata
+site: Kougarok
+observation_date: 2016-07
+time_year: 2016
+time_month: 7
+
+# PFT definitions
+pfts:
+  10:
+    name: broadleaf_evergreen_arctic_shrub
+    description: Evergreen shrub
+    dominant_species: Vaccinium vitis-idaea, Empetrum nigrum
+  11:
+    name: broadleaf_colddecid_arctic_shrub
+    description: Deciduous shrub
+    dominant_species: Betula nana, Salix pulchra
+  12:
+    name: arctic_c3_grass
+    description: Graminoid (sedges and grasses)
+    dominant_species: Eriophorum vaginatum, Carex bigelowii
+
+# Validation targets
+targets:
+  # PFT#10 - Evergreen Shrub
+  PFT10_leaf:
+    pft: 10
+    variable: FATES_LEAFC_SZPF
+    observed: 24.6  # g C/m²
+    uncertainty: 0.2  # relative (±20%)
+    uncertainty_type: relative
+    units: g C/m²
+    description: Evergreen shrub leaf biomass
+    original_std: 29.1  # Field measurement standard deviation
+
+  PFT10_fineroot:
+    pft: 10
+    variable: FATES_FROOTC_SZPF
+    observed: 174.2  # g C/m²
+    uncertainty: 0.2
+    uncertainty_type: relative
+    units: g C/m²
+    description: Evergreen shrub fine root biomass
+    original_std: 214.0
+
+  # PFT#11 - Deciduous Shrub
+  PFT11_leaf:
+    pft: 11
+    variable: FATES_LEAFC_SZPF
+    observed: 124.7  # g C/m²
+    uncertainty: 0.2
+    uncertainty_type: relative
+    units: g C/m²
+    description: Deciduous shrub leaf biomass
+    original_std: 47.2
+
+  PFT11_fineroot:
+    pft: 11
+    variable: FATES_FROOTC_SZPF
+    observed: 187.3  # g C/m²
+    uncertainty: 0.2
+    uncertainty_type: relative
+    units: g C/m²
+    description: Deciduous shrub fine root biomass
+    original_std: 120.4
+
+  # PFT#12 - Graminoid
+  PFT12_leaf:
+    pft: 12
+    variable: FATES_LEAFC_SZPF
+    observed: 82.7  # g C/m²
+    uncertainty: 0.2
+    uncertainty_type: relative
+    units: g C/m²
+    description: Arctic graminoid leaf biomass
+    original_std: 56.3
+
+  PFT12_fineroot:
+    pft: 12
+    variable: FATES_FROOTC_SZPF
+    observed: 382.1  # g C/m²
+    uncertainty: 0.2
+    uncertainty_type: relative
+    units: g C/m²
+    description: Arctic graminoid fine root biomass
+    original_std: 267.1
+
+# Excluded targets (for reference)
+excluded:
+  PFT10_agb:
+    reason: Included in AGB, not separate target
+  PFT11_agb:
+    reason: Included in AGB, not separate target
+  PFT12_agb:
+    reason: Data inconsistency - AGB (17.4) < leaf biomass (82.7)
+    note: Physically impossible, suggests measurement error
+
+# Cost function configuration
+cost_config:
+  error_method: relative_error
+  aggregation_method: rmsre
+  tolerance: 0.2
+  tolerance_type: relative

@@ -30,15 +30,15 @@ memory/logs/
 
 # Site-specific data (except Kougarok reference example)
 use_cases/*/memory/
-!use_cases/Kougarok/memory/
-use_cases/Kougarok/memory/extracted/
-!use_cases/Kougarok/memory/gained_knowledge/
-!use_cases/Kougarok/memory/workflow_*.json
+!use_cases/ELM-FATES_Kougarok/memory/
+use_cases/ELM-FATES_Kougarok/memory/extracted/
+!use_cases/ELM-FATES_Kougarok/memory/gained_knowledge/
+!use_cases/ELM-FATES_Kougarok/memory/workflow_*.json
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
 use_cases/*/config/*_config.sh
-!use_cases/Kougarok/config/
+!use_cases/ELM-FATES_Kougarok/config/
 !use_cases/TEMPLATE/
 *.bak
 

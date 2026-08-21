@@ -89,6 +89,80 @@ def parse_confidence(text):
     return val
 
 
+SKILLS_HDR = re.compile(r"^#{2,4}\s*Skills and memory invoked\s*$", re.I | re.M)
+# A skill claim is checkable only if it names WHERE in the skill it followed, or says it deviated.
+SKILL_TICK = re.compile(r"`([a-z0-9][a-z0-9-]{2,})`")
+STEP_REF = re.compile(r"(?:§|\bsteps?\s*|\bsec(?:tion)?\.?\s*)([0-9]+[a-z]?)", re.I)
+DEVIATED = re.compile(r"\bdeviat|\bnot followed\b|\bskipped\b|\bmisfire", re.I)
+
+
+def _skill_dir(repo_root):
+    return repo_root / ".claude" / "skills"
+
+
+def check_skill_citations(text, name, repo_root):
+    """WARN when the 'Skills and memory invoked' section records recollection, not a claim.
+
+    Rationale (dev_logs/reflection/20260809a): this section is meant to be the checkpoint where a
+    deviation is caught, but written from memory it cannot fail -- the recollection IS the
+    deviation. Requiring a step reference (or an explicit 'deviated') per skill forces the
+    skill file open, and the citation is verifiable: you cannot cite a step that does not
+    exist. This does NOT verify the step was followed; it makes the claim falsifiable.
+
+    Only skills that actually use numbered `## Step N` headings are held to this -- a skill
+    organised by named sections (e.g. `plotting`) has no step to cite, and demanding one
+    would manufacture a false citation, which is worse than none.
+    """
+    out = []
+    m = SKILLS_HDR.search(text)
+    if not m:
+        return out
+    seg = text[m.end(): m.end() + 2500]
+    sm = re.search(r"^\s*[-*]\s*\*\*Skills:?\*\*(.+?)(?=^\s*[-*]\s*\*\*|\Z)",
+                   seg, re.S | re.M)
+    if not sm:
+        return out
+    claim = sm.group(1)
+    skills_dir = repo_root / ".claude" / "skills"
+
+    # Split the bullet into one clause per backticked item, so a neighbour's "Step 4"
+    # cannot be read as this skill's citation.
+    toks = [(mm.start(), mm.group(1)) for mm in SKILL_TICK.finditer(claim)]
+    seen = set()
+    for idx, (pos, cand) in enumerate(toks):
+        sk = skills_dir / cand / "SKILL.md"
+        if not sk.is_file():
+            continue                                    # not a skill name
+        if cand in seen:
+            continue        # a skill named twice is still ONE claim; prose that mentions it
+        seen.add(cand)      # again (e.g. explaining a deviation) must not re-trigger.
+        stop = toks[idx + 1][0] if idx + 1 < len(toks) else len(claim)
+        clause = claim[pos:stop]
+        if DEVIATED.search(clause):
+            continue                                    # an explicit deviation IS a claim
+        body = sk.read_text(encoding="utf-8", errors="replace")
+        # Three heading forms the skills use: "## Step 9 -- ..." / sub-step "### 9d -- ..." /
+        # bold-numbered-list ("**0. Branch by intent...**", model-evolution + port-param-file).
+        steps = set(re.findall(r"^#{2,4}\s*(?:Step\s*)?([0-9]+[a-z]?)\b", body, re.I | re.M))
+        steps |= set(re.findall(r"^\*\*([0-9]+[a-z]?)\.\s", body, re.M))
+        if not steps:
+            continue                                    # skill has no steps to cite
+        ref = STEP_REF.search(clause)
+        if not ref:
+            out.append(
+                "%s: skill `%s` is listed with no step reference and no deviation note -- an "
+                "unfalsifiable recollection. Cite the step you followed (e.g. `%s` Step 4) or "
+                "state the deviation (dev_logs/reflection/20260809a)." % (name, cand, cand))
+            continue
+        step = ref.group(1).lower()
+        if step not in {x.lower() for x in steps}:
+            out.append(
+                "%s: skill `%s` is cited at Step %s, which does NOT exist in "
+                ".claude/skills/%s/SKILL.md (has: %s) -- the citation cannot be right." %
+                (name, cand, step, cand, ", ".join(sorted(steps, key=str))))
+    return out
+
+
 def check_log(path, repo_root):
     """Return (errors, warnings) for one offline log file."""
     errors, warnings = [], []
@@ -98,12 +172,15 @@ def check_log(path, repo_root):
         return errors, warnings  # not an offline topic-stem log
     stem = name[:-3] if name.endswith(".md") else name
     phase = int(m.group(2))
+    text0 = path.read_text(encoding="utf-8", errors="replace")
+    skill_warns = check_skill_citations(text0, name, repo_root)
     if phase not in ANALYSIS_PHASES:
-        return errors, warnings
+        return errors, skill_warns
     # site dir = parent of the logs/ dir the file lives in
     logs_dir = path.parent
     site_dir = logs_dir.parent.parent  # .../{site}/memory/logs/file -> .../{site}
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = text0
+    warnings.extend(skill_warns)
 
     # --- ERROR: at least one resolvable first-hand artifact ---
     arts = cited_artifacts(text)
@@ -143,6 +220,27 @@ def check_log(path, repo_root):
                     f"{hm.group(1).strip().lower()} but is not traceable to a cited artifact — "
                     f"verify it first-hand (feedback_performance_experiment_is_the_objective).")
                 break  # one nudge per decision section is enough
+
+    # --- WARN: the paired artifact folder should be SELF-DOCUMENTING (figure + caption + script + data) ---
+    # A figure with no caption / no generating script / no data is under-documented: a future reader can't
+    # tell what it shows, how it was made, or from what. Mirror the write-report self-contained folder.
+    topic = site_dir / "memory" / "phase_results" / stem
+    if topic.is_dir():
+        exts = {f.suffix.lower() for f in topic.rglob("*") if f.is_file()}
+        if exts & {".png", ".pdf"}:  # there is a figure to document
+            missing = []
+            if ".md" not in exts:
+                missing.append("a caption/NOTES .md (what it shows + how-to-read + provenance)")
+            if ".py" not in exts:
+                missing.append("the generating .py script (saved, reproducible — not an inline heredoc)")
+            if not (exts & {".csv", ".txt", ".nc", ".json", ".npz", ".npy"}):
+                missing.append("the underlying data file")
+            if missing:
+                warnings.append(
+                    f"{name}: phase_results/{stem}/ has a figure but is not self-documenting — add "
+                    f"{'; '.join(missing)} (figures>tables>words + the write-report self-contained-folder "
+                    f"discipline). The log/{{stem}}.md carries the analysis; the folder must let a future "
+                    f"reader regenerate + interpret the figure without you.")
     return errors, warnings
 
 

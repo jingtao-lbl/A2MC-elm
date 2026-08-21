@@ -1,0 +1,75 @@
+# =============================================================================
+# A2MC PARAMETER LIST — TEMPLATE
+# Copy to use_cases/<YourSite>/parameters/, replace the example rows, keep the schema.
+# Point $A2MC_PARAM_LIST_FILE at it; everything downstream derives from it.
+# =============================================================================
+#
+# THIS BRANCH CALIBRATES ELM **WITH OR WITHOUT FATES**, so the schema is not FATES-specific.
+# A FATES case writes FATES parameter names and uses the pft/organ axes; an ELM-only case
+# (BGC, hydrology, soil, snow) writes ELM parameter or namelist names and may omit `organ`
+# entirely. Both load through tools/param_spec.py::load_param_spec.
+#
+# INVARIANT: one row = one independently-sampled parameter = one Morris/Sobol matrix COLUMN,
+# in file order. The count is derived from this file (tools/count_param_list.py) and must never
+# be hardcoded anywhere else.
+#
+# COLUMNS
+#   param_name   REQUIRED. The name EXACTLY as it appears in the model's parameter file or
+#                namelist. Do NOT bake an axis id into it — no `fates_stoich_nitr_leaf`, no
+#                `leafcn_1`. Each axis gets its own column; A2MC builds the canonical id from
+#                (name + non-blank axis cells) and the writer resolves it to the file slot.
+#                (The legacy header `fates_name` is still accepted for existing lists.)
+#   pft          REQUIRED. Site PFT id (int). Blank / `-` / `0` = a global or scalar parameter.
+#                For FATES, verify ids against the BASE parameter file's `fates_pftname` — they
+#                are NOT stable across API versions (api-43 arctic = 10/11/12, api-31 = 7/9/10).
+#   organ        OPTIONAL, FATES/PARTEH only. Which organ slot(s) this row's single sampled
+#                value is written into: blank (non-organ), one id (1=leaf, 2=fineroot,
+#                3=sapwood, 4=structure), or a `|`-list like `1|2` to broadcast ONE value to
+#                several organs (e.g. retranslocation). It never adds rows or columns.
+#                **Omit this column entirely for an ELM-only list.**
+#   lower,upper  REQUIRED. Floats. The sampling range — see the note below.
+#   default      REQUIRED. The OPERATIVE default (the value used when the parameter is not
+#                otherwise set). May be named `default` or `default_api43`; the loader reads
+#                whichever is present. A blank cell is an error, not a zero.
+#   description  Free text. Say what it is and, for a per-PFT row, which PFT.
+#   bound_source RECOMMENDED. Where the range came from: a DOI, an expert attribution, or
+#                "provisional". See the bounds note below.
+#
+# BOUNDS ARE NOT `default ± 50%`
+#   That is only a provisional screening seed. Refine per parameter before a production
+#   ensemble (the `literature-review` skill has a PARAMETER-BOUNDS mode), and record the
+#   authority in `bound_source` so a later reader can tell a literature-backed range from a
+#   placeholder. Trait parameters and site conditions need DIFFERENT authorities: a trait
+#   database constrains a plant trait, but only that site's own measurement constrains a site
+#   condition. Re-centring a bound on a new base VOIDS its provenance — re-source, do not just
+#   re-centre.
+#
+# VERIFY THE PARAMETER BEFORE YOU BOUND IT
+#   A parameter's long_name/units can be wrong. Trace read -> internal variable -> equation in
+#   the checked-out source before setting a range, and never infer behaviour from the name
+#   (FATES `fates_allom_l2fr` is fine-root-per-LEAF, the reverse of what it reads like).
+#
+# VALIDATE after editing:
+#   python tools/validate_param_list.py <this file>
+#   python tools/count_param_list.py   <this file>     # the derived $A2MC_N_PARAMS
+# =============================================================================
+param_name,pft,organ,lower,upper,default,description,bound_source
+#
+# --- Example A: FATES, per-PFT, non-organ ------------------------------------------------
+fates_cnp_eca_km_nh4,10,,0.07,0.21,0.14,Michaelis-Menten constant for NH4 uptake PFT#10,provisional (default +/- 50%)
+fates_cnp_eca_km_nh4,11,,0.07,0.21,0.14,Michaelis-Menten constant for NH4 uptake PFT#11,provisional (default +/- 50%)
+#
+# --- Example B: FATES, organ-dimensioned ------------------------------------------------
+# One sampled value written into the leaf slot only.
+fates_stoich_nitr,10,1,0.02,0.06,0.04,Leaf N stoichiometry PFT#10,doi:10.xxxx/example
+# One sampled value BROADCAST to leaf + fineroot (this is one column, not two).
+fates_cnp_turnover_nitr_retrans,10,1|2,0.1,0.7,0.4,N retranslocation PFT#10 (leaf+fineroot),expert: <name>
+#
+# --- Example C: FATES, global / scalar --------------------------------------------------
+fates_maxpatch_primary,0,,1.0,10.0,5.0,Maximum primary patches (site-level),provisional
+#
+# --- Example D: ELM-only (no FATES) -----------------------------------------------------
+# For an ELM-only list you would drop the `organ` column from the header entirely; the rows
+# below keep it blank only so this one file can show both styles.
+elm_hksat_scalar,0,,0.5,2.0,1.0,Saturated hydraulic conductivity scalar (global),provisional
+elm_leafcn,1,,15.0,45.0,25.0,Leaf C:N for ELM PFT#1,doi:10.xxxx/example

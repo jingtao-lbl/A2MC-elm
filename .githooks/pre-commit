@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# A2MC pre-commit hook — enforce skill-registry + phase script-doc + memory-bucket parity.
+# A2MC pre-commit hook — enforce skill-registry + phase script-doc + memory-bucket parity,
+# agent-surface leak/shape validation, version-number consistency, and dev/ana + calibration
+# log conformance (two separate checkers, one per stream — see check (6) and (7) below).
 #
 # (1) tools/check_skill_registry.py (disk <-> README table <-> catalog <-> AGENTS.md
 # table, name/dir, ## Changelog, + the CONTRACT check that every path/skill a SKILL.md
@@ -21,10 +23,23 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 
+# Pick a python that can import the checks' deps (check_skill_registry.py needs pyyaml).
+# Prefer $A2MC_PYTHON, then the repo's documented a2mc_env, then bare python3, so a clone
+# whose system python3 lacks pyyaml (e.g. a PEP-668 Homebrew python) still gets a working
+# check instead of a hard ModuleNotFoundError. Falls back to bare python3 if none has yaml.
+pick_py() {
+    local p
+    for p in "${A2MC_PYTHON:-}" "$HOME/a2mc_env/bin/python3" python3; do
+        [[ -n "$p" ]] && command -v "$p" >/dev/null 2>&1 \
+            && "$p" -c 'import yaml' >/dev/null 2>&1 && { echo "$p"; return; }
+    done
+    command -v python3 2>/dev/null || true
+}
+
 # Staged paths that touch the skill system.
 if git diff --cached --name-only --diff-filter=ACMRD \
      | grep -qE '^\.claude/skills/|^docs/a2mc_reference/skills_catalog\.md$|^AGENTS\.md$|^tools/|^scripts/|^CLAUDE\.md$|^README\.md$'; then
-    PY="$(command -v python3 || true)"
+    PY="$(pick_py)"
     if [[ -z "$PY" ]]; then
         echo "pre-commit: python3 not found; skipping skill-registry check" >&2
         exit 0
@@ -41,7 +56,7 @@ fi
 
 # Staged paths under phases/ (a *.py add/rename/delete or a phase CLAUDE.md edit).
 if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^phases/'; then
-    PY="$(command -v python3 || true)"
+    PY="$(pick_py)"
     if [[ -z "$PY" ]]; then
         echo "pre-commit: python3 not found; skipping phase script-doc check" >&2
         exit 0
@@ -59,7 +74,7 @@ fi
 # scope/type frontmatter; a visibility: public memory carries no personal host path) when
 # .claude_memory/ is staged. No-ops if .claude_memory/ is absent (public clone).
 if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude_memory/'; then
-    PY="$(command -v python3 || true)"
+    PY="$(pick_py)"
     if [[ -z "$PY" ]]; then
         echo "pre-commit: python3 not found; skipping memory-bucket check" >&2
         exit 0
@@ -72,4 +87,87 @@ if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^\.claude_memor
         exit 1
     fi
 fi
+
+# (4) tools/validate_agent_surface.py (leak scan for private host paths / usernames / private
+# branch names across AGENTS.md + .claude/skills/, plus modes-block shape and broken relative
+# links) when the agent surface is staged. Gated HERE and not only at sync time: on 2026-07-31 a
+# public skill was found naming a private branch, invisible because the validator itself crashed
+# on a malformed modes: block and never printed its findings.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^(\.claude/skills/|AGENTS\.md$)'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/validate_agent_surface.py"; then
+        echo "" >&2
+        echo "pre-commit: agent-surface validation failed — a private path/username/branch token," >&2
+        echo "  a malformed modes: block, or a broken relative link. The leak scan matters most:" >&2
+        echo "  .claude/skills/ and AGENTS.md SHIP PUBLICLY. Bypass with --no-verify only if sure." >&2
+        exit 1
+    fi
+fi
+
+# (5) tools/check_version_consistency.py (the CLAUDE.md version header has exactly one changelog
+# entry; no LIVE duplicate) when either file is staged. Catches the 2026-07-30 failure where two
+# branches independently claimed v2.209 — each internally consistent, and because both wrote the
+# identical header string `git merge-tree` reported the merge CLEAN.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^(CLAUDE\.md|memory/a2mc_development_history\.md)$'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_version_consistency.py"; then
+        echo "" >&2
+        echo "pre-commit: version inconsistent — the CLAUDE.md header version must have exactly" >&2
+        echo "  one changelog entry in memory/a2mc_development_history.md. Two entries on the" >&2
+        echo "  SAME version is the cross-branch collision signature; renumber the later one." >&2
+        exit 1
+    fi
+fi
+
+# (6) tools/check_log_conformance.py (a staged dev/ana log matches the `log` skill contract:
+# filename, header order, the required-section list FOR ITS DETECTED SUBTYPE — Regular / Session /
+# Audit-Review / Handoff_To_Main / Reflection each have their own set, per `_REQUIRED_BY_SUBTYPE` —
+# and that every skill/memory named in "Skills and memory invoked" actually exists) when a log is
+# staged. STAGED-ONLY on purpose: it gates what you are writing NOW and never blocks a commit
+# because of pre-existing drift in logs you did not touch (use --dir for a sweep).
+# Reconciled 2026-08-14 from adapter-kit's parallel checker (`memory/dev_logs/20260814e_*`,
+# `20260814f_*`) — main's own required-since dates are 2026-08-03 ("Skills and memory invoked"/
+# "Next") and 2026-08-14 (Cross-references), not adapter-kit's single 2026-08-01; the subtype
+# mapping is grounded in main's own logs, not copied (a real main Handoff_To_Main log has no
+# Summary/Files Changed/Verification either, broader than adapter-kit's own base-4 assumption).
+# Needs no third-party deps, so it runs even where pick_py falls back to a bare python3.
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^memory/(dev_logs|ana_logs)'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_log_conformance.py" --staged; then
+        echo "" >&2
+        echo "pre-commit: log does not match the \`log\` skill contract — see above. RE-READ" >&2
+        echo "  .claude/skills/log/SKILL.md rather than recalling it; it changes. Each finding" >&2
+        echo "  names the DETECTED subtype — if that detection looks wrong (the log's shape was" >&2
+        echo "  misread), fix the log's shape to match its intended subtype rather than bypassing." >&2
+        echo "  'None' is a valid answer for Skills-and-memory-invoked/Cross-references/Next." >&2
+        exit 1
+    fi
+fi
+
+# (7) tools/check_calibration_log_conformance.py (a staged calibration log under
+# use_cases/<site>/memory/logs/ matches the `calibration-log` skill contract: for a phase log,
+# that phase's own required sections read from PhaseLogger._EXPECTED_SECTIONS; for a free-form
+# log, header + Cross-references) when a calibration log is staged. STAGED-ONLY, mirroring check
+# (6): gates what you are writing now, never blocks a commit over pre-existing drift.
+# Sibling of check (6), not a mode of it — the two contracts differ in header AND sections, and
+# each carries a wrong_stream() guard refusing the other's path (a calibration log run through
+# check (6) reports several false "missing section" errors; a dev log run through this tool,
+# before its guard existed, passed with only a warning — a false clean, worse than a false
+# failure). Reconciled 2026-08-14 from adapter-kit's parallel checker
+# (`memory/dev_logs/20260814f_Calibration_Log_Checker_And_Stream_Separation.md`). Needs no
+# third-party deps.
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '^use_cases/[^/]+/memory/logs/'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]] && ! "$PY" "$ROOT/tools/check_calibration_log_conformance.py" --staged; then
+        echo "" >&2
+        echo "pre-commit: calibration log does not match the \`calibration-log\` skill" >&2
+        echo "  contract — see above. RE-READ .claude/skills/calibration-log/SKILL.md rather" >&2
+        echo "  than recalling it. A phase log's required sections come from that phase's own" >&2
+        echo "  PhaseLogger._EXPECTED_SECTIONS entry, not a flat list. Bypass with --no-verify" >&2
+        echo "  only if you know why." >&2
+        exit 1
+    fi
+fi
+
 exit 0

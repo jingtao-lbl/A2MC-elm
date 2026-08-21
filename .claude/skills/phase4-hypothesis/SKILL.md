@@ -1,5 +1,7 @@
 ---
 name: phase4-hypothesis
+visibility: public
+category: phase
 description: Run Phase 4 (HYPOTHESIS) of the A2MC calibration workflow as the offline agent — the human-in-the-loop analog of the orchestrator's `_run_hypothesis()` / `reasoning.generate_hypothesis()`. Turn a Phase 3 diagnosis into specific, testable hypotheses with parameter changes + expected outcomes, and FIRST try to test them against the existing Morris ensemble (skip-testing — reads existing data, no new simulations) before committing to a Phase 5 experiment. Use when the user says "generate a hypothesis", "what should we test next", "design the experiment", "can we test this with existing data", "run Phase 4", after Phase 3 diagnosis.
 modes:
   requires_fates: false      # calibration-workflow phase skill; mode resolved at runtime via describe_mode
@@ -9,6 +11,8 @@ modes:
 ---
 
 # Phase 4: Hypothesis (offline agent)
+
+> **Driven by `calibration-goal`** — the run-to-convergence driver dispatches here when `WorkflowStateOffline.current_phase` routes to this phase; do the phase, then update + `save()` the state so the driver advances. Also runnable standalone (one phase).
 
 The offline analog of `_run_hypothesis()`. Online, `reasoning.generate_hypothesis()` proposes the
 hypothesis and decides `test_with_existing`; **offline, YOU do both** — frame a mechanistic,
@@ -39,7 +43,10 @@ from previous experiments (check Memory failed approaches — do not re-propose 
 If the hypothesis is answerable from the **existing** Morris ensemble — a correlation, a high-vs-low
 group contrast, a threshold, or a custom test — set `test_with_existing=true` and run it via
 `phases/phase4_hypothesis/test_with_existing_data.py` (methods: comparison / correlation / threshold
-/ diagnostic / custom_script). This is the 3↔4 inner loop: accumulate the evidence, and either
+/ diagnostic / custom_script). **Visualize the skip-test result** — the high-vs-low group contrast, the
+scatter + fit, or the threshold split — as a figure (via the `plotting` skill); a skip-test verdict rides
+on a distribution/relationship that a table of numbers flattens ([[feedback_figures_over_tables_over_words]]).
+This is the 3↔4 inner loop: accumulate the evidence, and either
 
 - **confidence ≥ `--confidence-threshold` (default 0.95)** (or the pattern is clear) → conclude without
   new simulations; or
@@ -59,6 +66,31 @@ Phase 5 begins.**
 `phases/phase4_hypothesis/synthesis.py` consolidates multi-cycle skip-testing insights into
 experiment designs when you exit the loop toward Phase 5.
 
+## Step 2b — EVERY hypothesis carries its own test plan and falsification bar
+
+Online, `design_experiments(hypothesis, base_case)` returns a `List[Experiment]` — so each
+hypothesis mechanically gets concrete experiments, each with `modifications`,
+`expected_results` and a **`success_threshold`**. Offline nothing forced that, and the gap is
+**worse here**, because this skill invites you to weigh *several* hypotheses where the online
+agent proposes one.
+
+For **each** hypothesis you carry forward, state:
+
+| | |
+|---|---|
+| **How it is examined** | skip-test on existing data (which cases, which reduction) **or** the Phase-5 variants that test it |
+| **Expected outcome** | the direction and magnitude per target |
+| **Success criteria** | the **quantified bar** that would confirm it |
+| **What would refute it** | the observation that kills it — if nothing could, it is not a hypothesis |
+
+Log the bar via `success_criteria=` on `log_hypothesis` (it emits `## Success Criteria`).
+`expected_outcomes` says what you think will happen; `success_criteria` says what settles it.
+Phase 6 rules CONFIRMED/REFUTED against this bar, so a hypothesis logged without one leaves
+that verdict unanchored.
+
+If you carry N hypotheses, log N of them (`log_hypothesis` is per-hypothesis) rather than one
+merged entry — Phase 6 evaluates them individually and the reasoning chain tracks each.
+
 ## Step 3 — needs new simulations? design the experiment → Phase 5
 
 If it can't be answered with existing data, the hypothesis becomes a parameter-sweep experiment.
@@ -68,12 +100,35 @@ generation + verification, the V0 reproducibility gate, submission, and analysis
 
 ## Step 4 — log and hand off
 
+> **The log is a LIVING record — start it now, enrich as the phase runs.** Not an end-of-phase
+> write-up. Full contract in `calibration-log`.
+>
+> **This phase's expected sections** — `PhaseLogger` names any you leave empty:
+> Mechanism · Parameters to Modify · AI Reasoning and Deep Analysis · Expected Outcomes · Success Criteria · Experiments Planned.
+>
+> **`Success Criteria` is the one that decides Phase 6.** Pass it explicitly — `log_hypothesis`
+> now takes `success_criteria=` — or Phase 6 rules CONFIRMED/REFUTED against a bar no log holds.
+>
+> **Set the handshake before the `log_*` call**, so the chain is traceable:
+> ```python
+> logger.set_phase_handshake(
+>     inherited_from="<phase3 log STEM> — root causes, implicated params, base cases",
+>     handed_to="the hypothesis + its success_criteria bar + the planned experiments",
+>     next_action="<skip-test to run, or the Phase 5 experiment to launch>")
+> ```
+> The log also carries `## Reasoning chain`, rebuilt from `workflow_state_offline` — so keep that
+> state updated with the FINDING, not a label; the chain is only as good as what each phase wrote.
+
+
 Log via `calibration-log` (phase log → `PhaseLogger.log_hypothesis`): the hypothesis, parameter
 moves, skip-test evidence + verdict, and the routing decision. **Hand off** to `phase5-testing` (new simulations)
-or back to `phase3-diagnosis` (another skip-test cycle).
+or back to `phase3-diagnosis` (another skip-test cycle). **Advance the driver state:** on route to Phase 5
+`st.set_position(current_phase="testing")`; on a skip-test loop-back
+`st.set_position(current_phase="diagnosis", skip_testing_count=<n+1>)`; `st.save()` either way
+(`tools/workflow_state_offline.py`).
 
-**Evidence gate (docs/33).** A skip-test log must cite the skip-test **script + output** produced this session
-(`test_with_existing_data.py` result in `phase_results/{stem}/`), not just an assertion. Run
+**Evidence gate (docs/33).** A skip-test log must cite the skip-test **script + output + figure** produced this session
+(`test_with_existing_data.py` result + the Step-2 visualization in `phase_results/{stem}/`), not just an assertion. Run
 `python tools/check_offline_log_evidence.py <log.md>` (exit 0). Note: a hypothesis is a hypothesis until a
 Phase-5 test confirms it — do not promote it to the curated KB from here (that's the `docs/33` §3b KB gate).
 
@@ -100,6 +155,10 @@ Phase-5 test confirms it — do not promote it to the curated KB from here (that
    `phase_results/` — never mint a separate letter for the artifacts (`docs/31`; via `PhaseLogger`
    offline mode). (Mirrored in `phase3-diagnosis`.)
 
+## Before you finish
+
+**Discipline self-review (automatic).** Before advancing the state, re-check the [`calibration-discipline`](../calibration-discipline/SKILL.md) items that apply to this phase. This is unprompted and per-phase — the user does not have to ask (memory `feedback_schedule_periodic_reviews_with_a_real_mechanism`).
+
 ## Related skills / next phase
 
 - **Experiment execution (the new-simulation path)** → `offline-testing-workflow` / `phase5-testing`.
@@ -109,6 +168,16 @@ Phase-5 test confirms it — do not promote it to the curated KB from here (that
 
 ## Changelog
 
+- 2026-08-03: New **Step 2b — every hypothesis carries its own test plan and falsification bar**.
+  Online, `design_experiments()` mechanically gives each hypothesis a `success_threshold`; offline
+  nothing forced it, and the gap is worse here because this skill weighs SEVERAL hypotheses. Log the
+  bar via `success_criteria=` (v2.221 wired it end to end) — Phase 6 rules CONFIRMED/REFUTED against it.
+- 2026-08-03: Log step now states the **living-record** contract (start at phase start, enrich as it
+  runs — the operational detail is unrecoverable later), names **this phase's expected sections** so an
+  omission is visible in the log, and shows `set_phase_handshake()` so the reasoning chain is traceable.
+  Added a **Before you finish** discipline self-review. Full contract: `calibration-log`.
+- 2026-07-15: Wired the conditional `set_position` state-advance in the handoff step (route to `testing` vs the 3↔4 skip-test loop-back to `diagnosis` with `skip_testing_count++`). Ported from demo `d3cbbf5` (offline-workflow enforcement sweep).
+- 2026-07-15: **Skip-test result must be visualized** — Step 2 requires a figure of the contrast / scatter+fit / threshold split, and the evidence gate now cites script + output **+ figure**. Ported from demo `cd14d24`.
 - 2026-07-06: Made the **inner-loop counter explicit** in Step 2 — named `skip_testing_count`,
   `--max-skip-testing` (10), `--confidence-threshold` (0.95), the increment-per-skip-test, and the
   reset-to-0-on-Phase-5. Pairs with the Phase-6 middle-loop gate. Ported from demo `2d3f4b0`.

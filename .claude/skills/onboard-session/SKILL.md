@@ -1,5 +1,7 @@
 ---
 name: onboard-session
+visibility: public
+category: meta
 description: Cold-start runbook — orient at the start of a session or after a context reset/compaction. Use when a session begins, resumes, or is compacted (especially if the SessionStart snapshot shows in-flight work or pending proposals), or when the user says "catch up", "where did we leave off", "onboard", "what's the current state". Reads the latest handoff, re-reads CLAUDE.md, checks live HPC processes + run state, and hands off to arm-hpc-monitoring / curate-knowledge as needed.
 modes:
   requires_fates: false
@@ -28,18 +30,32 @@ gives the *data*; this skill is what you *do* with it.
    Don't reconstruct the knowledge system from `AGENTS.md`'s one-liner — `CLAUDE.md`
    §"RAG/GraphRAG System" (+ `docs/a2mc_reference/rag_reference.md`) carries the full
    hybrid vector + two-layer knowledge graph + curated YAML detail.
-2. **Read the latest handoff / session log** — the SessionStart snapshot names it; else
-   `ls -t memory/dev_logs/*Handoff* memory/dev_logs/*Session_Log* | head`. Read it for
-   open threads + "state at session end". Skim the 2–3 most recent dated dev_logs for
-   anything still mid-flight.
-3. **Verify branch:** `git branch --show-current` → confirm it matches your intended working branch (`main` or your feature branch).
+2. **Read the latest calibration log/report — the primary source for the application-agent (calibration)
+   role, and the one that exists in ANY clone, public or private.** The `Offline state:` / `► NEXT:` line
+   (Step 4 below) gives you a *pointer*; this step is where you actually read what it points into. Check,
+   newest first:
+   `ls -t use_cases/*/reports/*/*.md use_cases/*/memory/logs/**/*.md use_cases/*/memory/phase_results/*/*.md 2>/dev/null | head`
+   — narrow to the active site. A consolidated register/synthesis report (if one exists) is usually the
+   fastest single read; phase logs and phase_results stems carry the finer-grained trail. Read for open
+   threads + current state **before** treating a `next_action` pointer as something you already understand
+   — a pointer is not a substitute for having read what it points at.
+3. **If this clone also carries framework-development history** — i.e. `memory/dev_logs/` exists (true on
+   the private A2MC-dev repo; absent on a fresh public clone, since it's excluded from the public sync) —
+   also read the latest handoff/session log there:
+   `ls -t memory/dev_logs/*Handoff* memory/dev_logs/*Session_Log* | head`. Skim the 2–3 most recent dated
+   dev_logs (and `memory/ana_logs/` if present) for anything still mid-flight. This step covers the
+   **developing-agent** role (framework code, RAG, skills) — skip it entirely if the directory doesn't
+   exist; don't treat its absence as an error.
+4. **Verify branch:** `git branch --show-current` → confirm it matches your intended working branch (`main` or your feature branch).
    `git status -s` for uncommitted work the previous session left.
-4. **Read the offline resume brain** (docs/31/34) — the SessionStart snapshot prints an `Offline state:`
+5. **Read the offline resume brain** (docs/31/34) — the SessionStart snapshot prints an `Offline state:`
    line from the highest-round `workflow_state_offline_r{RR}.json` (position + `next_action` + any
    `phase6_decision` binding target). If a round is mid-refinement, note the **binding target + next
    targeted experiment** — that is the objective to drive toward (`feedback_performance_experiment_is_the_objective`),
-   not the loudest crash thread.
-5. **Recall the operating discipline.** Skim `AGENTS.md` §"Offline-Agent Operating Discipline" — the four
+   not the loudest crash thread. **Validate it:** the SessionStart hook flags a corrupt state
+   (`⚠ Offline state INVALID …`); if it does, run `python3 tools/check_workflow_state_offline.py` and fix
+   the invariants before driving.
+6. **Recall the operating discipline.** Skim `AGENTS.md` §"Offline-Agent Operating Discipline" — the four
    recurring failure modes (verify before claiming · track the objective · drive, don't wait · trust the
    skill) and the gate enforcing each. Lead memory: `feedback_offline_agent_operating_discipline`.
 
@@ -73,6 +89,8 @@ line), **execute it** — you are the superset of the autonomous orchestrator, w
 per-phase prompt ([[feedback_offline_agent_drives_the_workflow]]). Lead with: *"Round R{N}, phase X;
 next action = `<...>`. Proceeding with it — will pause only at a fork or hard stop."* Then do it.
 
+> **To drive the *whole* calibration to the goal (not just this one action), hand off to `calibration-goal`** — the run-to-convergence driver that loops this drive-the-next-action over the full 7-phase workflow (via `resolve_next_action`) until Phase-7 CONVERGED or a loop limit, pausing only at the gates. `onboard-session` orients + resumes; `calibration-goal` drives.
+
 **DRIVE (just do it — surface results, not permission requests):**
 - arm/re-arm monitors; extract completed data; run a **planned** experiment; skip-test on existing data;
   advance to the next phase per the 7-phase workflow + iteration rules; regenerate a plot; commit routine work.
@@ -94,6 +112,17 @@ Everything not in the PAUSE list, you drive. Surface **proposals + results**, no
 
 ## Changelog
 
+- 2026-08-09: Step 1 point 2 redirected from `memory/dev_logs/` (framework-dev-only, excluded from the
+  public sync) to `use_cases/{site}/reports/`, `use_cases/{site}/memory/logs/`, and
+  `use_cases/{site}/memory/phase_results/` — the application-agent's actual calibration record, present
+  in any clone. The dev_logs read moved to a new
+  point 3, gated on `memory/dev_logs/` existing (private repo only), so the skill degrades cleanly on a
+  public clone instead of pointing at a directory that was never shipped. Signal: PI observed I had a
+  `next_action` pointer from the resume-state JSON but had not actually read the reports/logs it pointed
+  into — the skill told me to read dev_logs, not the calibration record. `SKILL.md` bodies ship unfiltered
+  (no `<!-- private -->` mechanism exists for them, unlike CLAUDE.md/AGENTS.md/README), so this is a
+  mode-aware single skill rather than a private/public content split.
+- 2026-07-15: Step 1 point 4 now validates the offline state (`tools/check_workflow_state_offline.py`); the SessionStart hook flags a corrupt state loudly. Ported from demo `d3cbbf5` (offline-workflow enforcement sweep).
 - 2026-07-06: Point Step 1 at `AGENTS.md` §"Offline-Agent Operating Discipline" — the consolidated
   4-failure-mode stance (docs/36, reinforcement #4); lead memory `feedback_offline_agent_operating_discipline`.
 - 2026-07-06: Cold-start **driving** reinforcement (docs/35, FM-3): Step 1 reads the offline resume brain

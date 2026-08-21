@@ -216,6 +216,7 @@ def cmd_extract(args):
         site=[v for v in ext.SITE_LEVEL_VARS if v in allv],
         levgrnd=[v for v in ext.LEVGRND_VARS if v in allv],
         levsoi=[v for v in ext.LEVSOI_VARS if v in allv],
+        levsno=[v for v in ext.LEVSNO_VARS if v in allv],
         levdcmp=[v for v in ext.LEVDCMP_VARS if v in allv],
         levelem=[v for v in ext.LEVELEM_VARS if v in allv],
         pft=[v for v in ext.PFT_LEVEL_VARS if v in allv],
@@ -249,7 +250,8 @@ def cmd_extract(args):
         for cid in todo:
             success = ext.process_case(
                 cid, avail["site"], avail["levgrnd"], avail["levsoi"],
-                avail["levdcmp"], avail["levelem"], avail["pft"], avail["szpf"])
+                avail["levsno"], avail["levdcmp"], avail["levelem"],
+                avail["pft"], avail["szpf"])
             (ok if success else failed).append(cid)
             print(f"  {'OK  ' if success else 'FAIL'} {cid}")
 
@@ -328,7 +330,9 @@ def cmd_plot(args):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import netCDF4 as nc
-    from tools.fates_utils import get_szpf_range
+    from tools.fates_utils import (
+        aggregate_szpf_by_pft, get_n_size_classes_from_config, get_szpf_dim_length,
+    )
 
     case_pattern = _get_case_pattern()
     targets_yaml = args.targets or str(
@@ -347,17 +351,25 @@ def cmd_plot(args):
     pend = (args.plot_year_end - ys + 1) * 12
     obs_idx = _obs_index(ys, obs_year, obs_month)
 
+    n_sc = get_n_size_classes_from_config()
+
     def load_series(nc_path, var, pft_id):
-        start, end = get_szpf_range(pft_id)
         with nc.Dataset(nc_path, "r") as ds:
             if var not in ds.variables:
                 return None
+            slen = get_szpf_dim_length(ds, var)     # file-derived levscpf length (None if absent)
             data = np.squeeze(ds.variables[var][:])
             if data.ndim != 2:
                 return None
-            if data.shape[1] == 156:  # (time,156)
-                data = data.T          # -> (156,time)
-        ts = np.sum(data[start:end + 1, :], axis=0) * 1000.0
+            if slen and data.shape[1] == slen:
+                data = data.T                        # (time, levscpf) -> (levscpf, time)
+            elif slen and data.shape[0] == slen:
+                pass                                  # already (levscpf, time)
+            elif data.shape[1] == 156:                # legacy fallback: undescribed 12-PFT file
+                data = data.T
+                slen = 156
+        fates_pft = (slen or data.shape[0]) // n_sc
+        ts = aggregate_szpf_by_pft(data, pft_id, axis=0, fates_pft=fates_pft) * 1000.0
         return ts if ts.shape[0] == n_months else None
 
     cmap = plt.get_cmap("viridis")
@@ -369,6 +381,14 @@ def cmd_plot(args):
     if len(var_specs) == 1:
         axes = axes.reshape(len(pft_ids), 1)
 
+    def _is_baseline(cid, label):
+        return args.baseline is not None and (str(cid) == args.baseline or label == args.baseline)
+
+    if args.baseline is not None and not any(
+            _is_baseline(cid, str(cid).partition("_")[2] or str(cid)) for cid in case_ids):
+        print(f"  WARN --baseline '{args.baseline}' matches none of the selected cases "
+              f"(by id or suffix) — plotting all as colored variants.")
+
     for ci, cid in enumerate(case_ids):
         cname = _resolve_case_name(case_pattern, cid, args.phase)
         ncf = Path(args.extract_dir) / \
@@ -377,14 +397,18 @@ def cmd_plot(args):
             print(f"  WARN missing: {ncf.name}")
             continue
         label = str(cid).partition("_")[2] or str(cid)  # the suffix
+        base = _is_baseline(cid, label)
+        # baseline drawn distinctly (black dashed, thicker, on top); variants colored solid
+        style = dict(color="black", linestyle="--", linewidth=2.4, alpha=1.0, zorder=6) if base \
+            else dict(color=colors[ci], linestyle="-", linewidth=1.6, alpha=0.9, zorder=3)
+        plot_label = f"{label} (baseline)" if base else label
         for col, (vt, vnc, _u) in enumerate(var_specs):
             for row, pid in enumerate(pft_ids):
                 ts = load_series(ncf, vnc, pid)
                 if ts is None:
                     continue
                 axes[row, col].plot(np.arange(pend - pstart), ts[pstart:pend],
-                                    color=colors[ci], linewidth=1.6,
-                                    label=label, alpha=0.9)
+                                    label=plot_label, **style)
 
     # Obs markers + axis cosmetics
     for col, (vt, vnc, unit) in enumerate(var_specs):
@@ -397,8 +421,16 @@ def cmd_plot(args):
                 obs, tol = t["observed"], t["uncertainty"]
                 ax.axhspan(obs * (1 - tol), obs * (1 + tol), xmin=0, xmax=1,
                            color="gold", alpha=0.18, zorder=0)
-                ax.plot(opx, obs, "kd", markersize=11, zorder=10,
-                        label="Obs" if (row == 0 and col == 0) else None)
+                # The obs point is calendar-anchored (targets.yaml time_year/time_month);
+                # it only has a real x-position when this phase's years ARE calendar years
+                # (TRANS). For a spin-up phase (ADSP/RGSP) opx falls wildly outside the
+                # plotted window (obs_year - a spin-up "year 1" is not a real time delta),
+                # and plotting it there force-expands the x-axis and crushes the real data
+                # into an unreadable sliver -- skip the point (keep the +/-20% band, which
+                # is phase-independent) rather than draw a physically meaningless position.
+                if 0 <= opx <= (pend - pstart):
+                    ax.plot(opx, obs, "kd", markersize=11, zorder=10,
+                            label="Obs" if (row == 0 and col == 0) else None)
             ticks = np.arange(0, pend - pstart, 12)
             ax.set_xticks(ticks)
             ax.set_xticklabels(np.arange(args.plot_year_start, args.plot_year_end + 1),
@@ -465,11 +497,17 @@ def main():
     pp.add_argument("--extract-dir", required=True)
     pp.add_argument("--output", required=True)
     pp.add_argument("--targets", default=None)
-    pp.add_argument("--pfts", default="7,9,10")
+    pp.add_argument("--pfts", default="10,11,12",
+                    help="Comma-separated calibrated PFT ids (default: Kougarok api-43 arctic — "
+                         "evergreen shrub 10, deciduous shrub 11, graminoid 12; were 7/9/10 on api-31)")
     pp.add_argument("--plot-year-start", type=int, default=2010)
     pp.add_argument("--plot-year-end", type=int, default=2019)
     pp.add_argument("--title", default=None)
     pp.add_argument("--dpi", type=int, default=200)
+    pp.add_argument("--baseline", default=None,
+                    help="Case id OR suffix to dash-highlight as the baseline "
+                         "(black dashed, drawn on top) — the others stay colored solid. "
+                         "Mirrors the online plot_experiment_comparison baseline styling.")
     pp.set_defaults(func=cmd_plot)
 
     args = p.parse_args()

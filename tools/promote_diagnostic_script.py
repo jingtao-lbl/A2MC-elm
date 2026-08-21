@@ -1,31 +1,43 @@
 #!/usr/bin/env python3
 """
-Promote a generated diagnostic script to the permanent inventory.
+Promote a reusable diagnostic/analysis script to the permanent library.
 
-For ensemble-level hypothesis tests (test_*.py with test_hypothesis()):
-  Just copies to phases/phase3_diagnosis/ — auto-discovered at runtime.
-  No manual inventory or __init__.py edits needed (v2.18+ dynamic dispatch).
+TWO SOURCES (online-proposes / offline-disposes):
+  - ONLINE  — the orchestrator writes generated scripts to phases/phase3_diagnosis/generated/;
+              promote by filename with --script (listed by --list).
+  - OFFLINE — the interactive agent writes scripts to use_cases/{site}/memory/phase_results/{stem}/;
+              promote by path with --source <path> (the file lives outside generated/).
 
-For other diagnostic scripts (analyze_*.py, check_*.py, etc.):
-  Copies to phases/phase3_diagnosis/ and updates DIAGNOSTIC_TOOLS_INVENTORY
-  in reasoning/prompts.py. You also need to manually add imports to __init__.py.
+TWO DESTINATIONS (--dest, default phase3_diagnosis):
+  - phase3_diagnosis — a reusable diagnostic test. An ensemble test (test_*.py with test_hypothesis())
+              is auto-discovered at runtime (just copied); any other script also updates
+              DIAGNOSTIC_TOOLS_INVENTORY in reasoning/prompts.py (+ a manual __init__.py import).
+  - tools     — a generic analysis utility (no test_hypothesis, not a diagnostic test). Just copied to
+              tools/; no inventory / __init__.py edits.
 
 Usage:
-    # List available scripts
+    # List online generated scripts
     python tools/promote_diagnostic_script.py --list
 
-    # Promote an ensemble test (just copies — auto-discovered)
+    # ONLINE: promote an ensemble test (just copies — auto-discovered)
     python tools/promote_diagnostic_script.py --script test_p_cycling_20260212_123456.py
 
-    # Dry-run first
-    python tools/promote_diagnostic_script.py --script test_p_cycling_20260212_123456.py --dry-run
-
-    # Promote a non-test script with explicit category
+    # ONLINE: promote a non-test diagnostic with explicit category
     python tools/promote_diagnostic_script.py --script analyze_water_stress.py \
         --tool-name analyze_water_stress --category "Mortality & Collapse Analysis"
 
+    # OFFLINE: promote a reusable analysis script from a phase_results/{stem}/ folder to tools/
+    python tools/promote_diagnostic_script.py \
+        --source use_cases/ELM-FATES_Kougarok/memory/phase_results/<stem>/analyze_nutrient_balance.py \
+        --dest tools --dry-run
+
+    # OFFLINE: promote a reusable test_hypothesis script into the diagnosis library
+    python tools/promote_diagnostic_script.py \
+        --source use_cases/ELM-FATES_Kougarok/memory/phase_results/<stem>/test_n_budget_closure.py \
+        --dest phase3_diagnosis --dry-run
+
 Author: Jing Tao with Claude
-Created: February 2026
+Created: February 2026 (offline --source / --dest tools added July 2026)
 """
 
 import re
@@ -39,7 +51,11 @@ from pathlib import Path
 A2MC_ROOT = Path(__file__).parent.parent
 GENERATED_DIR = A2MC_ROOT / "phases" / "phase3_diagnosis" / "generated"
 DIAGNOSIS_DIR = A2MC_ROOT / "phases" / "phase3_diagnosis"
+TOOLS_DIR = A2MC_ROOT / "tools"
 REASONING_FILE = A2MC_ROOT / "reasoning" / "prompts.py"
+
+# --dest choices -> destination directory
+DEST_DIRS = {"phase3_diagnosis": DIAGNOSIS_DIR, "tools": TOOLS_DIR}
 
 
 def list_generated_scripts():
@@ -193,20 +209,36 @@ def update_reasoning_inventory(tool_name: str, description: str, category: str,
         return False
 
 
-def promote_script(script_name: str, tool_name: str = None, category: str = None,
+def promote_script(script_name: str = None, source_path=None, dest: str = "phase3_diagnosis",
+                   tool_name: str = None, category: str = None,
                    description: str = None, use_when: str = None,
                    dry_run: bool = False) -> bool:
-    """Promote a generated script to the permanent inventory."""
+    """Promote a script to the permanent library.
 
-    # Find the script
-    script_path = GENERATED_DIR / script_name
-    if not script_path.exists():
-        # Try with .py extension
-        script_path = GENERATED_DIR / f"{script_name}.py"
+    Source is either the online generated/ dir (``script_name``) or an explicit path
+    (``source_path``, e.g. an offline ``phase_results/{stem}/`` script). Destination is
+    ``dest`` — ``phase3_diagnosis`` (a diagnostic test/tool) or ``tools`` (a generic utility).
+    """
+    # Resolve the source script
+    if source_path:
+        script_path = Path(source_path)
         if not script_path.exists():
-            print(f"Error: Script not found: {script_name}")
-            print(f"Looked in: {GENERATED_DIR}")
+            print(f"Error: Script not found: {source_path}")
             return False
+    else:
+        script_path = GENERATED_DIR / script_name
+        if not script_path.exists():
+            script_path = GENERATED_DIR / f"{script_name}.py"   # try with .py
+            if not script_path.exists():
+                print(f"Error: Script not found: {script_name}")
+                print(f"Looked in: {GENERATED_DIR}")
+                return False
+
+    # Resolve the destination dir
+    dest_dir = DEST_DIRS.get(dest)
+    if dest_dir is None:
+        print(f"Error: unknown --dest '{dest}' (choose {'/'.join(DEST_DIRS)})")
+        return False
 
     # Extract metadata
     metadata = extract_script_metadata(script_path)
@@ -223,10 +255,11 @@ def promote_script(script_name: str, tool_name: str = None, category: str = None
 
     # Destination path
     dest_name = f"{tool_name}.py"
-    dest_path = DIAGNOSIS_DIR / dest_name
+    dest_path = dest_dir / dest_name
 
-    # Determine if this is an ensemble test (auto-discovered) or a regular tool
-    is_ensemble_test = metadata["is_ensemble_test"]
+    # A tools/ promotion is a generic utility — never a diagnostic-inventory test.
+    to_tools = (dest == "tools")
+    is_ensemble_test = (not to_tools) and metadata["is_ensemble_test"]
 
     print(f"\n{'='*60}")
     print(f"Promoting: {script_path.name}")
@@ -234,13 +267,15 @@ def promote_script(script_name: str, tool_name: str = None, category: str = None
     print(f"  Source:      {script_path}")
     print(f"  Destination: {dest_path}")
     print(f"  Tool name:   {tool_name}")
-    if is_ensemble_test:
+    if to_tools:
+        print(f"  Type:        Generic analysis tool (tools/)")
+    elif is_ensemble_test:
         print(f"  Type:        Ensemble test (auto-discovered)")
     else:
         print(f"  Type:        Regular diagnostic tool")
         print(f"  Category:    {category or '(will infer)'}")
     print(f"  Description: {description}")
-    if not is_ensemble_test:
+    if not (to_tools or is_ensemble_test):
         print(f"  Use when:    {use_when}")
     print(f"{'='*60}")
 
@@ -253,8 +288,12 @@ def promote_script(script_name: str, tool_name: str = None, category: str = None
 
     if dry_run:
         print(f"\n[DRY RUN] Would perform the following actions:")
-        print(f"  1. Copy {script_path.name} -> {dest_name}")
-        if is_ensemble_test:
+        print(f"  1. Copy {script_path.name} -> {dest_path.relative_to(A2MC_ROOT)}")
+        if source_path:
+            print(f"  → then GENERALIZE the copy (this is a one-off script — see the note after promotion)")
+        if to_tools:
+            print(f"  (No further steps — a generic tools/ utility has no inventory/__init__.py entry)")
+        elif is_ensemble_test:
             print(f"  (No further steps — ensemble tests are auto-discovered at runtime)")
         else:
             if not category:
@@ -268,7 +307,22 @@ def promote_script(script_name: str, tool_name: str = None, category: str = None
         shutil.copy2(script_path, dest_path)
         print(f"\nCopied script to {dest_path}")
 
-        if is_ensemble_test:
+        # A promoted script is almost never reusable as-is — especially an offline one-off from
+        # phase_results/{stem}/, which typically hard-codes output paths, a specific stem, and case IDs.
+        print(f"\n*** GENERALIZE the promoted copy BEFORE committing "
+              f"({'offline one-off — this WILL need it' if source_path else 'review even generated scripts'}):")
+        print(f"    - remove hardcoded paths / stems / case IDs / site names;")
+        print(f"    - parameterize inputs (argparse args or tools/config.py), don't hardcode;")
+        print(f"    - make it site/run-agnostic so future rounds + other sites can reuse it")
+        print(f"      (CLAUDE.md: NO HARDCODED PATHS + KEEP GENERIC). Edit {dest_path.name}, then commit.")
+
+        if to_tools:
+            print(f"\nPromotion complete!")
+            print(f"\nThis is a generic analysis tool under tools/ — no inventory/__init__.py edits.")
+            print(f"\nNext steps:")
+            print(f"  1. Review the promoted script: {dest_path}")
+            print(f"  2. Commit the changes")
+        elif is_ensemble_test:
             print(f"\nPromotion complete!")
             print(f"\nThis is an ensemble test (test_*.py with test_hypothesis()).")
             print(f"It will be auto-discovered at runtime — no further edits needed.")
@@ -339,9 +393,16 @@ Examples:
     )
 
     parser.add_argument("--list", action="store_true",
-                        help="List available generated scripts")
+                        help="List available online generated scripts")
     parser.add_argument("--script", type=str,
-                        help="Script filename to promote")
+                        help="Script filename to promote from the online generated/ dir")
+    parser.add_argument("--source", type=str,
+                        help="Path to a script to promote from anywhere (e.g. an offline "
+                             "use_cases/{site}/memory/phase_results/{stem}/ script)")
+    parser.add_argument("--dest", type=str, default="phase3_diagnosis",
+                        choices=list(DEST_DIRS),
+                        help="Destination library: phase3_diagnosis (diagnostic test/tool, default) "
+                             "or tools (generic analysis utility)")
     parser.add_argument("--tool-name", type=str,
                         help="Name for the tool (default: derived from filename)")
     parser.add_argument("--category", type=str,
@@ -384,9 +445,11 @@ Examples:
         print(f"  python tools/promote_diagnostic_script.py --script <filename> --dry-run")
         return 0
 
-    if args.script:
+    if args.script or args.source:
         success = promote_script(
             script_name=args.script,
+            source_path=args.source,
+            dest=args.dest,
             tool_name=args.tool_name,
             category=args.category,
             description=args.description,

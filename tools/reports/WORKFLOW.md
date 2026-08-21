@@ -101,7 +101,7 @@ The Marp slides authored by Claude must follow the front matter and figure-refer
 
 ```bash
 ~/a2mc_env/bin/python3 tools/reports/verify_slides.py \
-    --pdf use_cases/Kougarok/reports/{session_id}/A2MC_Session_{session_id}.pdf
+    --pdf use_cases/ELM-FATES_Kougarok/reports/{session_id}/A2MC_Session_{session_id}.pdf
 ```
 
 Optional flags:
@@ -208,10 +208,10 @@ Each A2MC run produces logs tagged with a session ID (`YYYYMMDD_HHMMSS`):
 # Find all logs for a session
 SESSION_ID="20260309_232001"
 
-ls use_cases/Kougarok/memory/logs/phase3_diagnosis/ | grep $SESSION_ID
-ls use_cases/Kougarok/memory/logs/phase4_hypothesis/ | grep $SESSION_ID
-ls use_cases/Kougarok/memory/logs/phase5_testing/ | grep $SESSION_ID
-ls use_cases/Kougarok/memory/logs/phase6_refinement/ | grep $SESSION_ID
+ls use_cases/ELM-FATES_Kougarok/memory/logs/phase3_diagnosis/ | grep $SESSION_ID
+ls use_cases/ELM-FATES_Kougarok/memory/logs/phase4_hypothesis/ | grep $SESSION_ID
+ls use_cases/ELM-FATES_Kougarok/memory/logs/phase5_testing/ | grep $SESSION_ID
+ls use_cases/ELM-FATES_Kougarok/memory/logs/phase6_refinement/ | grep $SESSION_ID
 ```
 
 ### Collect the log files
@@ -231,7 +231,7 @@ The key logs per iteration cycle are:
 Diagnostic plots are generated during Phase 3 and stored in:
 
 ```
-use_cases/Kougarok/memory/phase_results/
+use_cases/ELM-FATES_Kougarok/memory/phase_results/
 ├── phase1_exploration/     # Morris sensitivity plots
 ├── phase2_screening/       # Screening comparison plots
 ├── phase3_diagnosis/       # AI-generated diagnostic plots (P mass balance, mortality, PFT overview)
@@ -247,10 +247,10 @@ PRES_DIR="tools/reports/MySession"
 mkdir -p $PRES_DIR/figures
 
 # Copy relevant figures (adjust paths for your session)
-cp use_cases/Kougarok/memory/phase_results/phase1_exploration/*sensitivity*.png $PRES_DIR/figures/
-cp use_cases/Kougarok/memory/phase_results/phase2_screening/*top_cases*.png $PRES_DIR/figures/
-cp use_cases/Kougarok/memory/phase_results/phase3_diagnosis/*.png $PRES_DIR/figures/
-cp use_cases/Kougarok/memory/phase_results/phase6_refinement/*comparison*.png $PRES_DIR/figures/
+cp use_cases/ELM-FATES_Kougarok/memory/phase_results/phase1_exploration/*sensitivity*.png $PRES_DIR/figures/
+cp use_cases/ELM-FATES_Kougarok/memory/phase_results/phase2_screening/*top_cases*.png $PRES_DIR/figures/
+cp use_cases/ELM-FATES_Kougarok/memory/phase_results/phase3_diagnosis/*.png $PRES_DIR/figures/
+cp use_cases/ELM-FATES_Kougarok/memory/phase_results/phase6_refinement/*comparison*.png $PRES_DIR/figures/
 ```
 
 ---
@@ -259,8 +259,8 @@ cp use_cases/Kougarok/memory/phase_results/phase6_refinement/*comparison*.png $P
 
 Both the Marp slide deck and the narration JSON are AI-generated. Ask Claude (via Claude Code or the API) to create them from the session logs. Example prompt:
 
-> Read the session logs in `use_cases/Kougarok/memory/logs/{session_id}/` and the figures in
-> `use_cases/Kougarok/memory/phase_results/`. Create:
+> Read the session logs in `use_cases/ELM-FATES_Kougarok/memory/logs/{session_id}/` and the figures in
+> `use_cases/ELM-FATES_Kougarok/memory/phase_results/`. Create:
 > 1. A Marp markdown slide deck summarizing the session's diagnosis evolution
 > 2. A `slide_scripts.json` with narration text for each slide
 >
@@ -429,9 +429,9 @@ source ~/a2mc_env/bin/activate
 
 # Run the generic video generator
 python tools/reports/generate_video.py \
-    --pdf use_cases/Kougarok/reports/MyPresentation.pdf \
+    --pdf use_cases/ELM-FATES_Kougarok/reports/MyPresentation.pdf \
     --scripts $PRES_DIR/slide_scripts.json \
-    --output-dir use_cases/Kougarok/reports/video_output
+    --output-dir use_cases/ELM-FATES_Kougarok/reports/video_output
 ```
 
 ### Pipeline stages
@@ -497,12 +497,12 @@ python tools/reports/generate_video.py --pdf ... --scripts ... --voice shimmer -
 # 0. Set up
 SESSION_ID="20260309_232001"
 PRES_DIR="tools/reports/MySession"
-REPORTS_DIR="use_cases/Kougarok/reports"
+REPORTS_DIR="use_cases/ELM-FATES_Kougarok/reports"
 mkdir -p $PRES_DIR/figures $REPORTS_DIR
 source ~/a2mc_env/bin/activate
 
 # 1. Copy figures
-cp use_cases/Kougarok/memory/phase_results/phase3_diagnosis/*.png $PRES_DIR/figures/
+cp use_cases/ELM-FATES_Kougarok/memory/phase_results/phase3_diagnosis/*.png $PRES_DIR/figures/
 
 # 2. Create Marp markdown + narration JSON (AI-generated, human-curated)
 #    → $PRES_DIR/MyPresentation.md
@@ -535,7 +535,7 @@ open $REPORTS_DIR/video_output/MyPresentation.mp4
 ```bash
 # Source config for AI provider settings
 source a2mc_config.sh
-source use_cases/Kougarok/config/kougarok_config.sh
+source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
 
 # Full pipeline: collect artifacts → AI slides → AI narration → PDF → video
 python tools/reports/generate_presentation.py --session-id 20260330_135435

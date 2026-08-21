@@ -98,11 +98,17 @@ Continuous attributes are mapped to discrete bins using helper functions in `mai
 | `get_age_class_index` | `age` | `iage` |
 | `get_layersizetype_class_index` | `canopy_layer, dbh, pft` | `iclscpf` |
 
-For a multiplexed dimension like `levscpf` (size class × PFT), the linear index is computed as a row-major flattening:
+For a multiplexed dimension like `levscpf` (size class × PFT), the linear index is **PFT-major
+with size class as the fastest-changing (inner) dimension** — each PFT owns a contiguous block of
+`nlevsclass` size classes:
 
 ```
-iscpf = (size_class - 1) * numpft + pft
+iscpf = (pft - 1) * nlevsclass + size_class
 ```
+
+(Verified against source: `sizetype_class_index` computes `size_by_pft_class = (pft-1)*nlevsclass
++ size_class`, and `FatesHistoryInterfaceMod.F90` comments "size class is the fastest changing
+dimension". A `(size_class-1)*numpft + pft` form would be size-major and is NOT what FATES writes.)
 
 The reverse maps `fates_hdim_pfmap_levscpf(:)` and `fates_hdim_scmap_levscpf(:)` (in `FatesInterfaceTypesMod.F90`) recover the PFT and size class from a linear index, e.g., for post-processing or when emitting per-bin metadata.
 
@@ -144,7 +150,7 @@ Sources: `(main/FatesHistoryInterfaceMod.F90:1024-1260)`
 cohort%leaf_c, n, dbh, pft
    ↓
 size_class, pft_class = sizetype_class_index(dbh, pft)
-iscpf = (size_class - 1) * numpft + pft_class
+iscpf = (pft_class - 1) * nlevsclass + size_class   ! PFT-major; size class fastest-changing
    ↓
 buf(ih_leafc_si_scpf, iscpf) += leaf_c * n * patch%area / AREA
    ↓  [daily, inside update_history_dyn]

@@ -2,21 +2,22 @@
 """
 FATES Parameter Modification Tool
 
-Modifies specific parameters in a FATES parameter NetCDF file and creates a new file.
+Modifies specific parameters in a FATES parameter file (NetCDF `.nc` or JSON `.json` — the format is
+auto-detected by extension/magic bytes; api-31 uses NetCDF, api-43+ uses JSON) and creates a new file.
 Supports both absolute values and percentage changes.
 
 Usage:
-    python modify_fates_parameters.py --input input.nc --output output.nc --param param_name --pft 10 --value 0.5
+    python modify_fates_parameters.py --input input.json --output output.json --param param_name --pft 10 --value 0.5
     python modify_fates_parameters.py --input input.nc --output output.nc --param param_name --pft 10 --percent +40
 
 Notes: For non-PFT-dependent (global) parameters, use --pft 0
-Example:
 Or use the config file method:
-    python modify_fates_parameters.py --input input.nc --output output.nc --config modifications.yaml
+    python modify_fates_parameters.py --input input.json --output output.json --config modifications.yaml
 
+Example:
     python modify_fates_parameters.py \
-    --input ~/Desktop/Work/NGEE-Arctic/Kougarok/FATESparameterfiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam138_Morris/fates_params_api25.5.0_12pft_c230710__PtCNP_En3643_mod4.nc \
-    --output ~/Desktop/Work/NGEE-Arctic/Kougarok/FATESparameterfiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam138_Morris/fates_params_api25.5.0_12pft_c230710__PtCNP_En3643_mod5a.nc \
+    --input  "$A2MC_PARAM_DIR/fates_params_<...>_En3643.json" \
+    --output "$A2MC_PARAM_DIR/fates_params_<...>_En3643_mod.json" \
      --param fates_alloc_storage_cushion \
      --pft 10 \
      --value 3.0 \
@@ -143,27 +144,81 @@ def build_param_lookup(param_list_file):
     return lookup
 
 
-def resolve_parameter_name(name, pft=None, organ=None, param_lookup=None):
+def _is_new_param_list_format(param_file) -> bool:
+    """True if `param_file` is the docs/37 explicit-column CSV (header starts with `fates_name`)."""
+    try:
+        with open(param_file) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                return ',' in line and line.split(',')[0].strip() == 'fates_name'
+    except OSError:
+        return False
+    return False
+
+
+def _organ_for_return(organ_list):
+    """Loader organ list → the resolve_parameter_name return form: [] → None, [x] → x,
+    [1,2] (retrans) → list (so design_experiments broadcasts to both slots)."""
+    if not organ_list:
+        return None
+    if len(organ_list) == 1:
+        return organ_list[0]
+    return list(organ_list)
+
+
+def _resolve_from_specs(name, pft, organ, specs):
+    """Resolve (name, pft, organ) against docs/37 loader specs → (fates_name, pft, organ).
+
+    `name` may be a canonical_id or a bare fates_name. An explicit organ passes through; if
+    omitted, it is taken from the (unique) matching spec — retrans → [1,2] (broadcast), a single
+    organ → its int; an ambiguous organ-dimensioned param (e.g. stoich leaf+fineroot) raises.
+    """
+    target_pft = pft if pft is not None else 0
+    for s in specs:
+        if s.canonical_id == name:
+            return (s.fates_name, s.pft, organ if organ is not None else _organ_for_return(s.organ))
+    if organ is not None:
+        return (name, target_pft, organ)
+    matches = [s for s in specs if s.fates_name == name and s.pft == target_pft]
+    if not matches:
+        return (name, target_pft, organ)
+    if len(matches) == 1:
+        return (name, target_pft, _organ_for_return(matches[0].organ))
+    organs = sorted({o for m in matches for o in m.organ})
+    raise ValueError(
+        f"Parameter '{name}' PFT {target_pft} is organ-dependent but no organ was specified. "
+        f"Available organs: {organs}. The hypothesis must include the 'organ' field "
+        f"(1=leaf, 2=fineroot, 3=sapwood, 4=structure).")
+
+
+def resolve_parameter_name(name, pft=None, organ=None, param_lookup=None, specs=None):
     """
     Resolve a parameter name (shorthand or full) to (fates_name, pft, organ).
 
     Resolution order:
-    1. If name is in param_lookup → use lookup values (shorthand resolution)
-    2. If name starts with 'fates_' → pass through as full name
-    3. Otherwise → return as-is (caller will get a clear NetCDF error)
+    1. If `specs` (docs/37 loader specs) is given → resolve against canonical identity.
+    2. If name is in param_lookup → use lookup values (shorthand resolution)
+    3. If name starts with 'fates_' → pass through as full name
+    4. Otherwise → return as-is (caller will get a clear NetCDF error)
 
     Explicit pft/organ arguments override lookup values when provided.
 
     Args:
-        name: Parameter name (shorthand like 'vmax_ptase_10' or full like 'fates_cnp_eca_vmax_ptase')
+        name: Parameter name (canonical_id / shorthand / full FATES name)
         pft: Explicit PFT index (overrides lookup if not None)
         organ: Explicit organ index (overrides lookup if not None)
-        param_lookup: Dict from build_param_lookup(), or None to skip lookup
+        param_lookup: Dict from build_param_lookup() (legacy .txt), or None
+        specs: List[ParamSpec] from load_param_spec() (new CSV), or None
 
     Returns:
         tuple: (fates_name, pft, organ) where pft is int (0=global) and organ is
                int, list[int] (retrans → [1,2] for leaf+fineroot), or None
     """
+    if specs is not None:
+        return _resolve_from_specs(name, pft, organ, specs)
+
     resolved_name = name
     resolved_pft = pft if pft is not None else 0
     resolved_organ = organ
@@ -667,16 +722,75 @@ def _create_modified_nc(input_file, output_file, modifications, verbose=True):
     return results
 
 
+def _read_json_param_value(var, pft_index, organ):
+    """Read a JSON param entry's current value at (pft_index, organ) — both 1-based
+    (pft 0/None = global, organ None = non-organ). Mirrors the dim-signature read logic
+    of _modify_json_param so verify and modify agree exactly."""
+    pft_ai = (pft_index - 1) if pft_index and pft_index > 0 else None
+    organ_ai = (organ - 1) if organ is not None and organ > 0 else None
+    dims = var.get("dims", []) or []
+    data = var.get("data")
+    if not dims or dims == ["scalar"]:
+        return float(data[0]) if isinstance(data, list) and data else float(data)
+    if dims == ["fates_pft"]:
+        return float(data[0]) if pft_ai is None else float(data[pft_ai])
+    if "fates_plant_organs" in dims and "fates_pft" in dims:
+        if organ_ai is None or pft_ai is None:
+            raise ValueError(f"organ+pft required for organ-dimensioned param; dims={dims}")
+        return (float(data[organ_ai][pft_ai]) if dims.index("fates_plant_organs") == 0
+                else float(data[pft_ai][organ_ai]))
+    if "fates_leafage_class" in dims and "fates_pft" in dims:
+        return (float(data[0][pft_ai]) if dims.index("fates_leafage_class") == 0
+                else float(data[pft_ai][0]))
+    raise ValueError(f"unsupported dims for JSON verify: {dims}")
+
+
+def _verify_json(param_file, expected_modifications, verbose=True):
+    """JSON twin of verify_modifications (api-43+ `.json` parameter files)."""
+    if verbose:
+        print(f"\nVerifying modifications in {Path(param_file).name}:")
+    with open(param_file) as f:
+        params = json.load(f).get("parameters", {})
+    all_correct = True
+    for mod in expected_modifications:
+        param = mod['param']
+        pft = mod.get('pft', 0)
+        organ = mod.get('organ', None)
+        expected_value = mod.get('expected_value', mod.get('value', None))
+        organ_str = f", organ {organ}" if organ is not None else ""
+        if param not in params:
+            if verbose:
+                print(f"  ✗ {param}: not found in JSON parameter file")
+            all_correct = False
+            continue
+        actual_value = _read_json_param_value(params[param], pft, organ)
+        if expected_value is not None:
+            is_correct = np.isclose(actual_value, expected_value, rtol=1e-6)
+            if verbose:
+                print(f"  {'✓' if is_correct else '✗'} {param}[PFT {pft}{organ_str}]: "
+                      f"{actual_value:.6e} (expected: {expected_value:.6e})")
+            if not is_correct:
+                all_correct = False
+        elif verbose:
+            print(f"  ℹ {param}[PFT {pft}{organ_str}]: {actual_value:.6e} (not verified)")
+    if verbose:
+        print("\n✓ All modifications verified successfully" if all_correct
+              else "\n✗ Some modifications did not match expected values")
+    return all_correct
+
+
 def verify_modifications(nc_file, expected_modifications, verbose=True):
     """
-    Verify that modifications were applied correctly.
+    Verify that modifications were applied correctly (NetCDF `.nc` or JSON `.json`).
 
     Parameters:
     -----------
     nc_file : str or Path
-        Path to modified NetCDF file
+        Path to modified parameter file (.nc or .json — format auto-detected).
     expected_modifications : list of dict
-        Expected modifications (same format as create_modified_parameter_file)
+        Expected modifications. Each dict uses `param`, `pft`, optional `organ`, and the
+        expected value under either `expected_value` or `value` (so the SAME mods list
+        passed to create_modified_parameter_file can be passed here to verify).
     verbose : bool
         Print verification results
 
@@ -685,6 +799,10 @@ def verify_modifications(nc_file, expected_modifications, verbose=True):
     all_correct : bool
         True if all modifications verified correctly
     """
+    # api-43+ JSON files: delegate to the JSON reader (this function was NetCDF-only).
+    if detect_format(nc_file) == "json":
+        return _verify_json(nc_file, expected_modifications, verbose=verbose)
+
     if verbose:
         print(f"\nVerifying modifications in {Path(nc_file).name}:")
 
@@ -694,7 +812,7 @@ def verify_modifications(nc_file, expected_modifications, verbose=True):
             param = mod['param']
             pft = mod.get('pft', 0)
             organ = mod.get('organ', None)
-            expected_value = mod.get('expected_value', None)
+            expected_value = mod.get('expected_value', mod.get('value', None))
 
             # Get array indices (0-based)
             pft_array_index = (pft - 1) if pft > 0 else None
@@ -762,7 +880,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Increase storage cushion by 40% for PFT 10
+  # Increase storage cushion by 40%% for PFT 10
   %(prog)s --input base.nc --output mod.nc --param fates_alloc_storage_cushion --pft 10 --percent +40
 
   # Set absolute value for PID gain for PFT 10

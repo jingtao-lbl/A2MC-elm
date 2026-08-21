@@ -135,7 +135,7 @@ export A2MC_MODEL_PATH="/path/to/your/E3SM_FATES"
 
 # Then run A2MC normally:
 source a2mc_config.sh
-source use_cases/Kougarok/config/kougarok_config.sh
+source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
 python orchestrator.py --run
 ```
 

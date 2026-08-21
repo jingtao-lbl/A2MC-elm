@@ -122,7 +122,7 @@ resolve_case_name() {
 
 CASE_NUM=""
 PARAM_FILE=""
-OUTPUT_ROOT="${A2MC_OUTPUT_ROOT}"
+OUTPUT_ROOT=""   # empty = not explicitly overridden; falls back to A2MC_ENSEMBLE_OUTPUT below
 CASE_PREFIX="${A2MC_ENSEMBLE_PREFIX}"
 CASE_SUFFIX=""
 RUN_PHASES=("ADSP" "RGSP" "TRANS")
@@ -235,11 +235,19 @@ if [ -n "$CASE_SUFFIX" ]; then
     BASE_CASE_NAME="${BASE_CASE_NAME}_${CASE_SUFFIX}"
 fi
 
-if [ -z "${A2MC_ENSEMBLE_OUTPUT:-}" ]; then
-    echo "ERROR: A2MC_ENSEMBLE_OUTPUT is not set. Source your site config first."
-    exit 1
+if [ -n "$OUTPUT_ROOT" ]; then
+    # --output-root was explicitly passed: honor it. This is the mechanism
+    # offline-testing-workflow Step 5 documents as non-negotiable for keeping an
+    # experiment's cases out of the parent Morris ensemble's output tree; it was
+    # previously parsed into OUTPUT_ROOT and then silently never used.
+    CIME_OUTPUT_ROOT="${OUTPUT_ROOT}/"
+else
+    if [ -z "${A2MC_ENSEMBLE_OUTPUT:-}" ]; then
+        echo "ERROR: A2MC_ENSEMBLE_OUTPUT is not set. Source your site config first."
+        exit 1
+    fi
+    CIME_OUTPUT_ROOT="${A2MC_ENSEMBLE_OUTPUT}/"
 fi
-CIME_OUTPUT_ROOT="${A2MC_ENSEMBLE_OUTPUT}/"
 
 echo "========================================"
 echo "A2MC Create Case"
@@ -334,6 +342,7 @@ ELM_OPTIONS="${A2MC_ELM_OPTIONS}"
 USE_FATES="${A2MC_USE_FATES}"
 FATES_PARTEH_MODE="${A2MC_FATES_PARTEH_MODE}"
 USE_FATES_NOCOMP="${A2MC_USE_FATES_NOCOMP}"
+USE_ROOTFINESFRAG_FIX="${A2MC_USE_ROOTFINESFRAG_FIX:-}"
 SOILORDER_DIR="${A2MC_SOILORDER_DIR}"
 SOILORDER_FILE="${A2MC_SOILORDER_FILE}"
 HIST_SZPF_VARS="${A2MC_HIST_SZPF_VARS}"
@@ -480,6 +489,13 @@ fates_paramfile = '${PARAM_FILE}'
 fsoilordercon = '${SOILORDER_DIR}/${SOILORDER_FILE}'
 hist_fincl1=${HIST_SZPF_VARS}
 NLEOF
+
+    # use_fates_rootfinesfrag_fix only exists on the jingtao-lbl/fates fork -- write it ONLY
+    # when a site config explicitly sets it, never unconditionally (this script ships publicly;
+    # an upstream FATES checkout doesn't recognize this namelist variable at all).
+    if [ -n "${USE_ROOTFINESFRAG_FIX:-}" ]; then
+        echo "use_fates_rootfinesfrag_fix = ${USE_ROOTFINESFRAG_FIX}" >> user_nl_elm
+    fi
 
     # Phase-specific namelist additions
     if [ "$PHASE" = "ADSP" ]; then
@@ -754,6 +770,13 @@ fates_paramfile = '${PARAM_FILE}'
 fsoilordercon = '${A2MC_SOILORDER_DIR}/${A2MC_SOILORDER_FILE}'
 hist_fincl1=${A2MC_HIST_SZPF_VARS}
 EOF
+
+    # use_fates_rootfinesfrag_fix only exists on the jingtao-lbl/fates fork -- write it ONLY
+    # when a site config explicitly sets it, never unconditionally (this script ships publicly;
+    # an upstream FATES checkout doesn't recognize this namelist variable at all).
+    if [ -n "${A2MC_USE_ROOTFINESFRAG_FIX:-}" ]; then
+        echo "use_fates_rootfinesfrag_fix = ${A2MC_USE_ROOTFINESFRAG_FIX}" >> user_nl_elm
+    fi
 
     # Phase-specific namelist additions
     if [ "$PHASE" = "ADSP" ]; then

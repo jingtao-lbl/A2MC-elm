@@ -6,7 +6,7 @@ Catches obvious foot-guns before SLURM accepts 4890 jobs:
 
   - Required env vars set, $A2MC_SITE_CONFIG points to a real file
   - $A2MC_PARAM_LIST_FILE and $A2MC_ENSEMBLE_MATRIX_FILE exist
-  - Every case in the range has a parameter .nc file in $A2MC_PARAM_DIR
+  - Every case in the range has a parameter file (.json on api-43+, .nc on api-31) in $A2MC_PARAM_DIR
   - Per-case scripts exist in $A2MC_CASE_SCRIPTS (when --scripts-required)
     and contain no unresolved {...} tokens
   - No conflicting jobs already queued in squeue for the same case names
@@ -210,7 +210,7 @@ def validate_per_case(
                     existing_case_dirs.append((n, phase, str(cdir)))
 
     r.check(not missing_params,
-            f"all {len(cases)} cases have a parameter .nc in {param_dir}"
+            f"all {len(cases)} cases have a parameter file (.json/.nc) in {param_dir}"
             f" ({len(missing_params)} missing: {missing_params[:5]}{'...' if len(missing_params) > 5 else ''})")
 
     r.check(not unresolved_cases,

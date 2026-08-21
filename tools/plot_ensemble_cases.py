@@ -23,7 +23,7 @@ Usage (standalone):
 Library use:
     from tools.plot_ensemble_cases import plot_ensemble_biomass_from_dir
 
-History: generalized from use_cases/Kougarok/analysis/plot_all_extracted.py
+History: generalized from use_cases/ELM-FATES_Kougarok/analysis/plot_all_extracted.py
 (which is now a thin shim → this module) so it is reusable + discoverable in tools/.
 Author: Jing Tao with Claude
 Created: February 2026 (moved to tools/ + generalized June 2026)
@@ -57,13 +57,8 @@ logger = logging.getLogger(__name__)
 # Default figure DPI (match plot_diagnostics.py)
 FIGURE_DPI = 600
 
-# Default PFT names
-DEFAULT_PFT_NAMES = {
-    7: 'PFT#7 Evergreen Shrub',
-    8: 'PFT#8 Hydrodecid. Shrub',
-    9: 'PFT#9 Deciduous Shrub',
-    10: 'PFT#10 Graminoid',
-}
+# PFT labels come from the base param file's fates_pftname via
+# tools.fates_utils.get_pft_display_names() — no hardcoded api-version-specific map.
 
 # Variable configurations
 VARIABLE_CONFIGS = {
@@ -591,7 +586,8 @@ def plot_ensemble_biomass(
     if variables is None:
         variables = ['leaf', 'fineroot']
     if pft_names is None:
-        pft_names = DEFAULT_PFT_NAMES
+        from tools.fates_utils import get_pft_display_names
+        pft_names = get_pft_display_names()
     if case_pattern is None:
         case_pattern = _get_case_name_pattern()
 

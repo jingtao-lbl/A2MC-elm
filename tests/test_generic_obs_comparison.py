@@ -86,7 +86,7 @@ class TestYamlLoaderRegression(unittest.TestCase):
     """The generic yaml loader must reproduce the canonical Kougarok target values."""
 
     def setUp(self):
-        self.kdir = _REPO_ROOT / "use_cases" / "Kougarok"
+        self.kdir = _REPO_ROOT / "use_cases" / "ELM-FATES_Kougarok"
         if not (self.kdir / "validation" / "targets.yaml").exists():
             self.skipTest("Kougarok targets.yaml not present")
 
@@ -94,11 +94,12 @@ class TestYamlLoaderRegression(unittest.TestCase):
         from tools.targets_loader import parse_targets_yaml, parse_time_anchor
         ypath = self.kdir / "validation" / "targets.yaml"
         targets = parse_targets_yaml(ypath)
-        # canonical values from validation_targets_leafroot.txt
+        # canonical values from validation_targets_leafroot.txt (api-43 PFT ids:
+        # evergreen=PFT10, deciduous=PFT11, graminoid=PFT12; were 7/9/10 on api-31)
         canonical = {
-            "PFT7_leaf": 24.6, "PFT7_fineroot": 174.2,
-            "PFT9_leaf": 124.7, "PFT9_fineroot": 187.3,
-            "PFT10_leaf": 82.7, "PFT10_fineroot": 382.1,
+            "PFT10_leaf": 24.6, "PFT10_fineroot": 174.2,
+            "PFT11_leaf": 124.7, "PFT11_fineroot": 187.3,
+            "PFT12_leaf": 82.7, "PFT12_fineroot": 382.1,
         }
         self.assertEqual(set(targets), set(canonical))
         for name, obs in canonical.items():
@@ -179,7 +180,7 @@ class TestTargetsValidator(unittest.TestCase):
         return {(f.level, f.code) for f in validate_targets_config(p, **kw)}
 
     def test_clean_kougarok(self):
-        ypath = _REPO_ROOT / "use_cases" / "Kougarok" / "validation" / "targets.yaml"
+        ypath = _REPO_ROOT / "use_cases" / "ELM-FATES_Kougarok" / "validation" / "targets.yaml"
         if not ypath.exists():
             self.skipTest("Kougarok targets.yaml not present")
         errs = [f for f in validate_targets_config(ypath, year_start=1901, year_end=2019)

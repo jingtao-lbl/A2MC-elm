@@ -1,0 +1,137 @@
+# Calibration Round Record — TEMPLATE
+# =============================================================================
+# Copy to your site and drop the "template_" prefix:
+#   cp use_cases/TEMPLATE/config/template_calibration_rounds.yaml \
+#      use_cases/<YourSite>/config/calibration_rounds.yaml
+#
+# WHAT THIS FILE IS
+#   One record per calibration ROUND (the outermost Phase 0->7 loop). A round is
+#   a full cycle with its own parameter space, bounds, protocol and targets.
+#   Rounds accumulate: the record is the durable history of what was run, why,
+#   and what came of it.
+#
+# TWO KINDS OF FIELD — this is the thing to understand before editing
+#
+#   [DERIVED]  Reproducible from the sourced configs. DO NOT hand-type these.
+#              Generate them, so the record cannot drift from what actually runs:
+#                source a2mc_config.sh
+#                source use_cases/<YourSite>/config/<yoursite>_config.sh
+#                python tools/generate_calibration_rounds.py --round 1 --write
+#                python tools/check_calibration_rounds.py --round 1
+#              --write REFRESHES derived fields in place and reports any that
+#              changed. A surprise in that report means the CONFIG drifted, not
+#              the record: the config is the runtime authority.
+#
+#   [AUTHORED] Cannot be derived from anything. Written by you (rationale,
+#              changes_from_previous) or by the agent at the Phase-6 gate
+#              (outcome, status). --write NEVER overwrites these, so it is safe
+#              to re-run on a completed round.
+#
+# COMMENTS: the generator preserves THIS header block but cannot preserve
+# inline per-key comments (PyYAML cannot round-trip them). Put anything durable
+# up here, not beside a key.
+#
+# The keys below are the union observed across real A2MC sites. Nothing is
+# mandatory except what your tooling reads — delete what does not apply.
+# =============================================================================
+
+# Optional top-level identity. Useful once a repo hosts more than one model.
+model: fates            # [AUTHORED] fates | ecosim | ats | ...
+site: MySite            # [AUTHORED] matches $A2MC_SITE_NAME
+
+rounds:
+
+  # ---------------------------------------------------------------------------
+  # Round 1 — the first round on this lineage
+  # ---------------------------------------------------------------------------
+  1:
+    # -- [DERIVED] from the site config; regenerate rather than edit ----------
+    parameters: 169                       # $A2MC_N_PARAMS (from the param list CONTENT)
+    ensembles: 5100                       # $A2MC_TOTAL_ENSEMBLE (by scheme; Morris = traj x (P+1))
+    trajectories: 30                      # $A2MC_N_TRAJECTORIES
+    sampling_scheme: morris               # $A2MC_SAMPLING_SCHEME
+    config_file: use_cases/MySite/config/mysite_config.sh
+    paths:
+      ensemble_name: MySite_FATESapi43_CNPECA_Para169
+      ensemble_output: ${A2MC_OUTPUT_ROOT}/MySite_FATESapi43_CNPECA_Para169
+      extracted_data: ${A2MC_OUTPUT_ROOT}/MySite_FATESapi43_CNPECA_Para169_Extract
+      param_list: use_cases/MySite/parameters/MySite_Parameter_List_para169.csv
+      salib_problem: use_cases/MySite/parameters/salib_problem_para169.txt
+      param_dir: ${A2MC_OUTPUT_ROOT}/ParameterFiles/fates_params_api43_para169_Morris
+      param_pattern: fates_params_api43.1.0_e027a40__PtCNP169_En{N}.json
+      case_name_pattern: MySite_ELM-FATES_PtCNPEn{N}_{PHASE}
+      case_scripts: ${A2MC_SCRIPTS_DIR}/MySite_FATESapi43_CNPECA_Para169
+    targets:
+      - PFT10_leaf, PFT10_fineroot
+      - PFT11_leaf, PFT11_fineroot
+      - PFT12_leaf, PFT12_fineroot
+    validation_targets_file: use_cases/MySite/validation/targets.yaml
+    protocol:
+      suplphos: {ADSP: ALL, RGSP: ALL, TRANS: NONE}
+      suplnitro: {ADSP: NONE, RGSP: NONE, TRANS: NONE}
+    elm_options: -bgc fates -nutrient cnp -nutrient_comp_pathway eca -soil_decomp century
+
+    # -- [AUTHORED] model provenance -----------------------------------------
+    # Block name is MODEL-NAMESPACED: fates_source | ecosim_source | ats_source.
+    # milestone/commits/checkout are DERIVED (from $A2MC_MODEL_PATH); the rest
+    # is authored and is never overwritten by --write.
+    fates_source:
+      milestone: api-43-1                 # [DERIVED] registered RAG profile
+      fates_commit: 57016c44              # [DERIVED]
+      elm_commit: 6565255                 # [DERIVED]
+      checkout: /path/to/your/E3SM_checkout   # [DERIVED] $A2MC_MODEL_PATH
+      branch: ""                          # [AUTHORED] experiment branch, if not the anchor
+      patches:                            # [AUTHORED] source changes THIS round depends on
+        - id: example-patch-id
+          file: biogeochem/SomeMod.F90
+          summary: |
+            What the patch changes and why this round needs it. A round whose
+            parameter list assumes a model change MUST record it here — the
+            build and the list are only valid together.
+    overrides: {}                         # [AUTHORED] per-round parameter overrides
+
+    # -- [AUTHORED] narrative -------------------------------------------------
+    rationale: >
+      Why this round is designed the way it is. What question it answers, and
+      what would count as an answer.
+    changes_from_previous:
+      - First round on this lineage.      # for round N>1, list the concrete deltas
+
+    # -- [AUTHORED] written at the Phase-6 gate, by the agent ------------------
+    # `outcome` is the round's verdict and can be long — headline result, what
+    # was falsified, what it implies for the next round. It is prose, not a
+    # score: the numbers live in the reports it cites. --write preserves it.
+    outcome: null                         # null until the round completes
+    status: planned                       # planned | in_progress | completed | superseded
+    # completed_date: 2026-08-02          # [AUTHORED] add when status -> completed
+
+  # ---------------------------------------------------------------------------
+  # Round 2 — what a COMPLETED round looks like (delete if not applicable)
+  # ---------------------------------------------------------------------------
+  # 2:
+  #   parameters: 175
+  #   ...derived fields as above...
+  #   changes_from_previous:
+  #     - "Parameter list 169 -> 175: added fates_trs_seedling_* (seedling mortality)"
+  #     - "Bounds re-centred on the R1 best case — re-sourced, not just re-centred"
+  #     - "Protocol: RGSP suplphos ALL -> NONE"
+  #   rationale: >
+  #     R1 reached only ~40% of the biomass target and biomass did not scale with
+  #     N supply, implicating allocation rather than supply. R2 opens the
+  #     fine-root and establishment levers.
+  #   outcome: >
+  #     R2 completed 5250/5250 on 2026-09-14. Headline: the fine-root PID
+  #     setpoints move standing fine root by 3x, but leaf biomass is unchanged,
+  #     so the leaf miss is NOT allocation-limited. Best case 4/6 targets
+  #     (was 2/6). See reports/20260914a_R2_ROUND_SUMMARY/.
+  #     Falsified: H1 (fine-root allocation explains the leaf gap).
+  #     Next: the establishment levers, which R2 held fixed.
+  #   status: completed
+  #   completed_date: 2026-09-14
+  #   key_cases:                          # [AUTHORED] the cases worth revisiting
+  #     best: En2939
+  #   provenance:                         # [AUTHORED] where the evidence lives
+  #     key_logs: [20260914a_phase6_refinement_r02]
+  #   # Other authored keys seen in real records, all preserved by --write:
+  #   #   notes, verification_note, total_cases, pi_decision_required, reopened,
+  #   #   source_round / source_top_n / source_ranking_metric (subset-replay rounds)

@@ -9,15 +9,15 @@ Two modes:
 Usage:
     # Step 1: Populate entries from experiment design log
     python tools/populate_experiments.py \
-        --state-file use_cases/Kougarok/memory/workflow_state.json \
-        --log-file use_cases/Kougarok/memory/logs/phase5_testing/r02_c00_iter06_20260226_125323_Experiment_Design.md
+        --state-file use_cases/ELM-FATES_Kougarok/memory/workflow_state.json \
+        --log-file use_cases/ELM-FATES_Kougarok/memory/logs/phase5_testing/r02_c00_iter06_20260226_125323_Experiment_Design.md
 
     # Step 2: Extract simulation outputs (on HPC)
     python tools/extract_monthly_variables_FATES.py --cases 322_c0_exp1 322_c0_exp2 ...
 
     # Step 3: Evaluate extracted results and update state
     python tools/populate_experiments.py \
-        --state-file use_cases/Kougarok/memory/workflow_state.json \
+        --state-file use_cases/ELM-FATES_Kougarok/memory/workflow_state.json \
         --evaluate
 
     # Step 4: Resume workflow at Phase 6

@@ -41,13 +41,28 @@ if str(_project_root) not in sys.path:
 logger = logging.getLogger(__name__)
 
 
+def _is_new_param_list(path: str) -> bool:
+    """True if `path` is the docs/37 explicit-column CSV (header starts with `fates_name`)."""
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                return ',' in line and line.split(',')[0].strip() == 'fates_name'
+    except OSError:
+        return False
+    return False
+
+
 def load_param_names(param_names_file: str) -> List[str]:
     """
-    Load parameter names from a text file.
+    Load parameter names (in Morris-column order) from a parameter list file.
 
-    Supports two formats:
-    1. Simple: one parameter name per line (must contain underscore like 'alpha_ptase_7')
-    2. Tabular: No<TAB>FullName<TAB>ShortName<TAB>... (extracts ShortName from column 2)
+    Supports:
+    1. docs/37 CSV → the canonical_ids (`fates_name#p{pft}#o{organ}`).
+    2. Simple: one parameter name per line (must contain underscore like 'alpha_ptase_7')
+    3. Tabular .txt: No<TAB>FullName<TAB>ShortName<TAB>... (extracts ShortName from column 2)
 
     Args:
         param_names_file: Path to file with parameter names
@@ -55,6 +70,10 @@ def load_param_names(param_names_file: str) -> List[str]:
     Returns:
         List of parameter names
     """
+    if _is_new_param_list(param_names_file):
+        from tools.param_spec import load_param_spec
+        return [s.canonical_id for s in load_param_spec(param_names_file)]
+
     names = []
     has_tabs = False
 
@@ -118,6 +137,11 @@ def load_param_bounds(bounds_file: str) -> List[Tuple[float, float]]:
         List of (lower, upper) tuples
     """
     import re
+    # docs/37 CSV → bounds straight from the loader (column order = canonical order).
+    if _is_new_param_list(bounds_file):
+        from tools.param_spec import load_param_spec
+        return [(s.lower, s.upper) for s in load_param_spec(bounds_file)]
+
     bounds = []
 
     with open(bounds_file, 'r') as f:
@@ -285,10 +309,17 @@ def read_parameter_file(
 
     with nc.Dataset(param_file, 'r') as ds:
         for param_name in parameters:
+            nc_name = param_name
+            # docs/37 canonical_id (fates_name#p{pft}#o{organ}) → the fates variable + its pft.
+            if '#' in param_name:
+                segs = param_name.split('#')
+                nc_name = segs[0]
+                for seg in segs[1:]:
+                    if seg.startswith('p') and seg[1:].isdigit():
+                        pft = int(seg[1:])
             # Handle shorthand names (e.g., "l2fr_ini_9" -> "fates_alloc_l2fr_ini")
             # Try with fates_ prefix first
-            nc_name = param_name
-            if not nc_name.startswith('fates_'):
+            elif not nc_name.startswith('fates_'):
                 # Check if there's a PFT suffix
                 if param_name[-1].isdigit() and '_' in param_name:
                     # Extract base name and PFT

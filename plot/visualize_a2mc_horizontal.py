@@ -14,6 +14,9 @@ Created: January 10, 2026
 Author: Jing Tao with Claude
 """
 
+import os
+from pathlib import Path
+
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 from matplotlib.patches import FancyBboxPatch, FancyArrowPatch
@@ -362,13 +365,18 @@ add_feature_box(ax, 12.8, feature_y, feature_box_width, feature_box_height,
 # =============================================================================
 plt.tight_layout()
 
-output_file = '~/Desktop/Work/NGEE-Arctic/Kougarok/Program/A2MC/plot/A2MC_Workflow_Horizontal.png'
+# In-repo, next to this script: the figure is a repo artifact, and the old
+# absolute path only existed on one machine.
+output_file = str(Path(__file__).resolve().parent / 'A2MC_Workflow_Horizontal.png')
 plt.savefig(output_file, dpi=600, bbox_inches='tight', facecolor='white')
 print(f"\n[OK] Horizontal A2MC workflow saved: {output_file}")
 
-# Also save to OptimizationLeafRoot for convenience
-output_file2 = '~/Desktop/Work/NGEE-Arctic/Kougarok/Program/OptimizationLeafRoot/A2MC_Workflow_Horizontal.png'
-plt.savefig(output_file2, dpi=300, bbox_inches='tight', facecolor='white')
-print(f"[OK] Also saved to: {output_file2}")
+# Optional second copy, opt-in via env var (was a hardcoded personal directory
+# that exists on no other machine, so the save always failed elsewhere).
+_extra = os.environ.get('A2MC_WORKFLOW_FIGURE_COPY')
+if _extra:
+    output_file2 = str(Path(_extra) / 'A2MC_Workflow_Horizontal.png')
+    plt.savefig(output_file2, dpi=300, bbox_inches='tight', facecolor='white')
+    print(f"[OK] Also saved to: {output_file2}")
 
 plt.close()

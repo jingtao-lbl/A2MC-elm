@@ -48,13 +48,8 @@ logger = logging.getLogger(__name__)
 # Default figure DPI (match plot_diagnostics.py)
 FIGURE_DPI = 600
 
-# Default PFT names
-DEFAULT_PFT_NAMES = {
-    7: 'PFT#7 Evergreen Shrub',
-    8: 'PFT#8 Hydrodecid. Shrub',
-    9: 'PFT#9 Deciduous Shrub',
-    10: 'PFT#10 Graminoid',
-}
+# PFT labels come from the base param file's fates_pftname via
+# tools.fates_utils.get_pft_display_names() — no hardcoded api-version-specific map.
 
 # Variable configurations
 VARIABLE_CONFIGS = {
@@ -370,7 +365,8 @@ def plot_ensemble_biomass(
     if variables is None:
         variables = ['leaf', 'fineroot']
     if pft_names is None:
-        pft_names = DEFAULT_PFT_NAMES
+        from tools.fates_utils import get_pft_display_names
+        pft_names = get_pft_display_names()
     if case_pattern is None:
         case_pattern = _get_case_name_pattern()
 
@@ -684,8 +680,12 @@ def main():
             from tools.config import config as a2mc_config
             data_dir = a2mc_config.EXTRACTED_DATA
         except ImportError:
-            home = os.environ.get('HOME', '')
-            data_dir = f'{home}/Desktop/Work/NGEE-Arctic/Kougarok/Results_PlantTraitsCNPEnsemble_wModPval_noADSP2/Kougarok_PlantTraitsCNPEnsemble162_Morris'
+            # No silent personal-path fallback: without config there is nothing
+            # sensible to guess, and guessing sends the run at someone else's disk.
+            raise SystemExit(
+                "tools.config unavailable and --data-dir not given.\n"
+                "  Run from the repo root with the configs sourced, or pass --data-dir."
+            )
 
     # Parse plot years
     plot_years = args.plot_years.split('-')

@@ -35,7 +35,7 @@ git submodule update --init components/elm/src/external_models/fates
 
 ### Step 2: tell A2MC where it is
 
-In your site config (e.g., `use_cases/Kougarok/config/kougarok_config.sh`), set:
+In your site config (e.g., `use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh`), set:
 
 ```bash
 export A2MC_MODEL_PATH="/path/to/your/E3SM"
@@ -47,7 +47,7 @@ That's it. The default `A2MC_RAG_DIR=$A2MC_ROOT/rag` and other env vars are corr
 
 ```bash
 source a2mc_config.sh
-source use_cases/Kougarok/config/kougarok_config.sh
+source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
 
 python scripts/rag_match.py
 ```

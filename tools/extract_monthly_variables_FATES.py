@@ -171,6 +171,9 @@ SITE_LEVEL_VARS = [
     'SNOW',                  # Snowfall
     # === P POOLS (site-level) ===
     'SMINP',              # Soil mineral P (total inorganic P)
+    'SOLUTIONP',          # Soil-solution P -- the pool the ECA solver actually competes for
+                          # ([P] in PAllocationECAMIC; LABILEP/SECONDP are the sorbed pools,
+                          # not plant-available. See ana_logs/20260808a.)
     'LABILEP',            # Labile P (plant-available inorganic P)
     'SECONDP',            # Secondary mineral P (aged, sorbed)
     'PRIMP',              # Primary mineral P (freshly weathered)
@@ -182,6 +185,7 @@ SITE_LEVEL_VARS = [
     'SMINP_LEACHED',      # P leaching loss
     'BIOCHEM_PMIN',       # Biochemical P mineralization
     'GROSS_PMIN',         # Gross P mineralization
+    'NET_PMIN',           # Net P mineralization (gross min - immobilization)
     'SMINP_TO_PLANT',     # Mineral P to plant
     'PRIMP_TO_LABILEP',   # Primary P weathering → labile
     'PDEP_TO_SMINP',      # Atmospheric P deposition → soil mineral
@@ -193,6 +197,9 @@ SITE_LEVEL_VARS = [
     'NDEP_TO_SMINN',      # N deposition → soil mineral
     'NFIX_TO_SMINN',      # Free-living N fixation → soil mineral
     'GROSS_NMIN',         # Gross N mineralization
+    'NET_NMIN',           # Net N mineralization (gross min - immobilization)
+    'SMINN_TO_PLANT',     # Mineral N to plant (the N-side counterpart of SMINP_TO_PLANT,
+                          # which was already captured -- this asymmetry was the gap)
     'SMIN_NO3_LEACHED',   # NO3 leaching loss
     'SMIN_NO3_RUNOFF',    # NO3 runoff loss
     'SMINN',              # Total soil mineral N
@@ -232,6 +239,23 @@ LEVGRND_VARS = [
 # FATES root distribution by soil layer (10 layers, different from levgrnd=15)
 LEVSOI_VARS = [
     'FATES_FROOTC_SL',       # Fine root carbon by soil layer (kg m-3, volumetric)
+]
+
+# ======= SNOW LAYER VARIABLES (time, levsno=5, lndgrid) =======
+# DYNAMIC snow layers (ELM snl<0; existing layers fill the LAST output levels, absent =
+# spval per no_snow_normal). Confirmed ELM SNO_* history fields (ColumnDataType.F90);
+# the A2MC land extractor (tools/extract_land_series) reads these with SNOW_<var>_surface/
+# _bottom selectors + spval->NaN. Wired through extract_all_variables + process_case + all
+# call sites (2026-07-11, mirroring levsoi), so SNO_* present in a history file are extracted.
+LEVSNO_VARS = [
+    'SNO_T',                 # Snow layer temperature (K)
+    'SNO_Z',                 # Snow layer depth (m)
+    'SNO_LIQH2O',            # Snow layer liquid water (kg/m2)
+    'SNO_ICE',               # Snow layer ice (kg/m2)
+    'SNO_BW',                # Snow layer bulk density (kg/m3)
+    'SNO_GS',                # Snow layer grain size (Microns)
+    'SNO_TK',                # Snow layer thermal conductivity (W/m-K)
+    'SNO_EXISTENCE',         # Snow layer existence flag (1) — useful for masking
 ]
 
 # ======= DECOMPOSITION LAYER VARIABLES (time, levdcmp=15, lndgrid) =======
@@ -415,7 +439,7 @@ def get_history_files(case_name, start_year, end_year):
     return sorted(files)
 
 
-def extract_all_variables(history_files, site_vars, levgrnd_vars, levsoi_vars, levdcmp_vars, levelem_vars, pft_vars, szpf_vars, case_name):
+def extract_all_variables(history_files, site_vars, levgrnd_vars, levsoi_vars, levsno_vars, levdcmp_vars, levelem_vars, pft_vars, szpf_vars, case_name):
     """
     Extract all variables from monthly history files using xarray.
 
@@ -502,6 +526,9 @@ def extract_all_variables(history_files, site_vars, levgrnd_vars, levsoi_vars, l
 
             # Add soil profile vars (FATES root distribution)
             vars_to_extract.extend([v for v in levsoi_vars if v in ds.variables])
+
+            # Add snow layer vars (levsno)
+            vars_to_extract.extend([v for v in levsno_vars if v in ds.variables])
 
             # Add decomposition layer vars
             vars_to_extract.extend([v for v in levdcmp_vars if v in ds.variables])
@@ -678,7 +705,7 @@ def create_csv_dataframe(ds_combined, site_vars, pft_vars):
     return df
 
 
-def process_case(case_id, available_site, available_levgrnd, available_levsoi, available_levdcmp, available_levelem, available_pft, available_szpf):
+def process_case(case_id, available_site, available_levgrnd, available_levsoi, available_levsno, available_levdcmp, available_levelem, available_pft, available_szpf):
     """
     Process a single case: extract all variables and save to NetCDF + CSV.
 
@@ -737,7 +764,7 @@ def process_case(case_id, available_site, available_levgrnd, available_levsoi, a
     try:
         # Extract all variables
         ds_combined = extract_all_variables(
-            history_files, available_site, available_levgrnd, available_levsoi, available_levdcmp, available_levelem, available_pft, available_szpf, case_name
+            history_files, available_site, available_levgrnd, available_levsoi, available_levsno, available_levdcmp, available_levelem, available_pft, available_szpf, case_name
         )
 
         if ds_combined is None:
@@ -748,6 +775,7 @@ def process_case(case_id, available_site, available_levgrnd, available_levsoi, a
         print(f"    Site-level variables: {len([v for v in available_site if v in ds_combined.variables])}")
         print(f"    Soil layer variables: {len([v for v in available_levgrnd if v in ds_combined.variables])}")
         print(f"    Soil profile variables: {len([v for v in available_levsoi if v in ds_combined.variables])}")
+        print(f"    Snow layer variables: {len([v for v in available_levsno if v in ds_combined.variables])}")
         print(f"    Decomposition layer variables: {len([v for v in available_levdcmp if v in ds_combined.variables])}")
         print(f"    Element-level variables: {len([v for v in available_levelem if v in ds_combined.variables])}")
         print(f"    PFT-level variables: {len([v for v in available_pft if v in ds_combined.variables])}")
@@ -810,7 +838,7 @@ def _extract_case_worker(case_id):
     sys.stdout = io.StringIO()
     try:
         success = process_case(case_id, v['site'], v['levgrnd'], v['levsoi'],
-                               v['levdcmp'], v['levelem'], v['pft'], v['szpf'])
+                               v['levsno'], v['levdcmp'], v['levelem'], v['pft'], v['szpf'])
     finally:
         sys.stdout = old_stdout
     return (case_id, success)
@@ -916,6 +944,7 @@ def run_monthly_extraction(case_list=None, case_file=None, parallel=8):
     available_site = [v for v in SITE_LEVEL_VARS if v in all_vars]
     available_levgrnd = [v for v in LEVGRND_VARS if v in all_vars]
     available_levsoi = [v for v in LEVSOI_VARS if v in all_vars]
+    available_levsno = [v for v in LEVSNO_VARS if v in all_vars]
     available_levdcmp = [v for v in LEVDCMP_VARS if v in all_vars]
     available_levelem = [v for v in LEVELEM_VARS if v in all_vars]
     available_pft = [v for v in PFT_LEVEL_VARS if v in all_vars]
@@ -934,7 +963,7 @@ def run_monthly_extraction(case_list=None, case_file=None, parallel=8):
         global _available_vars
         _available_vars = {
             'site': available_site, 'levgrnd': available_levgrnd,
-            'levsoi': available_levsoi, 'levdcmp': available_levdcmp,
+            'levsoi': available_levsoi, 'levsno': available_levsno, 'levdcmp': available_levdcmp,
             'levelem': available_levelem, 'pft': available_pft, 'szpf': available_szpf,
         }
 
@@ -951,7 +980,7 @@ def run_monthly_extraction(case_list=None, case_file=None, parallel=8):
         for idx, case_id in enumerate(cases_to_extract, 1):
             print(f"\n[{idx}/{len(cases_to_extract)}] Case {case_id}")
             success = process_case(case_id, available_site, available_levgrnd, available_levsoi,
-                                   available_levdcmp, available_levelem, available_pft, available_szpf)
+                                   available_levsno, available_levdcmp, available_levelem, available_pft, available_szpf)
             if success:
                 successful_cases.append(case_id)
             else:
@@ -1047,7 +1076,7 @@ Examples:
     print(f"  - Decomposition layer (2D): {len(LEVDCMP_VARS)} (dimension: 15 decomp layers, N+P diagnostics)")
     print(f"  - Element-level (2D): {len(LEVELEM_VARS)} (dimension: 3 elements, C/N/P)")
     print(f"  - PFT-level (2D): {len(PFT_LEVEL_VARS)}")
-    print(f"  - SZPF-level (2D): {len(SZPF_VARS)} (dimension: 156 = 13 size × 12 PFTs)")
+    print(f"  - SZPF-level (2D): {len(SZPF_VARS)} (dimension: nlevsclass × n_pft, from the param/output file)")
     print()
     print(f"Output directory: {OUTPUT_DIR}")
     print(f"Estimated time: {len(CASE_NUMBERS) * 5}-{len(CASE_NUMBERS) * 10} minutes")
@@ -1082,6 +1111,7 @@ Examples:
     available_site = [v for v in SITE_LEVEL_VARS if v in all_vars]
     available_levgrnd = [v for v in LEVGRND_VARS if v in all_vars]
     available_levsoi = [v for v in LEVSOI_VARS if v in all_vars]
+    available_levsno = [v for v in LEVSNO_VARS if v in all_vars]
     available_levdcmp = [v for v in LEVDCMP_VARS if v in all_vars]
     available_levelem = [v for v in LEVELEM_VARS if v in all_vars]
     available_pft = [v for v in PFT_LEVEL_VARS if v in all_vars]
@@ -1136,7 +1166,7 @@ Examples:
         global _available_vars
         _available_vars = {
             'site': available_site, 'levgrnd': available_levgrnd,
-            'levsoi': available_levsoi, 'levdcmp': available_levdcmp,
+            'levsoi': available_levsoi, 'levsno': available_levsno, 'levdcmp': available_levdcmp,
             'levelem': available_levelem, 'pft': available_pft, 'szpf': available_szpf,
         }
 
@@ -1154,7 +1184,7 @@ Examples:
             print(f"\n[{idx}/{len(cases_to_extract)}] Case {case_id}")
             print("=" * 80)
 
-            success = process_case(case_id, available_site, available_levgrnd, available_levsoi, available_levdcmp, available_levelem, available_pft, available_szpf)
+            success = process_case(case_id, available_site, available_levgrnd, available_levsoi, available_levsno, available_levdcmp, available_levelem, available_pft, available_szpf)
 
             if success:
                 successful_cases.append(case_id)

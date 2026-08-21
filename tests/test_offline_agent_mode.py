@@ -26,7 +26,12 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_REPO_ROOT))
 
 SKILLS_DIR = _REPO_ROOT / ".claude" / "skills"
-LEAK_TOKENS = re.compile(r"/global/|/pscratch/|/Users/|/cfs/cdirs|jingtao|m2467|kougarok_fates_demo")
+# Import the leak rule rather than restating it. This line used to be a hand-copied duplicate
+# of the regex in tools/validate_agent_surface.py, so the two could drift — and did, on
+# 2026-08-02, when the validator gained a narrow exemption for the maintainer's PUBLIC contact
+# address and this copy did not. One source of truth: the validator owns the rule, the test
+# applies it.
+from tools.validate_agent_surface import LEAK_TOKENS, PUBLIC_CONTACT  # noqa: E402
 
 
 class TestDescribeMode(unittest.TestCase):
@@ -92,10 +97,11 @@ class TestSkillFrontmatter(unittest.TestCase):
                           f"{skill} bad nutrient_pathway {modes['nutrient_pathway']!r}")
 
     def test_requires_fates_matches_skill_category(self):
-        # The FATES Morris-ensemble analysis skills are requires_fates:true; everything
-        # else is mode-agnostic (requires_fates:false).
+        # requires_fates:true = the skill is only meaningful with FATES — the Morris-ensemble
+        # analysis skills plus add-fates-parameter (adds a FATES source parameter). Everything
+        # else (incl. model-evolution, which also covers ELM-only source work) is mode-agnostic.
         fates_only = {"summarize-calibration-round", "compare-calibration-rounds",
-                      "offline-testing-workflow"}
+                      "offline-testing-workflow", "add-fates-parameter"}
         for skill in self._skills():
             meta = yaml.safe_load(skill.read_text().split("---", 2)[1])
             rf = meta["modes"]["requires_fates"]
@@ -108,11 +114,14 @@ class TestAgentSurfaceLeakClean(unittest.TestCase):
     """AGENTS.md + .claude/skills/ contain no private host paths / usernames."""
 
     def test_no_leak_tokens(self):
-        surface = [_REPO_ROOT / "AGENTS.md"] + list(SKILLS_DIR.rglob("*.md"))
+        # Scan the shipped surface only; skip gitignored local artifacts (.ipynb_checkpoints)
+        # that are never synced to the public repo.
+        surface = [_REPO_ROOT / "AGENTS.md"] + [
+            f for f in SKILLS_DIR.rglob("*.md") if ".ipynb_checkpoints" not in f.parts]
         offenders = []
         for f in surface:
             for i, line in enumerate(f.read_text().splitlines(), 1):
-                if LEAK_TOKENS.search(line):
+                if LEAK_TOKENS.search(PUBLIC_CONTACT.sub("", line)):
                     offenders.append(f"{f.relative_to(_REPO_ROOT)}:{i}: {line.strip()}")
         self.assertEqual(offenders, [], "leak tokens in agent surface:\n" + "\n".join(offenders))
 

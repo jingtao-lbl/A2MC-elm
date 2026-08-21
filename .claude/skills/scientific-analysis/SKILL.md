@@ -1,5 +1,7 @@
 ---
 name: scientific-analysis
+visibility: public
+category: calibration
 description: Run a manuscript-supporting scientific investigation that ends in a figure + an ana_log — pose a question, pull ensemble/run data, compute the statistic/mechanism, make a figure, cite evidence, and write an ana_log. Use when the user asks to "investigate whether X", "is X correlated with Y", "analyze the mechanism of X", "make a manuscript figure for X", "P-pool / cross-regime / attribution analysis". For a standardized single-round report use summarize-calibration-round; for cross-round figures use compare-calibration-rounds.
 modes:
   requires_fates: false
@@ -33,11 +35,20 @@ from names.
 Reuse the analysis tooling rather than re-deriving:
 - `use_cases/<site>/analysis/` scripts (attribution, contrast, forcing comparison) and
   `tools/plot_ensemble_cases.py` / `tools/extract_ADSP_RGSP_slim.py` for ensemble data.
+- **For any per-PFT / SZPF extraction in a custom script, use `tools/fates_utils`** — `get_szpf_range()`,
+  `extract_pft_data()`, `aggregate_szpf_by_pft()`, `get_pft_index()`, `identify_dimension_level()`. Do
+  **not** hand-roll the SZPF (`levscpf`) index: it is **PFT-major** `(pft-1)×nlevsclass`, where
+  **`nlevsclass` is file-derived** (`get_n_size_classes(ds)` from `fates_levscls` — 13 in the common
+  default but *configurable*, NOT a fixed constant), plus a 0-based/1-based PFT offset. (The FATES wiki's
+  `(size_class-1)*numpft+pft` is a known **wiki error** — the source is PFT-major; `fates_utils` encodes
+  the correct form.) `fates_utils` is the canonical helper the extract/plot tools use.
 - Compute the actual statistic (correlation r, attribution, regression) — quote the
   number, don't hand-wave. If a tiny/odd subset is involved, run `diagnose-forensics`
   triage first (is it real or an artifact?).
 
-## Step 3 — make the figure (filename convention)
+## Step 3 — make the figure (conventions + filename)
+
+**Load `plotting` BEFORE the first `savefig`.** This step is where a figure is actually made, and a filename convention says nothing about whether the figure is readable. `plotting` rule 8 (*open the rendered PNG and LOOK at it*) is the only check that catches an overlapping legend or a stats box drawn across the curve — and it cannot catch them once the figure is already in a report.
 
 Save figures under `use_cases/<site>/analysis/` with the **round + axis-mode + case
 count** embedded in the name (memory: plot filename convention) — e.g.
@@ -69,4 +80,5 @@ unverified hunch.
 
 ## Changelog
 
+- 2026-07-15: Step 2 names `tools/fates_utils` as the canonical per-PFT/SZPF extraction helper (`get_szpf_range`/`extract_pft_data`/`aggregate_szpf_by_pft`/`get_pft_index`) — don't hand-roll the `(pft-1)×13` index in a custom analysis script. Ported from demo `ac4c125`.
 - 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

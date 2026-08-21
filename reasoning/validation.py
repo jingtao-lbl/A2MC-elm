@@ -92,15 +92,53 @@ class ValidationResult:
 # Parameter bounds loader
 # ---------------------------------------------------------------------------
 
+def _is_new_format(param_file: str) -> bool:
+    """True if `param_file` is the docs/37 explicit-column CSV (header starts with `fates_name`)."""
+    try:
+        with open(param_file) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                return ',' in line and line.split(',')[0].strip() == 'fates_name'
+    except OSError:
+        return False
+    return False
+
+
+def _load_bounds_new_format(param_file: str) -> Dict[str, Dict]:
+    """Bounds dict from the docs/37 CSV, keyed by canonical_id (docs/37 Stage 1).
+
+    Preserves the legacy entry shape (`find_bounds_entry` searches by fates_name/pft/organ).
+    Organ collapses to the legacy single-int form: [1]→1 (leaf), [2]→2 (fineroot), and
+    [1,2] (retrans) / [] (non-organ) → None — matching what the shorthand parser produced.
+    """
+    from tools.param_spec import load_param_spec
+    bounds = {}
+    for s in load_param_spec(param_file):
+        organ = s.organ[0] if len(s.organ) == 1 else None
+        bounds[s.canonical_id] = {
+            'lower_bound': s.lower,
+            'upper_bound': s.upper,
+            'default': s.default,
+            'pft': s.pft or None,          # 0 (global) → None, matching the legacy extractor
+            'organ': organ,
+            'fates_name': s.fates_name,
+        }
+    logger.info(f"Loaded bounds for {len(bounds)} parameters from {param_file} (canonical ids)")
+    return bounds
+
+
 def load_parameter_bounds(param_file: str = None) -> Dict[str, Dict]:
     """Parse the parameter list file into a lookup dict.
 
     Args:
-        param_file: Path to the parameter list file (tab-separated).
-                    If None, reads from A2MC_PARAM_LIST_FILE env var.
+        param_file: Path to the parameter list file. If None, reads from config /
+                    A2MC_PARAM_LIST_FILE. The docs/37 explicit-column CSV keys entries by
+                    canonical_id; the legacy tab-separated `.txt` keys them by shorthand.
 
     Returns:
-        Dict mapping shorthand name → {lower_bound, upper_bound, default, pft, fates_name}.
+        Dict mapping id → {lower_bound, upper_bound, default, pft, organ, fates_name}.
         Example: {'vmax_p_9': {'lower_bound': 5e-11, 'upper_bound': 5e-05,
                                'default': 5e-10, 'pft': 9, 'fates_name': 'fates_cnp_eca_vmax_p'}}
     """
@@ -117,6 +155,9 @@ def load_parameter_bounds(param_file: str = None) -> Dict[str, Dict]:
     if not param_file or not os.path.exists(param_file):
         logger.warning(f"Parameter list file not found: {param_file}")
         return {}
+
+    if _is_new_format(param_file):
+        return _load_bounds_new_format(param_file)
 
     bounds = {}
     with open(param_file) as f:

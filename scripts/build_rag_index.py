@@ -113,81 +113,118 @@ def resolve_model_path(args) -> Path:
     return Path(env).resolve()
 
 
-def resolve_wiki_subdirs(args, version: ELMFATESVersion) -> tuple[str, str]:
+def resolve_wiki_subdirs(args, version: ELMFATESVersion,
+                         profile: Optional[str] = None) -> tuple[str, str]:
     """Return (fates_wiki_subdir, elm_wiki_subdir).
 
-    Priority: explicit CLI flags > commit-pinned dir matching FATES/ELM short
-    SHA (e.g., 'fates-codebase-wiki-e027a40').
+    Priority: explicit CLI flags > the matched MILESTONE registry's ``fates_wiki_subdir``
+    / ``elm_wiki_subdir`` > a dir named after the milestone ANCHOR commit > the checkout's
+    DETECTED commit. Registry/anchor first because the checkout HEAD is usually a later
+    commit within the milestone range and no wiki tree is pinned to it (v2.184 fix — same
+    root cause as resolve_param_files).
     """
+    ms = _load_milestone(profile)
+    fshort = version.fates.commit_short
+    fanchor = (ms.get("fates_commit_built") or "")[:7] or None
     fates_subdir = args.fates_wiki_subdir
     if fates_subdir is None:
-        candidate = f"fates-codebase-wiki-{version.fates.commit_short}"
-        cand_path = _REPO_ROOT / "docs" / "fates-knowledge-base" / candidate
-        if cand_path.exists():
-            fates_subdir = candidate
-        else:
+        for cand in (ms.get("fates_wiki_subdir"),
+                     f"fates-codebase-wiki-{fanchor}" if fanchor else None,
+                     f"fates-codebase-wiki-{fshort}"):
+            if cand and (_REPO_ROOT / "docs" / "fates-knowledge-base" / cand).exists():
+                fates_subdir = cand
+                break
+        if fates_subdir is None:
             raise RuntimeError(
-                f"Cannot resolve FATES wiki subdir. Tried '{candidate}' under "
-                f"docs/fates-knowledge-base/ but it doesn't exist. Pass "
+                f"Cannot resolve FATES wiki subdir for profile '{profile}'. Registry / "
+                f"anchor / detected ({fanchor}/{fshort}) all missing. Pass "
                 f"--fates-wiki-subdir explicitly."
             )
 
+    eshort = version.elm.commit_short
+    eanchor = (ms.get("elm_commit_built") or "")[:7] or None
     elm_subdir = args.elm_wiki_subdir
     if elm_subdir is None:
-        candidate = f"elm-codebase-wiki-{version.elm.commit_short}"
-        cand_path = _REPO_ROOT / "docs" / "elm-knowledge-base" / candidate
-        if cand_path.exists():
-            elm_subdir = candidate
-        else:
+        for cand in (ms.get("elm_wiki_subdir"),
+                     f"elm-codebase-wiki-{eanchor}" if eanchor else None,
+                     f"elm-codebase-wiki-{eshort}"):
+            if cand and (_REPO_ROOT / "docs" / "elm-knowledge-base" / cand).exists():
+                elm_subdir = cand
+                break
+        if elm_subdir is None:
             raise RuntimeError(
-                f"Cannot resolve ELM wiki subdir. Tried '{candidate}' under "
-                f"docs/elm-knowledge-base/ but it doesn't exist. Pass "
+                f"Cannot resolve ELM wiki subdir for profile '{profile}'. Registry / "
+                f"anchor / detected ({eanchor}/{eshort}) all missing. Pass "
                 f"--elm-wiki-subdir explicitly."
             )
 
     return fates_subdir, elm_subdir
 
 
-def resolve_param_files(args, version: ELMFATESVersion) -> tuple[str, str]:
+def _load_milestone(profile: Optional[str]) -> dict:
+    """Return the milestones.json entry for ``profile`` (or {} on any failure)."""
+    if not profile:
+        return {}
+    try:
+        import json as _json
+        with open(_REPO_ROOT / "rag" / "milestones.json") as _f:
+            return _json.load(_f).get("milestones", {}).get(profile, {}) or {}
+    except Exception:
+        return {}
+
+
+def resolve_param_files(args, version: ELMFATESVersion,
+                        profile: Optional[str] = None) -> tuple[str, str]:
     """Return (fates_param_file, output_var_file) absolute paths.
 
-    Priority: explicit CLI flags > commit-pinned files in
-    docs/fates-knowledge-base/ (e.g., 'fates_params_info_e027a40.json').
+    Priority: explicit CLI flags > the matched MILESTONE registry's pinned filenames
+    (``fates_param_cdl`` / ``fates_output_cdl``) > commit-pinned files named after the
+    milestone's ANCHOR commit (``fates_commit_built``) > the checkout's DETECTED commit >
+    the legacy unversioned default.
+
+    The registry/anchor step matters because the checkout HEAD is often a *later* commit
+    within the milestone's covered range (e.g. api-43-1 anchor e027a40 vs a HEAD of
+    57016c4), and the pinned CDLs are named after the anchor. Resolving off the raw HEAD
+    silently fell through to the generic default and shrank the index (v2.184 fix).
     """
+    ms = _load_milestone(profile)
     short = version.fates.commit_short
+    anchor = (ms.get("fates_commit_built") or "")[:7] or None
+    kb = _REPO_ROOT / "docs" / "fates-knowledge-base"
+
+    # --- FATES parameter file ---
     if args.param_cdl:
         param_file = args.param_cdl
     else:
-        # Try commit-pinned JSON first (api.43+), then commit-pinned CDL
-        # (api.31), then legacy unversioned CDL.
-        candidates = [
-            _REPO_ROOT / "docs" / "fates-knowledge-base" / f"fates_params_info_{short}.json",
-            _REPO_ROOT / "docs" / "fates-knowledge-base" / f"fates_params_info_{short}.cdl",
-            DEFAULT_PARAM_CDL_PATH,
-        ]
-        param_file = None
-        for c in candidates:
-            if c.exists():
-                param_file = str(c)
-                break
+        candidates = []
+        reg = ms.get("fates_param_cdl")
+        if reg:
+            candidates.append(kb / reg)
+        for s in (anchor, short):
+            if s:
+                candidates += [kb / f"fates_params_info_{s}.json",
+                               kb / f"fates_params_info_{s}.cdl"]
+        candidates.append(DEFAULT_PARAM_CDL_PATH)
+        param_file = next((str(c) for c in candidates if c.exists()), None)
         if param_file is None:
             raise RuntimeError(
                 f"Cannot resolve FATES parameter file. Tried: "
                 f"{[str(c) for c in candidates]}. Pass --param-cdl explicitly."
             )
 
+    # --- FATES output CDL ---
     if args.output_cdl:
         output_file = args.output_cdl
     else:
-        candidates = [
-            _REPO_ROOT / "docs" / "fates-knowledge-base" / f"elm_fates_output_info_{short}.cdl",
-            DEFAULT_OUTPUT_CDL_PATH,
-        ]
-        output_file = None
-        for c in candidates:
-            if c.exists():
-                output_file = str(c)
-                break
+        candidates = []
+        reg = ms.get("fates_output_cdl")
+        if reg:
+            candidates.append(kb / reg)
+        for s in (anchor, short):
+            if s:
+                candidates.append(kb / f"elm_fates_output_info_{s}.cdl")
+        candidates.append(DEFAULT_OUTPUT_CDL_PATH)
+        output_file = next((str(c) for c in candidates if c.exists()), None)
         if output_file is None:
             raise RuntimeError(
                 f"Cannot resolve FATES output CDL. Tried: "
@@ -323,6 +360,12 @@ def main():
         help="FATES output CDL. Auto-detected from FATES commit short SHA if not given.",
     )
     parser.add_argument(
+        "--allow-generic-cdl", action="store_true",
+        help="Permit a registered-milestone build whose resolved inputs do not match "
+             "the milestone's pinned CDLs/wiki (rag/milestones.json). Off by default: "
+             "the build aborts on mismatch to prevent silently shrinking the index.",
+    )
+    parser.add_argument(
         "--elm-output-cdl", default=None,
         help="ELM core output CDL. Auto-detected from ELM commit short SHA "
              "(e.g. elm_output_info_d40b843.cdl). Optional but recommended for "
@@ -360,10 +403,41 @@ def main():
 
     # 3. Resolve all paths
     rag_dir = resolve_rag_dir()
-    fates_wiki_subdir, elm_wiki_subdir = resolve_wiki_subdirs(args, version)
-    fates_param_file, output_var_file = resolve_param_files(args, version)
+    fates_wiki_subdir, elm_wiki_subdir = resolve_wiki_subdirs(args, version, profile=profile)
+    fates_param_file, output_var_file = resolve_param_files(args, version, profile=profile)
     elm_output_var_file = resolve_elm_output_cdl(args, version, profile=profile)
     curated_yaml = resolve_curated_yaml(args, profile)
+
+    # Guard: a REGISTERED milestone must not silently fall back to the generic,
+    # unversioned CDLs — that quietly shrinks the index (the v2.183 near-miss). If the
+    # resolved inputs don't match the registry's pinned files, abort. Override with
+    # --allow-generic-cdl for a deliberate off-milestone build.
+    _ms = _load_milestone(profile)
+    if _ms and not getattr(args, "allow_generic_cdl", False):
+        _kb = _REPO_ROOT / "docs" / "fates-knowledge-base"
+        _checks = [
+            ("FATES param file", fates_param_file, _ms.get("fates_param_cdl")),
+            ("FATES output CDL", output_var_file, _ms.get("fates_output_cdl")),
+            ("FATES wiki subdir", fates_wiki_subdir, _ms.get("fates_wiki_subdir")),
+            ("ELM wiki subdir", elm_wiki_subdir, _ms.get("elm_wiki_subdir")),
+        ]
+        _mismatch = [
+            f"    {label}: resolved '{Path(got).name if got else None}' "
+            f"but milestone '{profile}' registers '{want}'"
+            for label, got, want in _checks
+            if want and (not got or Path(got).name != want)
+        ]
+        if _mismatch:
+            print(
+                f"ERROR: build inputs do not match the '{profile}' milestone contract "
+                f"(rag/milestones.json). This is exactly how a rebuild silently indexes\n"
+                f"the wrong/generic sources and shrinks the index. Mismatches:\n"
+                + "\n".join(_mismatch)
+                + "\n  Fix: pass the pinned files explicitly, or --allow-generic-cdl if "
+                "this off-milestone build is intended.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
 
     # FATES first by convention; --kb-paths order matters for wiki_subdirs alignment.
     kb_paths = [str((_REPO_ROOT / p).resolve()) if not Path(p).is_absolute() else p
@@ -509,6 +583,12 @@ def main():
                 param_cdl_path=fates_param_file,
                 output_cdl_path=output_var_file,
                 elm_output_cdl_path=elm_output_var_file,
+                # Must be passed explicitly: without it build_fates_graph falls back
+                # to the generic rag/data/curated_relationships.yaml, so every profile
+                # silently got the same overlay while the printed line and the written
+                # metadata both claimed the per-profile file resolve_curated_yaml()
+                # picked. That breaks the per-milestone YAML snapshot contract.
+                curated_yaml_path=curated_yaml,
             )
         else:
             print(f"Loading existing graph from: {g_path}")
@@ -547,6 +627,48 @@ def main():
     write_metadata(md_path, md, graph_json_path=None)
     print(f"\nMetadata written: {md_path}")
 
+    # Count-regression guard: compare the freshly-built counts against the milestone's
+    # recorded expected_counts. Catches ANY input mistake that shrank the index (a wrong
+    # CDL, a dropped KB, a bad wiki subdir) even when the input-consistency guard above
+    # didn't — this is the net for "the mistake nobody caught". A DROP below tolerance
+    # fails the build (exit 3); growth is fine (content was added — update expected_counts).
+    _exp = _load_milestone(profile).get("expected_counts")
+    if _exp:
+        _tol = 0.02
+        # Only check counts that this run actually (re)built, so --graph-only and
+        # --vector-only don't false-fail on the untouched half. Read the live document
+        # count from disk when the vector store wasn't re-embedded this run.
+        _actual = {}
+        if not args.graph_only:
+            _actual["documents"] = chunk_count
+        else:
+            try:
+                _r = FATESRetriever(knowledge_base_path=kb_paths, persist_dir=str(persist_dir))
+                _actual["documents"] = _r.vector_store.collection.count()
+            except Exception:
+                pass  # can't read -> skip the documents check rather than false-fail
+        if graph_stats:
+            _actual["nodes"] = graph_stats.get("total_nodes", 0)
+            _actual["edges"] = graph_stats.get("total_edges", 0)
+        _drops = [
+            f"    {k}: built {_actual[k]} vs expected {_exp[k]} "
+            f"({100*(_actual[k]-_exp[k])/_exp[k]:+.1f}%)"
+            for k in _actual
+            if _exp.get(k) and _actual[k] < _exp[k] * (1 - _tol)
+        ]
+        if _drops:
+            print(
+                f"\nERROR: rebuilt '{profile}' index is SMALLER than the milestone's "
+                f"expected_counts (rag/milestones.json) — likely wrong/missing inputs:\n"
+                + "\n".join(_drops)
+                + "\n  The artifacts were written but should NOT be trusted/committed. "
+                "Diagnose the inputs (Param file / Output CDL / wiki subdirs printed "
+                "above), rebuild, or update expected_counts if the drop is intended.",
+                file=sys.stderr,
+            )
+            sys.exit(3)
+        print(f"\n✔ count-regression check passed vs expected_counts: {_actual}")
+
     if args.test:
         run_tests(args, kb_paths, str(persist_dir), str(g_path))
 
@@ -582,6 +704,19 @@ def run_tests(args, kb_paths, persist_dir, graph_p):
     print("\n  Parameters affecting FATES_FROOTC:")
     for p in retriever.knowledge_graph.get_related_parameters("FATES_FROOTC", depth=3)[:5]:
         print(f"    - {p}")
+
+    # Golden-query CONTENT assertions — fail the build on a wrong answer (bad SZPF formula,
+    # mislabeled PFT identity, dropped mechanism). Coverage/count guards can't see these.
+    print("\n--- Golden-query content test (tools/check_rag_queries.py) ---")
+    import subprocess
+    rc = subprocess.call(
+        [sys.executable, str(_REPO_ROOT / "tools" / "check_rag_queries.py")]
+    )  # inherits A2MC_RAG_ACTIVE -> tests the profile just built
+    if rc != 0:
+        raise SystemExit(
+            f"Golden-query content test FAILED (rc={rc}) — the index returns wrong content; "
+            f"do not trust/commit it. See rag/golden_queries.yaml."
+        )
 
 
 if __name__ == "__main__":

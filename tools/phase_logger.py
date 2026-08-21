@@ -119,7 +119,7 @@ class PhaseLogger:
         Initialize the phase logger.
 
         Args:
-            site_dir: Path to site use_case directory (e.g., use_cases/Kougarok)
+            site_dir: Path to site use_case directory (e.g., use_cases/ELM-FATES_Kougarok)
                       If None, tries to get from A2MC_USE_CASE_DIR env var
             site_name: Site name for log headers (e.g., "Kougarok")
                        If None, tries to get from A2MC_SITE_NAME env var
@@ -301,22 +301,47 @@ class PhaseLogger:
         s = '_'.join(s.split())
         return s[:60] or 'topic'
 
+    @staticmethod
+    def _offline_letter_candidates(max_levels: int = 4):
+        """Sort-stable same-day sequence: a..z, then za..zz, then zza..zzz, ...
+
+        A same-day run past 26 keeps a 'z' prefix so lexical order still equals
+        creation order (``20260717z_`` < ``20260717za_`` because ``_`` < ``a``).
+        Level k = (k 'z's) + each of a..z; each level sorts after all earlier ones.
+        """
+        import string
+        for k in range(max_levels):
+            prefix = "z" * k
+            for c in string.ascii_lowercase:
+                yield prefix + c
+
+    @staticmethod
+    def _offline_seq(name: str) -> str:
+        """The same-day letter-run of a stem/filename: chars between the 8-digit
+        date and the first '_' (single 'a' or multi-letter 'za')."""
+        return name[8:].split("_", 1)[0]
+
     def _offline_letter(self, today: str) -> str:
-        """Next free same-day sequence letter, scanning logs/ + phase_results/ + this session."""
+        """Next free same-day sequence letter, scanning logs/ + phase_results/ + this session.
+
+        Overflows past 'z' as a..z, za..zz, zza..zzz (see _offline_letter_candidates).
+        """
         used = set()
-        for p in self.log_dir.glob(f"{today}?_*.md"):
-            used.add(p.name[8:9])
+        for p in self.log_dir.glob(f"{today}*_*.md"):
+            used.add(self._offline_seq(p.name))
         pr = self.site_dir / "memory" / "phase_results"
         if pr.exists():
-            for p in pr.glob(f"{today}?_*"):
-                used.add(p.name[8:9])
+            for p in pr.glob(f"{today}*_*"):
+                used.add(self._offline_seq(p.name))
         for stem in self._offline_stems.values():
             if stem.startswith(today):
-                used.add(stem[8:9])
-        for c in "abcdefghijklmnopqrstuvwxyz":
-            if c not in used:
-                return c
-        return "z"
+                used.add(self._offline_seq(stem))
+        last = "z"
+        for cand in self._offline_letter_candidates():
+            if cand not in used:
+                return cand
+            last = cand
+        return last
 
     def topic_stem(self, phase: int, descriptor: str) -> str:
         """Build (and cache) the offline topic stem for (phase, descriptor).
@@ -513,11 +538,177 @@ class PhaseLogger:
                 lines.append(f"{prefix}- **{key}:** {value}")
         return "\n".join(lines)
 
+    # Sections each phase is EXPECTED to carry. Used only to name what is MISSING in an
+    # offline log (see _offline_supplement) — never to add content.
+    #
+    # EVERY phase gets a list, not only the analysis phases 3/4/6. A phase-0 log is not a
+    # one-line "submitted" note: it is the durable record of what was submitted, which
+    # job/array IDs, what monitoring was armed, which cases failed when the scheduler
+    # hiccupped, what was restarted and how, and the early plots that checked the run looks
+    # right — all paired with artifacts in `phase_results/{stem}/`. Without those sections
+    # named, a phase-0 log that omits them looked complete.
+    #
+    # Both phases that PUT SIMULATIONS ON A SCHEDULER (0 the ensemble, 5 the experiments)
+    # share this run-and-watch spine. Each item is unrecoverable if deferred to the end of
+    # the phase — nobody reconstructs an array ID, a failed-case list or a restart command
+    # from memory a week later.
+    #
+    # NOT in the spine: "Cases Materialized" is phase-0 vocabulary. Phase 0 materializes an
+    # ensemble of per-case parameter files; phase 5 designs a handful of VARIANTS from the
+    # hypothesis the inner 3<->4 loop produced, so what it must show is the variants' design,
+    # their run status, and a preview confirming the new tests came out sane.
+    _RUN_SPINE = ["Submission", "Simulation Status", "Monitoring Armed",
+                  "Failures and Restarts"]
+
+    _EXPECTED_SECTIONS = {
+        0: ["Sampling Design", "Cases Materialized"] + _RUN_SPINE + ["Verification Plots"],
+        1: ["Extraction Status", "Y Matrix", "Morris Results", "Interpretation"],
+        2: ["Ranking", "Ensemble vs Targets Plot", "Best Cases", "Patterns"],
+        5: ["Experiments Designed"] + _RUN_SPINE
+           + ["V0 Reproducibility Gate", "Results Preview", "Results Summary"],
+        3: ["Failing Targets", "Likely Causes", "Root Causes (Ranked)", "Key Insights",
+            "AI Reasoning and Deep Analysis", "Parameter Recommendations",
+            "Cross-PFT Conflicts", "Hypotheses Tested", "Conceptual Model"],
+        4: ["Mechanism", "Parameters to Modify", "AI Reasoning and Deep Analysis",
+            "Expected Outcomes", "Success Criteria", "Experiments Planned"],
+        6: ["Target Changes", "AI Reasoning and Deep Analysis", "Lessons Learned",
+            "Discoveries (for gained_knowledge)", "Failed Approaches (DO NOT REPEAT)",
+            "Experiment Results Summary"],
+    }
+
+    def set_phase_handshake(self, inherited_from: str = None,
+                            next_action: str = None,
+                            handed_to: str = None):
+        """Offline only. Record the phase-to-phase handshake for the NEXT log written.
+
+        The autonomous agent passes a typed object between phases (reasoning/schemas.py:
+        Diagnosis -> Hypothesis -> Experiment), so its chain cannot break inside one run.
+        The OFFLINE agent has no such object and its phases are separated by days,
+        sessions and compactions, so the log is the only channel. Absent this, each phase
+        re-derives what the previous one already concluded.
+
+        Mirrors set_iteration_context(): cross-cutting state set once, consumed by the
+        next log_* call, so no phase method's signature changes.
+
+        Args:
+            inherited_from: the predecessor log stem + what it concluded/asked for
+            next_action:    the single concrete action the NEXT phase should take
+            handed_to:      what the next phase receives (mirror the schema field names)
+        """
+        self._handshake = {"inherited_from": inherited_from,
+                           "next_action": next_action,
+                           "handed_to": handed_to}
+
+    def _offline_supplement(self, phase: int, content: str) -> str:
+        """Offline-only trailer: the phase handshake, plus the sections left EMPTY.
+
+        Returns "" for the online agent, so its logs are byte-identical to before —
+        unchanged by construction, not by care.
+
+        Why name the empty sections: every section in the phase methods is emitted
+        behind an `if <arg>:` guard (22 of them in log_diagnosis alone), so a section
+        that was never filled leaves NO trace that it was skipped. A thin call produces
+        a short, well-formed, entirely plausible log. Naming the gaps makes "not done"
+        distinguishable from "not applicable".
+        """
+        if not self._offline:
+            return ""
+
+        hs = getattr(self, "_handshake", None) or {}
+        miss = "_(not provided — fill, or state why it does not apply)_"
+        out = ["\n---\n\n## Phase Handshake\n"]
+        out.append(f"**Inherited from the previous phase:** {hs.get('inherited_from') or miss}\n")
+        out.append(f"**Handed to the next phase:** {hs.get('handed_to') or miss}\n")
+        out.append(f"**Next action:** {hs.get('next_action') or miss}\n")
+
+        out.append(self._reasoning_chain())
+
+        expected = self._EXPECTED_SECTIONS.get(phase)
+        if expected:
+            absent = [s for s in expected if f"## {s}" not in content]
+            if absent:
+                out.append("\n## Sections not provided\n")
+                out.append("Each is a gap to fill or to explain, not a state to leave:\n\n")
+                out.extend(f"- {s} — {miss}\n" for s in absent)
+
+        # Clear the PER-LOG handshake only. This is NOT about preventing carry-over --
+        # calibration is cumulative and the chain is the point (see _reasoning_chain).
+        # It is that these three fields describe THIS phase's position: reusing them in the
+        # next log would state, falsely, that phase N+1 inherited what phase N inherited.
+        # A visible placeholder beats a wrong provenance claim. The ACCUMULATION lives in
+        # workflow_state_offline and is re-read fresh for every log, so nothing is lost.
+        self._handshake = None
+        return "".join(out)
+
+    def _reasoning_chain(self) -> str:
+        """The round's accumulated chain, re-read from workflow_state_offline every time.
+
+        Calibration ACCUMULATES: each phase builds on the previous one and each experiment
+        cycle on the cycles before it, so a phase log that shows only its immediate
+        predecessor cannot be checked for logical consistency — a reader would have to open
+        ten files to see whether the reasoning actually follows.
+
+        `workflow_state_offline_r{RR}.json` already accumulates this (`decisions`, and
+        `evidence.{explorations,diagnoses,hypotheses,experiments}`), and every evidence entry
+        already carries the `stem` of the log that produced it. Nothing here is new
+        information; it was simply never surfaced in a log. Emitting it means each phase log
+        states the chain it stands on AND points back to every source log by stem.
+        """
+        state = self.site_dir / "memory" / f"workflow_state_offline_r{int(self.calibration_round):02d}.json"
+        if not state.exists():
+            return ""
+        try:
+            d = json.loads(state.read_text())
+        except Exception:
+            return ""                                # never let a bad state file break a log
+
+        rnd = int(self.calibration_round)
+        out = [f"\n## Reasoning chain — round {rnd:02d}, through cycle {self.experiment_count}\n\n",
+               "Accumulated from `workflow_state_offline_r%02d.json`; each entry names the log "
+               "that produced it, so the chain is traceable end to end.\n" % rnd]
+
+        # `one_line` is this repo's canonical per-evidence summary (written by
+        # WorkflowStateOffline.add_evidence), so it leads every block. The remaining names are
+        # richer per-kind fields a session may have added by hand; they are rendered when
+        # present and silently skipped when not, so neither schema is required.
+        _META = {"stem", "log_path", "artifact_dir"}
+
+        def _block(title, items, fields):
+            if not items:
+                return
+            out.append(f"\n**{title}**\n\n")
+            for it in items:
+                stem = it.get("stem") or it.get("id") or "?"
+                bits = "; ".join(str(it[f])[:150] for f in fields if it.get(f))
+                if not bits:      # neither one_line nor a known extra — fall back to whatever is there
+                    bits = "; ".join(f"{k}={str(v)[:80]}" for k, v in it.items()
+                                     if k not in _META and v) or "_(no summary recorded)_"
+                out.append(f"- `{stem}` — {bits}\n")
+
+        ev = d.get("evidence") or {}
+        _block("Exploration", ev.get("explorations"), ["one_line", "findings", "implication"])
+        _block("Diagnoses", ev.get("diagnoses"), ["one_line", "root_causes", "in_scope_lever", "fork"])
+        _block("Hypotheses", ev.get("hypotheses"), ["one_line", "H1_result", "H2_for_phase5", "scope_note"])
+        # Both bucket names are accepted: this repo's offline state has used `testing`,
+        # matching the phase name, while `experiments` matches the counter.
+        _block("Experiments", (ev.get("experiments") or []) + (ev.get("testing") or []),
+               ["one_line", "hypothesis", "design", "status", "next"])
+
+        dec = d.get("decisions") or []
+        if dec:
+            out.append("\n**Decisions standing in this round**\n\n")
+            for x in dec:
+                out.append(f"- {x.get('date','?')} — {str(x.get('decision',''))[:150]}"
+                           f"{' — *' + str(x['rationale'])[:110] + '*' if x.get('rationale') else ''}\n")
+        return "".join(out)
+
     def _write_log(self, phase: int, title: str, content: str) -> Path:
         """Write a Markdown log to file"""
         phase_dir = self._get_phase_dir(phase)
         filename = self._get_log_filename(phase, title)
         filepath = phase_dir / filename
+
+        content += self._offline_supplement(phase, content)
 
         with open(filepath, 'w') as f:
             f.write(content)
@@ -1134,6 +1325,7 @@ class PhaseLogger:
                        ai_reasoning: str = "",
                        design_type: str = "cumulative",
                        expected_outcomes: Dict = None,
+                       success_criteria: Dict = None,
                        experiments_planned: List[Dict] = None,
                        confidence: float = 0.0,
                        figure_paths: List[str] = None,
@@ -1220,6 +1412,22 @@ class PhaseLogger:
 ## Expected Outcomes
 
 {self._format_dict_as_markdown(expected_outcomes)}
+"""
+
+        # `Hypothesis.success_criteria` (reasoning/schemas.py:56) is the FALSIFICATION
+        # threshold — what would have to be true for the hypothesis to count as confirmed,
+        # and what would refute it. It existed in the schema and is produced + parsed by
+        # reasoning/methods.py, but this logger never accepted or emitted it, in EITHER agent
+        # mode, so Phase 6 later ruled CONFIRMED/REFUTED against a bar that was never written
+        # down. Expected outcomes say what we think will happen; success criteria say what
+        # settles it. (Found 2026-08-02.)
+        if success_criteria:
+            content += f"""
+---
+
+## Success Criteria
+
+{self._format_dict_as_markdown(success_criteria)}
 """
 
         if experiments_planned:
@@ -1876,7 +2084,7 @@ if __name__ == "__main__":
     # Test the logger
     # With session_id and experiment_count=1, skip_testing_count=3, filename will be:
     #   r02_exp01_iter04_20260212_143052_Title.md  (iter = skip + 1 = 4)
-    logger = PhaseLogger(site_dir="use_cases/Kougarok", site_name="Kougarok",
+    logger = PhaseLogger(site_dir="use_cases/ELM-FATES_Kougarok", site_name="Kougarok",
                          session_id="20260212_143052",
                          calibration_round=2, iteration=2,
                          experiment_count=1, skip_testing_count=3)

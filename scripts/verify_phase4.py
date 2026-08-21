@@ -376,7 +376,8 @@ def run_smoke_tests(rag_dir: Path) -> dict:
     try:
         from model_version import detect_model_version
         from rag_selector import select_rag
-        v43 = detect_model_version(Path.home() / "Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES_api43-1")
+        from tools.config import config as _cfg
+        v43 = detect_model_version(Path(_cfg.MODEL_PATH))
         manifest = load_manifest(_REPO_ROOT / "rag" / "milestones.json")
         sel43 = select_rag(v43, manifest)
         tests.append({
@@ -392,7 +393,12 @@ def run_smoke_tests(rag_dir: Path) -> dict:
 
     # 7. Selector returns correct profile for api-31 user
     try:
-        v31 = detect_model_version(Path.home() / "Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES")
+        _p31 = os.environ.get("A2MC_MODEL_PATH_API31")
+        if not _p31:
+            raise RuntimeError(
+                "set A2MC_MODEL_PATH_API31 to an api-31 checkout to run this probe"
+            )
+        v31 = detect_model_version(Path(_p31))
         sel31 = select_rag(v31, manifest)
         tests.append({
             "name": "Selector matches api-31 user to api-31-0 milestone",

@@ -1,5 +1,7 @@
 ---
 name: add-skill
+visibility: public
+category: meta
 description: Scaffold + register (or retire + de-register) an A2MC skill so the registry steps are never half-done. Use when the user or agent wants to create a new capability — "add a skill", "create/scaffold a skill", "make this reusable as a skill", "distill X into a skill" — OR to remove one — "remove/retire/delete the X skill". Writes (or deletes) the SKILL.md, and registers (or de-registers) it across all THREE human-facing registries (the README 'Current skills' table, docs/a2mc_reference/skills_catalog.md, AND the AGENTS.md 'At a glance' table), runs the mechanical drift check, and stops for human review before commit. Human-gated.
 allowed-tools: [Read, Glob, Grep, Write, Edit, Bash]
 modes:
@@ -27,6 +29,12 @@ all of it and verifies it mechanically. Conventions live in `.claude/skills/READ
 
 ## Procedure
 
+> **Paths are relative to the repo root.** Every path below (`.claude/skills/…`, `README.md`,
+> `docs/a2mc_reference/…`, `AGENTS.md`) assumes your cwd is the A2MC repo root. If unsure, anchor first —
+> `A2MC_ROOT="${A2MC_ROOT:-$(git rev-parse --show-toplevel)}"; cd "$A2MC_ROOT"` (verify `a2mc_config.sh`
+> is there). `A2MC_ROOT` is unset until a site config is sourced, so derive it; never write `$A2MC_ROOT/…`
+> while it is empty (that expands to the filesystem root).
+
 1. **Is it skill-worthy?** Per the README anti-patterns: not a one-off (wait for the pattern
    to repeat), not a paraphrase of `CLAUDE.md`. A skill encodes the easy-to-get-wrong
    conventions, not an essay.
@@ -38,6 +46,11 @@ all of it and verifies it mechanically. Conventions live in `.claude/skills/READ
 3. **Write `.claude/skills/<name>/SKILL.md`:**
    - `name:` matching the dir; `description:` = the trigger the harness matches (what it does
      + when to use + example phrasings — the highest-leverage line).
+   - **`visibility:` + `category:` (required, enum-validated by `check_skill_registry.py`):**
+     `visibility: public|private` — `private` = A2MC-dev-only (excluded from the public demo; the
+     sync derives its exclude list from this field, and wrap the skill's registry rows in a
+     private-comment block); default `public`. `category: phase|calibration|model-dev|meta|kb-build|authoring`
+     — pick the group (schema table in `.claude/skills/README.md`).
    - Body: short purpose → decision tree → numbered recipes (ready-to-run bash, use `$PY` for
      Python-3.10 RAG ops) → guardrails/footguns → cross-references.
    - End with a **`## Changelog`** seeded with a dated "Initial version — distilled from
@@ -56,7 +69,15 @@ all of it and verifies it mechanically. Conventions live in `.claude/skills/READ
      is exactly how AGENTS.md silently drifts from what ships).
 5. **Verify mechanically:** run `python3 tools/check_skill_registry.py` — it must exit 0
    (confirms **4-way parity** disk ↔ README table ↔ catalog ↔ AGENTS.md, `name:`↔dir, and the
-   `## Changelog`). A DRIFT failure means you missed a registry in step 4.
+   `## Changelog`). A DRIFT failure means you missed a registry in step 4. It also
+   **strict-parses each SKILL.md frontmatter** (`yaml.safe_load`), so a YAML error — most
+   commonly an unquoted `: ` (colon-space) in the `description:` line — fails here as
+   `FRONTMATTER-YAML` (no separate pytest run needed; the checker and
+   `tests/test_offline_agent_mode.py` agree). **Avoid `: ` inside a `description:`; use ` — `.** For a
+   **Tier-2 runtime** check, `python3 tools/smoke_test_skills.py` actually runs the read-only backing
+   commands the skills document and asserts exit 0 + sane output — it catches a broken/renamed backing
+   command that the static check (which only confirms the path *exists*) cannot; run it when the new skill
+   has a runnable read-only backing command.
 6. **Stop for human review.** Then, after verifying the branch (CLAUDE.md Rule #11), commit
    (`.claude/skills/<name>/` + README + catalog + AGENTS.md) with a plain no-attribution message, and
    write a brief dev_log (the `log` skill) on why it was extracted and from which logs. Do
@@ -96,6 +117,15 @@ add-only asymmetry is exactly how a deleted skill leaves stale registry rows beh
 
 ## Changelog
 
+- 2026-07-15: Step 5 names `tools/smoke_test_skills.py` as the **Tier-2 runtime** skill-contract check (complements the Tier-1 static `check_skill_registry.py`) — runs the read-only backing commands + asserts exit 0. Ported from demo `84af889`.
+- 2026-07-12: Step 5 note — `check_skill_registry.py` now **strict-parses each SKILL.md frontmatter** (`yaml.safe_load`), closing the gap where a colon-space in a `description:` passed the (lenient, regex) registry check but failed the strict pytest frontmatter parse. The checker and `tests/test_offline_agent_mode.py` now agree; avoid `: ` in a `description:` (use ` — `). Signal: colon-space bit twice (calibration-goal, literature-review).
+- 2026-07-09: Step 3 now requires the **`visibility:` + `category:`** frontmatter fields (enum-validated by
+  `check_skill_registry.py`) on every skill — `visibility: private` drives the public-sync exclude (derived
+  from frontmatter, no sync edit needed); `category` groups the skill. Schema table in `.claude/skills/README.md`.
+  Rolled out across all 28 main skills the same day. Ported from demo `a44717d` (v3.13).
+- 2026-07-08: Added a **repo-root path-anchoring note** to the Procedure — all paths are relative to the repo
+  root; anchor via `A2MC_ROOT="${A2MC_ROOT:-$(git rev-parse --show-toplevel)}"` and never write `$A2MC_ROOT/…`
+  while it is empty (expands to the filesystem root). Parallels the same hardening in `a2mc-init` / `inject-knowledge`.
 - 2026-07-06: Added the **"Removing / retiring a skill"** section — symmetric de-registration from all
   three registries + the DRIFT/DEAD-REF verify, closing the add-only asymmetry that let a removed skill
   leave stale registry rows. `description:` now also fires on "remove/retire a skill". Paired change:

@@ -375,11 +375,26 @@ def _evaluate_experiment(
     """
     from tools.evaluate_case import evaluate_case, find_extracted_nc
 
-    # --- 1. Load validation targets ---
-    if targets is None:
+    # --- 1. Load validation targets + cost config (generic; matches Phase-2 screening) ---
+    # Load the case's targets.yaml (snapshot or time series, with cost_config + time anchor)
+    # so this experiment eval uses the SAME targets + cost function the screening ranked with.
+    # Fall back to the hardcoded Kougarok set only if no targets.yaml is resolvable — mirrors
+    # phases/phase2_screening/screening_helpers.py.
+    cost_cfg, anchor_y, anchor_m = {}, None, None
+    try:
+        from tools.targets_loader import load_case_targets
+        loaded_targets, cost_cfg, (anchor_y, anchor_m) = load_case_targets()
+        cost_cfg = cost_cfg or {}
+        if targets is None:
+            targets = loaded_targets
+    except ImportError:
+        pass
+    if not targets:
         try:
             from phases.phase2_screening.screen_ensemble import load_kougarok_targets
             targets = load_kougarok_targets()
+            if anchor_y is None:
+                anchor_y, anchor_m = 2016, 7
         except ImportError:
             pass
 
@@ -416,13 +431,23 @@ def _evaluate_experiment(
     logger.info(f"  Loading extracted data from: {nc_file}")
 
     # --- 3. Compute observation timestep index ---
+    # Snapshot anchor: env override > the case's targets.yaml time anchor > legacy 2016-07
+    # (the same anchor screening uses, so the two agree).
     year_start = analysis_period[0]
-    obs_year = int(os.environ.get('A2MC_OBS_YEAR', '2016'))
-    obs_month = int(os.environ.get('A2MC_OBS_MONTH', '7'))
+    obs_year = int(os.environ.get('A2MC_OBS_YEAR', str(anchor_y or 2016)))
+    obs_month = int(os.environ.get('A2MC_OBS_MONTH', str(anchor_m or 7)))
     obs_idx = (obs_year - year_start) * 12 + obs_month - 1
 
-    # --- 4. Evaluate using shared utility ---
-    results = evaluate_case(nc_file, targets, obs_idx)
+    # --- 4. Evaluate using shared utility (same targets + cost config as Phase-2 screening) ---
+    # error/aggregation/tolerance come from the case cost_config; per-target cost_method/weight
+    # ride on the Target objects; year_start scores time-series targets on ALL their points.
+    results = evaluate_case(
+        nc_file, targets, obs_idx,
+        error_method=cost_cfg.get('error_method', 'relative_error'),
+        aggregation_method=cost_cfg.get('aggregation_method', 'rmsre'),
+        tolerance=cost_cfg.get('tolerance', 0.2),
+        year_start=year_start,
+    )
 
     # Add experiment-specific metadata
     results["analysis_period"] = list(analysis_period)

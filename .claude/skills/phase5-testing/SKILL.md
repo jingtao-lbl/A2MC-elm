@@ -1,5 +1,7 @@
 ---
 name: phase5-testing
+visibility: public
+category: phase
 description: Run Phase 5 (TESTING) of the A2MC calibration workflow as the offline agent — the human-in-the-loop analog of the orchestrator's `_run_testing()`. Execute the hypothesis experiments as new simulation runs — modify parameter files, create + submit cases (ADSP→RGSP→TRANS), monitor, and extract results against targets. This is a thin phase-router — the end-to-end offline procedure lives in `offline-testing-workflow`. Use when the user says "run the experiment", "submit the test cases", "run Phase 5", "test this hypothesis with new simulations", after Phase 4 hands off a hypothesis that needs new simulations.
 modes:
   requires_fates: false      # calibration-workflow phase skill; mode resolved at runtime via describe_mode
@@ -9,6 +11,8 @@ modes:
 ---
 
 # Phase 5: Testing (offline agent) — router
+
+> **Driven by `calibration-goal`** — the run-to-convergence driver dispatches here when `WorkflowStateOffline.current_phase` routes to this phase; on an HPC submit, arm monitors + take the WAIT stop (the Monitor event resumes the driver). Also runnable standalone (one phase).
 
 The offline analog of `_run_testing()`. **The full offline procedure is `offline-testing-workflow`**
 — this phase skill exists so the Phase 0–6 set is complete and to route you there with the phase
@@ -39,6 +43,29 @@ framing intact. Do not reimplement experiment execution here.
    infrastructure (restart-eligible) from model failures via `restart-failed-jobs`.
 3. **Log** via `calibration-log` (phase log → `PhaseLogger.log_testing` /
    `log_experiment_design`).
+4. **Advance the driver state** once results are extracted: `st.set_position(current_phase="refinement")`;
+   `st.save()` (`tools/workflow_state_offline.py`) so `resolve_next_action` resolves Phase 6.
+
+## Log it as a LIVING record
+
+`offline-testing-workflow` owns the mechanics; **the log is still yours**, and it starts when the
+variants are submitted, not when the results land. The operational detail — job/array IDs, which
+variants failed when the scheduler hiccupped, what was restarted — is unrecoverable a week later.
+Full contract in `calibration-log`.
+
+**Phase 5's expected sections** — `PhaseLogger` names any you leave empty:
+Experiments Designed · Submission · Simulation Status · Monitoring Armed · Failures and Restarts · V0 Reproducibility Gate · Results Preview · Results Summary.
+
+**Results Preview** is the load-bearing one: before trusting any result, show that each new test came
+out sane. It pairs with the **V0 reproducibility gate** — V0 proves the variant reproduces its base,
+the preview proves the variant itself is not nonsense.
+
+```python
+logger.set_phase_handshake(
+    inherited_from="<phase4 log STEM> — the hypothesis + its success_criteria bar",
+    handed_to="experiment results vs the bar (Phase 6 rules CONFIRMED/REFUTED against it)",
+    next_action="<the one concrete thing Phase 6 should evaluate>")
+```
 
 ## Footguns (the load-bearing ones; full set in `offline-testing-workflow`)
 
@@ -46,6 +73,10 @@ framing intact. Do not reimplement experiment execution here.
   case number collides with / leaks into the Morris ensemble extract dir.
 - **V0 gate before trust.** Reproduce V0 (baseline params) before reading V1+ as signal — catches
   build / param-file errors early.
+
+## Before you finish
+
+**Discipline self-review (automatic).** Before advancing the state, re-check the [`calibration-discipline`](../calibration-discipline/SKILL.md) items that apply to this phase. This is unprompted and per-phase — the user does not have to ask (memory `feedback_schedule_periodic_reviews_with_a_real_mechanism`).
 
 ## Related skills / next phase
 
@@ -55,6 +86,11 @@ framing intact. Do not reimplement experiment execution here.
 
 ## Changelog
 
+- 2026-08-03: Log step now states the **living-record** contract (start at phase start, enrich as it
+  runs — the operational detail is unrecoverable later), names **this phase's expected sections** so an
+  omission is visible in the log, and shows `set_phase_handshake()` so the reasoning chain is traceable.
+  Added a **Before you finish** discipline self-review. Full contract: `calibration-log`.
+- 2026-07-15: Wired the Step-4 `set_position(current_phase="refinement")` state-advance (once results are extracted, so `resolve_next_action` resolves Phase 6). Ported from demo `d3cbbf5` (offline-workflow enforcement sweep).
 - 2026-07-06: Added Step 0 — reset `skip_testing_count = 0` on Phase-5 entry (closes the inner loop for the
   cycle). Pairs with the Phase-6 middle-loop gate + Phase-4 inner-loop counter. Ported from demo `2d3f4b0`.
 - 2026-07-02: Created — thin Phase 5 router mirroring `_run_testing()`; delegates execution to `offline-testing-workflow`, hands off to `phase6-refinement`.

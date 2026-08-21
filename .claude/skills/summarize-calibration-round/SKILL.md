@@ -1,5 +1,7 @@
 ---
 name: summarize-calibration-round
+visibility: public
+category: calibration
 description: Produce a one-round calibration summary — whole-ensemble biomass graphs (combined 519-yr axis + TRANS), an evaluation report (best case, #targets met, per-target biomass vs ±20%/±SD bands), and a Morris μ* sensitivity report — ending in a markdown + PDF report. Use when the user asks to "summarize round N", "make a report for R5", "round N summary/report", "how did R3 do", or wants the combined+TRANS ensemble figures plus evaluation+sensitivity for a SINGLE round. (For comparing rounds against each other, use compare-calibration-rounds instead.)
 modes:
   requires_fates: true
@@ -120,6 +122,11 @@ standard above throughout):
 - Tools: `tools/plot_ensemble_cases.py`, `phases/phase2_screening/screen_ensemble.py`,
   `phases/phase1_exploration/morris_sensitivity_analysis.py`, `tools/regen_ensemble_milestone_plot.sh`.
 - Worked references: `the originating dev/ana log,b` (R5/R3 graphs), the originating dev/ana log.
+
+
+## Related skills
+
+- **`plotting`** — load it **before your first `savefig`**, not after. Its rule 8 (*open the rendered PNG and LOOK at it*) is the only step that catches an overlapping legend, a stats box across the curve, or an unreadable axis, and it cannot catch them retroactively.
 
 ## Changelog
 

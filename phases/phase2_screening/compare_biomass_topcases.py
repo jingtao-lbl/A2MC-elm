@@ -26,6 +26,12 @@ from pathlib import Path
 import netCDF4 as nc
 import argparse
 import re
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, for tools.*
+from tools.fates_utils import (
+    get_szpf_range, get_szpf_dim_length, get_szpf_total_from_config,
+    get_n_size_classes_from_config,
+)
 
 # =============================================================================
 # Configuration
@@ -43,15 +49,14 @@ OBS_MONTH = 7  # July
 OBS_IDX = (OBS_YEAR - YEAR_START) * 12 + OBS_MONTH - 1  # 0-indexed
 
 # Data directory - Auto-detect HPC vs local
-try:
-    from tools.config import config as a2mc_config
-    DATA_DIR = Path(a2mc_config.get_results_dir()) / a2mc_config.ENSEMBLE_NAME
-    OUTPUT_DIR = Path(a2mc_config.get_figures_dir())
-except ImportError:
-    import os
-    home = os.environ.get('HOME', '~')
-    DATA_DIR = Path(f'{home}/Desktop/Work/NGEE-Arctic/Kougarok/Results_PlantTraitsCNPEnsemble_wModPval_noADSP2/Kougarok_PlantTraitsCNPEnsemble162_Morris')
-    OUTPUT_DIR = Path(f'{home}/Desktop/Work/NGEE-Arctic/Kougarok/Figures_PlantTraitsCNPEnsemble_wModPval_noADSP2')
+# Both from config. `get_results_dir()` / `get_figures_dir()` never existed on
+# A2MCConfig, so this raised AttributeError at import — which `except ImportError`
+# cannot catch, making the fallback below unreachable dead code that hid a hard
+# crash. ENSEMBLE_OUTPUT is exactly what `get_results_dir()/ENSEMBLE_NAME` meant;
+# FIGURES_DIR is new (there was no config-backed figures location).
+from tools.config import config as a2mc_config
+DATA_DIR = Path(a2mc_config.ENSEMBLE_OUTPUT)
+OUTPUT_DIR = Path(a2mc_config.FIGURES_DIR)
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_DIR = OUTPUT_DIR / 'results'
@@ -90,27 +95,27 @@ FROOT_CONFIG = {
 # Validation targets for 6-output composite NRMSE
 VALIDATION_TARGETS = {
     # Leaf observations (g C/m²)
-    'PFT7_leaf_observed': 49.1 * 0.5,
-    'PFT9_leaf_observed': 249.4 * 0.5,
-    'PFT10_leaf_observed': 165.3 * 0.5,
+    'PFT10_leaf_observed': 49.1 * 0.5,
+    'PFT11_leaf_observed': 249.4 * 0.5,
+    'PFT12_leaf_observed': 165.3 * 0.5,
     # Fineroot observations (g C/m²)
-    'PFT7_fineroot_observed': 348.5 * 0.5,
-    'PFT9_fineroot_observed': 374.7 * 0.5,
-    'PFT10_fineroot_observed': 764.1 * 0.5,
+    'PFT10_fineroot_observed': 348.5 * 0.5,
+    'PFT11_fineroot_observed': 374.7 * 0.5,
+    'PFT12_fineroot_observed': 764.1 * 0.5,
     # ±20% ranges for leaf
-    'PFT7_leaf_min': 49.1 * 0.5 * 0.8,
-    'PFT7_leaf_max': 49.1 * 0.5 * 1.2,
-    'PFT9_leaf_min': 249.4 * 0.5 * 0.8,
-    'PFT9_leaf_max': 249.4 * 0.5 * 1.2,
-    'PFT10_leaf_min': 165.3 * 0.5 * 0.8,
-    'PFT10_leaf_max': 165.3 * 0.5 * 1.2,
+    'PFT10_leaf_min': 49.1 * 0.5 * 0.8,
+    'PFT10_leaf_max': 49.1 * 0.5 * 1.2,
+    'PFT11_leaf_min': 249.4 * 0.5 * 0.8,
+    'PFT11_leaf_max': 249.4 * 0.5 * 1.2,
+    'PFT12_leaf_min': 165.3 * 0.5 * 0.8,
+    'PFT12_leaf_max': 165.3 * 0.5 * 1.2,
     # ±20% ranges for fineroot
-    'PFT7_fineroot_min': 348.5 * 0.5 * 0.8,
-    'PFT7_fineroot_max': 348.5 * 0.5 * 1.2,
-    'PFT9_fineroot_min': 374.7 * 0.5 * 0.8,
-    'PFT9_fineroot_max': 374.7 * 0.5 * 1.2,
-    'PFT10_fineroot_min': 764.1 * 0.5 * 0.8,
-    'PFT10_fineroot_max': 764.1 * 0.5 * 1.2,
+    'PFT10_fineroot_min': 348.5 * 0.5 * 0.8,
+    'PFT10_fineroot_max': 348.5 * 0.5 * 1.2,
+    'PFT11_fineroot_min': 374.7 * 0.5 * 0.8,
+    'PFT11_fineroot_max': 374.7 * 0.5 * 1.2,
+    'PFT12_fineroot_min': 764.1 * 0.5 * 0.8,
+    'PFT12_fineroot_max': 764.1 * 0.5 * 1.2,
 }
 
 # FATES PFT mapping for size-class x PFT dimension (156 levels)
@@ -130,11 +135,11 @@ FATES_PFTMAP_LEVSCPF = np.array([
 ])
 
 # PFTs to analyze
-PFT_LIST = [7, 9, 10]
+PFT_LIST = [10, 11, 12]
 PFT_NAMES = [
-    'PFT#7 Evergreen Shrub',
-    'PFT#9 Deciduous Shrub',
-    'PFT#10 Graminoid'
+    'PFT#10 Evergreen Shrub',
+    'PFT#11 Deciduous Shrub',
+    'PFT#12 Graminoid'
 ]
 
 # Color scheme
@@ -179,31 +184,42 @@ def load_nc_timeseries(case_num, var_name, data_dir, year_start=1901, year_end=2
     )
 
     n_months = (year_end - year_start + 1) * 12
+    # SZPF total + nlevsclass from the run's base param file (not hardcoded 156/13);
+    # a present file is oriented by its own dimension.
+    szpf_total = get_szpf_total_from_config()
+    n_sc = get_n_size_classes_from_config()
 
     if nc_file.exists():
         try:
             with nc.Dataset(nc_file, 'r') as ds:
                 if var_name in ds.variables:
+                    slen = get_szpf_dim_length(ds, var_name) or szpf_total
                     data = ds.variables[var_name][:]
                     data = np.squeeze(data)
                     if data.ndim == 2:
-                        if data.shape[1] == 156:
+                        if data.shape[1] == slen or (
+                            data.shape[1] % n_sc == 0
+                            and data.shape[0] % n_sc != 0
+                        ):
                             data = data.T
                     else:
-                        return np.full((156, n_months), np.nan)
+                        return np.full((slen, n_months), np.nan)
                     return data
                 else:
                     pass
         except Exception as e:
             pass
 
-    return np.full((156, n_months), np.nan)
+    return np.full((szpf_total, n_months), np.nan)
 
 
 def get_pft_value_at_obs(data, pft_id, obs_idx, factor=1000):
     """Extract PFT-specific value at observation timestep."""
-    pft_mask = FATES_PFTMAP_LEVSCPF == pft_id
-    return np.sum(data[pft_mask, obs_idx]) * factor
+    # Contiguous SZPF slice for this PFT. nlevsclass from the base param file; PFT count
+    # = rows / nlevsclass — both model-derived, correct for any FATES PFT/size config.
+    n_sc = get_n_size_classes_from_config()
+    s, e = get_szpf_range(pft_id, fates_pft=data.shape[0] // n_sc, n_size_classes=n_sc)
+    return np.sum(data[s:e + 1, obs_idx]) * factor
 
 
 def calculate_nrmse(simulated, observed):
@@ -228,12 +244,12 @@ def calculate_composite_nrmse(sim_leaf, sim_froot, targets):
         nrmse_individual[key_froot] = calculate_nrmse(sim_froot[pft_id], obs_froot)
 
     nrmse_array = np.array([
-        nrmse_individual['PFT7_leaf'],
-        nrmse_individual['PFT7_fineroot'],
-        nrmse_individual['PFT9_leaf'],
-        nrmse_individual['PFT9_fineroot'],
         nrmse_individual['PFT10_leaf'],
         nrmse_individual['PFT10_fineroot'],
+        nrmse_individual['PFT11_leaf'],
+        nrmse_individual['PFT11_fineroot'],
+        nrmse_individual['PFT12_leaf'],
+        nrmse_individual['PFT12_fineroot'],
     ])
 
     composite_nrmse = np.sqrt(np.mean(nrmse_array**2))
@@ -324,18 +340,18 @@ def save_optimization_results(ranked_results, targets, output_file):
         f.write("#\n")
 
         f.write("Rank\tCase_Num\tComposite_NRMSE\tN_satisfied\t")
-        f.write("NRMSE_PFT7_leaf\tNRMSE_PFT7_fineroot\t")
-        f.write("NRMSE_PFT9_leaf\tNRMSE_PFT9_fineroot\t")
         f.write("NRMSE_PFT10_leaf\tNRMSE_PFT10_fineroot\t")
-        f.write("Sim_PFT7_leaf\tSim_PFT7_fineroot\t")
-        f.write("Sim_PFT9_leaf\tSim_PFT9_fineroot\t")
-        f.write("Sim_PFT10_leaf\tSim_PFT10_fineroot\n")
+        f.write("NRMSE_PFT11_leaf\tNRMSE_PFT11_fineroot\t")
+        f.write("NRMSE_PFT12_leaf\tNRMSE_PFT12_fineroot\t")
+        f.write("Sim_PFT10_leaf\tSim_PFT10_fineroot\t")
+        f.write("Sim_PFT11_leaf\tSim_PFT11_fineroot\t")
+        f.write("Sim_PFT12_leaf\tSim_PFT12_fineroot\n")
 
         for rank, r in enumerate(ranked_results, start=1):
             f.write(f"{rank}\t{r['case_num']}\t{r['composite_nrmse']:.6f}\t{r['n_satisfied']}\t")
 
-            for key in ['PFT7_leaf', 'PFT7_fineroot', 'PFT9_leaf',
-                       'PFT9_fineroot', 'PFT10_leaf', 'PFT10_fineroot']:
+            for key in ['PFT10_leaf', 'PFT10_fineroot', 'PFT11_leaf',
+                       'PFT11_fineroot', 'PFT12_leaf', 'PFT12_fineroot']:
                 f.write(f"{r['nrmse_individual'][key]:.6f}\t")
 
             f.write(f"{r['sim_leaf'][7]:.2f}\t{r['sim_froot'][7]:.2f}\t")
@@ -450,11 +466,12 @@ def main():
 
                 data = case_data[case_num][var_type]
 
-                if data.shape[0] != 156:
+                n_sc = get_n_size_classes_from_config()
+                if data.shape[0] % n_sc != 0:
                     continue
 
-                pft_mask = FATES_PFTMAP_LEVSCPF == pft_id
-                plotdata = np.sum(data[pft_mask, :], axis=0) * var_config['factor']
+                s, e = get_szpf_range(pft_id, fates_pft=data.shape[0] // n_sc, n_size_classes=n_sc)
+                plotdata = np.sum(data[s:e + 1, :], axis=0) * var_config['factor']
 
                 # Best case in red, others in light purple (no label for others)
                 if case_num == best_case:

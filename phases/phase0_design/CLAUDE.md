@@ -73,7 +73,7 @@ The script writes two outputs to `${A2MC_ENSEMBLE_OUTPUT}/`:
 Example:
 ```bash
 source a2mc_config.sh
-source use_cases/Kougarok/config/kougarok_config_r4.sh
+source use_cases/ELM-FATES_Kougarok/config/kougarok_config_r4.sh
 python phases/phase0_design/create_subset_replay.py
 ./tools/submit_ensemble.sh \
     --cases-file ${A2MC_ENSEMBLE_OUTPUT}/subset_replay_case_list.txt \

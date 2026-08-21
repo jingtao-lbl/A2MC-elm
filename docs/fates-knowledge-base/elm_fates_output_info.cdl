@@ -1,4 +1,4 @@
-netcdf /Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/Results_PlantTraitsCNPEnsemble_wModPval_noADSP2/Kougarok_ELM-FATES_PtCNPEn845_mod_phen_stc3_TRANS.elm.h0.2019-02-01-00000.nc {
+netcdf Kougarok_ELM-FATES_PtCNPEn845_mod_phen_stc3_TRANS.elm.h0.2019-02-01-00000.nc {
   dimensions:
     lndgrid = 1;
     gridcell = 1;

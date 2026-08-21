@@ -43,7 +43,7 @@ The materializer auto-detects the base parameter file's format from `$A2MC_BASE_
 ```bash
 # Always source configs first
 source a2mc_config.sh
-source use_cases/Kougarok/config/kougarok_config.sh
+source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
 ```
 
 ### Stage 1 — Generate the ensemble matrix (SAMPLE)
@@ -120,7 +120,7 @@ For mechanistic hypothesis tests at the ensemble scale (e.g., "does removing P l
 
 ```bash
 # Source the round-specific config (sets all REPLAY_* env vars)
-source use_cases/Kougarok/config/kougarok_config_r4.sh
+source use_cases/ELM-FATES_Kougarok/config/kougarok_config_r4.sh
 
 # Generate parameter files (copies top-N source files + applies overrides in place)
 python phases/phase0_design/create_subset_replay.py

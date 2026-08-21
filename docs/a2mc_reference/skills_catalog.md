@@ -27,6 +27,9 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 
 
 
+
+
+
 ### `calibration-log`
 - **Purpose:** Log interactive calibration/exploration work for a site under
   `use_cases/{site}/memory/logs/` — a PHASE log via `tools/phase_logger.py` (identical to the
@@ -54,6 +57,41 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
   after launching a new submitter/restart job.
 - **Modes:** `any` (HPC) — monitors any in-flight A2MC ensemble/experiment; model-agnostic.
 
+### `setup-discipline`
+
+- **Purpose:** The per-**stage** definition-of-done for the setup arc. `a2mc-init` and `onboard-case`
+  name their gates inline inside their steps, which makes a stage easy to *perform* and hard to
+  *finish*; this collects them so a stage can be closed. It does not re-teach the stages — each item
+  points at the step or tool that owns it.
+- **Invoke when:** a setup stage is ending; picking up a clone someone else configured; a session
+  claims "setup is done" and you want that verified; onboarding stalled and you need to know what is
+  missing.
+- **Backing tools:** `scripts/rag_match.py`, `tools/describe_mode.py`, `tools/validate_targets_config.py`,
+  `tools/validate_param_list.py`, `tools/check_calibration_rounds.py`, `tools/check_setup_ready.py`.
+- **Key discipline:** **a checked box means you ran the check, not that you believe the item holds.**
+  Two stages here (no `onboard-model` — this branch is the ELM family, configured through
+  `A2MC_ELM_OPTIONS`). Half-done setup fails silently: an unmatched milestone answers from the wrong
+  model version, an unresolved target key is dropped at runtime, a kept `template_` prefix leaves the
+  case with no round record.
+
+### `onboard-case`
+
+- **Purpose:** Add a NEW calibration case (a site or project) to a clone where A2MC is **already
+  configured** — the repeatable half of getting started. Interview from the science goal, resolve the
+  case **scale**, draft and confirm the research plan, scaffold `use_cases/<Case>/` from the
+  site-agnostic `TEMPLATE`, build or vet the parameter list, run the readiness preflight, hand off to
+  Phase 0.
+- **Invoke when:** "set up a new case", "add a site", "calibrate a second site", "start another
+  case", "onboard my site". **Not** for first-run machine setup in a fresh clone (`a2mc-init`) and
+  **not** for resuming an existing case (`onboard-session`).
+- **Backing tools:** `use_cases/TEMPLATE/`, `tools/generate_calibration_rounds.py`,
+  `tools/check_setup_ready.py`, `tools/validate_param_list.py`.
+- **Key discipline:** **Step 2 asks the case scale and never infers it.** This branch is single-point
+  end to end — scalar `A2MC_SITE_LAT`/`LON`, one `observed` per target, single-location extraction and
+  scoring — so **transect and regional cases are a HARD STOP**, not something to approximate by
+  scaffolding N independent cases. `a2mc-init` stays authoritative for the interview and scaffolding
+  substance this skill reuses; the machine-setup steps are deliberately absent.
+
 ### `a2mc-init`
 - **Purpose:** First-run setup for the offline agent — the official "getting started" flow the
   first time A2MC is used in a repo/site. Interviews the user (checkout path, FATES on/off,
@@ -73,6 +111,36 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Invoke when:** a session begins/resumes/compacts; "catch up", "where did we leave off", "onboard".
 - **Modes:** `any` — model-agnostic. Pairs with the `SessionStart` hook. For a **first-run** (no
   config yet), use `a2mc-init` instead.
+
+### `calibration-goal`
+- **Purpose:** The offline **run-to-convergence DRIVER** — the conductor above the phase skills
+  (docs/38). Each invocation loads `WorkflowStateOffline`, resolves the next action, dispatches to the
+  matching `phaseN` skill, advances + saves state, and repeats across turns + HPC waits until Phase-7
+  CONVERGED or a loop limit. The offline analog of `orchestrator.py:1031`.
+- **Invoke when:** "run/continue the calibration", "drive to convergence", "keep calibrating until the
+  targets are met", or when a standing goal to reach the validation targets is set.
+- **Backing tools:** `tools/workflow_state_offline.py` (`WorkflowStateOffline` + `resolve_next_action` +
+  `validate_phase6_decision`); dispatches to `phase0-design`…`phase6-refinement`; `arm-hpc-monitoring`
+  (the WAIT bridge); `summarize-calibration-round` (round exit).
+- **Key discipline:** harness-neutral (no `/goal`/`Monitor` dependency — optional hardenings only);
+  pause ONLY at the 4 human gates (Phase-6 decision, curated-KB write, expensive/irreversible, hard
+  stop); `st.save()` after every advance.
+
+### `calibration-discipline`
+- **Purpose:** The per-cycle and per-round **DISCIPLINE checklist** — the "definition of done" that keeps
+  a long offline campaign stable (prevents DRIFT). The individual steps live in other skills; this is the
+  invariant checklist that makes every experiment cycle look like every other good one (log each phase →
+  `log/{stem}.md` + self-documenting `phase_results/{stem}/`, arm monitors right after every launch, keep
+  the figure script canonical in `phase_results`, validate `workflow_state` after every phase, a synthesis
+  report each cycle end, drive to the limit, and a round summary that INCLUDES the next-round plan).
+- **Invoke when:** starting a multi-cycle offline calibration, and re-check every cycle/round; "stay in
+  calibration discipline", "keep the campaign stable".
+- **Backing tools:** the phase skills + `calibration-log` (logging), `arm-hpc-monitoring`, `write-report`,
+  `check_offline_log_evidence.py` / `check_workflow_state_offline.py` (gates), `promote_diagnostic_script.py`
+  + `curate-/inject-knowledge` (round-close).
+- **Key discipline:** DISTINCT from `calibration-goal` (the driver LOOP mechanics) and from a single
+  `phaseN` skill (one phase) — this is the HABITS layer the driver must honor. Round summary MUST propose
+  the next-round work plan; no KB write / model-source edit before a verified test + human gate.
 
 ### `curate-knowledge`
 - **Purpose:** Review + promote staged Tier-3 knowledge proposals — the human-in-the-loop half
@@ -102,6 +170,21 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Invoke when:** "convert/render markdown to PDF/Word/docx", "render this ana_log/report to PDF", "make a PDF of this", "turn this .md into a docx".
 - **Modes:** `any` — model-agnostic.
 
+### `literature-review`
+- **Purpose:** Systematic, citation-backed literature review over academic databases via the `paper-search-mcp` server (search → triage → extract → cited synthesis). Two modes: PARAMETER-BOUNDS (a defensible `[lo, hi]` range for a FATES/ELM parameter, to refine a Phase-0 param list's `lower`/`upper` columns) and MANUSCRIPT (a themed topic review). Every citation is a validated, resolvable DOI — no fabrication.
+- **Invoke when:** "lit review on X", "what's the published range for parameter X", "find bounds for X from the literature", "review papers on X", "synthesize the literature for". NOT a single-citation lookup.
+- **Modes:** `any` — model-agnostic (needs the `paper-search-mcp` server). Pairs with `markdown-to-pdf` and `manuscript-writing-style`.
+
+### `plotting`
+- **Purpose:** Produce a clean, readable, report/manuscript/slide-grade matplotlib figure (right fonts, no legend/annotation overlap, log scale + units, finding-stating title) and **verify it by viewing the saved PNG** before shipping.
+- **Invoke when:** "plot X", "make a figure/chart", "the legend overlaps", "clean up this plot", "make this publication-quality", "the fonts are too small", "the labels are clipped".
+- **Modes:** `any` — model-agnostic.
+
+### `write-report`
+- **Purpose:** Write a general, integrated, self-contained report for a zero-context human reader (reader's key → executive summary → sectioned narrative → embedded figures → provenance), facts-first with cross-log contradiction reconciliation.
+- **Invoke when:** "write a report", "write up X for the PI/collaborator", "make an integrated report on X", "summarize this investigation into a report". NOT a standardized round summary (`summarize-calibration-round`) or journal prose (`manuscript-writing-style`).
+- **Modes:** `any` — model-agnostic.
+
 ### `build-rag-from-scratch`
 - **Purpose:** Construct the RAG/GraphRAG knowledge layer from scratch (new model or fresh build).
 - **Invoke when:** "build the RAG from scratch", "stand up RAG for <model>".
@@ -126,6 +209,13 @@ See [`AGENTS.md`](../../AGENTS.md) for the operating contract these skills run u
 - **Purpose:** Inject curated domain knowledge into the KB via the curated-YAML overlay (additive, evidence-backed).
 - **Invoke when:** "inject this knowledge", "add a curated relationship".
 - **Modes:** `any` — model-agnostic. See `docs/a2mc_reference/graphrag_curated_yaml_roadmap.md`.
+
+### `port-param-file`
+- **Purpose:** Port a calibrated/site-tuned parameter file across model/API versions — reads a source (tuned prior-version) file + the new-version default template, remaps PFT identity **by functional type** (not index/name), and transfers every overlapping tuned value into the new version's format+structure.
+- **Invoke when:** "port/migrate/convert the param file to api-XX", "map parameters to the new version", "build the new-API base file from the tuned prior one".
+- **Backing tools:** `tools/port_param_file.py` (`identity`/`port`/`verify` subcommands; version/format/param-list agnostic).
+- **Key discipline:** run `identity` FIRST and resolve any `NAME MISMATCH` slot by functional intent (`--map`); port ONTO the target template so no registered param is missing (avoids the `check_var … not on dataset` runtime abort). Doctrine (why/which-values) lives in the memories it cites — thin by design.
+- **Modes:** `any` — model-agnostic.
 
 ### `add-skill`
 - **Purpose:** Scaffold + register a new skill (correct frontmatter + `## Changelog`, both
@@ -203,3 +293,19 @@ ADSP/RGSP/TRANS spinup, Morris μ*). The `modes:` gate keeps them out of ELM-onl
 - **Purpose:** Offline analog of Phase 6 — evaluate results vs baseline/expected, extract lessons, update Adaptive Memory, decide converge / rethink (6→3) / redesign (6→0).
 - **Invoke when:** "evaluate the results", "what did we learn", "converge or iterate", "run Phase 6".
 - **Modes:** `any`.
+
+## Model development (ELM/FATES source-code changes — `requires_fates: true`)
+
+Skills for modifying the **ELM/FATES model source** (Fortran), not just its parameters. Model-dev on the
+pinned checkout, governed by the reproducibility contract (`E3SM_FATES_api43/CLAUDE.md` §1): experiment
+branch, **push only to the `jingtao-lbl` fork (never upstream)**, switch-gated default-off, V0-at-equality.
+
+### `model-evolution`
+- **Purpose:** The general workflow for evolving the ELM/FATES model *source* (mechanism fix, structural refactor, debug instrumentation, new parameter) — branch-by-intent, mechanism-first gate, scope-from-source, switch-gate default-off, paired ON/OFF V0-at-equality verify, log both streams, fork-only push. Umbrella that `add-fates-parameter` routes up to.
+- **Invoke when:** "update/change the model code", "modify the FATES/ELM source", "add a mechanism/fix to FATES", "refactor the phenology/allocation code", "instrument the model". NOT parameter-file tuning (that's calibration).
+- **Modes:** `requires_fates: false` (covers ELM and/or FATES source); model-dev.
+
+### `add-fates-parameter`
+- **Purpose:** Wire a new FATES parameter (an `EDParamsMod` entry read from the parameter file) into the model source — declare/register/retrieve in `EDParamsMod`, `use` it in the consuming module, and add the value to every parameter file (JSON on api-43, `.nc` on api-31/demo). A **per-PFT** knob goes in `EDPftvarcon`, not `EDParamsMod`.
+- **Invoke when:** "add a FATES parameter", "make X an EDParamsMod parameter", "promote this hardcoded constant to a FATES parameter", "switch-gate this model change".
+- **Modes:** `requires_fates: true`.

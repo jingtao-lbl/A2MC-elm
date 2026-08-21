@@ -99,17 +99,34 @@ def build_metadata_from_version(
     Schema follows docs/18 §4.3.1; ``elm_output_var_file`` is the v2.96
     extension (companion to the FATES output CDL).
     """
+    # SHAs FIRST, from the paths as given — _safe_sha opens the file, so it must run
+    # before any rewriting below turns an absolute path into a repo-relative one.
     fates_param_sha = _safe_sha(fates_param_file)
     output_var_sha = _safe_sha(output_var_file)
     elm_output_var_sha = _safe_sha(elm_output_var_file) if elm_output_var_file else None
     curated_yaml_sha = _safe_sha(curated_yaml_path)
+
+    # These four point INTO this repo, so store them repo-relative — what the docstring
+    # above has always said was preferred, now enforced rather than left to the caller.
+    # This metadata ships to the public repo; an absolute path there is both a disclosure
+    # of the builder's directory layout and a broken pointer for everyone else.
+    fates_param_file = _repo_relative(fates_param_file)
+    output_var_file = _repo_relative(output_var_file)
+    elm_output_var_file = _repo_relative(elm_output_var_file)
+    curated_yaml_path = _repo_relative(curated_yaml_path)
 
     md = {
         "metadata_schema_version": METADATA_VERSION,
         "profile_name": profile_name,
         "built_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "a2mc_version": a2mc_version,
-        "model_path": version.model_path,
+        # BASENAME, not the full path: the E3SM checkout lives OUTSIDE this repo, so it
+        # cannot be made repo-relative, and the full path is pure host layout. Nothing
+        # reads this field back — every consumer re-derives the checkout from
+        # A2MC_MODEL_PATH at runtime — and the model identity that matters is already
+        # carried precisely by elm.commit_sha / fates.commit_sha directly below. So the
+        # basename keeps the human "which checkout was this" hint at no disclosure cost.
+        "model_path": _basename_only(version.model_path),
         "elm": {
             "commit_sha": version.elm.commit_sha,
             "commit_short": version.elm.commit_short,
@@ -147,6 +164,35 @@ def build_metadata_from_version(
     if extra:
         md.update(extra)
     return md
+
+
+_REPO_ROOT = _HERE.parent
+
+
+def _repo_relative(path: Optional[str]) -> Optional[str]:
+    """Return `path` relative to the repo root when it lives inside the repo.
+
+    Left untouched when it does not (a path outside the repo has no meaningful
+    repo-relative form, and inventing `../../..` would be worse than absolute) and
+    when it is already relative. Never raises: metadata construction must not fail
+    over a cosmetic path rewrite.
+    """
+    if not path:
+        return path
+    p = Path(path)
+    if not p.is_absolute():
+        return path
+    try:
+        return str(p.resolve().relative_to(_REPO_ROOT.resolve()))
+    except (ValueError, OSError):
+        return path
+
+
+def _basename_only(path: Optional[str]) -> Optional[str]:
+    """Return just the final component of `path` (see `model_path` in the schema)."""
+    if not path:
+        return path
+    return Path(path).name
 
 
 def _safe_sha(path: Optional[str]) -> Optional[str]:

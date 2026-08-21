@@ -125,6 +125,7 @@ def synthesize_skip_testing_insights(
                             ai_reasoning=synth.get('synthesis_summary', ''),
                             design_type=synth.get('design_type', 'cumulative'),
                             expected_outcomes=synth.get('expected_outcomes', {}),
+                            success_criteria=synth.get('success_criteria', {}),
                             confidence=synth.get('confidence', 0),
                             metadata=_synth_metadata
                         )

@@ -42,6 +42,17 @@ fi
 # ========================
 # DIRECTORY PATHS (HPC)
 # ========================
+# A2MC_ROOT: the A2MC repo root, derived from THIS file's own location so it is
+# correct in every clone without a hardcoded path. It must be set HERE, not in a
+# site config: the documented source order is machine-config first, site-config
+# second, so anything below that expands ${A2MC_ROOT} (e.g. A2MC_RAG_DIR) would
+# otherwise expand it while still empty and silently root itself at "/".
+# A site config re-exports the same value afterward, which is harmless.
+# Precedence: shell export > this derivation.
+if [ -z "${A2MC_ROOT:-}" ]; then
+    export A2MC_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+fi
+
 # E3SM/FATES source code (canonical api-43-1 checkout: FATES e027a40 / ELM d40b843)
 export A2MC_E3SM_ROOT="~/E3SM_FATES_api43"
 
@@ -56,7 +67,7 @@ export A2MC_E3SM_ROOT="~/E3SM_FATES_api43"
 # overrides it; a shell export before sourcing overrides both.
 # Precedence: shell export > site config > this machine default.
 if [ -z "${A2MC_MODEL_PATH:-}" ]; then
-    export A2MC_MODEL_PATH="~/E3SM_FATES_api43"
+    export A2MC_MODEL_PATH=${A2MC_E3SM_ROOT}
     export _A2MC_MODEL_PATH_IS_DEFAULT=1
 fi
 #
@@ -75,7 +86,7 @@ export A2MC_RAG_AUTO_REBUILD="false"
 export A2MC_OUTPUT_ROOT="~"
 
 # Scripts directory (where case scripts are generated)
-export A2MC_SCRIPTS_DIR="pscratch/sd/j/jingtao/CaseScripts/Kougarok_FATES"
+export A2MC_SCRIPTS_DIR="~/CaseScripts/Kougarok_FATESapi43"
 
 # Input data paths
 export A2MC_DIN_LOC_ROOT="/dvs_ro/cfs/cdirs/e3sm/inputdata"
@@ -102,6 +113,15 @@ export A2MC_RES="ELM_USRDAT"
 export A2MC_USE_FATES=".true."
 export A2MC_FATES_PARTEH_MODE=2
 export A2MC_USE_FATES_NOCOMP=".false."
+# NOTE: A2MC_USE_ROOTFINESFRAG_FIX is intentionally NOT defaulted here. The
+# use_fates_rootfinesfrag_fix namelist variable only exists on the jingtao-lbl/fates fork
+# (main 6f61d423+) -- it is not an upstream NGEET/fates namelist entry, so writing it
+# unconditionally into every user's user_nl_elm (this file ships publicly) would break
+# case creation for anyone on a plain upstream checkout. tools/create_case.sh only emits
+# the namelist line when this var is explicitly set, so it stays undefined here; set it in
+# a site config (e.g. use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh) only if that site's
+# model checkout actually carries the fork commit. See
+# memory/model_logs/20260817a_Root_Fines_Frag_Fix_Merged_To_Fork_Main.md.
 
 # COMPSET configuration by phase
 export A2MC_COMPSET_SPINUP="1850_DATM%QIA_ELM%BGC-FATES_SICE_SOCN_SROF_SGLC_SWAV"
@@ -131,8 +151,8 @@ export A2MC_DATM_MODE="CLMGSWP3v1"
 # --- ADSP (Accelerated Decomposition Spinup) ---
 export A2MC_ADSP_BGC_SPINUP="on"           # "-bgc_spinup on" for accelerated decomp
 export A2MC_ADSP_START_DATE="0001-01-01"
-export A2MC_ADSP_SUPLPHOS="ALL"             # Prescribe all P during AD spinup
-export A2MC_ADSP_SUPLNITRO="NONE"           # No prescribed N
+export A2MC_ADSP_SUPLPHOS="ALL"             # Supplement all P during AD spinup
+export A2MC_ADSP_SUPLNITRO="NONE"           # No Supplement N
 export A2MC_ADSP_NYEARS_AD_CARBON_ONLY=30   # Carbon-only years before nutrient cycling
 export A2MC_ADSP_FINIDAT=""                 # Empty = cold start
 
@@ -361,7 +381,7 @@ validate_config() {
 }
 
 # Discover available site configs
-_A2MC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_A2MC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 _A2MC_SITES=()
 for _cfg in "${_A2MC_DIR}"/use_cases/*/config/*_config.sh; do
     [ -f "$_cfg" ] && _A2MC_SITES+=("$_cfg")

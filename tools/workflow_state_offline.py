@@ -22,10 +22,18 @@ import os
 import re
 import json
 import glob
+from collections import namedtuple
 from pathlib import Path
 from datetime import datetime
 
 SCHEMA = "a2mc.offline_workflow_state.v1"
+
+# The next workflow action a driver (the `calibration-goal` skill, docs/38 §4.3) should take,
+# resolved PURELY from state. kind ∈ {"run_phase", "gate", "done"}:
+#   run_phase  -> phase is the phase to run next (the driver ensures current_phase==phase, runs it)
+#   gate       -> pause for a human decision (detail names the gate kind)
+#   done       -> converged (Phase 7); clear the /goal
+NextAction = namedtuple("NextAction", ["kind", "phase", "detail"])
 
 
 class WorkflowStateOffline:
@@ -215,7 +223,66 @@ class WorkflowStateOffline:
             if not (d.get("exhaustion_justification") or "").strip():
                 errs.append("stop_model_dev requires a non-empty exhaustion_justification "
                             "(why no in-range target-aimed experiment remains).")
+            # A self-authored exhaustion_justification is NOT sufficient BELOW the loop limit:
+            # declaring "next_targeted_experiment == NONE" at a low experiment_count is exactly
+            # the documented premature-stop failure (2026-07-21: stop_model_dev asserted at
+            # experiment_count 0/10 while an untested, source-verified residence lever remained
+            # — found in the very next cycle). The middle loop exists to TEST the "it's futile"
+            # conviction, not to trust it. An early stop needs explicit HUMAN sign-off.
+            if ec < mx and not bool(d.get("human_confirmed_exhaustion")):
+                errs.append(
+                    f"stop_model_dev at experiment_count ({ec}) < max_experiments ({mx}) requires "
+                    f"human_confirmed_exhaustion=true. A self-declared next_targeted_experiment==NONE "
+                    f"is not sufficient below the loop limit (feedback_never_self_declare_exhaustion): "
+                    f"either drive the remaining cycles (rethink_6to3) or get explicit human sign-off.")
         return errs
+
+    # Phases 0-5 are executed directly; phase 6 (refinement) is the convergence fork.
+    RUNNABLE_PHASES = ("design", "exploration", "screening", "diagnosis", "hypothesis", "testing")
+
+    def resolve_next_action(self) -> "NextAction":
+        """Deterministic, PURE-state resolver for the offline convergence driver (docs/38 §4.3).
+
+        Maps this state -> the next workflow action, encoding the phase graph + the Phase-6 fork:
+          - converged                       -> done (Phase 7)
+          - current_phase in 0..5           -> run_phase(current_phase)
+          - current_phase == refinement:
+              no phase6_decision            -> gate (make the converge/rethink/redesign/stop call)
+              converge                      -> done
+              rethink_6to3                  -> run_phase(diagnosis)   (driver: experiment_count++,
+                                                                       set current_phase, clear decision)
+              redesign_6to0                 -> run_phase(design)      (driver: calibration_round++, …)
+              stop_model_dev                -> gate (human; earned only if validate_phase6_decision passes)
+
+        NOTE: WAIT_HPC (an ensemble in flight) and the curated-KB-write / expensive-action gates are
+        RUNTIME concerns the driver overlays (they depend on squeue/monitors, not on state), so they
+        are deliberately NOT resolved here — this keeps the resolver pure + unit-testable.
+        """
+        d = self.data
+        if d.get("converged"):
+            return NextAction("done", "converged", "all targets met — Phase 7 CONVERGED")
+        phase = d.get("current_phase", "design")
+        if phase in self.RUNNABLE_PHASES:
+            return NextAction("run_phase", phase, f"execute the {phase} phase skill")
+        if phase == "refinement":
+            dec = (d.get("phase6_decision") or {}).get("decision")
+            if not dec:
+                return NextAction("gate", "refinement",
+                                  "Phase-6 converge/rethink/redesign/stop decision needed "
+                                  "(fill phase6_decision, then validate_phase6_decision)")
+            if dec == "converge":
+                return NextAction("done", "converged", "Phase-6 decided converge — Phase 7 CONVERGED")
+            if dec == "rethink_6to3":
+                return NextAction("run_phase", "diagnosis",
+                                  "Phase-6 rethink — next experiment cycle, back to diagnosis")
+            if dec == "redesign_6to0":
+                return NextAction("run_phase", "design",
+                                  "Phase-6 redesign — widen the space, next calibration round")
+            if dec == "stop_model_dev":
+                return NextAction("gate", "refinement",
+                                  "Phase-6 stop -> model-dev — HUMAN gate (must pass validate_phase6_decision)")
+            return NextAction("gate", "refinement", f"unknown phase6 decision '{dec}'")
+        return NextAction("gate", phase, f"unknown current_phase '{phase}' — resolve manually")
 
     # ---- read helpers (for the SessionStart hook) ----
     def summary_line(self) -> str:

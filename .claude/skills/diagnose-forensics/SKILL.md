@@ -1,5 +1,7 @@
 ---
 name: diagnose-forensics
+visibility: public
+category: calibration
 description: Investigate an anomaly or suspicious result in an ensemble — an outlier, a too-good "best" case, a failure cluster, a target that won't move — to determine FIRST whether it's real or an artifact (contamination, infra-timing, mislabeled index, NaN), then root-cause it with the phase3 diagnosis tools. Use when the user asks "why is case X an outlier", "is this result real or contamination", "investigate this anomaly / failure cluster", "edge-case / collapse detection", "root cause of this PFT not calibrating".
 modes:
   requires_fates: false

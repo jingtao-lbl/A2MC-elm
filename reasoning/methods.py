@@ -962,28 +962,27 @@ Do NOT make generic statements without case attribution.
                 include_set.discard('')
 
                 # include_set may contain FATES names (from diagnosis, e.g.
-                # 'fates_cnp_vmax_p') or shorthands (from sensitivity, e.g.
-                # 'vmax_p_10'). base_case_params keys are shorthands. Use
-                # build_param_lookup() reverse mapping to expand FATES names
-                # to their matching shorthands.
+                # 'fates_cnp_vmax_p') or the ids base_case_params is keyed by
+                # (new CSV → canonical_ids like 'fates_cnp_vmax_p#p10'; legacy
+                # .txt → shorthands like 'vmax_p_10'). Reverse-map fates_name →
+                # those ids so FATES names from diagnosis expand to match.
                 try:
-                    from tools.modify_fates_parameters import build_param_lookup
                     _plf = os.environ.get('A2MC_PARAM_LIST_FILE', '')
-                    param_lookup = build_param_lookup(_plf)
-                    # Reverse: fates_name → set of shorthands
-                    fates_to_shorthands = {}
-                    for shorthand, entry in param_lookup.items():
-                        fates_to_shorthands.setdefault(entry['fates_name'], set()).add(shorthand)
-                    # Expand any FATES names in include_set to their shorthands
+                    fates_to_ids = {}
+                    if _plf and self._is_new_param_list(_plf):
+                        from tools.param_spec import load_param_spec
+                        for s in load_param_spec(_plf):
+                            fates_to_ids.setdefault(s.fates_name, set()).add(s.canonical_id)
+                    else:
+                        from tools.modify_fates_parameters import build_param_lookup
+                        for shorthand, entry in build_param_lookup(_plf).items():
+                            fates_to_ids.setdefault(entry['fates_name'], set()).add(shorthand)
                     expanded = set()
                     for p in include_set:
-                        if p in fates_to_shorthands:
-                            expanded.update(fates_to_shorthands[p])
-                        else:
-                            expanded.add(p)
+                        expanded.update(fates_to_ids.get(p, {p}))
                     include_set = expanded
                 except Exception as e:
-                    logger.debug(f"FATES→shorthand expansion failed: {e}")
+                    logger.debug(f"FATES→id expansion failed: {e}")
 
                 included_lines = []
                 for pname, pval in sorted(base_case_params.items()):

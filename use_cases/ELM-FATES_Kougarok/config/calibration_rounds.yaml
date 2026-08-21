@@ -1,0 +1,105 @@
+# Calibration Round History for Kougarok Site (api-43-1)
+# =============================================================================
+# Documents the evolution of calibration rounds (outermost Phase 0-7 loop).
+# Each round is a full cycle with potentially different parameter spaces,
+# bounds, protocols, or validation targets.
+#
+# This file tracks the api-43-1 lineage (canonical checkout E3SM_FATES_api43,
+# FATES e027a40 / ELM d40b843). The api-31-0 Kougarok-manuscript rounds live on
+# the frozen demo branch.
+#
+# Template + field reference: use_cases/TEMPLATE/config/template_calibration_rounds.yaml
+# (which marks every key [DERIVED] vs [AUTHORED]).
+#
+# DO NOT hand-edit the DERIVED fields — regenerate them, so this record cannot
+# drift from what actually runs:
+#   source a2mc_config.sh && source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
+#   python tools/generate_calibration_rounds.py --round <N> --write   # refreshes derived
+#   python tools/check_calibration_rounds.py --round <N>              # asserts agreement
+# --write preserves every AUTHORED field (rationale, changes_from_previous,
+# patches, and the agent-written outcome/status), so it is safe on a completed
+# round. It preserves this header block too, but NOT inline per-key comments —
+# keep durable explanation here rather than beside a key.
+# =============================================================================
+
+rounds:
+  1:
+    parameters: 169
+    ensembles: 5100
+    trajectories: 30
+    sampling_scheme: morris
+    config_file: use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
+    paths:
+      ensemble_name: Kougarok_FATESapi43_CNPECA_Para169
+      ensemble_output: ${A2MC_OUTPUT_ROOT}/Kougarok_FATESapi43_CNPECA_Para169
+      extracted_data: ${A2MC_OUTPUT_ROOT}/Kougarok_FATESapi43_CNPECA_Para169_Extract
+      param_list: use_cases/ELM-FATES_Kougarok/parameters/FATES_Parameter_List_api43_para169.csv
+      salib_problem: use_cases/ELM-FATES_Kougarok/parameters/salib_problem_api43_para169.txt
+      param_dir: ${A2MC_OUTPUT_ROOT}/ParameterFiles/fates_params_api43_para169_Morris
+      param_pattern: fates_params_api43.1.0_e027a40__PtCNP169_En{N}.json
+      case_name_pattern: Kougarok_ELM-FATES_PtCNPEn{N}_{PHASE}
+      case_scripts: ${A2MC_SCRIPTS_DIR}/Kougarok_FATESapi43_CNPECA_Para169
+    targets:
+    - PFT10_leaf, PFT10_fineroot
+    - PFT11_leaf, PFT11_fineroot
+    - PFT12_leaf, PFT12_fineroot
+    validation_targets_file: use_cases/ELM-FATES_Kougarok/validation/targets.yaml
+    protocol:
+      suplphos:
+        ADSP: ALL
+        RGSP: ALL
+        TRANS: NONE
+      suplnitro:
+        ADSP: NONE
+        RGSP: NONE
+        TRANS: NONE
+    elm_options: -bgc fates -nutrient cnp -nutrient_comp_pathway eca -soil_decomp
+      century
+    overrides: {}
+    fates_source:
+      milestone: api-43-1
+      fates_commit: 6f61d42
+      elm_commit: 938f765
+      checkout: ~/E3SM_FATES_api43
+      patches:
+      - 'A2MCapi43port17 (#17): fates_phen_gddthresh_c + cold-phenology state promoted
+        site-scalar -> per-PFT. Promoted to the FATES working model 2026-07-16 (fork
+        main 675fb49f; E3SM gitlink ce5448d6ef). REQUIRED by para169 (per-PFT phen_gddthresh_c
+        rows). CONFIRMED ON THE CHECKOUT 2026-08-06 (handoff 20260805b step 4): FATES
+        HEAD = 675fb49f on branch main, EDParamsMod.F90:52 carries the per-PFT promotion,
+        and the E3SM gitlink is ce5448d6 (submodule status agrees). fates_commit/elm_commit
+        updated from the pre-#17 pair (57016c44 / 6565255) to match. para169 is therefore
+        VALID and the para168 scalar-phenology fallback is NOT needed. Note 675fb49f
+        is 7bf65ae9 (the V0-at-equality PASS) with only its commit message reworded
+        to drop the bare "#17" autolink -- same parent, identical tree.'
+    changes_from_previous:
+    - 'New api-43-1 lineage (was api-31-0 on the demo branch): FATES CDL/NetCDF params
+      -> JSON at api.43'
+    - "Parameter list 162 -> 171 -> 168 -> 169 (docs/37 explicit-column CSV; seed\
+      \ reparameterization: seed_repro_fraction + seed_alloc_fraction virtual coords\
+      \ + calibrated fates_recruit_seed_dbh_repro_threshold; dropped 3 fates_cnp_eca_alpha_ptase\
+      \ rows \u2014 inactive & hard-guarded to 0 in api-43 ECA, see ana_logs/20260712a;\
+      \ then 168 -> 169 added per-PFT fates_phen_gddthresh_c for PFT11/12 = the #17\
+      \ split, see patches above)"
+    - 'PFT identity remap by functional type: 7/9/10 -> 10/11/12 (api-43 14-PFT arctic
+      ordering)'
+    - Validation targets -> targets.yaml (PFT10/11/12), loaded via tools.targets_loader
+    - "Base param file: api-43 default with CSV default_api43 values (arctic defaults,\
+      \ e.g. seed threshold PFT12 0.35; eca_alpha_ptase forced to 0 \u2014 inactive\
+      \ & guarded in api-43 ECA, dropped from the calibration list)"
+    - 'CWDOut litter-flux fix enabled (2026-08-17, PI decision): use_fates_rootfinesfrag_fix=.true.
+      (site config use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh), fixing a bug where
+      CWDOut silently discarded the plant C/N/P efflux each day. R1 was still status=planned
+      (no cases created) when this landed, so it applies to the whole round. Single-parameterization
+      testing (phase_results/20260812a_.../leafroot_biomass_vs_obs_monthly.md) did
+      not show a biomass-vs-obs improvement, but PI judgment: that does not settle
+      whether the fix helps across the calibrated parameter space -- R1''s Morris
+      sweep tests that directly. See memory/model_logs/20260817a_Root_Fines_Frag_Fix_Merged_To_Fork_Main.md.'
+    rationale: 'First api-43-1 calibration round for Kougarok. Preceded by a base-file
+      smoke + default-vs-portapi31 comparison test (dev_logs 20260710*) confirming
+      the api-43 build/run and the api-31->api-43 default drift before committing
+      the full 5100-case Morris ensemble.
+
+      '
+    outcome: null
+    status: planned

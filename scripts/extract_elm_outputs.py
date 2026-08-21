@@ -251,7 +251,7 @@ def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Extract ELM history-output registry")
     ap.add_argument(
         "--elm-src", type=Path,
-        default=Path("~/Desktop/Work/SourceCode/ELM_FATES/E3SM_FATES_api43-1/components/elm/src"),
+        default=None,  # resolved from config.MODEL_PATH below (CLAUDE.md rule 8)
         help="Path to components/elm/src in your E3SM checkout",
     )
     ap.add_argument(
@@ -268,6 +268,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.elm_src is None:
+        # Derive from the user's own checkout rather than a hardcoded default.
+        # config.MODEL_PATH is already a required setting and raises with an
+        # actionable message when the configs were not sourced.
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from tools.config import config as _cfg
+        args.elm_src = Path(_cfg.MODEL_PATH) / "components" / "elm" / "src"
     print(f"Extracting ELM output registry from {args.elm_src}")
     fields = extract_all(args.elm_src)
     print(f"  Total unique fields: {len(fields)}")

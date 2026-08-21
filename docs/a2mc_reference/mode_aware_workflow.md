@@ -158,7 +158,7 @@ See `memory/feedback_env_vars_are_intent_case_dir_is_truth.md` for the principle
 ### Recipe 1: Default Kougarok run (FATES + PARTEH=2 + ECA + CNP)
 
 ```bash
-# In use_cases/Kougarok/config/kougarok_config.sh:
+# In use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh:
 export A2MC_ELM_OPTIONS="-bgc fates -nutrient cnp -nutrient_comp_pathway eca"
 export A2MC_FATES_PARTEH_MODE=2
 ```

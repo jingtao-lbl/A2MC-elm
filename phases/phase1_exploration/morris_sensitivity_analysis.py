@@ -746,7 +746,7 @@ Examples:
     if config is not None and config.is_configured():
         x_matrix_path = args.x_matrix or config.ENSEMBLE_MATRIX_FILE
         problem_path = args.problem or config.SALIB_PROBLEM_FILE
-        data_dir = args.data_dir or '~/Desktop/Work/NGEE-Arctic/Kougarok/Program'
+        data_dir = args.data_dir or config.EXTRACTED_DATA
     else:
         x_matrix_path = args.x_matrix
         problem_path = args.problem
@@ -754,7 +754,7 @@ Examples:
 
     if not x_matrix_path or not problem_path:
         print("Error: Must provide --x-matrix and --problem paths")
-        print("       Or source A2MC config: source use_cases/Kougarok/config/kougarok_config.sh")
+        print("       Or source A2MC config: source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh")
         sys.exit(1)
 
     output_dir = Path(args.output_dir)

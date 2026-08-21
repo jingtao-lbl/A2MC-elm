@@ -24,7 +24,7 @@ Usage:
         pft_id=10,
         targets={'leaf': 82.7, 'froot': 382.1},
         comparison_pfts=[7, 9],
-        output_dir="use_cases/Kougarok/memory/phase_results/{session_id}/phase3_diagnosis/"
+        output_dir="use_cases/ELM-FATES_Kougarok/memory/phase_results/{session_id}/phase3_diagnosis/"
     )
 
 Author: Jing Tao with Claude

@@ -125,7 +125,7 @@ A2MC's `ConfigMode.from_env()` mirrors these constraints (see `tools/config.py:f
 
 ## A2MC site config example (Kougarok)
 
-`use_cases/Kougarok/config/kougarok_config.sh`:
+`use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh`:
 
 ```bash
 # Compset string passed to E3SM as ELM_BLDNML_OPTS

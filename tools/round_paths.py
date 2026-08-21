@@ -44,7 +44,7 @@ def _resolve_yaml_path(yaml_path: Optional[str] = None) -> Path:
     if not use_case_dir:
         raise FileNotFoundError(
             "A2MC_USE_CASE_DIR is not set. Source your site config first "
-            "(e.g. `source use_cases/Kougarok/config/kougarok_config_r3.sh`)."
+            "(e.g. `source use_cases/ELM-FATES_Kougarok/config/kougarok_config_r3.sh`)."
         )
     p = Path(use_case_dir) / 'config' / 'calibration_rounds.yaml'
     if not p.exists():

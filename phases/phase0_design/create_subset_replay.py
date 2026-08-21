@@ -39,7 +39,7 @@ Outputs:
 
 Usage:
   source a2mc_config.sh
-  source use_cases/Kougarok/config/kougarok_config_r4.sh
+  source use_cases/ELM-FATES_Kougarok/config/kougarok_config_r4.sh
   python phases/phase0_design/create_subset_replay.py
 
 After this completes:
@@ -198,7 +198,7 @@ def main() -> int:
         for v in missing:
             logger.error(f"  {v}")
         logger.error("Please source the round-specific config file first, e.g.:")
-        logger.error("  source use_cases/Kougarok/config/kougarok_config_r4.sh")
+        logger.error("  source use_cases/ELM-FATES_Kougarok/config/kougarok_config_r4.sh")
         return 1
 
     source_state = Path(source_state_str)

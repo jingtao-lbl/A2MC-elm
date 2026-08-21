@@ -20,7 +20,7 @@ Configuration is read from:
 Usage:
     # First, source the config files
     source a2mc_config.sh
-    source use_cases/Kougarok/config/kougarok_config.sh
+    source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
 
     # Run workflow (output-dir and state-file auto-detected from config)
     python orchestrator.py --run
@@ -416,7 +416,7 @@ class CalibrationOrchestrator:
         self._memory = None
         self._generic_memory = None
         if config.use_memory:
-            # output_dir is already the memory directory (e.g., use_cases/Kougarok/memory)
+            # output_dir is already the memory directory (e.g., use_cases/ELM-FATES_Kougarok/memory)
             # gained_knowledge/ contains JSON files for discoveries, experiments, etc.
             memory_dir = config.memory_dir or str(self.output_dir / "gained_knowledge")
             try:
@@ -444,7 +444,7 @@ class CalibrationOrchestrator:
         self._workflow_status = None
         if WorkflowStatus is not None:
             try:
-                # output_dir is already the memory directory (e.g., use_cases/Kougarok/memory)
+                # output_dir is already the memory directory (e.g., use_cases/ELM-FATES_Kougarok/memory)
                 # Don't append another /memory
                 status_dir = str(self.output_dir) if self.output_dir else "memory"
                 self._workflow_status = WorkflowStatus(
@@ -553,7 +553,7 @@ class CalibrationOrchestrator:
                 "A2MC_MODEL_PATH is required but not set. The RAG "
                 "infrastructure needs to know your E3SM/ELM-FATES checkout "
                 "root to select the right milestone profile. Set it in your "
-                "site config (e.g., use_cases/Kougarok/config/kougarok_config.sh)."
+                "site config (e.g., use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh)."
             )
 
         try:
@@ -2201,6 +2201,10 @@ Diagnosis Summary:{skip_header}
                     ai_reasoning=ai_reasoning,
                     design_type=hypothesis.get('design_type', hypothesis.get('experimental_design', 'cumulative')),
                     expected_outcomes=hypothesis.get('expected_outcomes', {'expectation': hypothesis.get('expected_outcome', '')}),
+                    # The falsification threshold. reasoning/methods.py produces and defaults
+                    # it; without passing it here Phase 6 rules CONFIRMED/REFUTED against a
+                    # bar that never reached the log.
+                    success_criteria=hypothesis.get('success_criteria', {}),
                     confidence=hypothesis.get('confidence', 0),
                     base_case_id=_hyp_base_case_id,
                     metadata={
@@ -3520,7 +3524,7 @@ Examples:
   python orchestrator.py --run
 
   # Resume from checkpoint (state file is session-tagged)
-  python orchestrator.py --resume --state-file ./use_cases/Kougarok/memory/workflow_state_s0309h23m45.json
+  python orchestrator.py --resume --state-file ./use_cases/ELM-FATES_Kougarok/memory/workflow_state_s0309h23m45.json
 
   # Start from specific phase in calibration round 2 (e.g., 162 params)
   python orchestrator.py --run --start-phase 2 --start-round 2

@@ -15,16 +15,17 @@ Supports:
   - Multiple PFTs or gridcell-level targets
   - Configurable cost functions via cost_functions.py module
 
-Usage:
-  # As module
-  from tools.optimize_function import optimize_ensemble
+Usage (library — this module is generic, site-agnostic):
+  from tools.optimize_function import optimize_ensemble, Target, OptimizationConfig
   results = optimize_ensemble(simulated_data, observed_targets, config)
 
-  # As standalone script (uses Kougarok configuration)
-  python optimize_function.py
+  Load a site's targets generically from its ``validation/targets.yaml`` via
+  ``tools/targets_loader``; the offline screening entry point that drives this over a full
+  ensemble is ``phases/phase2_screening/screen_ensemble.py``.
 
 Created: December 2025
 Updated: January 2026 - Corrected terminology (RE/RMSRE), made generic
+Updated: July 2026 - Removed the Kougarok-specific example/main (site content lives in use_cases/)
 """
 
 import numpy as np
@@ -564,159 +565,6 @@ def _plot_optimization_statistics(result: OptimizationResult, output_file: Path)
     plt.close(fig)
 
 
-# =============================================================================
-# Kougarok-Specific Configuration (Example)
-# =============================================================================
-
-def load_kougarok_targets() -> Dict[str, Target]:
-    """
-    Load validation targets for Kougarok Arctic site.
-
-    Returns 6 biomass targets: leaf + fineroot for 3 PFTs.
-    """
-    return {
-        'PFT7_leaf': Target(
-            name='PFT7_leaf',
-            observed=24.6,
-            uncertainty=0.2,
-            units='g C/m²',
-            description='Evergreen shrub leaf biomass'
-        ),
-        'PFT7_fineroot': Target(
-            name='PFT7_fineroot',
-            observed=174.2,
-            uncertainty=0.2,
-            units='g C/m²',
-            description='Evergreen shrub fine root biomass'
-        ),
-        'PFT9_leaf': Target(
-            name='PFT9_leaf',
-            observed=124.7,
-            uncertainty=0.2,
-            units='g C/m²',
-            description='Deciduous shrub leaf biomass'
-        ),
-        'PFT9_fineroot': Target(
-            name='PFT9_fineroot',
-            observed=187.3,
-            uncertainty=0.2,
-            units='g C/m²',
-            description='Deciduous shrub fine root biomass'
-        ),
-        'PFT10_leaf': Target(
-            name='PFT10_leaf',
-            observed=82.7,
-            uncertainty=0.2,
-            units='g C/m²',
-            description='Arctic graminoid leaf biomass'
-        ),
-        'PFT10_fineroot': Target(
-            name='PFT10_fineroot',
-            observed=382.1,
-            uncertainty=0.2,
-            units='g C/m²',
-            description='Arctic graminoid fine root biomass'
-        ),
-    }
-
-
-def load_kougarok_simulated(data_dir: Path) -> Dict[str, np.ndarray]:
-    """
-    Load simulated biomass from ensemble for Kougarok (SITE-SPECIFIC EXAMPLE).
-
-    This function is specific to the Kougarok use case. For other sites,
-    implement a similar loader or use the generic optimize_ensemble() API.
-
-    Expects files (site-specific naming):
-      - LeafBiomass_{site}_obsid.txt or similar
-      - FineRootBiomass_{site}_obsid.txt or similar
-    """
-    # Site-specific file patterns - adjust for your use case
-    leaf_file = data_dir / 'MorrisLeafBiomass_UpdatedModel_138param_obsid.txt'
-    fineroot_file = data_dir / 'MorrisFineRootBiomass_UpdatedModel_138param_obsid.txt'
-
-    leaf_data = np.loadtxt(leaf_file)      # (4170, 3)
-    fineroot_data = np.loadtxt(fineroot_file)  # (4170, 3)
-
-    # Column mapping: 0=PFT7, 1=PFT9, 2=PFT10
-    pft_cols = {7: 0, 9: 1, 10: 2}
-
-    simulated = {}
-    for pft_num, col in pft_cols.items():
-        simulated[f'PFT{pft_num}_leaf'] = leaf_data[:, col]
-        simulated[f'PFT{pft_num}_fineroot'] = fineroot_data[:, col]
-
-    return simulated
-
-
-# =============================================================================
-# Main (Kougarok Example)
-# =============================================================================
-
-def main():
-    """Run optimization for Kougarok (example usage)"""
-    print("\n" + "=" * 80)
-    print("A2MC ENSEMBLE OPTIMIZATION")
-    print("=" * 80)
-    print("\nSite: Kougarok, Alaska")
-    print("Targets: 6 biomass (leaf + fineroot × 3 PFTs)")
-    print("Method: Relative Error (RE) + RMSRE aggregation")
-
-    # Paths - Auto-detect HPC vs local
-    try:
-        from config import config as a2mc_config
-        data_dir = Path(a2mc_config.LOCAL_DATA_DIR) / 'Program'
-        output_dir = data_dir / 'OptimizationLeafRoot' / 'results'
-    except ImportError:
-        import os
-        home = os.environ.get('HOME', '~')
-        data_dir = Path(f'{home}/Desktop/Work/NGEE-Arctic/Kougarok/Program')
-        output_dir = data_dir / 'OptimizationLeafRoot' / 'results'
-
-    # Load data
-    print("\n" + "-" * 40)
-    print("Loading data...")
-    targets = load_kougarok_targets()
-    simulated = load_kougarok_simulated(data_dir)
-
-    n_sets = len(list(simulated.values())[0])
-    print(f"  Loaded {n_sets} parameter sets")
-    print(f"  Loaded {len(targets)} targets")
-
-    # Configure optimization
-    config = OptimizationConfig(
-        error_method='relative_error',  # RE = |sim - obs| / obs
-        aggregation_method='rmsre',     # RMSRE = sqrt(mean(RE²))
-        tolerance=0.2,
-        n_top=50,
-        output_dir=output_dir,
-        save_plots=True,
-        verbose=True
-    )
-
-    # Run optimization
-    print("\n" + "-" * 40)
-    print("Running optimization...")
-    result = optimize_ensemble(simulated, targets, config)
-
-    # Save results
-    print("\n" + "-" * 40)
-    print("Saving results...")
-    save_optimization_results(result, simulated, output_dir, prefix='leafroot')
-
-    # Summary
-    print("\n" + "=" * 80)
-    print("OPTIMIZATION COMPLETE")
-    print("=" * 80)
-    print(f"\nBest parameter set: #{result.best_set_id}")
-    print(f"  Composite cost (RMSRE): {result.best_cost:.6f}")
-    print(f"  Targets satisfied: {result.n_satisfied[result.best_index]}/{len(targets)}")
-
-    top_ids = result.get_top_set_ids(10)
-    print(f"\nTop 10 set IDs: {list(top_ids)}")
-
-    print("\n" + "=" * 80 + "\n")
-
-
-if __name__ == '__main__':
-    main()
+# A site-specific runnable example (load this site's targets + Morris ensemble outputs and
+# rank them) belongs with the use case, not in this generic library — see
+# `use_cases/<site>/validation/load_targets.py` and the `phase2-screening` skill.

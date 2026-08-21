@@ -34,7 +34,7 @@ PY_A2MC = str(Path.home() / "a2mc_env" / "bin" / "python")  # memory / RAG (Pyth
 # A real curated dir for read-only probes: the active use case if set, else the Kougarok
 # reference use case (main's shipped example). Site-agnostic via $A2MC_USE_CASE_DIR.
 _UC = os.environ.get("A2MC_USE_CASE_DIR", "").rstrip("/")
-CURATED = f"{_UC}/memory/gained_knowledge" if _UC else "use_cases/Kougarok/memory/gained_knowledge"
+CURATED = f"{_UC}/memory/gained_knowledge" if _UC else "use_cases/ELM-FATES_Kougarok/memory/gained_knowledge"
 SKIP_RC = 77                                             # an inline snippet signals SKIP with this
 
 PASS, FAIL, SKIP = "PASS", "FAIL", "SKIP"
@@ -81,8 +81,11 @@ except Exception as e:
 # ---- check table: (name, group, interp, argv, want_substr) ----
 # interp: "sys" = system python3 (stdlib-only checks); "a2mc" = ~/a2mc_env (memory/RAG).
 CHECKS = [
-    # Tier-1 gate, re-run here so one command covers both tiers
+    # Tier-1 gates, re-run here so one command covers both tiers
     ("check_skill_registry", "registry", "sys", ["tools/check_skill_registry.py"], "clean"),
+    # offline-state invariant checker (the state analog of check_skill_registry) — exit 0 iff the
+    # workflow_state_offline_r*.json the driver loads is valid (or none exists yet).
+    ("check_workflow_state_offline", "registry", "sys", ["tools/check_workflow_state_offline.py"], None),
     # validator CLIs. codebase_wiki_validator is stdlib-only (runs anywhere); yaml_wiki_validator
     # needs PyYAML and rag_diff needs networkx, so those two run under ~/a2mc_env.
     ("codebase_wiki_validator --help", "validators", "sys", ["tools/codebase_wiki_validator.py", "--help"], "usage"),
@@ -91,6 +94,20 @@ CHECKS = [
     # curate-knowledge backing command (read-only list). --memory-dir is a GLOBAL arg → before subcommand.
     ("review_pending_knowledge list", "curate", "sys",
      ["tools/review_pending_knowledge.py", "--memory-dir", CURATED, "list"], None),
+    # calibration-loop backing commands — argparse `--help` smoke. Can't run these for real (they need
+    # HPC data / a live ensemble), but `--help` proves the module IMPORTS and its arg spec parses — it
+    # catches the whole class of import/rename/dependency + unescaped-`%`-in-help breakage the static
+    # check can't (found modify_fates_parameters' `40%`→`% f` argparse crash, 20260715). All need a2mc_env.
+    ("extract_sensitivity_outputs --help", "calibration", "a2mc", ["phases/phase1_exploration/extract_sensitivity_outputs.py", "--help"], "usage"),
+    ("morris_sensitivity_analysis --help", "calibration", "a2mc", ["phases/phase1_exploration/morris_sensitivity_analysis.py", "--help"], "usage"),
+    ("screen_ensemble --help", "calibration", "a2mc", ["phases/phase2_screening/screen_ensemble.py", "--help"], "usage"),
+    ("plot_ensemble_cases --help", "calibration", "a2mc", ["tools/plot_ensemble_cases.py", "--help"], "usage"),
+    ("extract_and_plot_selected_cases --help", "calibration", "a2mc", ["tools/extract_and_plot_selected_cases.py", "--help"], "usage"),
+    ("extract_monthly_variables_FATES --help", "calibration", "a2mc", ["tools/extract_monthly_variables_FATES.py", "--help"], "usage"),
+    ("diagnose_ensemble_status --help", "calibration", "a2mc", ["tools/diagnose_ensemble_status.py", "--help"], "usage"),
+    ("modify_fates_parameters --help", "calibration", "a2mc", ["tools/modify_fates_parameters.py", "--help"], "usage"),
+    ("submit_phase0 --help", "calibration", "a2mc", ["phases/phase0_design/submit_phase0.py", "--help"], "usage"),
+    ("validate_submission_plan --help", "calibration", "a2mc", ["tools/validate_submission_plan.py", "--help"], "usage"),
     # memory smoke — the get_relevant_context regression (inject-knowledge / curate-knowledge)
     ("memory get_relevant_context", "memory", "a2mc", ["-c", _MEMORY_SMOKE], "OK"),
     # RAG/GraphRAG — needs Python 3.10 + a built index; SKIPs cleanly otherwise

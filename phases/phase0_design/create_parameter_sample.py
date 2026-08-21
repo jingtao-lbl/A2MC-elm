@@ -114,6 +114,9 @@ from typing import Tuple
 import numpy as np
 import pandas as pd
 
+# Make `from tools.* import ...` resolve when this file is run as a script (repo root on sys.path).
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 # SALib is the sampling backend. Import lazily so --help works without it.
 
 
@@ -188,14 +191,38 @@ def _find_bound_columns(columns: list[str]) -> Tuple[str, str]:
     return lower, upper
 
 
+def _is_new_format(path: Path) -> bool:
+    """True for the docs/37 explicit-column CSV (fates_name,pft,organ,...) vs the legacy
+    shorthand list. Detected by the header carrying the fates_name + pft + organ columns."""
+    try:
+        with path.open() as f:
+            header = f.readline()
+    except OSError:
+        return False
+    cols = {c.strip().lower() for c in header.replace('\t', ',').split(',')}
+    return {'fates_name', 'pft', 'organ'}.issubset(cols)
+
+
 def parse_param_list(path: Path) -> Tuple[list[str], np.ndarray, np.ndarray]:
     """Parse a parameter list file into (names, lower, upper) arrays.
 
-    Auto-detects header row, delimiter, and column names. Filters out
-    non-data rows (e.g., trailing blank lines, commented separators).
+    For the new explicit-column CSV (docs/37) the canonical loader is the sole parser and
+    `names` are canonical ids. For the legacy shorthand list, auto-detect header/delimiter/
+    columns (names = the shorthand). Filters non-data rows.
     """
     if not path.is_file():
         raise FileNotFoundError(f"Parameter list file not found: {path}")
+
+    # docs/37 explicit-column CSV → canonical loader (single source of truth)
+    if _is_new_format(path):
+        from tools.param_spec import load_param_spec
+        specs = load_param_spec(path)
+        names = [s.canonical_id for s in specs]
+        lower = np.array([s.lower for s in specs], dtype=float)
+        upper = np.array([s.upper for s in specs], dtype=float)
+        if not names:
+            raise ValueError(f"No parameters parsed from {path}")
+        return names, lower, upper
 
     skiprows = _detect_header_row(path)
     with path.open() as f:
@@ -266,16 +293,23 @@ def sample_sobol(
     """Generate a Saltelli-Sobol sample. Returns shape (N*(2P+2), P)
     if calc_second_order else (N*(P+2), P).
     """
-    from SALib.sample.saltelli import sample as saltelli_sample  # lazy import
-    # SALib's Saltelli generator doesn't accept seed; set numpy's global RNG
-    # for deterministic skip_values selection, and pass skip_values=seed for
-    # explicit reproducibility of the underlying Sobol sequence offset.
-    np.random.seed(seed)
-    X = saltelli_sample(
+    # SALib 1.5.2 ships TWO Sobol samplers, and only the current one has a seed:
+    #   SALib.sample.sobol.sample     (problem, N, *, calc_second_order, scramble,
+    #                                  skip_values, seed)   <- current
+    #   SALib.sample.saltelli.sample  (problem, N, calc_second_order, skip_values)
+    #                                                       <- legacy, DeprecationWarning
+    # This called the legacy path and passed `skip_values=seed`. `skip_values` is a
+    # Sobol-sequence OFFSET, not a seed: it must be a power of two >= N, so a seed
+    # like 42 either errors or silently shifts the sequence instead of seeding it.
+    # `np.random.seed()` did not rescue it either — the Sobol generator does not
+    # draw from numpy's global RNG. The design was effectively unseeded.
+    from SALib.sample.sobol import sample as sobol_sample  # lazy import
+    X = sobol_sample(
         problem,
         N=n_samples,
         calc_second_order=calc_second_order,
-        skip_values=seed,
+        scramble=True,
+        seed=seed,
     )
     return X
 
@@ -323,6 +357,13 @@ def parse_defaults(path: Path, names: list[str], lower: np.ndarray, upper: np.nd
     Uses a `Default_Value` column if present in the parameter list file,
     else falls back to the midpoint of (lower, upper) for missing entries.
     """
+    # docs/37 explicit-column CSV → canonical loader, defaults keyed by canonical id
+    if _is_new_format(path):
+        from tools.param_spec import load_param_spec
+        by_id = {s.canonical_id: s.default for s in load_param_spec(path)}
+        return np.array([by_id.get(n, (lo + hi) / 2.0)
+                         for n, lo, hi in zip(names, lower, upper)], dtype=float)
+
     skiprows = _detect_header_row(path)
     with path.open() as f:
         header_line = next(line for i, line in enumerate(f) if i == skiprows)

@@ -19,7 +19,7 @@ Usage:
     memory = MemoryManager("./memory/gained_knowledge")
 
     # Initialize with site-specific knowledge
-    memory = MemoryManager("./use_cases/Kougarok/memory/gained_knowledge")
+    memory = MemoryManager("./use_cases/ELM-FATES_Kougarok/memory/gained_knowledge")
 
     # Query relevant context for diagnosis
     context = memory.get_relevant_context(["froot_pft10", "leaf_pft10"])

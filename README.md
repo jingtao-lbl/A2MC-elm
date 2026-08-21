@@ -81,7 +81,7 @@ A discovery vetted by either agent is available to the other on the next run.
 
 Non-linear iteration paths avoid unnecessary HPC computation: **Phase 4 → Phase 3** (skip testing when existing data can test the hypothesis), **Phase 6 → Phase 3** (rethink when results disprove the hypothesis), **Phase 6 → Phase 0** (redesign when the parameter space needs expansion). These are organized as three nested loops — calibration round (Phase 0→7), experiment cycle (Phase 3→4→5→6→3), and skip-testing (Phase 3↔4).
 
-Full per-phase behavior, diagnostic-tool inventory, and the three-level iteration counters are in the [User Guide → 7-phase workflow](docs/a2mc_reference/user_guide.md#4-the-7-phase-workflow-in-detail).
+Full per-phase behavior, diagnostic-tool inventory, and the three-level iteration counters are in the [User Guide → 7-phase workflow](docs/a2mc_reference/user_guide.md#5-the-7-phase-workflow-in-detail).
 
 ---
 
@@ -89,7 +89,7 @@ Full per-phase behavior, diagnostic-tool inventory, and the three-level iteratio
 
 ```bash
 # 1. Create a use case (copy the Kougarok example or the minimal template)
-cp -r use_cases/Kougarok use_cases/YourSite      # or use_cases/TEMPLATE
+cp -r use_cases/ELM-FATES_Kougarok use_cases/YourSite      # or use_cases/TEMPLATE
 
 # 2. Configure site + machine settings
 vim use_cases/YourSite/config/yoursite_config.sh # PFTs, parameters, validation, HPC paths
@@ -106,7 +106,7 @@ python orchestrator.py --run                     # add --no-review for fully aut
 
 `A2MC_MODEL_PATH` (your E3SM/ELM-FATES checkout root) is **required** — A2MC reads the FATES + ELM commits and selects the matching RAG profile. AI reasoning (phases 2, 3, 4, 6) needs the API key for your chosen provider (`anthropic`, `openai`, or `cborg`).
 
-Full setup — every config field, provider/model table, installation on NERSC Perlmutter, and all run/resume options — is in the [User Guide → Installation](docs/a2mc_reference/user_guide.md#1-installation-and-setup-nersc-perlmutter), [Configuration](docs/a2mc_reference/user_guide.md#2-configuration-reference), and [Running the workflow](docs/a2mc_reference/user_guide.md#3-running-the-workflow).
+Full setup — every config field, provider/model table, installation on NERSC Perlmutter, and all run/resume options — is in the [User Guide → Installation](docs/a2mc_reference/user_guide.md#1-installation-and-setup-nersc-perlmutter), [Configuration](docs/a2mc_reference/user_guide.md#2-configuration-reference), and [Running the workflow](docs/a2mc_reference/user_guide.md#4-using-the-online-autonomous-agent).
 
 ---
 
@@ -153,7 +153,7 @@ The RAG/GraphRAG tier auto-detects the user's E3SM/ELM-FATES checkout (via `A2MC
 
 The **Adaptive Memory** system learns across sessions: generic FATES insights in `memory/gained_knowledge/` and site-specific discoveries under `use_cases/{site}/memory/`, with generalizable lessons promoted from site to generic. At diagnosis/hypothesis time, RAG knowledge, adaptive memory, and current task data are combined into the reasoning prompt (failed approaches marked "DO NOT REPEAT").
 
-Details: [User Guide → Knowledge system](docs/a2mc_reference/user_guide.md#6-knowledge-system) and [Adaptive Memory](docs/a2mc_reference/user_guide.md#7-adaptive-memory-system).
+Details: [User Guide → Knowledge system](docs/a2mc_reference/user_guide.md#7-knowledge-system) and [Adaptive Memory](docs/a2mc_reference/user_guide.md#8-adaptive-memory-system).
 
 ---
 
@@ -164,7 +164,7 @@ Details: [User Guide → Knowledge system](docs/a2mc_reference/user_guide.md#6-k
 - [`docs/a2mc_reference/skills_catalog.md`](docs/a2mc_reference/skills_catalog.md) — offline-agent skills catalog
 - `docs/a2mc_reference/` — mode-aware workflow, version association, validation playbook, RAG build roadmap, FATES data reference
 - `docs/fates-knowledge-base/` — FATES documentation (official docs + codebase wiki)
-- `use_cases/Kougarok/README.md` — a complete worked example (Arctic tundra, NGEE-Arctic)
+- `use_cases/ELM-FATES_Kougarok/README.md` — a complete worked example (Arctic tundra, NGEE-Arctic)
 
 ---
 

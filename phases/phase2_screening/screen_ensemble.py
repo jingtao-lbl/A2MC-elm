@@ -81,12 +81,12 @@ class ScreeningConfig:
     # (single-month comparison). Set only to average months for legacy/un-specced targets.
     obs_months: Optional[List[int]] = None
 
-    # PFT settings
-    pfts: List[int] = field(default_factory=lambda: [7, 9, 10])
+    # PFT settings (api-43 12-PFT arctic ordering: evergreen=10, decid=11, graminoid=12)
+    pfts: List[int] = field(default_factory=lambda: [10, 11, 12])
     pft_names: Dict[int, str] = field(default_factory=lambda: {
-        7: 'Evergreen Shrub',
-        9: 'Deciduous Shrub',
-        10: 'Graminoid'
+        10: 'Evergreen Shrub',
+        11: 'Deciduous Shrub',
+        12: 'Graminoid'
     })
 
     # Variables to extract
@@ -253,28 +253,44 @@ def load_nc_timeseries(case_num: int, var_name: str, config: ScreeningConfig) ->
     )
 
     n_months = (config.year_end - config.year_start + 1) * 12
+    # SZPF total + nlevsclass from the run's base param file (not hardcoded 156/13) for
+    # the missing-data placeholder; a present file is oriented by its own dimension.
+    from tools.fates_utils import (
+        get_szpf_dim_length, get_szpf_total_from_config, get_n_size_classes_from_config,
+    )
+    szpf_total = get_szpf_total_from_config()
+    n_sc = get_n_size_classes_from_config()
 
     if nc_file.exists():
         try:
             with nc.Dataset(nc_file, 'r') as ds:
                 if var_name in ds.variables:
+                    slen = get_szpf_dim_length(ds, var_name) or szpf_total
                     data = ds.variables[var_name][:]
                     data = np.squeeze(data)
                     if data.ndim == 2:
-                        if data.shape[1] == 156:
+                        if data.shape[1] == slen or (
+                            data.shape[1] % n_sc == 0
+                            and data.shape[0] % n_sc != 0
+                        ):
                             data = data.T
                     else:
-                        return np.full((156, n_months), np.nan)
+                        return np.full((slen, n_months), np.nan)
                     return data
         except Exception:
             pass
 
-    return np.full((156, n_months), np.nan)
+    return np.full((szpf_total, n_months), np.nan)
 
 
 def get_pft_value_at_obs(data: np.ndarray, pft_id: int, obs_idx: int, factor: float = 1000) -> float:
     """Extract PFT-specific value at observation timestep."""
-    szpf_start, szpf_end = get_szpf_range(pft_id)
+    from tools.fates_utils import get_n_size_classes_from_config
+    n_sc = get_n_size_classes_from_config()          # nlevsclass from base param file
+    n_pft = data.shape[0] // n_sc if n_sc else None
+    szpf_start, szpf_end = get_szpf_range(
+        pft_id, fates_pft=(n_pft or pft_id), n_size_classes=n_sc
+    )
     return np.sum(data[szpf_start:szpf_end + 1, obs_idx]) * factor
 
 
@@ -484,8 +500,8 @@ def screen_ensemble(
     >>> from tools.optimize_function import Target
     >>>
     >>> targets = {
-    ...     'PFT7_leaf': Target('PFT7_leaf', observed=24.6, uncertainty=0.2),
-    ...     'PFT10_fineroot': Target('PFT10_fineroot', observed=382.1, uncertainty=0.2),
+    ...     'PFT10_leaf': Target('PFT10_leaf', observed=24.6, uncertainty=0.2),
+    ...     'PFT12_fineroot': Target('PFT12_fineroot', observed=382.1, uncertainty=0.2),
     ... }
     >>> result = screen_ensemble(data_dir, targets, top_n=50)
     >>> print(f"Best case: #{result.best_case_num}, cost: {result.best_cost:.4f}")
@@ -593,50 +609,56 @@ def load_kougarok_targets() -> Dict[str, Target]:
     Load validation targets for Kougarok site.
 
     Observations from July 2016 field campaign.
+
+    PFT ids are api-43 (12-PFT arctic ordering): evergreen shrub = PFT10,
+    deciduous shrub = PFT11, graminoid = PFT12 (were 7/9/10 on api-31). Values
+    unchanged; the target-name PFT number drives the SZPF extraction slice.
+    This is the fallback only — the live path loads use_cases/ELM-FATES_Kougarok/validation/
+    targets.yaml via tools.targets_loader.load_case_targets().
     """
     return {
-        'PFT7_leaf': Target(
-            name='PFT7_leaf',
+        'PFT10_leaf': Target(
+            name='PFT10_leaf',
             observed=24.55,  # 49.1 * 0.5 (dry mass to C)
             uncertainty=0.2,
             units='g C/m²',
             description='Evergreen shrub leaf biomass',
             obs_std=29.1,
         ),
-        'PFT7_fineroot': Target(
-            name='PFT7_fineroot',
+        'PFT10_fineroot': Target(
+            name='PFT10_fineroot',
             observed=174.25,  # 348.5 * 0.5
             uncertainty=0.2,
             units='g C/m²',
             description='Evergreen shrub fine root biomass',
             obs_std=214.0,
         ),
-        'PFT9_leaf': Target(
-            name='PFT9_leaf',
+        'PFT11_leaf': Target(
+            name='PFT11_leaf',
             observed=124.7,  # 249.4 * 0.5
             uncertainty=0.2,
             units='g C/m²',
             description='Deciduous shrub leaf biomass',
             obs_std=47.2,
         ),
-        'PFT9_fineroot': Target(
-            name='PFT9_fineroot',
+        'PFT11_fineroot': Target(
+            name='PFT11_fineroot',
             observed=187.35,  # 374.7 * 0.5
             uncertainty=0.2,
             units='g C/m²',
             description='Deciduous shrub fine root biomass',
             obs_std=120.4,
         ),
-        'PFT10_leaf': Target(
-            name='PFT10_leaf',
+        'PFT12_leaf': Target(
+            name='PFT12_leaf',
             observed=82.65,  # 165.3 * 0.5
             uncertainty=0.2,
             units='g C/m²',
             description='Arctic graminoid leaf biomass',
             obs_std=56.3,
         ),
-        'PFT10_fineroot': Target(
-            name='PFT10_fineroot',
+        'PFT12_fineroot': Target(
+            name='PFT12_fineroot',
             observed=382.05,  # 764.1 * 0.5
             uncertainty=0.2,
             units='g C/m²',
@@ -671,10 +693,10 @@ def main():
     if args.data_dir:
         data_dir = Path(args.data_dir)
     else:
-        # Default Kougarok path
-        import os
-        home = os.environ.get('HOME', '~')
-        data_dir = Path(f'{home}/Desktop/Work/NGEE-Arctic/Kougarok/Results_PlantTraitsCNPEnsemble_wModPval_noADSP2/Kougarok_PlantTraitsCNPEnsemble162_Morris')
+        # From config, not a hardcoded path (CLAUDE.md rule 8). Raises with an
+        # actionable message if the configs were not sourced.
+        from tools.config import config as _cfg
+        data_dir = Path(_cfg.EXTRACTED_DATA)
 
     # Load targets
     targets = load_kougarok_targets()

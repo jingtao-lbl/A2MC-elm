@@ -1,4 +1,4 @@
-netcdf /Users/jingtao/Desktop/Work/NGEE-Arctic/Kougarok/FATESparameterfiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris/fates_params_api25.5.0_12pft_c230710__PtCNP162_En1.nc {
+netcdf fates_params_api25.5.0_12pft_c230710__PtCNP162_En1.nc {
   dimensions:
     fates_NCWD = 4;
     fates_history_age_bins = 7;

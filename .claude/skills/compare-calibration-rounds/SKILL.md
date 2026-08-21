@@ -1,5 +1,7 @@
 ---
 name: compare-calibration-rounds
+visibility: public
+category: calibration
 description: Compare A2MC calibration rounds (R1, R2, …) against each other and the validation targets — top-N best-achievable biomass per round, per-target Morris μ* sensitivity, P-pool / cross-regime overlays. Use when the user asks to "compare rounds", "update the multi-round figure", "refresh the R1-RN comparison", "which round is best", "top sensitive parameters per round", or to regenerate any `multiround_*` / cross-round figure after new cases complete. Codifies the multiround bundle pipeline + the footguns (screening contamination, case-name patterns, μ* ranking, param-set mismatch, partial-ensemble caveats).
 modes:
   requires_fates: true
@@ -80,6 +82,11 @@ Also: `tools/compare_rounds.py` for quantitative round-vs-round deltas.
   the originating dev/ana log (findings).
 - Tools: `phases/phase2_screening/screen_ensemble.py`, `phases/phase1_exploration/morris_sensitivity_analysis.py`,
   `tools/{compare_rounds,extract_and_plot_selected_cases,plot_ensemble_cases}.py`.
+
+
+## Related skills
+
+- **`plotting`** — load it **before your first `savefig`**, not after. Its rule 8 (*open the rendered PNG and LOOK at it*) is the only step that catches an overlapping legend, a stats box across the curve, or an unreadable axis, and it cannot catch them retroactively.
 
 ## Changelog
 

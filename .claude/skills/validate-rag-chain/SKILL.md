@@ -1,5 +1,7 @@
 ---
 name: validate-rag-chain
+visibility: public
+category: kb-build
 description: Validate the source→wiki→curated-YAML→RAG chain before shipping, using the three A2MC validators in dependency order. Use when the user asks to "validate the wiki/RAG", "check the wiki against source", "did the rebuild regress", "check for hallucinations before merging the wiki", "validate the curated YAML", or after generating a wiki / editing curated_relationships.yaml / rebuilding the RAG at a new commit. Runs codebase_wiki_validator (wiki↔source) → yaml_wiki_validator (YAML↔wiki+param+output) → rag_diff (profile vs reference), applies the Green/Yellow/Red banding and the fabrication-vs-false-positive triage. Distilled from docs/a2mc_reference/rag_validation_workflow.md.
 modes:
   requires_fates: false

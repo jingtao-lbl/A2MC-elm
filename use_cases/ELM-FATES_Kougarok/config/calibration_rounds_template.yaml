@@ -1,0 +1,90 @@
+# ⚠️ SUPERSEDED (2026-08-02) — DO NOT COPY FROM THIS FILE
+# =============================================================================
+# The generic template now lives at:
+#     use_cases/TEMPLATE/config/template_calibration_rounds.yaml
+# which is model-agnostic and marks every key [DERIVED] vs [AUTHORED].
+#
+# This file is an api-31-era Kougarok EXAMPLE (162 params, api25.5.0 12-PFT .nc
+# parameter files, PFT 7/9/10, branch fates-cnp-eca-tj @ e85d997). It is kept
+# only as a historical record of the R4 round design.
+#
+# It also encodes three path patterns that were CORRECTED on 2026-08-02 (v2.219,
+# dev log 20260802d) — do not carry them forward:
+#   * param_dir on /global/homes/... (hardcoded; belongs on ${A2MC_OUTPUT_ROOT})
+#   * case_scripts re-appending "Kougarok_FATES/" to $A2MC_SCRIPTS_DIR, which
+#     already ends in it (produced a DOUBLED path segment)
+#   * no round token in param_dir / param_pattern, so two rounds collide
+#
+# The live record is calibration_rounds.yaml in this directory; generate and
+# validate it with tools/generate_calibration_rounds.py + check_calibration_rounds.py.
+# =============================================================================
+#
+# Calibration Round History for Kougarok Site  (historical R4 example)
+# -----------------------------------------------------------------------------
+# Each round represents a full Phase 0-7 cycle with potentially different
+# parameter spaces, bounds, simulation protocols, or validation targets.
+# =============================================================================
+
+rounds:
+  1:
+    parameters: 162
+    ensembles: 4890
+    trajectories: 30
+    sampling_scheme: "morris"
+    config_file: "use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh"
+    paths:
+      ensemble_name: "Kougarok_PlantTraitsCNPEnsemble162_ADSPSupNP"
+      ensemble_output: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_ADSPSupNP"
+      extracted_data: "${A2MC_OUTPUT_ROOT}/Kougarok_PlantTraitsCNPEnsemble162_ADSPSupNP_Extract"
+      param_dir: "~/E3SM_Aid/FATES-ParameterFiles/fates_params_NonPrescribed_EnPlantTraitsCNPparam162_Morris"
+      param_pattern: "fates_params_api25.5.0_12pft_c230710__PtCNP162_En{N}.nc"
+      case_name_pattern: "Kougarok_ELM-FATES_PtCNPEn{N}ADSPSupNP_{PHASE}"
+      case_scripts: "${A2MC_SCRIPTS_DIR}/Kougarok_FATES/ReCalibration_PtCNP162_AllPhase_ADSPSupNP"
+    targets:
+      - "PFT7_leaf, PFT7_fineroot"
+      - "PFT9_leaf, PFT9_fineroot"
+      - "PFT10_leaf, PFT10_fineroot"
+    protocol:
+      suplphos:
+        ADSP: "ALL"
+        RGSP: "NONE"   # CHANGED from R3 (was ALL); matches R2 baseline
+        TRANS: "NONE"
+      suplnitro:
+        ADSP: "ALL"    # CHANGED from R2/R3 (was NONE) — R4 primary hypothesis
+        RGSP: "NONE"
+        TRANS: "NONE"
+    overrides: {}
+    fates_source:
+      branch: "fates-cnp-eca-tj"
+      base_commit: "e85d997"
+      patches:
+        - id: "gradual-hydraulic-mortality"
+          file: "biogeochem/EDMortalityFunctionsMod.F90"
+          summary: |
+            Replaces the binary hydraulic mortality switch at hf_sm_threshold
+            with a linear ramp `(hf_sm_threshold - btran_ft)/hf_sm_threshold`,
+            matching the flc-based path. Reduces catastrophic mortality during
+            the 1963-68 Alaska drought event, mitigating the litter-trap
+            mechanism that locks P in undecomposed litter.
+        - id: "prescribed-puptake-fix"
+          file: "biogeochem/FatesSoilBGCFluxMod.F90"
+          line: 202
+          summary: |
+            prescribed_nuptake(pft) → prescribed_puptake(pft) in daily_p_gain
+            calculation. Fixes the FATES source quirk discovered during the
+            e85d997 wiki audit (memory/dev_logs/fates_wiki_audit_e85d997/06_parteh.md
+            m6 and 10_advanced.md m5). Numerical no-op for R4 because R4
+            doesn't use prescribed-P mode (overrides: {}), but unblocks
+            decoupled N/P prescription rates for any future calibration
+            that wants them.
+    changes_from_previous:
+      - "REDESIGN: subset_replay (200 cases, prescribed_puptake=1.0) → fresh Morris ensemble (4890 cases, no overrides)"
+      - "Protocol vs old-R4: A2MC_ADSP_SUPLNITRO NONE → ALL; A2MC_RGSP_SUPLPHOS ALL → NONE"
+      - "Closest analogue is R2 (Morris design, RGSP_SUPLPHOS=NONE): R4 differs from R2 by ADSP_SUPLNITRO=ALL"
+      - "Removed override: fates_cnp_prescribed_puptake (was 1.0 in old-R4, now default 0)"
+      - "FATES rebuild on fates-cnp-eca-tj: gradual hydraulic mortality + prescribed_puptake correctness fix"
+      - "Parameter NC files: reuses R3's directory (R2/R3/new-R4 share parameter sets — only protocol differs)"
+    rationale: >
+      
+    outcome: null
+    status: in_progress

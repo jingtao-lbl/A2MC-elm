@@ -46,25 +46,33 @@ DEFAULT_MECHANISMS = [
     },
 ]
 
-# Default PFT names (used when PFTs not in YAML or config)
-DEFAULT_PFT_NAMES = {
-    7: ("Arctic evergreen shrub", "Evergreen shrubs (e.g., Ledum, Vaccinium vitis-idaea)"),
-    9: ("Arctic deciduous shrub", "Deciduous shrubs (e.g., Betula nana, Salix)"),
-    10: ("Arctic graminoid", "Tundra grasses and sedges (e.g., Eriophorum, Carex)"),
-}
+# PFT identity comes ONLY from the base param file's `fates_pftname` at build time (see
+# add-PFTs below). There is deliberately NO hardcoded name map: PFT identity is not stable
+# across FATES versions (api-31 arctic PFTs were 7/9/10; api-43 are 10/11/12), so a static
+# fallback would silently mislabel the whole graph. If the file is unavailable, the build
+# FAILS LOUDLY rather than guess. [[feedback_verify_pft_identity_across_versions]]
 
 
 # =============================================================================
 # PFT list resolution
 # =============================================================================
 
+# Standard FATES PFT count for the last-resort fallback below. This is a MODEL-level
+# default (a 12-PFT FATES configuration), NOT a site's PFT subset — the framework must
+# not bake any one site's PFTs (e.g. Kougarok's arctic 7/9/10 or 10/11/12) into a
+# generic file. Real runs always supply the exact set via A2MC_PFTS or pft_list.
+DEFAULT_FATES_NPFT = 12
+
+
 def _resolve_pft_list(pft_list: Optional[List[int]] = None) -> List[int]:
-    """Resolve PFT list from argument, env var, or default.
+    """Resolve PFT list from argument, env var, or a generic model-level default.
 
     Resolution order:
-    1. pft_list argument
-    2. A2MC_PFTS environment variable (comma-separated)
-    3. Default [7, 9, 10]
+    1. ``pft_list`` argument
+    2. ``A2MC_PFTS`` environment variable (comma-separated) — set by the site config
+    3. Generic fallback: all PFTs of a standard 12-PFT FATES file, ``[1..12]``, with a
+       warning. This is deliberately site-agnostic; set ``A2MC_PFTS`` for your site so
+       the graph builds PFT-specific nodes for exactly the PFTs you calibrate.
     """
     if pft_list is not None:
         return pft_list
@@ -76,7 +84,13 @@ def _resolve_pft_list(pft_list: Optional[List[int]] = None) -> List[int]:
         except ValueError:
             pass
 
-    return [7, 9, 10]
+    fallback = list(range(1, DEFAULT_FATES_NPFT + 1))
+    print(
+        f"  ⚠ WARNING: no pft_list and A2MC_PFTS unset; defaulting to all "
+        f"{DEFAULT_FATES_NPFT} PFTs {fallback}. Set A2MC_PFTS for your site "
+        f"(e.g. A2MC_PFTS=10,11,12) so the graph nodes match your calibrated PFTs."
+    )
+    return fallback
 
 
 # =============================================================================
@@ -511,7 +525,8 @@ def build_fates_graph(
         curated_yaml_path: Path to curated_relationships.yaml (uses default if None)
         param_cdl_path: Path to fates_params_info.cdl (auto-detected if None)
         output_cdl_path: Path to elm_fates_output_info.cdl (auto-detected if None)
-        pft_list: List of PFT indices to include (default from env or [7, 9, 10])
+        pft_list: List of PFT indices to include (default from A2MC_PFTS env, else
+            all 12 PFTs of a standard FATES file — site-agnostic; see _resolve_pft_list)
         include_elm_outputs: Whether to include key ELM output variables
 
     Returns:
@@ -538,11 +553,34 @@ def build_fates_graph(
         elif DEFAULT_OUTPUT_CDL_PATH.exists():
             output_cdl_path = str(DEFAULT_OUTPUT_CDL_PATH)
 
-    # --- Add PFTs ---
+    # --- Add PFTs (identities from the base param file's fates_pftname — authoritative
+    #     per api version; NO hardcoded fallback, fail loudly on a wrong/missing identity) ---
     print("  Adding PFTs...")
+    from tools.fates_utils import get_pft_names_from_file
+    _bp = os.environ.get('A2MC_BASE_PARAM_FILE', '')
+    if not _bp or not Path(_bp).exists():
+        raise RuntimeError(
+            f"Cannot resolve PFT identities: A2MC_BASE_PARAM_FILE is unset or missing "
+            f"({_bp!r}). It must point at the FATES base parameter file so PFT node names "
+            f"come from fates_pftname. Source the site config; no hardcoded fallback exists."
+        )
+    try:
+        pft_file_names = get_pft_names_from_file(_bp)
+    except Exception as _e:
+        raise RuntimeError(
+            f"Failed to read fates_pftname from base param file {_bp}: {_e}"
+        ) from _e
+    print(f"    PFT identities from fates_pftname ({Path(_bp).name}, {len(pft_file_names)} PFTs)")
     for pft_idx in pft_list:
-        name, desc = DEFAULT_PFT_NAMES.get(pft_idx, (f"PFT{pft_idx}", f"Plant Functional Type {pft_idx}"))
-        kg.add_pft(pft_idx, name, desc)
+        if pft_idx not in pft_file_names:
+            raise RuntimeError(
+                f"PFT id {pft_idx} (from A2MC_PFTS / pft_list) is not in fates_pftname of "
+                f"{Path(_bp).name} (which has {len(pft_file_names)} PFTs: "
+                f"{sorted(pft_file_names)}). Fix A2MC_PFTS or the base param file — the "
+                f"builder will not guess an identity."
+            )
+        name = pft_file_names[pft_idx]
+        kg.add_pft(pft_idx, name, f"FATES PFT #{pft_idx}: {name} (from fates_pftname)")
 
     # --- Layer 1: Auto-extracted from CDL files ---
     print("  Layer 1: Auto-extracting from CDL files...")

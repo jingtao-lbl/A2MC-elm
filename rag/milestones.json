@@ -13,6 +13,8 @@
       "fates_wiki_subdir": "fates-codebase-wiki-e027a40",
       "fates_output_cdl": "elm_fates_output_info_e027a40.cdl",
       "elm_output_cdl": "elm_output_info_d40b843.cdl",
+      "fates_param_cdl": "fates_params_info_e027a40.json",
+      "expected_counts": {"documents": 6328, "nodes": 3178, "edges": 2772},
       "covers_sci_tags": [
         "sci.1.90.0_api.43.1.0",
         "sci.1.90.1_api.43.1.0",
@@ -41,6 +43,8 @@
       "fates_wiki_subdir": "fates-codebase-wiki-e85d997",
       "fates_output_cdl": "elm_fates_output_info.cdl",
       "elm_output_cdl": null,
+      "fates_param_cdl": "fates_params_info.cdl",
+      "expected_counts": {"documents": 2581, "nodes": 1295, "edges": 2197},
       "covers_sci_tags": [
         "sci.1.68.2_api.31.0.0",
         "sci.1.68.3_api.31.0.0",

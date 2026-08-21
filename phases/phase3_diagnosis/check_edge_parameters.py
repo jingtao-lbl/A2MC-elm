@@ -59,8 +59,8 @@ PARAMETER_CATEGORIES = {
     'Retranslocation': ['nitr_retrans', 'phos_retrans'],
     'PID_controller': ['pid_kp', 'pid_ki', 'pid_kd'],
     'Allocation': ['alloc_storage_cushion', 'alloc_store_priority_frac', 'l2fr_ini'],
-    'Stoichiometry_N': ['stoich_nitr_leaf', 'stoich_nitr_fineroot'],
-    'Stoichiometry_P': ['stoich_phos_leaf', 'stoich_phos_fineroot'],
+    'Stoichiometry_N': ['stoich_nitr'],   # matches both organ rows (fates_name has no organ; it's in #o..)
+    'Stoichiometry_P': ['stoich_phos'],
     'Allometry': ['allom_d2bl1', 'allom_d2bl2', 'allom_agb2', 'allom_agb3',
                   'allom_d2h1', 'allom_d2h2', 'allom_dbh_maxheight',
                   'allom_d2ca_coefficient_min'],
@@ -71,7 +71,9 @@ PARAMETER_CATEGORIES = {
                   'phen_ncolddayslim', 'phen_gddthresh_c'],
     'Recruitment': ['recruit_height_min', 'recruit_seed_alloc', 'frag_seed_decay',
                     'recruit_seed_germination_rate', 'recruit_seed_supplement',
-                    'recruit_init_density'],
+                    'recruit_init_density',
+                    # api-43 seed reparameterization (docs/37): the derived-param coords + threshold
+                    'seed_repro_fraction', 'seed_alloc_fraction', 'seed_dbh_repro'],
     'Leaf_traits': ['leaf_slatop', 'leaf_vcmax25top', 'grperc'],
     'Maintenance_respiration': ['maintresp_nonleaf_baserate']
 }
@@ -195,10 +197,13 @@ def categorize_edge_parameters(edge_result: Dict) -> Dict[str, Dict]:
     categories['Other'] = {'at_lower': [], 'at_upper': []}
 
     def get_category(param_name: str) -> str:
-        """Find category for a parameter."""
+        """Find category for a parameter (canonical_id or legacy shorthand)."""
         param_base = param_name.strip()
-        # Remove PFT suffix for matching
-        if param_base[-1].isdigit() and '_' in param_base:
+        if '#' in param_base:
+            # docs/37 canonical_id `fates_name#p..#o..` → match on the fates_name
+            param_base = param_base.split('#')[0]
+        elif param_base and param_base[-1].isdigit() and '_' in param_base:
+            # legacy shorthand → remove the PFT suffix for matching
             param_base = '_'.join(param_base.split('_')[:-1])
 
         for cat, patterns in PARAMETER_CATEGORIES.items():

@@ -213,10 +213,26 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
         """
         return self._load_ensemble_parameter_list()
 
+    @staticmethod
+    def _is_new_param_list(param_file: str) -> bool:
+        """True if `param_file` is the docs/37 explicit-column CSV (header starts with `fates_name`)."""
+        try:
+            with open(param_file) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'):
+                        continue
+                    return ',' in line and line.split(',')[0].strip() == 'fates_name'
+        except OSError:
+            return False
+        return False
+
     def _load_ensemble_parameter_list(self) -> str:
         """Load the Morris ensemble parameter list with sampling bounds.
 
         Returns a formatted string listing the parameters varied in the current ensemble.
+        The docs/37 CSV lists parameters by canonical_id (full name + pft/organ); the legacy
+        `.txt` lists them by shorthand.
         """
         try:
             param_file = None
@@ -229,6 +245,23 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
                 return ""
 
             lines = []
+            if self._is_new_param_list(param_file):
+                from tools.param_spec import load_param_spec
+                for i, s in enumerate(load_param_spec(param_file), 1):
+                    lines.append(f"  {i}. {s.canonical_id} ({s.fates_name}) "
+                                 f"[{s.lower}, {s.upper}] default={s.default} | {s.description}")
+                if lines:
+                    header = (
+                        "## Parameters in Current Morris Ensemble\n\n"
+                        "These are the parameters varied in the current ensemble with their sampling bounds.\n"
+                        "Each is identified by its canonical id `fates_name#p{pft}#o{organ}` (full FATES name\n"
+                        "with explicit pft/organ). When recommending changes, give the fates_name + pft + organ.\n"
+                        "If you identify a key parameter NOT in this ensemble list, flag it explicitly as\n"
+                        "'NOT IN CURRENT ENSEMBLE - consider adding in next redesign cycle (Phase 0)'.\n\n"
+                    )
+                    logger.info(f"Loaded {len(lines)} ensemble parameters from {param_file} (canonical ids)")
+                    return header + "\n".join(lines)
+                return ""
             with open(param_file) as f:
                 for line in f:
                     line = line.strip()
@@ -292,16 +325,21 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
                 logger.info(f"Parameter list file not found: {param_file}")
                 return {}
 
-            # Read parameter shorthand names from param list file
+            # Read parameter names from the param list, in Morris-column order.
+            # New CSV → canonical_ids; legacy .txt → shorthand names.
             param_names = []
-            with open(param_file) as f:
-                for line in f:
-                    line = line.strip()
-                    if not line or line.startswith('=') or line.startswith('No\t') or line.startswith('ELM'):
-                        continue
-                    parts = line.split('\t')
-                    if len(parts) >= 3 and parts[0].isdigit():
-                        param_names.append(parts[2].strip())  # shorthand name
+            if self._is_new_param_list(param_file):
+                from tools.param_spec import load_param_spec
+                param_names = [s.canonical_id for s in load_param_spec(param_file)]
+            else:
+                with open(param_file) as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith('=') or line.startswith('No\t') or line.startswith('ELM'):
+                            continue
+                        parts = line.split('\t')
+                        if len(parts) >= 3 and parts[0].isdigit():
+                            param_names.append(parts[2].strip())  # shorthand name
 
             if not param_names:
                 logger.warning("No parameter names found in parameter list file")
@@ -362,6 +400,15 @@ Express uncertainty when appropriate using confidence scores (0-1)."""
             if not param_file:
                 param_file = os.environ.get('A2MC_PARAM_LIST_FILE', '')
             if not param_file or not os.path.exists(param_file):
+                return mapping
+
+            # New CSV: canonical_id → (fates_name, pft); plus fates_name → base node.
+            if self._is_new_param_list(param_file):
+                from tools.param_spec import load_param_spec
+                for s in load_param_spec(param_file):
+                    mapping[s.canonical_id] = (s.fates_name, s.pft or None)
+                    mapping.setdefault(s.fates_name, (s.fates_name, None))
+                logger.info(f"Built parameter name mapping: {len(mapping)} entries (canonical ids)")
                 return mapping
 
             # First pass: collect all (shorthand, official) pairs

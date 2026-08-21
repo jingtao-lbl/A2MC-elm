@@ -6,8 +6,9 @@ is internally consistent and that every filesystem entity it references
 exists, so it is safe to execute. Catches the kinds of bugs that otherwise
 require manual review:
 
-  - user_nl_elm last line is `finidat = ...` (so `sed -i '$ d'` deletes the
-    correct line)
+  - user_nl_elm has a `finidat = ...` line (target for the generator's
+    `sed -i '/^finidat/d'`; the generator matches by NAME, not position, so a
+    manually-appended trailing namelist flag is never at risk)
   - the restart .nc file pointed to by each `finidat = ...` exists (continue
     mode); fresh-start finidat exists in the previous phase's run dir
   - chained TRANS / RGSP case dirs exist for ADSP / RGSP restarts
@@ -228,13 +229,20 @@ def validate(cases, args, end_years, incomplete_set):
                 check(Path(pb.case_dir).is_dir(), f"case dir exists: {pb.case_dir}", errors, warnings)
                 nl = Path(pb.case_dir) / "user_nl_elm"
                 if nl.is_file():
-                    last = ""
-                    for line in nl.read_text().splitlines():
-                        if line.strip():
-                            last = line.strip()
-                    check(last.startswith("finidat"),
-                          f"user_nl_elm last non-blank line starts with `finidat` (got: {last[:60]!r})",
-                          errors, warnings)
+                    # The generator targets lines by NAME (`sed -i '/^finidat/d'`, and for ADSP
+                    # continue also `/^nyears_ad_carbon_only/d`), not by position -- so the
+                    # precondition is "a finidat line exists somewhere", not "it is the last
+                    # line". Positional deletion was retired 2026-08 after it was found to
+                    # silently strip a manually-appended namelist flag (a one-off experiment
+                    # setting with no --write-script CLI flag yet) that happened to sit after
+                    # the generic template's finidat line, while leaving the stale finidat
+                    # untouched -- no error, silently invalidating the run.
+                    has_finidat_line = any(
+                        line.strip().startswith("finidat")
+                        for line in nl.read_text().splitlines())
+                    check(has_finidat_line,
+                          "user_nl_elm has a `finidat = ...` line for the generator's "
+                          "sed -i '/^finidat/d' to target", errors, warnings)
                 else:
                     check(False, f"user_nl_elm missing at {nl}", errors, warnings)
 

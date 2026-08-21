@@ -1,0 +1,54 @@
+# RAG golden queries — realistic retrieval/content assertions run AFTER a (re)build.
+#
+# Complements rag/canary_queries.yaml: that one is metadata-only (a kb_source/wiki file was
+# dropped -> count 0). THIS one runs the embedding model and the graph, querying the index
+# the way the reasoning agent does, and asserts the CONTENT is correct — the class of bug
+# the coverage check cannot see (a wrong SZPF ordering formula, a mislabeled PFT identity;
+# see dev_logs 20260710r/t). Run via tools/check_rag_queries.py after build_rag_index.py.
+#
+# Assertion keys per query (all optional, combined with AND):
+#   must_contain:     every listed substring MUST appear in the retrieved context
+#   must_not_contain: none of the listed substrings may appear (catches stale/wrong content)
+#   must_contain_any: at least one listed substring must appear
+# pft_identity: {pft_id: substring} — each graph PFT node's name MUST contain the substring
+#   (authoritative check that the graph carries the right fates_pftname per api version).
+collection: fates_knowledge
+
+profiles:
+  api-43-1:
+    queries:
+      - name: szpf_levscpf_ordering
+        query: "How is the FATES levscpf SZPF dimension flattened and indexed by size class and PFT?"
+        must_contain: ["(pft - 1) * nlevsclass + size_class"]
+        must_not_contain: ["(size_class - 1) * numpft"]   # the wiki error corrected in v2.183
+
+      - name: leafc_szpf_output_dimension
+        query: "What is the FATES_LEAFC_SZPF output variable and which dimension does it use?"
+        must_contain_any: ["SZPF", "size", "levscpf"]
+
+      - name: cnp_allocation_pid
+        query: "How does the FATES CNP PARTEH allocation / PID controller respond to nutrient stress?"
+        must_contain_any: ["allocation", "PID", "stoichiometry", "nutrient"]
+
+      - name: fine_root_carbon
+        query: "Fine-root carbon biomass in FATES and the parameters that control it"
+        must_contain_any: ["FROOT", "fine", "root"]
+
+    # Graph PFT identities must match api-43 fates_pftname (arctic shrubs/grass at 10/11/12),
+    # NOT the api-31 identities (7/9/10). Catches the v2.186 mislabel.
+    pft_identity:
+      10: "evergreen_arctic_shrub"
+      11: "colddecid_arctic_shrub"
+      12: "arctic_c3_grass"
+
+  api-31-0:
+    # Frozen Kougarok-manuscript profile. Its INDEX predates the SZPF wiki fix (not rebuilt
+    # on purpose), so do NOT assert the corrected formula here. Keep to identity + presence.
+    queries:
+      - name: leafc_szpf_output_dimension
+        query: "What is the FATES_LEAFC_SZPF output variable and which dimension does it use?"
+        must_contain_any: ["SZPF", "size", "levscpf"]
+    pft_identity:
+      7: "evergreen"
+      9: "colddecid"
+      10: "grass"

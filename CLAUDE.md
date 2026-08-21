@@ -2,8 +2,8 @@
 
 **Project:** A2MC (Agentic Adaptive Multi-target Calibration)
 **Purpose:** Fully autonomous multi-target calibration of ELM (with or without FATES) using AI API + HPC + Adaptive Memory
-**Status:** Implementation Complete (v2.127)
-**Last Updated:** July 7, 2026
+**Status:** Implementation Complete (v2.261)
+**Last Updated:** August 21, 2026
 ---
 
 
@@ -229,7 +229,7 @@ python orchestrator.py --run \
 
 ## A2MC Skills (`.claude/skills/`)
 
-A2MC ships its own project-scoped skills, **tracked in this repo** under `.claude/skills/` (versioned). They encode A2MC domain knowledge — HPC-run procedures, calibration conventions, and knowledge-infrastructure recipes specific to this framework — so they live with the code, not in the user-level `~/.claude/skills/` (which holds cross-project skills like `literature-review`). When invoked via the Skill tool, project skills override user skills of the same name.
+A2MC ships its own project-scoped skills, **tracked in this repo** under `.claude/skills/` (versioned). They encode A2MC domain knowledge — HPC-run procedures, calibration conventions, and knowledge-infrastructure recipes specific to this framework — so they live with the code, not in the user-level `~/.claude/skills/` (which holds cross-project skills not tied to any one project). When invoked via the Skill tool, project skills override user skills of the same name.
 
 
 These skills are the **interactive (offline) agent's capability catalog** (the offline runtime of "One Agent, Two Ways" above). The interactive agent — a coding-agent harness operating in the repo, co-equal to the autonomous `orchestrator.py --run` loop — runs under the public-safe, harness-neutral operating contract in root `AGENTS.md`, with the full per-skill index at `docs/a2mc_reference/skills_catalog.md`. Each skill's `modes:` frontmatter declares which run configurations it applies to (most are mode-agnostic; the FATES Morris-ensemble analysis skills are `requires_fates: true`).
@@ -237,13 +237,21 @@ These skills are the **interactive (offline) agent's capability catalog** (the o
 | Skill | Modes | When to use |
 |-------|-------|-------------|
 | `a2mc-init` | any | First-run setup: interview + create/populate a use case, then hand off to `phase0-design` (distinct from `onboard-session`, which resumes an existing setup) |
+| `onboard-case` | any | Add a NEW case/site to an already-configured clone (the repeatable half of `a2mc-init`); resolves case SCALE first — transect/regional are a HARD STOP while this branch is single-point |
+| `setup-discipline` | any | Definition-of-done checklist for a setup stage (`a2mc-init` / `onboard-case`); collects their inline gates so a half-done stage cannot look finished |
 | `onboard-session` | any | Cold-start: orient at session start or after a compaction/reset |
+| `calibration-goal` | any | Run-to-convergence driver — the conductor above the phase skills; drives the offline 7-phase loop to CONVERGED, pausing only at the human gates (docs/38; harness-neutral) |
+| `calibration-discipline` | any | Per-cycle/per-round DISCIPLINE checklist (definition-of-done) that keeps a long offline campaign stable — the HABITS layer the driver honors (log+self-document each phase, arm monitors after every launch, validate state, per-cycle report, round summary WITH next-round plan); distinct from `calibration-goal` (loop mechanics) |
 | `curate-knowledge` | any | Review + promote staged Tier-3 knowledge proposals (the write-gate loop) |
 | `inject-knowledge` | any | Inject a human-originated discovery / parameter / relationship into curated knowledge |
+| `port-param-file` | any | Port a calibrated/tuned parameter file across model/API versions — remap PFT identity by functional type, transfer overlapping tuned values (api-31 `.nc` → api-43 `.json` and beyond) |
 | `calibration-log` | any | Log interactive calibration/exploration for a site — a PhaseLogger phase log or a free-form session log under `use_cases/{site}/memory/logs/` |
 | `diagnose-forensics` | any | Investigate an anomaly — real or artifact? — then root-cause it |
 | `scientific-analysis` | any | Investigation → figure → ana_log (manuscript-supporting) |
 | `markdown-to-pdf` | any | Convert a markdown ana_log/report/note to a shareable PDF or Word doc |
+| `literature-review` | any | Cited literature review via `paper-search-mcp` (search→triage→extract→synthesis) — PARAMETER-BOUNDS (published ranges → refine a param-list's `lower`/`upper`) or MANUSCRIPT topic review |
+| `plotting` | any | Clean, readable, overlap-free matplotlib figures — verify by viewing the PNG |
+| `write-report` | any | Integrated, self-contained report for a zero-context human reader |
 | `arm-hpc-monitoring` | any (HPC) | Set up real-time monitoring of an in-flight ensemble at session start (Rule #6) |
 | `restart-failed-jobs` | any (HPC) | Restart SLURM jobs that failed mid-run or at end-of-run (infra vs model failure) |
 | `build-rag-from-scratch` | any | Build the RAG/GraphRAG layer from scratch (new model or full reconstruction) |
@@ -255,6 +263,8 @@ These skills are the **interactive (offline) agent's capability catalog** (the o
 | `summarize-calibration-round` | FATES | Single-round summary: ensemble graphs + evaluation + Morris μ* → report |
 | `compare-calibration-rounds` | FATES | Cross-round comparison (R1…RN): top-N overlays, μ* overlay, P-pool/cross-regime |
 | `offline-testing-workflow` | FATES | Design + launch + analyze a parameter-sweep HPC experiment (V0 reproducibility gate → KB injection) |
+| `add-fates-parameter` | FATES | Model-dev — wire a new FATES parameter into EDParamsMod + the parameter file (experiment branch, default-off, V0-at-equality) |
+| `model-evolution` | any | Model-dev umbrella — the workflow for evolving ELM/FATES source (branch, default-off, paired verify, fork-only push) |
 | `phase0-design` | any | Offline Phase 0 — sample/materialize/submit + monitor the ensemble |
 | `phase1-exploration` | any | Offline Phase 1 — extract Y matrix + Morris sensitivity, interpret μ* |
 | `phase2-screening` | any | Offline Phase 2 — rank the ensemble vs validation targets |
@@ -408,6 +418,8 @@ Located at `use_cases/{site}/memory/gained_knowledge/`:
 | `memory/workflow_log.json` | Master workflow status (current phase, history) |
 | `memory/extracted/` | Generic extracted lessons (YAML) |
 | `use_cases/{site}/memory/logs/{session_id}/` | Phase **execution** logs with AI reasoning (session-scoped, Markdown) |
+| `use_cases/{site}/memory/logs/{stem}.md` | Offline (interactive-agent) phase/experiment logs — flat, one per `{stem}` (see Session Logging Convention) |
+| `use_cases/{site}/memory/phase_results/{stem}/` | Durable artifacts paired 1:1 with the offline log above — case scripts, restart scripts, figures, manifests, and (as of 2026-08-14) diagnostic-tool outputs saved via `--output-dir`/`--output-script`. Git-tracked (`.gitignore`'s `phase_results` negation). |
 | `use_cases/{site}/memory/extracted/` | Site-specific extracted lessons (YAML) |
 
 ### Knowledge Promotion
@@ -436,6 +448,25 @@ Site Discovery → AI Evaluation → If generalizable → Copy to memory/gained_
 - Example: `20260210_143052/phase3_diagnosis/r02_c01_iter03_20260210_143052_PFT10_Analysis.md`
 - Fallback (no session_id): logs go directly under `phase{N}_{name}/` without session subdirectory
 
+**Offline (interactive-agent) logs and their durable artifacts** (docs/31; `calibration-log` skill,
+`tools/phase_logger.py::topic_stem()`) — the companion to the online Phase Execution logs above, used
+by the interactive agent's per-phase/per-experiment work:
+```
+stem = YYYYMMDDx_phase{N}_{name}_r{RR}[_c{EE}[_iter{II}]]_{descriptor}
+```
+- `x` = same same-day sequential letter as the dev-log convention above (`_offline_letter`)
+- Bracketed segments are conditional the same way the online convention's are: `_c{EE}` for Phase
+  3-6 (experiment cycle), `_iter{II}` additionally for Phase 3&4 (inner skip-testing loop)
+- The **log** is the single flat file `use_cases/{site}/memory/logs/{stem}.md`
+- Its **durable artifacts** (case scripts, restart scripts, figures + captions, param files,
+  manifests, and — as of 2026-08-14 — `diagnose_ensemble_status.py`/`diagnose_qos_failures.py`/
+  `restart_experiment_case.py` outputs saved via `--output-dir`/`--output-script`) live in the
+  **paired folder** `use_cases/{site}/memory/phase_results/{stem}/`, same `{stem}`, both git-tracked
+  — this is what makes any of those artifacts traceable back to the exact phase/round/cycle/session
+  that produced them, from the folder name alone, without opening any file
+- Example: `20260812b_phase5_testing_r01_c01_rootfinesfrag_fix_suplphos_dose_experiment` names both
+  `logs/20260812b_....md` and the sibling `phase_results/20260812b_.../` folder
+
 **Key API:**
 ```python
 from memory import MemoryManager
@@ -444,7 +475,7 @@ from memory import MemoryManager
 memory = MemoryManager("memory/gained_knowledge")
 
 # Site-specific knowledge
-memory = MemoryManager("use_cases/Kougarok/memory/gained_knowledge")
+memory = MemoryManager("use_cases/ELM-FATES_Kougarok/memory/gained_knowledge")
 
 memory.get_relevant_context(targets, parameters, phase)
 memory.add_discovery(name, description, mechanism, affects, confidence)
@@ -536,7 +567,7 @@ Validation targets and site-specific discoveries are documented in `use_cases/`:
 
 | Use Case | Location | Description |
 |----------|----------|-------------|
-| `use_cases/Kougarok/` | Alaska, USA | Arctic tundra, 3 PFTs, NGEE-Arctic |
+| `use_cases/ELM-FATES_Kougarok/` | Alaska, USA | Arctic tundra, 3 PFTs, NGEE-Arctic |
 | `use_cases/TEMPLATE/` | - | Template for new sites |
 
 **See `use_cases/{site}/README.md` for:**
@@ -551,8 +582,8 @@ When calibrating a new site, you can reference knowledge from existing sites wit
 
 | Your Site Type | Reference | Key Transferable Knowledge |
 |----------------|-----------|---------------------------|
-| Arctic/tundra | `use_cases/Kougarok/` | Allocation Paradox, P-limitation, graminoid-shrub competition |
-| CNP-enabled | `use_cases/Kougarok/` | PID controller behavior, ECA competition, vmax calibration |
+| Arctic/tundra | `use_cases/ELM-FATES_Kougarok/` | Allocation Paradox, P-limitation, graminoid-shrub competition |
+| CNP-enabled | `use_cases/ELM-FATES_Kougarok/` | PID controller behavior, ECA competition, vmax calibration |
 
 **What transfers:** Mechanistic insights, diagnostic patterns, failed approaches
 **What doesn't transfer:** Exact parameter values (site-specific)
@@ -560,7 +591,7 @@ When calibrating a new site, you can reference knowledge from existing sites wit
 ```python
 # Reference another site's knowledge
 from memory import MemoryManager
-ref_memory = MemoryManager("use_cases/Kougarok/memory/gained_knowledge")
+ref_memory = MemoryManager("use_cases/ELM-FATES_Kougarok/memory/gained_knowledge")
 discoveries = ref_memory.get_relevant_context(targets=your_targets, phase="diagnosis")
 ```
 
@@ -589,7 +620,7 @@ Detailed documentation for A2MC tools: cost functions, phase logger, workflow st
 ```bash
 # IMPORTANT: Always source config files first!
 source a2mc_config.sh
-source use_cases/Kougarok/config/kougarok_config.sh
+source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
 
 # Run workflow (output-dir and state-file auto-detected from config)
 python orchestrator.py --run
@@ -664,7 +695,7 @@ run_sensitivity_analysis(
 ```python
 # Note: Source configs first before running Python
 # source a2mc_config.sh
-# source use_cases/Kougarok/config/kougarok_config.sh
+# source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
 
 from orchestrator import CalibrationOrchestrator, Config
 
@@ -709,12 +740,16 @@ Sourcing `a2mc_config.sh` + `use_cases/<site>/config/<site>_config.sh` sets the 
 ### FATES Knowledge Base
 - `docs/fates-knowledge-base/` - Combined FATES documentation
   - `fates-official-docs/` - Official tech docs (RST, equations, theory)
-  - `fates-codebase-wiki/` - Code-level wiki (Markdown, 348 diagrams)
-- Key sections for calibration:
-  - **`fates-codebase-wiki/advanced/cnp_calibration_guide.md`** - **START HERE** for CNP calibration (Knox 2026)
-  - `fates-codebase-wiki/plant-physiology/parteh/cnp_allocation.md` - PID controller, three-phase allocation
-  - `fates-codebase-wiki/advanced/nutrient_competition.md` - ECA vs RD modes, prescribed vs coupled uptake
-  - `fates-codebase-wiki/plant-physiology/parteh/soil_plant_interface.md` - Nutrient uptake mechanics
+  - `fates-codebase-wiki-<fates-commit>/` - Code-level wiki (Markdown, 348 diagrams), **pinned per
+    FATES commit**. There is NO unversioned `fates-codebase-wiki/` directory — symlink-based
+    selection was replaced by first-class version awareness in v2.90. Shipping today:
+    `-e027a40` (api-43-1, canonical) and `-e85d997` (api-31-0, legacy). Resolve the right one from
+    `wiki_subdir` in `rag/metadata/<profile>.json`, or `python tools/rag_selector.py`.
+- Key sections for calibration (all present in both pinned trees):
+  - **`fates-codebase-wiki-<commit>/advanced/cnp_calibration_guide.md`** - **START HERE** for CNP calibration (Knox 2026)
+  - `fates-codebase-wiki-<commit>/plant-physiology/parteh/cnp_allocation.md` - PID controller, three-phase allocation
+  - `fates-codebase-wiki-<commit>/advanced/nutrient_competition.md` - ECA vs RD modes, prescribed vs coupled uptake
+  - `fates-codebase-wiki-<commit>/plant-physiology/parteh/soil_plant_interface.md` - Nutrient uptake mechanics
   - `fates-official-docs/docs/source/parteh/` - PARTEH equations
 
 ### Adaptive Memory (`memory/gained_knowledge/`)
@@ -750,11 +785,11 @@ grep -r "use_fates_nocomp" docs/fates-knowledge-base/
 
 **Example of what NOT to do:**
 - ❌ Assumed `use_fates_nocomp` meant "fixed PFT areas" based on name
-- ✅ Should have checked `docs/fates-knowledge-base/fates-codebase-wiki/advanced/simulation_modes.md`
+- ✅ Should have checked `docs/fates-knowledge-base/fates-codebase-wiki-<commit>/advanced/simulation_modes.md`
 - ✅ Correct: `use_fates_nocomp` means no competition and separates PFTs into patches (no inter-PFT competition), but does NOT fix areas
 
 **Key documentation locations:**
-- `docs/fates-knowledge-base/fates-codebase-wiki/` - Code-level wiki with detailed explanations
+- `docs/fates-knowledge-base/fates-codebase-wiki-<commit>/` - Code-level wiki (per-FATES-commit; see the Knowledge Base section above)
 - `docs/fates-knowledge-base/fates-official-docs/` - Official FATES technical documentation
 - `rag/data/curated_relationships.yaml` - Parameter-mechanism-output relationships
 
@@ -772,7 +807,7 @@ grep -r "use_fates_nocomp" docs/fates-knowledge-base/
 
 **Use the `use_cases/` folder for site-specific documentation:**
 - `use_cases/TEMPLATE/` - Template for new case studies
-- `use_cases/Kougarok/` - Kougarok, Alaska example (NGEE-Arctic)
+- `use_cases/ELM-FATES_Kougarok/` - Kougarok, Alaska example (NGEE-Arctic)
 - Create your own: `use_cases/YourSite/`
 
 ---
@@ -798,7 +833,7 @@ grep -r "use_fates_nocomp" docs/fates-knowledge-base/
 
 ## Version History
 
-Current version: **v2.127** (2026-07-07)
+Current version: **v2.261** (2026-08-21)
 
 ### Git Tags (Stable Checkpoints)
 

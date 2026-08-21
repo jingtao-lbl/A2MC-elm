@@ -37,7 +37,22 @@ def test_hypothesis(param_matrix, y_outputs, screening_data, config):
         'l2fr_ini_9': [0.01, 18.31149756],
         'l2fr_ini_10': [1.115169823, 9.879038859]
     }
-    
+
+    # This promoted test hardcodes api-31 SHORTHAND names (PFTs 7/9/10). Under the docs/37
+    # canonical-id scheme (or a different api epoch) none match `param_names`; rather than
+    # silently reporting "0 at bounds" (docs/37 §5 #2), flag that the hardcoded set is stale.
+    if not any(p in param_names for p in param_bounds):
+        return {
+            'supported': False,
+            'confidence': 0.0,
+            'evidence': {'params_at_bounds': 0,
+                         'note': 'hardcoded api-31 shorthand param set (vmax_p_7, l2fr_ini_10, ...) is '
+                                 'not present in the current ensemble param_names — likely a different '
+                                 'api epoch / the docs/37 canonical-id scheme. Regenerate this test.'},
+            'insights': ['NOT APPLICABLE: this promoted test uses api-31 shorthand names that do not '
+                         'match the current ensemble param_names.'],
+        }
+
     # Check which parameters are at bounds
     at_bounds = {}
     bound_impact = {}

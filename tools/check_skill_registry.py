@@ -34,6 +34,8 @@ import re
 import sys
 from pathlib import Path
 
+import yaml  # strict frontmatter parse (available under both system py3 and a2mc_env)
+
 ROOT = Path(__file__).resolve().parent.parent
 SKILLS_DIR = ROOT / ".claude" / "skills"
 README = SKILLS_DIR / "README.md"
@@ -81,12 +83,32 @@ def agents_table_names():
     return set(re.findall(r"^\|\s*`([a-z0-9-]+)`", AGENTS.read_text(encoding="utf-8"), re.M))
 
 
-def frontmatter_name(text):
+def _frontmatter_block(text):
     m = re.match(r"^---\n(.*?)\n---\n", text, re.S)
-    if not m:
+    return m.group(1) if m else None
+
+
+def frontmatter_name(text):
+    fm = _frontmatter_block(text)
+    if fm is None:
         return None
-    nm = re.search(r"^name:\s*(.+)$", m.group(1), re.M)
+    nm = re.search(r"^name:\s*(.+)$", fm, re.M)
     return nm.group(1).strip() if nm else None
+
+
+def frontmatter_field(text, key):
+    """Value of a top-level `key: value` line in the SKILL.md frontmatter, or None."""
+    fm = _frontmatter_block(text)
+    if fm is None:
+        return None
+    m = re.search(rf"^{re.escape(key)}:\s*(.+)$", fm, re.M)
+    return m.group(1).strip() if m else None
+
+
+# Enforced skill-frontmatter enums (schema mirrors the memory-bucket schema idea):
+# visibility drives the public sync; category groups the skills machine-readably.
+VISIBILITY = {"public", "private"}
+CATEGORY = {"phase", "calibration", "model-dev", "meta", "kb-build", "authoring"}
 
 
 # ---------------- Tier-1 contract validation ----------------
@@ -197,6 +219,69 @@ def marker_check():
     return problems
 
 
+RECIPROCAL_MARK = "**Reciprocal skills:**"
+_RECIPROCAL_DECL = re.compile(r"^\s*[-*]\s+" + re.escape(RECIPROCAL_MARK))
+
+
+def reciprocity_check(disk):
+    """Every skill named in a RECIPROCAL_MARK bullet must name the declaring skill back.
+
+    WHY: `plotting`'s cross-references claimed `phase0-design`, `phase3-diagnosis`,
+    `scientific-analysis` and three more applied its conventions while none of the six
+    named it back. A one-directional claim is invisible from the side that MATTERS --
+    the skill that should have loaded it -- so a case's figures get produced without
+    the conventions, or `plotting` rule 8 (open the PNG and look at it), ever being
+    read. Measured on this branch 2026-08-19: 6 of plotting's 10 links were one-way.
+    Fixing instances is not enough; prose decays, so the invariant is enforced here.
+
+    WHAT WOULD MAKE THIS FAIL (named first, per feedback_a_check_that_cannot_fail):
+      1. a declared skill does not name the declarer back    -> RECIPROCITY problem
+      2. a declared skill does not exist on disk             -> RECIPROCITY problem
+      3. NO skill anywhere declares reciprocity              -> RECIPROCITY problem
+
+    (3) is the anti-silent-pass guard and the reason the check is worth having: without
+    it, renaming or rewording the marker leaves the loop iterating over nothing and
+    reporting success -- the failure mode of any check keyed on a label another file
+    writes (feedback_exact_strings_are_contracts). No skill name is hardcoded; the
+    mechanism is open to any skill.
+    """
+    problems, declarers = [], []
+    for name, text in sorted(disk.items()):
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            if not _RECIPROCAL_DECL.match(line):
+                continue
+            declarers.append(name)
+            block_lines = [line]
+            for nxt in lines[i + 1:]:
+                if nxt.startswith("## ") or re.match(r"^[-*] ", nxt) or not nxt.strip():
+                    break
+                block_lines.append(nxt)
+            # Bare backticked tokens only. `_SKILLREF` is deliberately NOT reused: it
+            # matches PROSE ("the `x` skill"), so a comma-separated list matches nothing
+            # and the check reports "names no skills" on a bullet naming several.
+            # And tokens are NOT intersected with the known skill set -- intersecting
+            # silently discards a typo'd or renamed name BEFORE branch 2 can see it,
+            # making that branch unreachable. Shape-filtering instead keeps paths and
+            # code identifiers out without hiding a real name.
+            toks = [x for x in re.findall(r"`([^`\n]+)`", " ".join(block_lines))
+                    if re.fullmatch(r"[a-z0-9-]+", x) and x != name]
+            if not toks:
+                problems.append(f"RECIPROCITY: '{name}' declares reciprocal skills but names none")
+                continue
+            for other in toks:
+                if other not in disk:
+                    problems.append(f"RECIPROCITY: '{name}' declares `{other}`, which is not a skill")
+                elif f"`{name}`" not in disk[other]:
+                    problems.append(f"RECIPROCITY: '{name}' declares `{other}`, but `{other}` "
+                                    f"never names `{name}` back — a one-directional link is "
+                                    f"invisible from the side that should load it")
+    if not declarers:
+        problems.append(f"RECIPROCITY: no skill declares '{RECIPROCAL_MARK}' anywhere — the marker "
+                        f"was probably reworded, which makes this check silently pass")
+    return problems
+
+
 def main():
     disk = skills_on_disk()
     if not disk:
@@ -211,6 +296,7 @@ def main():
 
     disk_names = set(disk)
     problems = []
+    problems.extend(reciprocity_check(disk))
     for n in sorted(disk_names - readme):
         problems.append(f"DRIFT: '{n}' on disk but missing from the README 'Current skills' table")
     for n in sorted(readme - disk_names):
@@ -225,6 +311,22 @@ def main():
         problems.append(f"DRIFT: AGENTS.md table lists '{n}' but no skill dir exists")
 
     for name, text in disk.items():
+        # Strict YAML parse of the frontmatter block. The field-reads below are regex-based
+        # (lenient) and miss real YAML breakage — e.g. an unquoted ": " in the description —
+        # that fails the pytest frontmatter parse (tests/test_offline_agent_mode.py). Parse
+        # strictly here, in the enforced pre-commit gate, so the checker and the pytest agree.
+        fm_block = _frontmatter_block(text)
+        if fm_block is None:
+            problems.append(f"FRONTMATTER: '{name}' SKILL.md has no `---`-delimited frontmatter block")
+        else:
+            try:
+                yaml.safe_load(fm_block)
+            except yaml.YAMLError as e:
+                mark = getattr(e, "problem_mark", None)
+                loc = f" (line {mark.line + 1}, col {mark.column + 1})" if mark is not None else ""
+                problems.append(
+                    f"FRONTMATTER-YAML: '{name}' frontmatter is not valid YAML{loc}: "
+                    f"{getattr(e, 'problem', str(e))} — commonly an unquoted ': ' in the description")
         fm = frontmatter_name(text)
         if fm is None:
             problems.append(f"NAME: '{name}' SKILL.md has no `name:` in frontmatter")
@@ -232,6 +334,16 @@ def main():
             problems.append(f"NAME: '{name}' frontmatter name is '{fm}' (must match dir)")
         if not re.search(r"^## Changelog", text, re.M):
             problems.append(f"CHANGELOG: '{name}' SKILL.md has no `## Changelog` section")
+        vis = frontmatter_field(text, "visibility")
+        if vis is None:
+            problems.append(f"FRONTMATTER: '{name}' SKILL.md missing `visibility:` (one of {sorted(VISIBILITY)})")
+        elif vis not in VISIBILITY:
+            problems.append(f"FRONTMATTER: '{name}' visibility '{vis}' invalid (must be one of {sorted(VISIBILITY)})")
+        cat = frontmatter_field(text, "category")
+        if cat is None:
+            problems.append(f"FRONTMATTER: '{name}' SKILL.md missing `category:` (one of {sorted(CATEGORY)})")
+        elif cat not in CATEGORY:
+            problems.append(f"FRONTMATTER: '{name}' category '{cat}' invalid (must be one of {sorted(CATEGORY)})")
 
     problems += contract_check(disk)
     problems += marker_check()

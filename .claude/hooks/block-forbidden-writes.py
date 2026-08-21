@@ -57,4 +57,8 @@ def main():
     sys.exit(0)
 
 
-main()
+if __name__ == "__main__":
+    # Guard added 2026-08-19: without it, importing this module RUNS the hook,
+    # so it cannot be unit-tested in process. Enforced by
+    # tests/test_hook_matcher_coverage.py::test_hooks_are_importable_without_running.
+    main()

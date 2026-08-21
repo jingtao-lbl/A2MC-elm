@@ -18,6 +18,7 @@ Created: December 30, 2025
 """
 
 import argparse
+import json
 import netCDF4 as nc
 import numpy as np
 from pathlib import Path
@@ -170,6 +171,104 @@ def extract_value_from_nc(ds, param_info):
     return None, "unknown shape"
 
 
+def extract_value_from_json(params_doc, param_info):
+    """
+    Extract a parameter value from a FATES JSON parameter file (api-43+).
+
+    `params_doc` is the loaded JSON dict; parameters live under `params_doc["parameters"]`,
+    each entry = {"dims": [...], "data": [...], ...} (scalar → dims ["scalar"], data a 1-element
+    list; 1D → dims ["fates_pft"]; 2D → e.g. ["fates_leafage_class", "fates_pft"] or
+    ["fates_plant_organs", "fates_pft"]). Mirrors extract_value_from_nc.
+
+    Returns (value, error_message).
+    """
+    fates_name = param_info['fates_name']
+    pft = param_info['pft']
+    organ = param_info['organ']
+
+    params = params_doc.get("parameters", params_doc)
+    if fates_name not in params:
+        return None, f"not found: {fates_name}"
+
+    entry = params[fates_name]
+    dims = entry.get("dims", [])
+    data = entry.get("data")
+    pft_idx = pft - 1 if pft else None
+
+    try:
+        # Scalar (stored as a 1-element list, dims == ["scalar"])
+        if dims == ["scalar"] or len(dims) == 0:
+            v = data[0] if isinstance(data, (list, tuple)) else data
+            return float(v), None
+
+        # 1D (fates_pft)
+        if len(dims) == 1:
+            if pft_idx is not None:
+                return float(data[pft_idx]), None
+            return float(data[0]), None
+
+        # 2D
+        if len(dims) == 2:
+            # (fates_plant_organs, fates_pft) - stoich and retrans parameters
+            if 'fates_plant_organs' in dims and 'fates_pft' in dims:
+                organ_idx = 1 if organ == 'fineroot' else 0   # default to leaf
+                organ_dim = dims.index('fates_plant_organs')
+                if organ_dim == 0:
+                    return float(data[organ_idx][pft_idx]), None
+                return float(data[pft_idx][organ_idx]), None
+
+            # (fates_leafage_class, fates_pft) - vcmax25top, turnover_leaf
+            if 'fates_leafage_class' in dims and 'fates_pft' in dims:
+                leafage_dim = dims.index('fates_leafage_class')
+                if leafage_dim == 0:
+                    return float(data[0][pft_idx]), None
+                return float(data[pft_idx][0]), None
+
+            return None, f"unknown 2D dims: {dims}"
+
+    except Exception as e:
+        return None, str(e)
+
+    return None, "unknown shape"
+
+
+def _is_new_format(path):
+    """True if `path` is the docs/37 explicit-column CSV (header starts with `fates_name`)."""
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                return ',' in line and line.split(',')[0].strip() == 'fates_name'
+    except OSError:
+        return False
+    return False
+
+
+# FATES organ id -> the organ string the extract_value_from_* helpers expect.
+_ORGAN_STR = {1: 'leaf', 2: 'fineroot'}
+
+
+def _find_param_file(ensemble_num):
+    """Locate the ensemble's FATES param file (.json api-43+ or .nc api-31), or None."""
+    patterns = [
+        f"fates_params_*_En{ensemble_num}.json",
+        f"fates_params_*_En{ensemble_num}.nc",
+        f"*_En{ensemble_num}.json",
+        f"*_En{ensemble_num}.nc",
+    ]
+    for pattern in patterns:
+        matches = list(Path(PARAM_FILE_DIR).glob(pattern))
+        if matches:
+            return matches[0]
+    for ext in (".json", ".nc"):
+        cand = Path(PARAM_FILE_DIR) / f"fates_params_En{ensemble_num}{ext}"
+        if cand.exists():
+            return cand
+    return None
+
+
 def verify_parameter_file(ensemble_num, ensemble_data, param_list, verbose=False):
     """
     Verify a single parameter file against ensemble matrix.
@@ -178,23 +277,9 @@ def verify_parameter_file(ensemble_num, ensemble_data, param_list, verbose=False
     --------
     tuple: (n_matched, n_mismatched, n_skipped, mismatches)
     """
-    # Try to find the parameter file - support multiple naming patterns
-    param_file = None
-    patterns = [
-        f"fates_params_*_En{ensemble_num}.nc",
-        f"*_En{ensemble_num}.nc",
-    ]
-    for pattern in patterns:
-        matches = list(Path(PARAM_FILE_DIR).glob(pattern))
-        if matches:
-            param_file = matches[0]
-            break
-
-    if param_file is None:
-        param_file = Path(PARAM_FILE_DIR) / f"fates_params_En{ensemble_num}.nc"
-
-    if not param_file.exists():
-        print(f"ERROR: Parameter file not found: {param_file}")
+    param_file = _find_param_file(ensemble_num)
+    if param_file is None or not param_file.exists():
+        print(f"ERROR: Parameter file not found for ensemble {ensemble_num}")
         return 0, 0, 0, []
 
     # Get ensemble row (0-based indexing)
@@ -205,13 +290,20 @@ def verify_parameter_file(ensemble_num, ensemble_data, param_list, verbose=False
     n_skipped = 0
     mismatches = []
 
-    with nc.Dataset(param_file, 'r') as ds:
+    is_json = param_file.suffix.lower() == ".json"
+    if is_json:
+        with open(param_file) as _f:
+            source = json.load(_f)
+    else:
+        source = nc.Dataset(param_file, 'r')
+    try:
         for param_info in param_list:
             col = param_info['col']
             short_name = param_info['short_name']
             expected = ensemble_row[col - 1]  # col is 1-based
 
-            actual, error = extract_value_from_nc(ds, param_info)
+            actual, error = (extract_value_from_json(source, param_info) if is_json
+                             else extract_value_from_nc(source, param_info))
 
             if actual is None:
                 n_skipped += 1
@@ -229,6 +321,74 @@ def verify_parameter_file(ensemble_num, ensemble_data, param_list, verbose=False
                 mismatches.append((col, short_name, expected, actual))
                 if verbose:
                     print(f"  FAIL [{col:3d}] {short_name}: {actual:.6e} != {expected:.6e}")
+    finally:
+        if not is_json:
+            source.close()
+
+    return n_matched, n_mismatched, n_skipped, mismatches
+
+
+def verify_parameter_file_new(ensemble_num, ensemble_data, specs, verbose=False):
+    """Verify an ensemble param file against a docs/37 explicit-column CSV (loader specs).
+
+    Non-virtual rows verify directly (organ list -> one check per slot; retrans [1,2] checks both
+    slots against the same value). Virtual coords are expanded via the transform and the resulting
+    NATIVE FATES params are the values verified in the file.
+    Returns (n_matched, n_mismatched, n_skipped, mismatches[(col,label,expected,actual)])."""
+    from tools.param_transforms import DERIVED_TRANSFORMS
+
+    param_file = _find_param_file(ensemble_num)
+    if param_file is None or not param_file.exists():
+        print(f"ERROR: Parameter file not found for ensemble {ensemble_num}")
+        return 0, 0, 0, []
+    ensemble_row = ensemble_data[ensemble_num - 1, :]
+
+    # Build check items: (col, label, fates_name, pft, organ_str, expected)
+    checks = []
+    virtual = {}
+    for s in specs:
+        val = ensemble_row[s.row_index]
+        if s.is_virtual:
+            virtual.setdefault((s.transform_group, s.pft), {})[s.fates_name] = val
+            continue
+        slots = [_ORGAN_STR.get(o) for o in s.organ] if s.organ else [None]
+        for organ_str in slots:
+            checks.append((s.row_index + 1, s.canonical_id, s.fates_name, s.pft, organ_str, val))
+    for (group, pft), coord_values in virtual.items():
+        natives = DERIVED_TRANSFORMS[group].apply(coord_values)
+        for native_name, native_value in natives.items():
+            checks.append((0, f"{group}->{native_name}#p{pft}", native_name, pft, None, native_value))
+
+    n_matched = n_mismatched = n_skipped = 0
+    mismatches = []
+    is_json = param_file.suffix.lower() == ".json"
+    if is_json:
+        with open(param_file) as _f:
+            source = json.load(_f)
+    else:
+        source = nc.Dataset(param_file, 'r')
+    try:
+        for col, label, fates_name, pft, organ_str, expected in checks:
+            param_info = {'fates_name': fates_name, 'pft': pft, 'organ': organ_str}
+            actual, error = (extract_value_from_json(source, param_info) if is_json
+                             else extract_value_from_nc(source, param_info))
+            if actual is None:
+                n_skipped += 1
+                if verbose:
+                    print(f"  SKIP {label}: {error}")
+                continue
+            if np.isclose(expected, actual, rtol=1e-5, atol=1e-10):
+                n_matched += 1
+                if verbose:
+                    print(f"  OK   {label}: {actual:.6e} == {expected:.6e}")
+            else:
+                n_mismatched += 1
+                mismatches.append((col, label, expected, actual))
+                if verbose:
+                    print(f"  FAIL {label}: {actual:.6e} != {expected:.6e}")
+    finally:
+        if not is_json:
+            source.close()
 
     return n_matched, n_mismatched, n_skipped, mismatches
 
@@ -252,15 +412,25 @@ def main():
         print("ERROR: A2MC_PARAM_LIST_FILE not set. Source config first.")
         return
 
-    # Parse parameter list
-    print("Parsing parameter list...")
-    param_list = parse_parameter_list()
-    print(f"  Found {len(param_list)} parameters")
-
     # Load ensemble matrix
     print("Loading ensemble matrix...")
     ensemble_data = np.loadtxt(ENSEMBLE_MATRIX_FILE)
     print(f"  Loaded: {ensemble_data.shape[0]} sets × {ensemble_data.shape[1]} parameters")
+
+    # Parse parameter list — new-format CSV (docs/37) routes through the loader + transforms.
+    print("Parsing parameter list...")
+    if _is_new_format(PARAM_LIST_FILE):
+        from tools.param_spec import load_param_spec
+        specs = load_param_spec(PARAM_LIST_FILE)
+        n_params = len(specs)
+        def _verify(en, verbose):
+            return verify_parameter_file_new(en, ensemble_data, specs, verbose)
+    else:
+        param_list = parse_parameter_list()
+        n_params = len(param_list)
+        def _verify(en, verbose):
+            return verify_parameter_file(en, ensemble_data, param_list, verbose)
+    print(f"  Found {n_params} parameters ({'new-format CSV' if _is_new_format(PARAM_LIST_FILE) else 'legacy .txt'})")
 
     print("\n" + "=" * 80)
     print("PARAMETER FILE VERIFICATION")
@@ -269,9 +439,7 @@ def main():
     if args.ensemble:
         # Verify single file
         print(f"\nVerifying ensemble {args.ensemble}...")
-        n_matched, n_mismatched, n_skipped, mismatches = verify_parameter_file(
-            args.ensemble, ensemble_data, param_list, verbose=args.verbose
-        )
+        n_matched, n_mismatched, n_skipped, mismatches = _verify(args.ensemble, args.verbose)
 
         print(f"\n--- Results for Ensemble {args.ensemble} ---")
         print(f"  Matched:    {n_matched}")
@@ -299,9 +467,7 @@ def main():
         files_with_issues = []
 
         for en in ensembles:
-            n_matched, n_mismatched, n_skipped, mismatches = verify_parameter_file(
-                en, ensemble_data, param_list, verbose=False
-            )
+            n_matched, n_mismatched, n_skipped, mismatches = _verify(en, False)
 
             total_matched += n_matched
             total_mismatched += n_mismatched

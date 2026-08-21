@@ -1,0 +1,170 @@
+fates_name,pft,organ,lower,upper,default_api43,default_api31,description
+fates_cnp_eca_decompmicc,10,,140,600,280,280,Microbial biomass C concentration PFT#10
+fates_cnp_eca_km_nh4,10,,0.07,0.21,0.14,0.14,Michaelis-Menten constant for NH4 uptake PFT#10
+fates_cnp_eca_km_no3,10,,0.135,0.405,0.27,0.27,Michaelis-Menten constant for NO3 uptake PFT#10
+fates_cnp_eca_km_p,10,,0.05,0.15,0.1,0.1,Michaelis-Menten constant for P uptake PFT#10
+fates_cnp_eca_km_ptase,10,,0.5,1.5,1,1,Michaelis-Menten constant for phosphatase PFT#10
+fates_cnp_vmax_nh4,10,,2.5E-10,0.00025,2.5e-09,2.5e-09,Maximum NH4 uptake rate PFT#10
+fates_cnp_vmax_no3,10,,2.5E-10,0.00025,2.5e-09,2.5e-09,Maximum NO3 uptake rate PFT#10
+fates_cnp_vmax_p,10,,5E-11,0.00005,5e-10,5e-10,Maximum P uptake rate PFT#10
+fates_cnp_eca_vmax_ptase,10,,5E-10,0.0005,5e-09,5e-09,Maximum phosphatase production rate PFT#10
+fates_cnp_pid_kp,10,,0.000005,0.005,0.0005,0.0005,PID proportional gain for allocation PFT#10
+fates_allom_l2fr,10,,0.01,2.956620991,1,1,Initial leaf to fine root ratio PFT#10
+fates_cnp_turnover_nitr_retrans,10,1|2,0.4,0.7,0.25,0.25,Nitrogen retranslocation fraction PFT#10
+fates_cnp_turnover_phos_retrans,10,1|2,0.6,0.9,0.25,0.25,Phosphorus retranslocation fraction PFT#10
+fates_stoich_nitr,10,1,0.018676344,0.038729283,0.033,0.033,Leaf nitrogen stoichiometry PFT#10
+fates_stoich_phos,10,1,0.001034373,0.002847928,0.0033,0.0033,Leaf phosphorus stoichiometry PFT#10
+fates_stoich_nitr,10,2,0.014525165,0.020000432,0.024,0.024,Fine root nitrogen stoichiometry PFT#10
+fates_stoich_phos,10,2,0.000804464,0.001470716,0.0024,0.0024,Fine root phosphorus stoichiometry PFT#10
+fates_cnp_eca_decompmicc,11,,140,600,280,280,Microbial biomass C concentration PFT#11
+fates_cnp_eca_km_nh4,11,,0.07,0.21,0.14,0.14,Michaelis-Menten constant for NH4 uptake PFT#11
+fates_cnp_eca_km_no3,11,,0.135,0.405,0.27,0.27,Michaelis-Menten constant for NO3 uptake PFT#11
+fates_cnp_eca_km_p,11,,0.05,0.15,0.1,0.1,Michaelis-Menten constant for P uptake PFT#11
+fates_cnp_eca_km_ptase,11,,0.5,1.5,1,1,Michaelis-Menten constant for phosphatase PFT#11
+fates_cnp_vmax_nh4,11,,2.5E-10,0.00025,2.5e-09,2.5e-09,Maximum NH4 uptake rate PFT#11
+fates_cnp_vmax_no3,11,,2.5E-10,0.00025,2.5e-09,2.5e-09,Maximum NO3 uptake rate PFT#11
+fates_cnp_vmax_p,11,,5E-11,0.00005,5e-10,5e-10,Maximum P uptake rate PFT#11
+fates_cnp_eca_vmax_ptase,11,,5E-10,0.0005,5e-09,5e-09,Maximum phosphatase production rate PFT#11
+fates_cnp_pid_kp,11,,0.000005,0.005,0.0005,0.0005,PID proportional gain for allocation PFT#11
+fates_allom_l2fr,11,,0.01,18.31149756,1,1,Initial leaf to fine root ratio PFT#11
+fates_cnp_nfix1,11,,0,1,0,0,Nitrogen fixation parameter PFT#11
+fates_cnp_turnover_nitr_retrans,11,1|2,0.4,0.7,0.25,0.25,Nitrogen retranslocation fraction PFT#11
+fates_cnp_turnover_phos_retrans,11,1|2,0.6,0.8,0.25,0.25,Phosphorus retranslocation fraction PFT#11
+fates_stoich_nitr,11,1,0.03783522,0.058189077,0.04,0.04,Leaf nitrogen stoichiometry PFT#11
+fates_stoich_phos,11,1,0.002095471,0.004278889,0.004,0.004,Leaf phosphorus stoichiometry PFT#11
+fates_stoich_nitr,11,2,0.012530528,0.028131898,0.024,0.024,Fine root nitrogen stoichiometry PFT#11
+fates_stoich_phos,11,2,0.000693992,0.002068657,0.0024,0.0024,Fine root phosphorus stoichiometry PFT#11
+fates_cnp_eca_decompmicc,12,,140,600,280,280,Microbial biomass C concentration PFT#12
+fates_cnp_eca_km_nh4,12,,0.07,0.21,0.14,0.14,Michaelis-Menten constant for NH4 uptake PFT#12
+fates_cnp_eca_km_no3,12,,0.135,0.405,0.27,0.27,Michaelis-Menten constant for NO3 uptake PFT#12
+fates_cnp_eca_km_p,12,,0.05,0.15,0.1,0.1,Michaelis-Menten constant for P uptake PFT#12
+fates_cnp_eca_km_ptase,12,,0.5,1.5,1,1,Michaelis-Menten constant for phosphatase PFT#12
+fates_cnp_vmax_nh4,12,,2.5E-10,0.00025,2.5e-09,2.5e-09,Maximum NH4 uptake rate PFT#12
+fates_cnp_vmax_no3,12,,2.5E-10,0.00025,2.5e-09,2.5e-09,Maximum NO3 uptake rate PFT#12
+fates_cnp_vmax_p,12,,5E-11,0.00005,5e-10,5e-10,Maximum P uptake rate PFT#12
+fates_cnp_eca_vmax_ptase,12,,5E-10,0.0005,5e-09,5e-09,Maximum phosphatase production rate PFT#12
+fates_cnp_pid_kp,12,,0.000005,0.005,0.0005,0.0005,PID proportional gain for allocation PFT#12
+fates_allom_l2fr,12,,1.115169823,9.879038859,0.67,1,Initial leaf to fine root ratio PFT#12
+fates_cnp_turnover_nitr_retrans,12,1|2,0.6,0.7,0.25,0.25,Nitrogen retranslocation fraction PFT#12
+fates_cnp_turnover_phos_retrans,12,1|2,0.7,0.9,0.25,0.25,Phosphorus retranslocation fraction PFT#12
+fates_stoich_nitr,12,1,0.016628655,0.04072551,0.04,0.04,Leaf nitrogen stoichiometry PFT#12
+fates_stoich_phos,12,1,0.000920964,0.002994719,0.004,0.004,Leaf phosphorus stoichiometry PFT#12
+fates_stoich_nitr,12,2,0.012805067,0.017077499,0.024,0.024,Fine root nitrogen stoichiometry PFT#12
+fates_stoich_phos,12,2,0.000709198,0.001255781,0.0024,0.0024,Fine root phosphorus stoichiometry PFT#12
+fates_allom_d2bl1,10,,0.037290039,0.100693359,0.0481934,0.07,Diameter to leaf biomass allometry parameter 1 PFT#10
+fates_allom_d2bl2,10,,0.679199219,1.897949219,1.06006,1.3,Diameter to leaf biomass allometry parameter 2 PFT#10
+fates_allom_agb2,10,,0.303316406,0.850738281,0.528988,0.572,Aboveground biomass allometry parameter 2 PFT#10
+fates_allom_agb3,10,,1.009785156,2.823798828,2.10104,1.94,Aboveground biomass allometry parameter 3 PFT#10
+fates_allom_d2h1,10,,0.329375,0.959375,0.816562,0.64,Diameter to height allometry parameter 1 PFT#10
+fates_allom_d2h2,10,,0.195297852,0.521396484,0.231611,0.37,Diameter to height allometry parameter 2 PFT#10
+fates_recruit_height_min,10,,0.392211914,1.095336914,0.8,0.2,Minimum recruit height PFT#10
+fates_allom_dbh_maxheight,10,,1.574707031,4.480957031,2.4,3,DBH at maximum height PFT#10
+fates_allom_d2ca_coefficient_min,10,,0.179952134,0.502875414,0.436343,0.3381119,Minimum diameter to crown area coefficient PFT#10
+fates_alloc_store_priority_frac,10,,0.441894531,0.948144531,0.7,0.8,Storage allocation priority fraction PFT#10
+fates_alloc_storage_cushion,10,,0.611132813,5.0,1.5,1.2,Storage carbon cushion PFT#10
+fates_leaf_slatop,10,,0.010105671,0.017249186,0.01,0.012,Specific leaf area at canopy top PFT#10
+fates_leaf_vcmax25top,10,,58.37439691,99.3841642,38,62,Maximum carboxylation rate at 25C PFT#10
+fates_grperc,10,,0.05784668,0.16440918,0.12,0.11,Growth respiration fraction PFT#10
+fates_mort_scalar_hydrfailure,10,,0.05,0.848144531,0.6,0.6,Hydraulic failure mortality scalar PFT#10
+fates_mort_scalar_cstarvation,10,,0.15,0.897070313,0.6,0.6,Carbon starvation mortality scalar PFT#10
+fates_mort_scalar_coldstress,10,,1.721191406,4.409179688,3,3,Cold stress mortality scalar PFT#10
+fates_mort_bmort,10,,0.007143555,0.020829102,0.016,0.014,Background mortality rate PFT#10
+fates_mort_hf_sm_threshold,10,,1E-08,1.44482E-06,1e-06,1e-06,Hydraulic failure soil moisture threshold PFT#10
+fates_mort_freezetol,10,,-89.58984375,-34.51171875,-71,-60,Freezing tolerance temperature PFT#10
+seed_repro_fraction,10,,0.2,0.6,0.4,,Mature-plant total reproductive C fraction (seed_alloc+seed_alloc_mature) PFT#10
+seed_alloc_fraction,10,,0.01,1,0.0722,,Share of seed_repro_fraction assigned to base fates_recruit_seed_alloc PFT#10
+fates_recruit_seed_dbh_repro_threshold,10,,1.5,3.5,2.4,,DBH (cm) threshold for mature reproductive allocation PFT#10
+fates_frag_seed_decay_rate,10,,0.10,0.763754883,0.74,0.51,Seed decay rate PFT#10
+fates_recruit_seed_germination_rate,10,,0.256591797,0.740722656,0.4,0.5,Seed germination rate PFT#10
+fates_recruit_seed_supplement,10,,0.000439453,0.048803711,0,0,Seed rain supplement PFT#10
+fates_recruit_init_density,10,,0.104980469,0.292480469,0.16,0.2,Initial recruit density PFT#10
+fates_phen_mindaysoff,10,,51.70898438,148.5839844,100,100,Minimum days in dormant phase PFT#10
+fates_allom_d2bl1,11,,0.039819336,0.101069336,0.0481934,0.07,Diameter to leaf biomass allometry parameter 1 PFT#11
+fates_allom_d2bl2,11,,0.742675781,1.841455078,1.71768,1.3,Diameter to leaf biomass allometry parameter 2 PFT#11
+fates_allom_agb2,11,,0.319236328,0.828394531,0.685395,0.572,Aboveground biomass allometry parameter 2 PFT#11
+fates_allom_agb3,11,,1.095986328,2.854111328,1.76286,1.94,Aboveground biomass allometry parameter 3 PFT#11
+fates_allom_d2h1,11,,0.358125,0.958125,0.778125,0.64,Diameter to height allometry parameter 1 PFT#11
+fates_allom_d2h2,11,,0.193310547,0.529887695,0.4027,0.37,Diameter to height allometry parameter 2 PFT#11
+fates_recruit_height_min,11,,0.396606445,1.103759766,0.8,0.2,Minimum recruit height PFT#11
+fates_allom_dbh_maxheight,11,,1.002929688,2.940429688,1.9,2,DBH at maximum height PFT#11
+fates_allom_d2ca_coefficient_min,11,,0.183749289,0.485705669,0.31665,0.3381119,Minimum diameter to crown area coefficient PFT#11
+fates_alloc_store_priority_frac,11,,0.405566406,0.974804688,0.6,0.8,Storage allocation priority fraction PFT#11
+fates_alloc_storage_cushion,11,,0.887109375,5.0,1.4,1.2,Storage carbon cushion PFT#11
+fates_leaf_slatop,11,,0.017267216,0.031647838,0.032,0.03,Specific leaf area at canopy top PFT#11
+fates_leaf_vcmax25top,11,,58.37439691,99.3841642,54,54,Maximum carboxylation rate at 25C PFT#11
+fates_grperc,11,,0.056450195,0.161025391,0.11,0.11,Growth respiration fraction PFT#11
+fates_mort_scalar_hydrfailure,11,,0.05,0.880957031,0.8,0.6,Hydraulic failure mortality scalar PFT#11
+fates_mort_scalar_cstarvation,11,,0.15,0.866601563,0.57,0.6,Carbon starvation mortality scalar PFT#11
+fates_mort_scalar_coldstress,11,,1.514648438,4.466308594,3.5,3,Cold stress mortality scalar PFT#11
+fates_mort_bmort,11,,0.00725293,0.020876953,0.01,0.014,Background mortality rate PFT#11
+fates_mort_hf_sm_threshold,11,,1E-08,1.4209E-06,1e-06,1e-06,Hydraulic failure soil moisture threshold PFT#11
+fates_mort_freezetol,11,,-115.234375,-42.734375,-95,-80,Freezing tolerance temperature PFT#11
+seed_repro_fraction,11,,0.2,0.6,0.4,,Mature-plant total reproductive C fraction (seed_alloc+seed_alloc_mature) PFT#11
+seed_alloc_fraction,11,,0.01,1,0.1,,Share of seed_repro_fraction assigned to base fates_recruit_seed_alloc PFT#11
+fates_recruit_seed_dbh_repro_threshold,11,,1.0,3.0,1.9,,DBH (cm) threshold for mature reproductive allocation PFT#11
+fates_frag_seed_decay_rate,11,,0.10,0.730883789,0.46,0.51,Seed decay rate PFT#11
+fates_recruit_seed_germination_rate,11,,0.318847656,0.742675781,0.49,0.5,Seed germination rate PFT#11
+fates_recruit_seed_supplement,11,,0.003295898,0.045263672,0,0,Seed rain supplement PFT#11
+fates_recruit_init_density,11,,0.102148438,0.289648438,0.2,0.2,Initial recruit density PFT#11
+fates_phen_mindaysoff,11,,51.70898438,148.5839844,100,100,Minimum days in dormant phase PFT#11
+fates_allom_d2bl1,12,,0.019,0.15,0.0004,0.07,Diameter to leaf biomass allometry parameter 1 PFT#12
+fates_allom_d2bl2,12,,0.59,2.14,1.7092,1.3,Diameter to leaf biomass allometry parameter 2 PFT#12
+fates_allom_agb2,12,,1.203261719,1.422636719,1.6592,0.572,Aboveground biomass allometry parameter 2 PFT#12
+fates_allom_agb3,12,,0.986103516,2.880634766,1.248,1.94,Aboveground biomass allometry parameter 3 PFT#12
+fates_allom_d2h1,12,,0.3703125,0.9503125,0.1812,0.64,Diameter to height allometry parameter 1 PFT#12
+fates_allom_d2h2,12,,0.234321289,0.546870117,0.6384,0.37,Diameter to height allometry parameter 2 PFT#12
+fates_recruit_height_min,12,,0.065307617,0.185668945,0.11,0.125,Minimum recruit height PFT#12
+fates_allom_dbh_maxheight,12,,0.191748047,0.519873047,20,0.35,DBH at maximum height PFT#12
+fates_allom_d2ca_coefficient_min,12,,0.170871981,0.500729196,0.0408,0.3381119,Minimum diameter to crown area coefficient PFT#12
+fates_alloc_store_priority_frac,12,,0.401757813,0.986523438,0.6,0.8,Storage allocation priority fraction PFT#12
+fates_alloc_storage_cushion,12,,0.685546875,5.0,1.2,1.2,Storage carbon cushion PFT#12
+fates_leaf_slatop,12,,0.008526343,0.028958435,0.027,0.03,Specific leaf area at canopy top PFT#12
+fates_leaf_vcmax25top,12,,58.37439691,99.3841642,86,78,Maximum carboxylation rate at 25C PFT#12
+fates_grperc,12,,0.055322266,0.162529297,0.16,0.11,Growth respiration fraction PFT#12
+fates_mort_scalar_hydrfailure,12,,0.05,0.890332031,0.6,0.6,Hydraulic failure mortality scalar PFT#12
+fates_mort_scalar_cstarvation,12,,0.15,0.887988281,0.6,0.6,Carbon starvation mortality scalar PFT#12
+fates_mort_scalar_coldstress,12,,1.584960938,4.275878906,2.3,3,Cold stress mortality scalar PFT#12
+fates_mort_bmort,12,,0.007922852,0.020685547,0.014,0.014,Background mortality rate PFT#12
+fates_mort_hf_sm_threshold,12,,1E-08,1.44238E-06,1e-06,1e-06,Hydraulic failure soil moisture threshold PFT#12
+fates_mort_freezetol,12,,-118.984375,-42.8515625,-89,-80,Freezing tolerance temperature PFT#12
+seed_repro_fraction,12,,0.2,0.999999,0.25,,Mature-plant total reproductive C fraction (seed_alloc+seed_alloc_mature) PFT#12
+seed_alloc_fraction,12,,0.01,1,0.05,,Share of seed_repro_fraction assigned to base fates_recruit_seed_alloc PFT#12
+fates_recruit_seed_dbh_repro_threshold,12,,0.1,1.0,0.35,,DBH (cm) threshold for mature reproductive allocation PFT#12 (api-31 arctic base 0.35; api-43 generic base 3.0)
+fates_frag_seed_decay_rate,12,,0.10,0.750805664,0.35,0.51,Seed decay rate PFT#12
+fates_recruit_seed_germination_rate,12,,0.264160156,0.747802734,0.29,0.5,Seed germination rate PFT#12
+fates_recruit_seed_supplement,12,,0.001025391,0.047900391,0,0,Seed rain supplement PFT#12
+fates_recruit_init_density,12,,0.100195313,0.280664063,0.2,0.2,Initial recruit density PFT#12
+fates_phen_mindaysoff,12,,51.70898438,148.5839844,100,100,Minimum days in dormant phase PFT#12
+fates_maintresp_nonleaf_baserate,,,1.29568E-06,3.66926E-06,2.525e-06,2.525e-06,Non-leaf maintenance respiration base rate (shared)
+fates_phen_chilltemp,,,-4.580078125,4.990234375,5,5,Chilling temperature threshold (shared)
+fates_phen_coldtemp,,,-7.456054688,7.075195313,7.5,7.5,Cold temperature threshold (shared)
+fates_phen_ncolddayslim,,,2.573242188,6.948242188,5,5,Number of cold days limit (shared)
+fates_phen_gddthresh_c,11,,-0.014916992,-0.005166016,-0.01,-0.01,GDD threshold slope PFT#11 (cold-decid shrub) - now per-PFT (A2MCapi43port17)
+fates_phen_gddthresh_c,12,,-0.014916992,-0.005166016,-0.01,-0.01,GDD threshold slope PFT#12 (arctic C3 grass) - now per-PFT (A2MCapi43port17)
+fates_turnover_fnrt,10,,0.5,5.0,1.5,1.5,Fine root longevity (yr) PFT#10 - NEW TIER 1
+fates_turnover_fnrt,11,,0.5,5.0,1,1,Fine root longevity (yr) PFT#11 - NEW TIER 1
+fates_turnover_fnrt,12,,0.5,5.0,1,1,Fine root longevity (yr) PFT#12 - NEW TIER 1
+fates_turnover_leaf_canopy,10,,0.3,2.0,1.5,,Leaf longevity (yr) PFT#10 (canopy)
+fates_turnover_leaf_ustory,10,,0.3,2.0,1.5,,Leaf longevity (yr) PFT#10 (understory)
+fates_turnover_leaf_canopy,11,,0.3,2.0,1,,Leaf longevity (yr) PFT#11 (canopy)
+fates_turnover_leaf_ustory,11,,0.3,2.0,1,,Leaf longevity (yr) PFT#11 (understory)
+fates_turnover_leaf_canopy,12,,0.3,2.0,1,,Leaf longevity (yr) PFT#12 (canopy)
+fates_turnover_leaf_ustory,12,,0.3,2.0,1,,Leaf longevity (yr) PFT#12 (understory)
+fates_allom_fnrt_prof_a,10,,11.17,33.51,7,7,Root distribution shape parameter a PFT#10 - NEW TIER 1
+fates_allom_fnrt_prof_a,11,,9.16,27.48,7,7,Root distribution shape parameter a PFT#11 - NEW TIER 1
+fates_allom_fnrt_prof_a,12,,5.75,17.27,11,11,Root distribution shape parameter a PFT#12 - NEW TIER 1
+fates_allom_fnrt_prof_b,10,,5.18,15.53,1.5,1.5,Root distribution shape parameter b PFT#10 - NEW TIER 1
+fates_allom_fnrt_prof_b,11,,9.14,27.43,1.5,1.5,Root distribution shape parameter b PFT#11 - NEW TIER 1
+fates_allom_fnrt_prof_b,12,,3.26,9.78,2,2,Root distribution shape parameter b PFT#12 - NEW TIER 1
+fates_cnp_pid_ki,10,,0.0,0.001,0,0,PID integral gain PFT#10 - NEW TIER 2
+fates_cnp_pid_ki,11,,0.0,0.001,0,0,PID integral gain PFT#11 - NEW TIER 2
+fates_cnp_pid_ki,12,,0.0,0.001,0,0,PID integral gain PFT#12 - NEW TIER 2
+fates_cnp_pid_kd,10,,0.01,0.5,0.1,0.1,PID derivative gain PFT#10 - NEW TIER 2
+fates_cnp_pid_kd,11,,0.01,0.5,0.1,0.1,PID derivative gain PFT#11 - NEW TIER 2
+fates_cnp_pid_kd,12,,0.01,0.5,0.1,0.1,PID derivative gain PFT#12 - NEW TIER 2
+fates_cnp_phos_store_ratio,10,,1.0,5.0,1.5,1.5,P storage capacity (multiple of leaf P) PFT#10 - NEW TIER 3
+fates_cnp_phos_store_ratio,11,,1.0,5.0,1.5,1.5,P storage capacity (multiple of leaf P) PFT#11 - NEW TIER 3
+fates_cnp_phos_store_ratio,12,,1.0,5.0,1.5,1.5,P storage capacity (multiple of leaf P) PFT#12 - NEW TIER 3
+fates_cnp_nitr_store_ratio,10,,1.0,5.0,1.5,1.5,N storage capacity (multiple of leaf N) PFT#10 - NEW TIER 3
+fates_cnp_nitr_store_ratio,11,,1.0,5.0,1.5,1.5,N storage capacity (multiple of leaf N) PFT#11 - NEW TIER 3
+fates_cnp_nitr_store_ratio,12,,1.0,5.0,1.5,1.5,N storage capacity (multiple of leaf N) PFT#12 - NEW TIER 3

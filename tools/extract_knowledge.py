@@ -34,7 +34,7 @@ Usage:
 
     # For A2MC phase logs
     extractor = KnowledgeExtractor(
-        site_dir="use_cases/Kougarok"
+        site_dir="use_cases/ELM-FATES_Kougarok"
     )
     extractor.extract_from_phase("diagnosis")
 
@@ -211,7 +211,7 @@ class KnowledgeExtractor:
         Initialize the knowledge extractor.
 
         Args:
-            site_dir: Site use_case directory (e.g., "use_cases/Kougarok")
+            site_dir: Site use_case directory (e.g., "use_cases/ELM-FATES_Kougarok")
             api_key: Claude API key (uses AI_API_KEY env var if not provided)
             auto_save: Whether to automatically save extracted knowledge
         """
@@ -221,7 +221,7 @@ class KnowledgeExtractor:
         if site_dir:
             self.site_dir = Path(site_dir)
         else:
-            self.site_dir = Path(os.environ.get('A2MC_USE_CASE_DIR', 'use_cases/Kougarok'))
+            self.site_dir = Path(os.environ.get('A2MC_USE_CASE_DIR', 'use_cases/ELM-FATES_Kougarok'))
 
         # Memory directories
         self.log_dir = self.site_dir / "memory" / "logs"
@@ -763,7 +763,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
     parser = argparse.ArgumentParser(description="Extract knowledge from A2MC logs")
-    parser.add_argument("--site-dir", default="use_cases/Kougarok",
+    parser.add_argument("--site-dir", default="use_cases/ELM-FATES_Kougarok",
                        help="Site use_case directory")
     parser.add_argument("--phase", type=str, help="Specific phase to extract from")
     parser.add_argument("--bootstrap", action="store_true",

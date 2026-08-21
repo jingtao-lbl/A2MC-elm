@@ -50,7 +50,7 @@ use_cases/{site}/memory/logs/
 └── {date}_*.md  (general logs)
 ```
 
-Example: `use_cases/Kougarok/memory/logs/phase3_diagnosis/20260120a_Triple_Bottleneck.md`
+Example: `use_cases/ELM-FATES_Kougarok/memory/logs/phase3_diagnosis/20260120a_Triple_Bottleneck.md`
 
 ### 2. Development Session Logs (Framework Development)
 

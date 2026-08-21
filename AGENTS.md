@@ -41,6 +41,7 @@ These are the site- and framework-agnostic rules. Follow them on every task.
 8. **Check structure before writing paths.** Verify actual folder/file names by listing or reading existing code; never guess directory names.
 9. **Confirm before destructive or hard-to-reverse actions.**
 10. **Drive the workflow; pause only at forks + hard stops.** Given a goal, advance it — you are the superset of the autonomous loop, which drives itself with no per-phase prompt. Execute the resume brain's next action (extract, monitor, run a planned experiment, advance a phase); surface results + proposals, not "shall I…?" for mechanical steps. **Pause** for: a Phase-6 converge/redesign/stop decision, a curated-KB write, an expensive/irreversible action, or a standing hard stop (rule 9). See the `onboard-session` skill's drive-vs-pause list.
+11. **Model-source changes go to your fork, never upstream.** Calibration tunes *parameters*; only reach for editing ELM/FATES *source* (the model-development track) when the calibration loop is provably exhausted. Two habits are non-negotiable: **annotate every edit**, and **push only to your own fork of the model repo — NEVER to the upstream project** (`E3SM-Project/E3SM`, `NGEET/fates`). Branch choice is by intent: a small change you intend to **keep** can go on your working branch (your fork's default); use a dedicated **experiment branch** for **exploratory / A-B / reproducibility-sensitive** work, and there switch-gate behavioral changes **default-off** so a switch-off build reproduces the baseline bit-for-bit (V0-at-equality). See the `add-fates-parameter` skill.
 
 ## Offline-Agent Operating Discipline
 
@@ -69,23 +70,33 @@ At a glance (most skills are mode-agnostic; the FATES Morris-ensemble analysis s
 |---|---|---|
 | `calibration-log` | any | Log interactive calibration/exploration work for a site (PhaseLogger + session logs) |
 | `a2mc-init` | any | First-run setup — interview + create/populate a use case, then hand off to phase0-design (distinct from onboard-session) |
+| `onboard-case` | any | Add a NEW case/site to an already-configured clone — interview, resolve case scale, research plan, scaffold from TEMPLATE, param list, preflight, Phase 0 (distinct from `a2mc-init`, which is first-run only) |
+| `setup-discipline` | any | Per-stage definition-of-done checklist for the setup arc — collects the gates `a2mc-init` and `onboard-case` name inline, so a stage can be CLOSED rather than merely performed |
 | `onboard-session` | any | Cold-start: orient at session start or after a compaction/reset |
+| `calibration-goal` | any | Run-to-convergence driver — the conductor above the phase skills; advances the offline 7-phase loop to CONVERGED, pausing only at the 4 human gates (harness-neutral) |
+| `calibration-discipline` | any | Per-cycle/per-round DISCIPLINE checklist (definition-of-done) that keeps a long offline campaign stable — the HABITS layer the driver honors (log+self-document each phase, arm monitors after every launch, validate state, per-cycle report, round summary WITH next-round plan); distinct from `calibration-goal` (loop mechanics) |
 | `curate-knowledge` | any | Review + promote staged Tier-3 knowledge proposals (the write-gate loop) |
 | `arm-hpc-monitoring` | any (HPC) | Set up real-time monitoring of an in-flight ensemble at session start |
 | `restart-failed-jobs` | any (HPC) | Restart SLURM jobs that failed in an ensemble/experiment |
 | `diagnose-forensics` | any | Investigate an anomaly — real or artifact? — then root-cause it |
 | `scientific-analysis` | any | Run an investigation → figure → ana_log |
 | `markdown-to-pdf` | any | Convert a markdown ana_log/report/note to a shareable PDF or Word doc |
+| `literature-review` | any | Cited literature review via `paper-search-mcp` (search→triage→extract→synthesis) — PARAMETER-BOUNDS (published ranges → refine a param-list's `lower`/`upper`) or MANUSCRIPT topic review. Validated DOIs, no fabrication. NOT a single-citation lookup |
+| `plotting` | any | Clean, readable, overlap-free matplotlib figures — verify by viewing the PNG |
+| `write-report` | any | Integrated, self-contained report for a zero-context human reader |
 | `build-rag-from-scratch` | any | Build the RAG/GraphRAG knowledge layer from scratch (new model or full reconstruction) |
 | `rebuild-rag` | any | Rebuild/repair the RAG index — reindex, bump wiki commit, refresh the graph |
 | `generate-codebase-wiki` | any | Produce a source-grounded codebase wiki for a model |
 | `validate-rag-chain` | any | Validate the source → wiki → curated-YAML → RAG chain before shipping |
 | `inject-knowledge` | any | Inject a human-originated discovery / parameter / relationship into curated knowledge |
+| `port-param-file` | any | Port a calibrated param file across model/API versions (remap PFT identity by functional type, transfer tuned values) |
 | `add-skill` | any | Scaffold + register a new skill (4-way registry parity) |
 | `refine-skill` | any | Refine an existing skill from accumulated evidence (human-gated) |
 | `summarize-calibration-round` | **FATES** | Summarize one calibration round (whole-ensemble biomass + evaluation report) |
 | `compare-calibration-rounds` | **FATES** | Compare calibration rounds (top-N, μ* sensitivity, cross-round overlays) |
 | `offline-testing-workflow` | **FATES** | Design + launch + analyze a parameter-sweep HPC experiment |
+| `add-fates-parameter` | **FATES** | Model-dev: wire a new FATES parameter into EDParamsMod + the parameter file |
+| `model-evolution` | any | Model-dev umbrella: the workflow for evolving ELM/FATES source code |
 | `phase0-design` | any | Offline Phase 0 — design/sample/submit the ensemble |
 | `phase1-exploration` | any | Offline Phase 1 — extract Y matrix + Morris sensitivity |
 | `phase2-screening` | any | Offline Phase 2 — rank ensemble vs validation targets |

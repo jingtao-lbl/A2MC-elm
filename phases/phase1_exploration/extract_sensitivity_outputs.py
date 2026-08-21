@@ -71,7 +71,7 @@ except ImportError:
 
 try:
     from tools.fates_output_variables import OUTPUT_VARIABLES
-    from tools.fates_utils import get_szpf_range, N_SIZE_CLASSES
+    from tools.fates_utils import get_szpf_range, get_n_size_classes_from_config
 except ImportError:
     OUTPUT_VARIABLES = None
     print("Warning: Could not import fates_output_variables or fates_utils")
@@ -116,9 +116,15 @@ def parse_case_range(case_spec: str) -> List[int]:
     return sorted(set(cases))
 
 
-def get_szpf_indices_for_pft(pft_id: int, n_size_classes: int = 13) -> Tuple[int, int]:
-    """Get SZPF index range for a PFT. Delegates to tools.fates_utils.get_szpf_range."""
-    return get_szpf_range(pft_id)
+def get_szpf_indices_for_pft(pft_id: int, n_size_classes: int = None) -> Tuple[int, int]:
+    """Get SZPF index range for a PFT. Delegates to tools.fates_utils.get_szpf_range.
+
+    nlevsclass is derived from the base param file (not a hardcoded 13); pft_id is already
+    validated upstream (from the pfts config), so fates_pft is set to pft_id to skip the
+    redundant bound check.
+    """
+    n_sc = n_size_classes or get_n_size_classes_from_config()
+    return get_szpf_range(pft_id, fates_pft=pft_id, n_size_classes=n_sc)
 
 
 def get_case_path(case_num: int, ensemble_output: str, case_prefix: str,
@@ -622,7 +628,7 @@ Available output variables:
 
     if not ensemble_output or not case_prefix:
         print("Error: Must provide --ensemble-output and --case-prefix")
-        print("       Or source A2MC config: source use_cases/Kougarok/config/kougarok_config.sh")
+        print("       Or source A2MC config: source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh")
         sys.exit(1)
 
     # Determine year range

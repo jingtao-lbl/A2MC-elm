@@ -5,7 +5,7 @@
 # WHAT THIS IS
 # =============================================================================
 # Config-driven autonomous monitor for an A2MC FATES ensemble on SLURM. It is
-# the generalized version of use_cases/Kougarok/analysis/r5_auto_monitor.sh and
+# the generalized version of use_cases/ELM-FATES_Kougarok/analysis/r5_auto_monitor.sh and
 # is intended to serve BOTH reuse paths:
 #
 #   * ONLINE  Phase 0 — orchestrator-driven Morris ensembles. The orchestrator

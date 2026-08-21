@@ -1,5 +1,7 @@
 ---
 name: rebuild-rag
+visibility: public
+category: kb-build
 description: Rebuild or repair the A2MC RAG/GraphRAG index (ChromaDB vector store + NetworkX knowledge graph) that the ReasoningModule queries before every Claude API call. Use when the user asks to "rebuild the RAG", "reindex", "bump the wiki to a new commit", "the RAG/index stopped working / returns nothing / returns stale content", "I edited the curated YAML — refresh the graph", "add a model to the RAG", or after any edit to a wiki / CDL / curated_relationships.yaml. Codifies the build pipeline + the footguns (the loader pattern-probe symlink trap, --rebuild vs --graph-only, Python 3.10, dropped curated edges, PFT-count env var) distilled from docs/a2mc_reference/rag_build_roadmap.md and the RAG dev logs.
 modes:
   requires_fates: false
@@ -34,9 +36,26 @@ that preserves chunk count but changes text is ignored unless you `--rebuild`.
 
 ## Step 1 — standard rebuild (current tree, no commit bump)
 
+**For a registered milestone, this one line is enough and is guarded (v2.184):**
+
 ```bash
-$PY scripts/build_rag_index.py --rebuild --test
+$PY scripts/build_rag_index.py --rebuild --test --profile <name>   # e.g. api-43-1
 ```
+
+`--profile` resolves EVERY commit-pinned input (wiki subdirs, param file, FATES+ELM output CDLs)
+from `rag/milestones.json` — the registered pinned filenames, else the milestone **anchor** commit.
+You do NOT need `--fates-wiki-subdir` / `--param-cdl` / `--output-cdl` for a registered milestone
+(the checkout HEAD is usually a *later* commit than the anchor, so deriving filenames from HEAD used
+to silently fall through to the generic CDLs and shrink the index — the v2.183 near-miss).
+
+Two guards now make that failure loud:
+- **Input-contract guard** — if a registered milestone's resolved inputs don't match its registry
+  entry, the build aborts (exit 2) before embedding. Override with `--allow-generic-cdl` only for a
+  deliberate off-milestone build.
+- **Count-regression guard** — a >2% drop in docs/nodes/edges vs the milestone's `expected_counts`
+  fails the build (exit 3). Growth is fine; bump `expected_counts` when you legitimately add content.
+
+Plain `--rebuild --test` (no `--profile`) still works for the active env profile.
 
 Reads `docs/fates-knowledge-base/` + `docs/elm-knowledge-base/`, parses the two CDLs,
 overlays `rag/data/curated_relationships.yaml`, writes `rag/chroma_db/<profile>/` +
@@ -88,6 +107,16 @@ print(r.get_targeted_context(param_names=['fates_cnp_pid_kp'],
   asserts every expected `kb_source` is present above a floor and canary wiki files appear.
   This catches the ELM-wiki-absent bug class (a whole KB silently dropped: `kb_source 'elm' = 0`).
   Update `rag/canary_queries.yaml` floors after a legitimate rebuild; the *presence* invariant should hold.
+- **Golden-query content test (REQUIRED after any content change):**
+  `$PY tools/check_rag_queries.py --profile <profile>`. Coverage is metadata-only — it does NOT
+  catch a *wrong answer* (a bad SZPF ordering formula, a mislabeled PFT identity: dev_logs
+  `20260710r/t`). This one runs the embedding model + graph and asserts real query results:
+  `must_contain` / `must_not_contain` per query (e.g. the correct
+  `iscpf = (pft-1)*nlevsclass+size_class`, the wrong `(size_class-1)*numpft` absent) plus a
+  graph PFT-identity check (PFT10/11/12 = the api-43 arctic `fates_pftname`). Assertions live in
+  `rag/golden_queries.yaml` — **add a query there for every new content invariant you fix** so a
+  regression fails loudly next time. It self-verifies (a negative run does fail); exit 1 = wrong
+  content, exit 0 = pass or gracefully-skipped (no embedding model).
 
 ## Step 3 — graph-only rebuild after a curated-YAML edit
 
@@ -112,9 +141,11 @@ compat fix (`20260204a`).
 
 ## Notes
 
-- **Other knobs:** `A2MC_PFTS` sets the PFT list (defaults to Kougarok `[7,9,10]`) — set
-  `A2MC_PFTS=1,2,...,12` for a non-Kougarok site or graph nodes come out wrong
-  (`graph_builder.py` `_resolve_pft_list`).
+- **Other knobs:** `A2MC_PFTS` sets the PFT list — always set it (the site config does)
+  so the graph builds PFT-specific nodes for exactly your calibrated PFTs (e.g.
+  `A2MC_PFTS=10,11,12` for api-43 Kougarok). If unset, `graph_builder.py`
+  `_resolve_pft_list` falls back to a site-agnostic all-12-PFT default `[1..12]` **and
+  prints a warning** — usable but not tailored to your site.
 - **After a commit bump or curated edit, validate the chain** before trusting it — the
   `validate-rag-chain` skill (wiki↔source, YAML↔wiki, profile diff).
 - **Where it lives in code:** the roadmap §8 has a grep cheat-sheet for every default path,

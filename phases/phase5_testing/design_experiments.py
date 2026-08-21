@@ -119,17 +119,25 @@ def create_experiment_param_files(
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Build parameter name lookup for shorthand → full name resolution
+    # Build parameter-name resolution context. The docs/37 CSV resolves via canonical loader specs;
+    # the legacy .txt via the shorthand build_param_lookup dict.
     param_list_file = os.environ.get('A2MC_PARAM_LIST_FILE', '')
     param_lookup = None
+    param_specs = None
     if param_list_file and Path(param_list_file).exists():
         try:
-            param_lookup = build_param_lookup(param_list_file)
-            logger.info(f"Loaded parameter name lookup: {len(param_lookup)} entries from {Path(param_list_file).name}")
+            from tools.modify_fates_parameters import _is_new_param_list_format
+            if _is_new_param_list_format(param_list_file):
+                from tools.param_spec import load_param_spec
+                param_specs = load_param_spec(param_list_file)
+                logger.info(f"Loaded {len(param_specs)} loader specs from {Path(param_list_file).name} (canonical)")
+            else:
+                param_lookup = build_param_lookup(param_list_file)
+                logger.info(f"Loaded parameter name lookup: {len(param_lookup)} entries from {Path(param_list_file).name}")
         except Exception as e:
-            logger.warning(f"Could not build parameter lookup: {e}. Shorthand names will not be resolved.")
+            logger.warning(f"Could not build parameter resolver: {e}. Names will not be resolved.")
     else:
-        logger.warning("A2MC_PARAM_LIST_FILE not set or not found. Shorthand parameter names will not be resolved.")
+        logger.warning("A2MC_PARAM_LIST_FILE not set or not found. Parameter names will not be resolved.")
 
     updated_experiments = []
 
@@ -182,7 +190,7 @@ def create_experiment_param_files(
 
                 fates_name, pft, organ = resolve_parameter_name(
                     raw_name, pft=explicit_pft, organ=explicit_organ,
-                    param_lookup=param_lookup,
+                    param_lookup=param_lookup, specs=param_specs,
                 )
 
                 if raw_name != fates_name:

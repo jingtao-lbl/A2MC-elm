@@ -34,6 +34,7 @@ categories:
       - PID_Controller
       - Nutrient_Uptake
       - ECA_Competition
+      - Biochemical_Phosphatase
       - Stoichiometry
     key_outputs:
       - FATES_LEAFC
@@ -244,6 +245,58 @@ mechanisms:
     notes: |
       Triggered when storage C falls below threshold.
       Lower scalar = less sensitive to starvation.
+
+  Biochemical_Phosphatase:
+    description: "Enzymatic (phosphatase) mineralization of organic P to plant-available inorganic P"
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cnp]
+      nutrient_comp_pathway: [eca]
+    code_reference: "main/EDPftvarcon.F90::FatesCheckParams"
+    doc_reference: "ana_logs/20260712a, 20260712b (source-verified api-31 vs api-43)"
+    parameters:
+      - fates_cnp_eca_vmax_ptase  # ACTIVE: max phosphatase production rate
+      - fates_cnp_eca_km_ptase    # ACTIVE: half-saturation
+    affects:
+      - FATES_PUPTAKE_SZPF
+    notes: |
+      Plants invest C in phosphatase enzymes to mineralize organic P into
+      inorganic, plant-available P. The produced flux splits into P sent
+      DIRECTLY to the plant (biochem_pmin_to_plant) vs P released to the SHARED
+      soil-solution pool (biochem_pmin_vr), which is then competed for by all
+      plants + microbes via the ECA solver.
+
+      api-43 form (CURRENT; alpha/lambda DISABLED):
+        ptase    = vmax_ptase * fr / dz / (km_ptase + 1)
+        to_plant = 0            # alpha hard-guarded to 0
+        pool    += ptase        # ALL liberated P goes to the shared pool
+      => No direct-to-plant channel and NO P-stress gating. Production is a
+      simple constitutive rate, so phosphatase is a background soil-P source,
+      not a plant-specific, demand-driven P-acquisition lever. Only vmax_ptase
+      and km_ptase are tunable.
+
+      api-31 form (HISTORICAL, for contrast; NOT api-43):
+        ptase    = vmax_ptase*fr*max(lamda_up - lambda, 0)
+                   / (km_ptase + max(lamda_up - lambda_eca, 0))
+        to_plant = ptase * alpha ;  pool += ptase * (1 - alpha)
+      alpha (direct-to-plant fraction, default 0.5) and lambda (critical-value
+      P-stress threshold, default 1.0) were ACTIVE and calibrated in the api-31
+      manuscript ensemble.
+
+      CALIBRATION CAUTION (api-43): fates_cnp_eca_alpha_ptase and
+      fates_cnp_eca_lambda_ptase are INACTIVE and hard-guarded to 0
+      (FatesCheckParams calls endrun on any nonzero) -- do NOT add them to an
+      api-43 calibration list or set them nonzero (init crash). See
+      reference_fates_eca_ptase_disabled_api43. Restoring the preferential /
+      demand-driven pathway would be a fork-side, default-off model-dev change,
+      not a parameter.
+
+      Source: FATES guard main/EDPftvarcon.F90:1033-1048 (endrun if alpha/lambda
+      nonzero; commit e35f44c7, Knox 2024-02-06); ELM host compute
+      elm/src/biogeochem/PhosphorusDynamicsMod.F90:552-575 (api-43, alpha/lambda
+      commented out) vs :651-658 (api-31, active). Still disabled on upstream
+      NGEET/fates main as of 2026-07-12.
 
 # -----------------------------------------------------------------------------
 # Output Variables (from extract_monthly_variables_FATES.py)
@@ -1046,10 +1099,35 @@ parameters:
       - FATES_PUPTAKE_SZPF
     related_to:
       - fates_cnp_vmax_p
+      - fates_cnp_eca_km_ptase
     calibration_notes: |
-      Maximum phosphatase production rate.
-      Affects organic P mineralization.
+      Maximum phosphatase production rate (ACTIVE api-43 knob).
+      Sets the rate of organic-P -> plant-available-P mineralization.
+      In api-43 ALL mineralized P goes to the SHARED soil-solution pool
+      (no direct-to-plant channel, alpha=0) and production is NOT P-stress
+      gated (no lambda). So vmax_ptase + km_ptase are the ONLY phosphatase
+      levers here. See mechanism Biochemical_Phosphatase.
       Typical range: 1e-9 to 5e-4
+
+  fates_cnp_eca_km_ptase:
+    category: cnp
+    applies_in:
+      use_fates: [true]
+      parteh_mode: [2]
+      nutrient: [cnp]
+      nutrient_comp_pathway: [eca]
+    controls:
+      - ECA_Competition
+    affects:
+      - FATES_PUPTAKE_SZPF
+    related_to:
+      - fates_cnp_eca_vmax_ptase
+    calibration_notes: |
+      Half-saturation constant for phosphatase P production (ACTIVE api-43 knob).
+      With alpha/lambda disabled in api-43 the kinetics reduce to
+      ptase = vmax_ptase*fr/dz / (km_ptase + 1); higher km_ptase lowers the
+      per-layer mineralization rate. One of the two tunable phosphatase levers
+      (with vmax_ptase). See mechanism Biochemical_Phosphatase.
 
   fates_cnp_eca_alpha_ptase:
     category: cnp
@@ -1064,11 +1142,13 @@ parameters:
       - fates_cnp_eca_vmax_ptase
       - fates_cnp_eca_lambda_ptase
     calibration_notes: |
-      INACTIVE in api-43-1: validation at EDPftvarcon.F90:1044 aborts on non-zero.
-      Phosphatase mining cost coefficient (per unit C invested).
-      Higher values raise the C cost of mining organic P, reducing P uptake
-      via the ECA pathway. Tune jointly with vmax_ptase and lambda_ptase
-      when calibrating phosphatase efficiency.
+      INACTIVE in api-43-1: FatesCheckParams (EDPftvarcon.F90:1044) calls endrun
+      if non-zero. DO NOT tune or set non-zero -- causes an init crash.
+      What it is: alpha = the fraction of phosphatase-mineralized P routed
+      DIRECTLY to the plant (preferential capture) instead of to the shared soil
+      pool. Active in api-31 (default 0.5); hard-guarded to 0 in api-43, where
+      all mineralized P goes to the shared pool. See mechanism
+      Biochemical_Phosphatase and reference_fates_eca_ptase_disabled_api43.
 
   fates_cnp_eca_decompmicc:
     category: cnp
@@ -1103,10 +1183,13 @@ parameters:
       - fates_cnp_eca_vmax_ptase
       - fates_cnp_eca_alpha_ptase
     calibration_notes: |
-      INACTIVE in api-43-1: validation at EDPftvarcon.F90:1038 aborts on non-zero.
-      Phosphatase decay constant (1/s). Controls how quickly phosphatase
-      activity dissipates after production. Tune with vmax_ptase and
-      alpha_ptase as a coordinated triplet.
+      INACTIVE in api-43-1: FatesCheckParams (EDPftvarcon.F90:1038) calls endrun
+      if non-zero. DO NOT tune or set non-zero -- causes an init crash.
+      What it is: lambda = the critical-value (P-stress) threshold that gates
+      phosphatase production on the plant's P-vs-N limitation signal. Active in
+      api-31 (default 1.0); hard-guarded to 0 in api-43, where production is no
+      longer stress-gated. See mechanism Biochemical_Phosphatase and
+      reference_fates_eca_ptase_disabled_api43.
 
   fates_cnp_eca_plant_escalar:
     category: cnp

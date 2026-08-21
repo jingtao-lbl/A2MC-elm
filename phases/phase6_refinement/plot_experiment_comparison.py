@@ -50,7 +50,6 @@ from matplotlib.patches import Rectangle
 
 from phases.phase2_screening.plot_screening import (
     VARIABLE_CONFIGS,
-    DEFAULT_PFT_NAMES,
     _get_case_name_pattern,
     load_nc_timeseries,
     get_pft_timeseries,
@@ -239,7 +238,8 @@ def plot_experiment_comparison(
     if variables is None:
         variables = ['leaf', 'fineroot']
     if pft_names is None:
-        pft_names = DEFAULT_PFT_NAMES
+        from tools.fates_utils import get_pft_display_names
+        pft_names = get_pft_display_names()
     if case_pattern is None:
         case_pattern = _get_case_name_pattern()
 

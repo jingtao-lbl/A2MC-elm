@@ -1,5 +1,7 @@
 ---
 name: phase3-diagnosis
+visibility: public
+category: phase
 description: Run Phase 3 (DIAGNOSIS) of the A2MC calibration workflow as the offline agent — the human-in-the-loop analog of the autonomous orchestrator's `_run_diagnosis()` / `reasoning.diagnose()`. Systematically root-cause WHY the screening round is missing its validation targets — gather diagnostic data with the phase3 tools, pull RAG + Adaptive Memory context, then reason to a structured diagnosis (failing targets, likely causes, ranked root causes, parameter recommendations, base cases, hypotheses) and hand off to Phase 4. Use when the user says "diagnose the failing targets", "run Phase 3", "why aren't the targets calibrating", "root-cause this round", "what's driving the PFTx miss", after screening (Phase 2) hands off a ranked ensemble.
 modes:
   requires_fates: false      # calibration-workflow phase skill; mode resolved at runtime via describe_mode
@@ -9,6 +11,8 @@ modes:
 ---
 
 # Phase 3: Diagnosis (offline agent)
+
+> **Driven by `calibration-goal`** — the run-to-convergence driver dispatches here when `WorkflowStateOffline.current_phase` routes to this phase; do the phase, then update + `save()` the state so the driver advances. Also runnable standalone (one phase).
 
 The offline analog of the orchestrator's `_run_diagnosis()`. Online, `reasoning.diagnose()`
 makes this call automatically; **offline, YOU are the reasoning** — the `phases/phase3_diagnosis/`
@@ -51,6 +55,20 @@ Drive the phase3 tools on the best / lowest-cost / most-targets cases. Run sever
 Any `test_*.py` in the folder exposing `test_hypothesis()` is **auto-discovered** (see root
 `CLAUDE.md` §"Diagnostic tools") — you can run one to probe an ensemble-wide pattern without new simulations.
 
+> **Writing a custom diagnostic script? Use `tools/fates_utils`** for any per-PFT / SZPF extraction
+> (`get_szpf_range()`, `extract_pft_data()`, `aggregate_szpf_by_pft()`, `get_pft_index()`) — do NOT hand-roll
+> the SZPF (`levscpf`) index: it is **PFT-major** `(pft-1)×nlevsclass` with `nlevsclass` **file-derived**
+> (13 in the common default but *configurable*, not a fixed 13), plus the 0-based/1-based offset (a classic
+> silent bug; the FATES wiki's size-major formula is wrong). It is the canonical helper the existing phase3
+> tools already import.
+
+> **Trajectory view for collapse/exclusion.** The per-case `plot_diagnostics.py` (6-panel PFT composite)
+> shows *one* case; to see *where in the spin-up→transient a target diverges from the ensemble/observations*,
+> also read the whole-ensemble time-series comparison from Phase 2 Step 1b
+> (`tools/plot_ensemble_cases.py --combined`, [[reference_ensemble_combined_plot_pipeline]]). Late collapse,
+> overshoot-then-crash, and competitive-exclusion frontiers show up there before the per-case mechanism tools
+> name them.
+
 ## Step 2 — pull evidence (RAG + Memory), verify before asserting
 
 - **RAG/GraphRAG + `docs/fates-knowledge-base/`:** confirm the mechanism behind any parameter
@@ -78,8 +96,22 @@ prompt enforces online):
    targets_satisfied, targets_to_fix}`) for Phase 4 to build on.
 6. **Hypotheses** — 1–N testable statements for Phase 4, each with an expected direction.
 
-Structure follows `templates/reasoning/phase3_diagnosis_template.md`. Cross-check every mechanism
-claim against RAG before writing it down.
+Structure follows `templates/reasoning/phase3_diagnosis_template.md`. **Verify every mechanism claim in
+the checked-out model SOURCE (`file:line`), not just RAG or the parameter's `long_name`/`units`.**
+RAG and `long_name` are the starting hypothesis; the Fortran is ground truth, and it has repeatedly
+contradicted the description:
+
+- `fates_allom_l2fr` reads as "leaf-to-fineroot" and is the **reverse** — fine-root C *per leaf* C
+  (`FatesAllometryMod.F90`, `bfineroot`: `bfr = blmax * l2fr * canopy_trim`), so high `l2fr` means MORE
+  fine root ([[reference_l2fr_is_fineroot_per_leaf]]);
+- `fates_cnp_eca_alpha_ptase` / `lambda_ptase` are **inactive and hard-guarded to 0** in api-43 ECA
+  despite live-looking descriptions — a nonzero value aborts init ([[reference_fates_eca_ptase_disabled_api43]]);
+- `use_fates_nocomp` does **not** fix PFT areas, whatever the name suggests (CLAUDE.md's own worked example).
+
+So before writing a root cause that rests on "parameter X does Y": grep the source for X, read the
+equation it enters, and cite the `file:line`. A mechanism claim with a source citation is a different
+quality of evidence from one with a plausible name.
+[[feedback_param_description_can_lie_verify_in_source]] [[feedback_verify_before_acting_triangulate_sources]]
 
 ## Step 4 — cheap test first? (skip-testing inner loop, Phase 3↔4)
 
@@ -90,6 +122,24 @@ skip-testing inner loop: hand the hypothesis to `phase4-hypothesis`, which decid
 
 ## Step 5 — log it and hand off
 
+> **The log is a LIVING record — start it now, enrich as the phase runs.** Not an end-of-phase
+> write-up: the operational detail (job/array IDs, which cases failed, what was restarted) is
+> unrecoverable a week later. Full contract in `calibration-log`.
+>
+> **This phase's expected sections** — `PhaseLogger` names any you leave empty:
+> Failing Targets · Likely Causes · Root Causes (Ranked) · Key Insights · AI Reasoning and Deep Analysis · Parameter Recommendations · Cross-PFT Conflicts · Hypotheses Tested · Conceptual Model.
+>
+> **Set the handshake before the `log_*` call**, so the chain is traceable:
+> ```python
+> logger.set_phase_handshake(
+>     inherited_from="<predecessor log STEM> — what it concluded / asked of this phase",
+>     handed_to="<what Phase 4 receives; mirror the reasoning/schemas.py field names>",
+>     next_action="<the one concrete thing Phase 4 should do>")
+> ```
+> The log also carries `## Reasoning chain`, rebuilt from `workflow_state_offline` — so keep that
+> state updated with the FINDING, not a label; the chain is only as good as what each phase wrote.
+
+
 - **Log** via `calibration-log` (phase log → `PhaseLogger.log_diagnosis`, byte-identical to the
   autonomous agent so both modes' logs synthesize). Capture failing targets, ranked root causes,
   parameter recommendations, selected base cases, hypotheses, and the RAG/Memory evidence.
@@ -98,6 +148,11 @@ skip-testing inner loop: hand the hypothesis to `phase4-hypothesis`, which decid
   (a "Scripts Created" / "Output Figures" / "Evidence" section) — not just restate a prior log. Run
   `python tools/check_offline_log_evidence.py <log.md>`; it must exit 0 (ERROR = no resolvable first-hand
   artifact). See `feedback_offline_logs_need_first_hand_analysis`.
+  **Make `phase_results/{stem}/` SELF-DOCUMENTING** (`calibration-log` "different jobs" note): the
+  `log/{stem}.md` carries the analysis/findings/discussion/conclusion/next-action; the folder ships, per
+  figure, the **figure + a caption/NOTES `.md` (what it shows + how-to-read + provenance) + the generating
+  `.py` script (saved, not an inline heredoc) + the data**. The gate now WARNs on a figure missing its
+  caption/script/data — clear those warnings, don't stop at exit 0 (mirrors `write-report`). Phase 4/6 identical.
 - **Hand off** to `phase4-hypothesis` with the base cases + hypotheses. (If you came here from
   Phase 6 to rethink a disproven hypothesis, that's the 6→3 experiment-cycle loop — same routine;
   `experiment_count` was incremented on the 6→3 route (Phase-6 Step 4), and this new cycle's inner-loop
@@ -147,7 +202,13 @@ skip-testing inner loop: hand the hypothesis to `phase4-hypothesis`, which decid
    `phase_results/`** — never mint a separate letter for the artifacts (`docs/31`; via `PhaseLogger`
    offline mode `topic_stem`/`topic_artifact_dir`).
 
+## Before you finish
+
+**Discipline self-review (automatic).** Before advancing the state, re-check the [`calibration-discipline`](../calibration-discipline/SKILL.md) items that apply to this phase. This is unprompted and per-phase — the user does not have to ask (memory `feedback_schedule_periodic_reviews_with_a_real_mechanism`).
+
 ## Related skills / next phase
+
+- **`plotting`** — load it **before your first `savefig`**, not after. Its rule 8 (*open the rendered PNG and LOOK at it*) is the only step that catches an overlapping legend, a stats box across the curve, or an unreadable axis, and it cannot catch them retroactively.
 
 - **Reactive anomaly** (one outlier, not the whole round) → `diagnose-forensics`.
 - **Manuscript-grade investigation of a finding** → `scientific-analysis`.
@@ -155,6 +216,15 @@ skip-testing inner loop: hand the hypothesis to `phase4-hypothesis`, which decid
 
 ## Changelog
 
+- 2026-08-03: Diagnosis-writing step now requires **verifying every mechanism claim in the model SOURCE**
+  (`file:line`), not just RAG/`long_name`, with three FATES cases where the description misleads
+  (`fates_allom_l2fr` reversed, `eca_alpha_ptase` inactive, `use_fates_nocomp` misread).
+- 2026-08-03: Log step now states the **living-record** contract (start at phase start, enrich as it
+  runs — the operational detail is unrecoverable later), names **this phase's expected sections** so an
+  omission is visible in the log, and shows `set_phase_handshake()` so the reasoning chain is traceable.
+  Added a **Before you finish** discipline self-review. Full contract: `calibration-log`.
+- 2026-07-17: Evidence-gate bullet now requires a SELF-DOCUMENTING `phase_results/{stem}/` (figure + caption + saved generating .py + data), not just one artifact; the gate WARNs on a lone under-documented figure. Phase 4/6 mirror it. See `calibration-log` "different jobs" note. Ported from adapter-kit `3d187c3`.
+- 2026-07-15: Named `tools/fates_utils` as the canonical per-PFT/SZPF helper for a custom diagnostic script (don't hand-roll `(pft-1)×13`), and added a trajectory-view cross-ref to the whole-ensemble time-series comparison (`plot_ensemble_cases.py --combined`, Phase 2 Step 1b) as a complement to the per-case `plot_diagnostics.py`. Ported from demo `ac4c125`+`b11162a`.
 - 2026-07-06: Noted the middle-loop counter at the 6→3 re-entry (`experiment_count` incremented on the route;
   fresh `skip_testing_count`). Pairs with the Phase-6 middle-loop gate. Ported from demo `2d3f4b0`.
 - 2026-07-06: Added "Working discipline (Phase 3↔4)" — integrated-story logs, read-your-source-before-upstream-git (generalized off demo's FATES-branch phrasing), keep the inner loop turning while sims run, and the log-stem-is-canonical invariant (now backed by `PhaseLogger` offline mode, v2.115). Ported from demo, scrubbed of Kougarok worked examples. Mirrored in `phase4-hypothesis`.

@@ -1,5 +1,7 @@
 ---
 name: curate-knowledge
+visibility: public
+category: calibration
 description: Review and promote staged Tier-3 knowledge proposals (the human-in-the-loop curation step that pairs with the memory write gate). Use when the user asks to "review/curate pending knowledge", "promote proposals", "what did the runs propose to learn", "check auto_discovered_pending", or at session start when staged proposals exist. The autonomous online agent stages auto_learn proposals to auto_discovered_pending.json instead of the curated KB; this skill evaluates each against evidence and promotes the vetted ones (or discards misunderstandings).
 modes:
   requires_fates: false

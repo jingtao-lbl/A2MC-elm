@@ -72,7 +72,18 @@ ORGAN_FINEROOT = 2
 # PARAMETER MAPPING
 # ============================================================================
 
-def build_modifications_list(param_values):
+def _is_new_format(path):
+    """True for the docs/37 explicit-column CSV (fates_name,pft,organ,...) vs the legacy list."""
+    try:
+        with open(path) as f:
+            header = f.readline()
+    except OSError:
+        return False
+    cols = {c.strip().lower() for c in header.replace('\t', ',').split(',')}
+    return {'fates_name', 'pft', 'organ'}.issubset(cols)
+
+
+def build_modifications_list(param_values, param_list_file=None):
     """
     Build a list of modifications for create_modified_parameter_file().
 
@@ -86,10 +97,35 @@ def build_modifications_list(param_values):
     modifications : list of dict
         List of modifications in format expected by create_modified_parameter_file()
     """
+    # docs/37 explicit-column CSV → loader-driven (single source of truth; kills the drift-prone
+    # hand-coded positional table below). One row = one Morris column = one sampled value; the
+    # organ field lists which organ slot(s) that value writes into ([1,2] for retrans broadcast).
+    plf = param_list_file or os.environ.get('A2MC_PARAM_LIST_FILE', '')
+    if plf and _is_new_format(plf):
+        from tools.param_spec import load_param_spec
+        from tools.param_transforms import DERIVED_TRANSFORMS
+        mods = []
+        virtual = {}                                # (group, pft) -> {coord_name: sampled value}
+        for s in load_param_spec(plf):
+            value = param_values[s.row_index]
+            if s.is_virtual:                        # a derived-param coordinate: defer to the transform
+                virtual.setdefault((s.transform_group, s.pft), {})[s.fates_name] = value
+                continue
+            for organ in s.organ_slots():           # [None] non-organ, [1]/[2] stoich, [1,2] retrans
+                m = {'param': s.fates_name, 'pft': s.pft, 'value': value}
+                if organ is not None:
+                    m['organ'] = organ
+                mods.append(m)
+        # expand each derived group -> native FATES param writes (feasibility asserted in .apply)
+        for (group, pft), coord_values in virtual.items():
+            for native_name, native_value in DERIVED_TRANSFORMS[group].apply(coord_values).items():
+                mods.append({'param': native_name, 'pft': pft, 'value': native_value})
+        return mods
+
     modifications = []
 
     # =========================================================================
-    # Columns 1-18: PFT#7 CNP parameters (0-based: 0-17)
+    # Columns 1-18: PFT#7 CNP parameters (0-based: 0-17)  [LEGACY 162-param table]
     # =========================================================================
     modifications.extend([
         {'param': 'fates_cnp_eca_alpha_ptase', 'pft': 7, 'value': param_values[0]},
@@ -336,66 +372,57 @@ def build_modifications_list(param_values):
     return modifications
 
 
-def apply_post_modifications(output_file, param_values):
+def _slatop_floor_map(param_values, param_list_file=None):
+    """{pft_idx(0-based): slatop_value} for the slamax >= slatop floor.
+
+    New CSV → derived from the loader (`fates_leaf_slatop` specs, any PFT). Legacy → hardcoded
+    162-param columns / PFTs 7/9/10.
+    """
+    plf = param_list_file or os.environ.get('A2MC_PARAM_LIST_FILE', '')
+    if plf and _is_new_format(plf):
+        from tools.param_spec import load_param_spec
+        return {s.pft - 1: param_values[s.row_index]
+                for s in load_param_spec(plf)
+                if s.fates_name == 'fates_leaf_slatop' and s.pft}
+    slatop_cols = {7: 66, 9: 92, 10: 118}   # 0-based 162-param columns
+    pft_indices = {7: 6, 9: 8, 10: 9}        # 0-based PFT indices
+    return {pft_indices[pft]: param_values[col] for pft, col in slatop_cols.items()}
+
+
+def apply_post_modifications(output_file, param_values, param_list_file=None):
     """
     Apply post-processing modifications (format-dispatched, v2.100+):
-    1. Ensure fates_leaf_slamax >= fates_leaf_slatop for each PFT
+    1. Ensure fates_leaf_slamax >= fates_leaf_slatop for each calibrated PFT
     2. Set fates_cnp_prescribed_puptake and fates_cnp_prescribed_nuptake to 0
-
-    Parameters:
-    -----------
-    output_file : Path
-        Path to the output parameter file (.nc or .json)
-    param_values : array
-        Original parameter values (to get slatop values)
     """
+    slatop_by_idx = _slatop_floor_map(param_values, param_list_file)
     fmt = detect_format(output_file)
     if fmt == "json":
-        _apply_post_modifications_json(output_file, param_values)
+        _apply_post_modifications_json(output_file, slatop_by_idx)
     else:
-        _apply_post_modifications_nc(output_file, param_values)
+        _apply_post_modifications_nc(output_file, slatop_by_idx)
 
 
-def _apply_post_modifications_nc(output_file, param_values):
-    """NetCDF backend (existing pre-v2.100 logic, lifted into a private fn)."""
+def _apply_post_modifications_nc(output_file, slatop_by_idx):
+    """NetCDF backend. `slatop_by_idx` = {pft_idx(0-based): slatop_value}."""
     with nc.Dataset(output_file, 'r+') as ncfile:
-        # slatop column indices (0-based): 66 for PFT7, 92 for PFT9, 118 for PFT10
-        slatop_cols = {7: 66, 9: 92, 10: 118}
-        pft_indices = {7: 6, 9: 8, 10: 9}  # 0-based indices
-
-        for pft, col in slatop_cols.items():
-            pft_idx = pft_indices[pft]
-            slatop_val = param_values[col]
-            slamax_val = float(ncfile.variables['fates_leaf_slamax'][pft_idx])
-
-            if slamax_val < slatop_val:
+        for pft_idx, slatop_val in slatop_by_idx.items():
+            if float(ncfile.variables['fates_leaf_slamax'][pft_idx]) < slatop_val:
                 ncfile.variables['fates_leaf_slamax'][pft_idx] = slatop_val
-
         # Set prescribed uptake to 0
         ncfile.variables['fates_cnp_prescribed_puptake'][:] = 0.0
         ncfile.variables['fates_cnp_prescribed_nuptake'][:] = 0.0
 
 
-def _apply_post_modifications_json(output_file, param_values):
-    """JSON backend — mirrors the NC logic via dict mutation. v2.100 Chunk 8.
-
-    Reads the JSON, applies the same two post-modifications (slamax floor +
-    prescribed uptake = 0), writes back. Format-equivalent semantics.
-    """
+def _apply_post_modifications_json(output_file, slatop_by_idx):
+    """JSON backend — mirrors the NC logic via dict mutation. `slatop_by_idx` = {pft_idx: slatop_value}."""
     with open(output_file) as f:
         doc = json.load(f)
     params = doc["parameters"]
 
-    # slatop column indices (0-based): 66 for PFT7, 92 for PFT9, 118 for PFT10
-    slatop_cols = {7: 66, 9: 92, 10: 118}
-    pft_indices = {7: 6, 9: 8, 10: 9}  # 0-based indices
-
     slamax = params["fates_leaf_slamax"]["data"]  # 1D list per fates_pft
-    for pft, col in slatop_cols.items():
-        pft_idx = pft_indices[pft]
-        slatop_val = param_values[col]
-        slamax_val = float(slamax[pft_idx])
-        if slamax_val < slatop_val:
+    for pft_idx, slatop_val in slatop_by_idx.items():
+        if float(slamax[pft_idx]) < slatop_val:
             slamax[pft_idx] = float(slatop_val)
 
     # Set prescribed uptake to 0 across all PFTs

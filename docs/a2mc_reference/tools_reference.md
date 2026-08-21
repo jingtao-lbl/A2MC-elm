@@ -66,7 +66,7 @@ use_cases/{site}/memory/logs/
 from tools.phase_logger import PhaseLogger
 
 # Initialize with full iteration context
-logger = PhaseLogger(site_dir="use_cases/Kougarok", site_name="Kougarok",
+logger = PhaseLogger(site_dir="use_cases/ELM-FATES_Kougarok", site_name="Kougarok",
                      calibration_round=2, iteration=2,
                      experiment_count=1, skip_testing_count=3)
 
@@ -357,7 +357,7 @@ case_name = config.make_case_name(case_num=322, phase='TRANS')
 **Usage:**
 ```bash
 source a2mc_config.sh
-source use_cases/Kougarok/config/kougarok_config.sh
+source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
 print_config  # Show current settings
 ```
 

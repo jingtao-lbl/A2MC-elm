@@ -71,6 +71,8 @@ from tools.targets_loader import (
     parse_targets_yaml, parse_cost_config, parse_time_anchor, resolve_targets_yaml,
 )
 from tools.evaluate_case import _parse_target_specs, resolve_obs_index_windows
+from tools.extract_ecosystem_series import parse_ecosystem_specs
+from tools.extract_land_series import parse_land_specs
 
 
 @dataclass
@@ -137,7 +139,11 @@ def validate_targets_config(
     targets = parse_targets_yaml(yaml_path)
     cost_cfg = parse_cost_config(yaml_path)
     anchor_year, anchor_month = parse_time_anchor(yaml_path)
-    specs = _parse_target_specs(targets)  # {name: (nc_var, pft_id, factor)} for resolvable names
+    # PFT/SZPF (nc_var, pft_id, factor) + ecosystem (site_var, factor) + land/snow/soil
+    # (nc_var, level, selector, factor) specs; all expose the nc_var at [0], so R1
+    # membership + the sample-var check below work for any level.
+    specs = {**_parse_target_specs(targets), **parse_ecosystem_specs(targets),
+             **parse_land_specs(targets)}
 
     if n_times is None and year_end is not None:
         n_times = (year_end - year_start + 1) * 12
@@ -182,8 +188,9 @@ def validate_targets_config(
         # --- Resolution ---
         if name not in specs:
             findings.append(Finding("ERROR", "R1", name,
-                "target name does not resolve to an NC variable "
-                "(must be PFT<id>_<vartype>, e.g. PFT7_leaf, with a known variable family)"))
+                "target name does not resolve to an NC variable — use PFT<id>_<vartype> "
+                "(PFT10_leaf), ECO_<var> (ECO_gpp), SNOW_<var> (SNOW_snowdp), or "
+                "SOIL_<var>_<N>cm / _L<n> (SOIL_tsoi_10cm), with a known variable"))
 
         # effective cost method
         method = (spec.get("cost_method") or global_method)
