@@ -208,7 +208,26 @@ def main():
     if ana:
         lines.append("Latest ana_log (any type): %s" % ana)
 
+    # Clone-level master state (tools/agent_state.py). DERIVED half only here:
+    # phase/round/cycle read off the newest log stem, so this line cannot be stale.
+    # It also reports EVERY case — the per-round block below picks the single
+    # highest-round file across all cases, which silently hides the others the
+    # moment a second case reaches R2 (three cases live here today).
+    try:
+        import importlib.util as _ilu
+        _as_spec = _ilu.spec_from_file_location(
+            "_a2mc_agent_state", os.path.join(root, "tools", "agent_state.py"))
+        _as = _ilu.module_from_spec(_as_spec)
+        _as_spec.loader.exec_module(_as)
+        from pathlib import Path as _P
+        _stored = _as.load(_P(root) / _as.STATE_REL)
+        lines.extend(_as.report(_P(root), _stored))
+    except Exception:
+        pass                              # never let the master state break the snapshot
+
     # Offline-agent resume state (docs/31): the highest-round workflow_state_offline_r{RR}.json.
+    # Kept for the per-round DETAIL the master does not store (open threads with their
+    # next_action, the phase-6 objective gate, the invariant check).
     best = None
     for p in glob.glob(os.path.join(root, "use_cases", "*", "memory",
                                     "workflow_state_offline_r*.json")):
@@ -220,10 +239,15 @@ def main():
             with open(best[1]) as f:
                 st = json.load(f)
             nt = len(st.get("open_threads", []))
-            lines.append("Offline state: R%s (%s) %s | cycle %s | %d open thread%s"
+            # Phase/round/cycle deliberately NOT printed here: they are derived
+            # above from the newest log stem. This file's stored copies drift —
+            # measured 2026-08-21 at ten days and five phases adrift — so showing
+            # them beside the derived line would put a true and a false answer to
+            # the same question next to each other. What remains is what only this
+            # file holds, plus the age of the record so the reader can weigh it.
+            lines.append("Round detail (R%s, %s): %d open thread%s, recorded %s"
                          % (st.get("calibration_round"), st.get("site", "?"),
-                            st.get("current_phase"), st.get("experiment_count"),
-                            nt, "" if nt == 1 else "s"))
+                            nt, "" if nt == 1 else "s", st.get("updated_at", "?")))
             # docs/35: the next action is the most salient cold-start line — DRIVE it, don't wait.
             if st.get("open_threads"):
                 na = st["open_threads"][0].get("next_action", "")

@@ -1,0 +1,8 @@
+{
+  "schema": "a2mc.agent_state.v1",
+  "note": "Offline agent's clone-level master state. STORES ONLY what no artifact can prove: approved-plan tasks, decisions, open threads, campaign goals. Phase, round, cycle, case list and setup stage are DERIVED on read (tools/agent_state.py --derive) and deliberately absent here \u2014 storing them is what made workflow_state_offline drift. SEED COPY \u2014 copy to memory/agent_state.json (or run `python3 tools/agent_state.py --init`) and it becomes this clone's state. The populated file is private working state and is NOT published; this seed is.",
+  "updated_at": "2026-08-21",
+  "cases": {},
+  "decisions": [],
+  "open_threads": []
+}

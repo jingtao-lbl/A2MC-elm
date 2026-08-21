@@ -158,6 +158,47 @@ def _stage1(root: Path, py: str) -> int:
         results.append((NA, "RAG milestone match", "needs A2MC_MODEL_PATH"))
         results.append((NA, "fork-safe remotes", "needs A2MC_MODEL_PATH"))
 
+    # The write paths. tools/config.py raises when any of these is unset (v2.261 —
+    # they used to fall back to the maintainer's own absolute paths), but "set" is
+    # not "usable": an output root that does not exist, or exists and is read-only,
+    # or is full, fails only when an ensemble is hours in and has already burned the
+    # allocation. Checking existence AND writability here is what makes this gate
+    # mean "ready to run" rather than "the variables are populated".
+    for var, what, hint in (
+        ("A2MC_E3SM_ROOT", "E3SM source root (CIME builds from it)",
+         "a2mc-init Step 3 — usually the same path as A2MC_MODEL_PATH"),
+        ("A2MC_OUTPUT_ROOT", "simulation output root",
+         "a2mc-init Step 3 — a project/scratch allocation, not the home filesystem"),
+        ("A2MC_SCRIPTS_DIR", "generated case scripts dir",
+         "a2mc-init Step 3 — one script per ensemble member lands here"),
+    ):
+        val = env(var)
+        if not val:
+            results.append((FAIL, f"{var} set", f"<unset> — {hint}"))
+            continue
+        p = Path(val)
+        if not p.is_dir():
+            results.append((FAIL, f"{var} exists", f"{val} — no such directory"))
+        elif not os.access(val, os.W_OK):
+            # Read-only is the quiet one: the path resolves, so every "does it exist"
+            # check passes and the failure lands at the first write instead.
+            results.append((FAIL, f"{var} writable", f"{val} — exists but is NOT writable"))
+        else:
+            results.append((PASS, f"{var} exists and is writable", val))
+
+    # Free space on the output root, reported not enforced: only the user knows how
+    # big their ensemble is, and a shared filesystem's free space is not their quota.
+    out = env("A2MC_OUTPUT_ROOT")
+    if out and Path(out).is_dir():
+        try:
+            st = os.statvfs(out)
+            free_gb = (st.f_bavail * st.f_frsize) / (1024 ** 3)
+            results.append((INFO, "output root free space",
+                            f"{free_gb:,.0f} GiB available at {out} — size this against your "
+                            f"ensemble (see the site's quota command for your real limit)"))
+        except OSError:
+            pass
+
     cases = _real_cases(root)
     results.append((PASS if cases else INFO,
                     "a real case exists",

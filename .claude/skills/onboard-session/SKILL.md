@@ -48,13 +48,28 @@ gives the *data*; this skill is what you *do* with it.
    exist; don't treat its absence as an error.
 4. **Verify branch:** `git branch --show-current` → confirm it matches your intended working branch (`main` or your feature branch).
    `git status -s` for uncommitted work the previous session left.
-5. **Read the offline resume brain** (docs/31/34) — the SessionStart snapshot prints an `Offline state:`
-   line from the highest-round `workflow_state_offline_r{RR}.json` (position + `next_action` + any
-   `phase6_decision` binding target). If a round is mid-refinement, note the **binding target + next
-   targeted experiment** — that is the objective to drive toward (`feedback_performance_experiment_is_the_objective`),
-   not the loudest crash thread. **Validate it:** the SessionStart hook flags a corrupt state
+5. **Read the master state, then the round detail** — two files, and knowing which answers what
+   saves you from acting on a stale one.
+
+   **`tools/agent_state.py` — the clone-level master.** `python3 tools/agent_state.py` prints the
+   setup stage, EVERY case with its current phase/round/cycle, and each case's approved-plan task
+   list with what is done and what is next. The position half is **DERIVED on read** from the newest
+   log stem, so it cannot be stale; the task/decision/thread half is stored. This is the line to
+   trust for *where the work is*. Validate the stored half with `--check` (it rejects any attempt to
+   store a derived field). If a case shows plan tasks, **the next `todo` is your default next action.**
+
+   **`workflow_state_offline_r{RR}.json` — the per-round detail.** Still the place for open threads
+   with their `next_action`, the `phase6_decision` binding target, and the per-round evidence
+   pointers. If a round is mid-refinement, note the **binding target + next targeted experiment** —
+   that is the objective to drive toward (`feedback_performance_experiment_is_the_objective`), not the
+   loudest crash thread. **Validate it:** the SessionStart hook flags a corrupt state
    (`⚠ Offline state INVALID …`); if it does, run `python3 tools/check_workflow_state_offline.py` and fix
    the invariants before driving.
+
+   > **Weigh the round detail by its age.** The snapshot prints `recorded <date>` beside it because
+   > its stored position fields drift — measured 2026-08-21 at ten days and five phases behind the
+   > logs, with a `next_action` naming jobs long finished. If `recorded` lags the master's `as of`
+   > date, treat its `next_action` as a *lead to verify*, not an instruction to execute.
 6. **Recall the operating discipline.** Skim `AGENTS.md` §"Offline-Agent Operating Discipline" — the four
    recurring failure modes (verify before claiming · track the objective · drive, don't wait · trust the
    skill) and the gate enforcing each. Lead memory: `feedback_offline_agent_operating_discipline`.

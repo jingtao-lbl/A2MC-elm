@@ -118,16 +118,28 @@ vim use_cases/YourSite/validation/your_targets.txt
 
 ### 2.4 Machine settings
 
-Only edit `a2mc_config.sh` if you need to change HPC-level settings:
+`a2mc_config.sh` holds the four paths that are specific to *your* machine. A2MC **raises** rather
+than guessing when any of them is unset — they previously fell back to the maintainer's own
+absolute paths, which meant an unset value silently pointed your run at a directory that cannot
+exist on your system. The error names the variable and the two config layers to source.
+
+| Variable | What it is | Confirm before setting |
+|---|---|---|
+| `A2MC_MODEL_PATH` | your E3SM / ELM-FATES **checkout** — A2MC reads the ELM + FATES commits from it to pick the matching RAG profile | `components/elm/` exists under it |
+| `A2MC_E3SM_ROOT` | the E3SM source root CIME builds from — usually the same path | `cime/scripts/` exists |
+| `A2MC_OUTPUT_ROOT` | where simulation output may be written | exists, is **writable**, and has room for your ensemble (§5.3 sizes it). On HPC use a project or scratch allocation, not your home filesystem |
+| `A2MC_SCRIPTS_DIR` | where generated case scripts go — one per ensemble member | exists and is writable; scratch is the usual choice |
+
+Check that all four exist and are writable, and check free space on `A2MC_OUTPUT_ROOT` against your
+ensemble size, *before* launching — an unwritable or full output root is otherwise discovered only
+when the ensemble fails hours in.
 
 ```bash
-export A2MC_PROJECT="your_project"        # HPC allocation
-export A2MC_E3SM_ROOT="/path/to/E3SM"     # E3SM source code
-export A2MC_OUTPUT_ROOT="/path/to/output" # Simulation output root
-
-# REQUIRED for version-aware RAG (v2.90+): point at your E3SM/ELM-FATES checkout.
-# A2MC reads the FATES + ELM commits and selects the matching RAG profile.
+export A2MC_PROJECT="your_project"                       # HPC allocation
 export A2MC_MODEL_PATH="/path/to/your/E3SM_FATES_checkout"
+export A2MC_E3SM_ROOT="/path/to/E3SM"                    # usually the same as A2MC_MODEL_PATH
+export A2MC_OUTPUT_ROOT="/path/to/output"                # simulation output root
+export A2MC_SCRIPTS_DIR="/path/to/case_scripts"          # generated case scripts
 
 # Optional for configuration-aware retrieval (v2.92+): override mode env vars.
 # Defaults match ELM namelist_defaults.xml (vanilla SP run, no FATES).
@@ -148,6 +160,8 @@ export A2MC_RAG_AUTO_REBUILD="false"      # default false (warn-and-continue)
 export A2MC_RAG_T3_AUTO_DISTANCE=100      # default 100 = one major epoch step
 # See docs/a2mc_reference/version_association_howto.md "Drift handling".
 ```
+
+If you ran `a2mc-init` (§3.1), the agent asked for these during setup and wrote them here for you.
 
 ### 2.5 AI settings
 
@@ -276,6 +290,35 @@ The autonomous loop **cannot** write curated knowledge; it stages proposals to
   reasoning pipeline surfaces it.
 
 This gate is why unattended runs cannot contaminate the knowledge base. See Section 8.
+
+### 3.7 What the agent tracks between sessions
+
+Two state files, and knowing which answers what saves you from acting on a stale one.
+
+**`memory/agent_state.json` — the clone-level master, one file for all your cases.**
+
+```bash
+python3 tools/agent_state.py            # setup stage, every case's position, plan tasks
+python3 tools/agent_state.py --check    # validate what is stored
+```
+
+It splits by **derivability**. The setup stage, your case list, and each case's current
+phase/round/cycle are **derived on every read** from the newest phase log's filename — a stem like
+`20260820a_phase5_testing_r01_c01_…` already encodes phase 5, round 1, cycle 1 — so that half
+cannot go stale. Only what no artifact can prove is stored: your approved plan's tasks, decisions,
+open threads, campaign goals. `--check` refuses to store a derived field, because a hand-copied
+position is exactly what drifts.
+
+When `a2mc-init` reaches GATE 1 and you approve the research plan, its steps become tracked tasks
+here (§3.1). At the start of any later session the agent reads this first, and the next `todo` is
+its default next action.
+
+**`use_cases/<case>/memory/workflow_state_offline_r{RR}.json` — the per-round detail.** Open threads
+with their next action, the Phase-6 objective gate, per-round evidence pointers. Validate it with
+`python3 tools/check_workflow_state_offline.py`.
+
+> The session snapshot prints `recorded <date>` beside the round detail. If that lags the master's
+> `as of` date, treat its stored next action as a lead to verify rather than an instruction to run.
 
 ---
 

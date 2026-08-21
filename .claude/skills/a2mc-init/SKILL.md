@@ -18,6 +18,7 @@ Step 2  verify checkout + milestone + PFT inventory
 Step 3  machine config
 Step 4  draft research_plan.md ──► ★ GATE 1 (iterate until approved): plan ◄──
           then: record memory + write site config + targets.yaml
+          then: agent_state --import-plan  (the approved plan becomes tracked tasks)
 Step 4b parameter list + ensemble design (scheme/size/cost — show trade-offs)
           ──► ★ GATE 2 (iterate until agreed) ◄── then: round record
 Step 5  check_setup_ready.py  (goal-conditional; all ✗ resolved)
@@ -254,15 +255,39 @@ Record the user's fork URLs + intended experiment branch in their case memory if
 
 If `a2mc_config.sh` is not yet customized, walk the user through the minimal set:
 
+**Ask where things live and where it is safe to write — then confirm, do not assume.** Three of
+these are paths on the user's machine that only they can tell you, and A2MC now **raises** rather
+than guessing when any is unset (`tools/config.py::_required_env`), so a missing one surfaces as an
+error at first use rather than a wrong-directory failure much later.
+
 ```bash
 # In a2mc_config.sh:
 export A2MC_USER_NAME="<how the user asked to be addressed>"  # from the Step-0 greeting; author field
 export A2MC_PROJECT="<HPC allocation>"
-export A2MC_E3SM_ROOT="<E3SM source>"
-export A2MC_OUTPUT_ROOT="<simulation output root>"
-export A2MC_MODEL_PATH="<E3SM/ELM-FATES checkout root>"   # REQUIRED
+export A2MC_MODEL_PATH="<E3SM/ELM-FATES checkout root>"   # REQUIRED — the model CLONE
+export A2MC_E3SM_ROOT="<E3SM source root for CIME>"       # REQUIRED — usually the same path
+export A2MC_OUTPUT_ROOT="<where simulation output may be written>"   # REQUIRED
+export A2MC_SCRIPTS_DIR="<where generated case scripts go>"          # REQUIRED
 export A2MC_AI_PROVIDER="anthropic"                       # or openai / cborg
 ```
+
+Ask for each in the user's own terms, and **verify what they tell you** — an unwritable or full
+output root is otherwise discovered only when an ensemble fails hours in:
+
+| Ask | Then confirm |
+|---|---|
+| "Where is your E3SM / ELM-FATES checkout?" -> `A2MC_MODEL_PATH` | `components/elm/` exists under it (Step 2 detects the commits from it) |
+| "Is CIME in that same checkout?" -> `A2MC_E3SM_ROOT` | `cime/scripts/` exists. Usually identical to `A2MC_MODEL_PATH`; they are separate vars because a user may build from a different tree than the one A2MC reads versions from |
+| "Where may simulation output be written — which filesystem, and do you have quota there?" -> `A2MC_OUTPUT_ROOT` | the directory exists and is **writable**, with room for the ensemble sized in Step 4b. On HPC this is a project/scratch allocation, never the home filesystem |
+| "Where should generated case scripts go?" -> `A2MC_SCRIPTS_DIR` | exists and is writable. Often scratch; it holds one script per ensemble member |
+
+Confirm each is real and writable before writing it into `a2mc_config.sh` — check that every one of
+the four directories exists and passes a write test, and check the free space on the output root
+against the ensemble estimate from Step 4b (`df -h` on that path, or the site's quota command).
+
+**Do not invent a default for any of these.** They were once hardcoded to the maintainer's own
+paths, so an unset value silently pointed a new user's run at a directory that could not exist on
+their machine (fixed v2.261 — they now raise instead). Ask, confirm, then write.
 
 API key (online agent only): `echo 'export ANTHROPIC_API_KEY="sk-ant-..."' >> ~/.bashrc && source ~/.bashrc`. Full field reference: `docs/a2mc_reference/user_guide.md` §2. Do not paste real keys into tracked files.
 
@@ -316,7 +341,8 @@ question the user raises and fold in every requested change, then **re-present t
 not advance past this gate (to config, or to the Step-4b parameter list) while any question or request is
 unresolved** — keep looping until the user *explicitly approves* the plan. Only then build config.
 
-**On confirmation — (a) record the case memory, then (b) propagate the plan into config.**
+**On confirmation — (a) record the case memory, (b) turn the plan into tracked tasks, then
+(c) propagate the plan into config.**
 
 **(a) Persist the intent** so the next session + the calibration agent inherit *why* the setup looks as it
 does, not just the files:
@@ -326,7 +352,28 @@ does, not just the files:
 - optionally seed initial **site knowledge** via `inject-knowledge` — only *verified* facts the user gave you
   (a measured target value, a known site trait), never a guess (the evidence gate, `docs/33`).
 
-**(b) Propagate the confirmed plan into the config files** (all under `$DEST = $A2MC_ROOT/use_cases/$SITE`):
+**(b) Turn the approved plan into tracked tasks** — the moment of approval is the only moment the
+plan exists as a *commitment* rather than prose, so capture it now:
+
+```bash
+python3 tools/agent_state.py --init                      # first run in this clone only
+python3 tools/agent_state.py --import-plan "$SITE"       # reads use_cases/$SITE/research_plan.md
+python3 tools/agent_state.py                             # read the task list back
+```
+
+`--import-plan` picks up `- [ ]` / `- [x]` checkboxes and numbered steps from the plan and records
+each as a task (`todo`/`done`). Tasks are **free-form** — they are whatever the user approved, not a
+normalization of it. Add an optional `phase:` to any task the 7-phase loop will tick off
+(`--add-task "$SITE" "…" --phase 0`); leave it off for work that is not a phase, which is most of
+setup. Add anything the plan implies but does not spell out with `--add-task`.
+
+This is the clone-level master state: one file, all cases. It stores ONLY what no artifact can
+prove — these tasks, decisions, open threads, campaign goals. Phase/round/cycle are **derived** from
+the log stems on every read and deliberately not stored, because storing them is what made
+`workflow_state_offline` drift ten days and five phases out of date. `--check` rejects any attempt
+to write a derived field back in.
+
+**(c) Propagate the confirmed plan into the config files** (all under `$DEST = $A2MC_ROOT/use_cases/$SITE`):
 
 1. **Site config** `use_cases/$SITE/config/<site>_config.sh` — fill Section 1 (name, lat/lon, surface/domain data), Section 2 (`A2MC_PFTS` — the 1-based **FATES** PFT ids of the calibrated PFTs), Section 5 mode env vars (`A2MC_ELM_OPTIONS`, `A2MC_FATES_PARTEH_MODE`, Tier-2 flags). These mode vars are what makes retrieval configuration-aware — set them to the user's actual run, not the template defaults.
 2. **Validation targets + cost function** `use_cases/$SITE/validation/targets.yaml` — one entry per target. **Key must be `PFT<id>_<vartype>`** (e.g. `PFT10_leaf`, `PFT9_fineroot`); a non-matching key is silently dropped at runtime. Snapshot targets carry a scalar `observed` + `uncertainty` matched at `time_year`/`time_month`; **time-series / several-snapshot** targets use an `observations:` list (one point per time). Several stocks → several targets. Only enter values the user gave you. **The cost function lives here too:** a top-level `cost_config:` block (`error_method`, `aggregation_method`) + optional per-target `cost_method` / `weight` (defaults: `relative_error` + `rmsre` + weight 1.0) — **match each `cost_method` to the variant** (a series may use `nse`/`kge`/`nrmse`; a snapshot cannot — skill scores need ≥2 points). Validate with `tools/validate_targets_config.py` (it checks the keys, the `cost_config` metrics against the valid sets, and warns on mixing relative + absolute metrics under `rmsre`). Format + examples: the seed `targets.yaml` header and `docs/a2mc_reference/user_guide.md` §4.5.
