@@ -61,6 +61,32 @@ Arriving here from Phase 6 with the middle loop exhausted (or all candidates pin
    R{N} config sourced — a **fresh** sensitivity screen on the corrected base (a prior round's μ* sampled
    around a stale/dead base is void). Log the redesign rationale in Step 5.
 
+## Step 0.5 — design the parameter set (REQUIRED, every Phase 0)
+
+**Do this before Step 1, every round — not only a redesign.** Step 1 samples whatever the parameter
+list says, so this is the decision that determines everything after it. **Round 1 is not exempt:** it
+must equally state what is deliberately *not* calibrated and where its bounds came from. Answer all
+three **in the log**, not just in the round record.
+
+**ADD — each new parameter, with the evidence for it.** Prior-round μ\*, a Phase-3 diagnosis, or a
+mechanism the previous screen never varied. A lever nothing measured is a guess.
+
+**DROP — each removed parameter, AND the fixed value it now takes, AND where that value comes from.**
+
+> ⚠️ **A dropped parameter does NOT fall back to the parameter list's `default` column** — that column
+> is documentation. `generate_parameter_files.py` copies `$A2MC_BASE_PARAM_FILE` and applies only the
+> sampled-matrix edits, so **dropping a parameter transfers control of its value to the base file.**
+> Verify the base carries the value you intend, and say so in the log.
+>
+> On this branch that base is a **site-tuned** file, not the FATES default — see
+> [[feedback_port_tuned_base_param_file_across_versions]], whose sharp edge is exactly a
+> non-calibrated parameter carrying a value nobody re-checked (grass `dbh_repro_threshold` 0.35 vs
+> 3.0). A parameter dropped from the list inherits whatever that file says.
+
+**BOUNDS — where each lower/upper came from.** Not "default ±50%": a literature range, a prior μ\*
+sweep, or a physical limit, recorded per parameter
+([[reference_param_bounds_sourcing_pipeline]]).
+
 ## Step 1 — sample the parameter space (parameter-file prep — no simulations)
 
 `phases/phase0_design/create_parameter_sample.py --method {morris|sobol|lhs}` reads
@@ -162,6 +188,8 @@ bounds? That's the 6→0 redesign — widen bounds / add parameters and start a 
 - **Next:** `phase1-exploration` (extract Y matrix + Morris sensitivity).
 
 ## Changelog
+
+- 2026-08-23 — Added **Step 0.5 — design the parameter set (REQUIRED, every Phase 0)**, with the ADD / DROP / BOUNDS questions answered in the log. Adopted from `adapter-kit` (`659d0498`), re-authored. The load-bearing warning: a dropped parameter does NOT fall back to the list's `default` column — `generate_parameter_files.py` copies `$A2MC_BASE_PARAM_FILE` and applies only the matrix edits, so dropping a parameter transfers control of its value to the base file. On this branch that base is site-TUNED, which is the sharp edge in `feedback_port_tuned_base_param_file_across_versions`.
 
 - 2026-08-03: Log step now states the **living-record** contract (start at phase start, enrich as it
   runs — the operational detail is unrecoverable later), names **this phase's expected sections** so an

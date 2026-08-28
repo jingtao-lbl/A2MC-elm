@@ -61,6 +61,9 @@ rounds:
       fates_commit: 6f61d42
       elm_commit: 938f765
       checkout: /global/cfs/cdirs/<your_project>/<your_user>/E3SM_FATES_api43
+      binary:
+        archive_label: R1_rootfinesfragfix_32d95784
+        sha256_prefix: aba28526811b
       patches:
       - 'A2MCapi43port17 (#17): fates_phen_gddthresh_c + cold-phenology state promoted
         site-scalar -> per-PFT. Promoted to the FATES working model 2026-07-16 (fork
@@ -88,11 +91,11 @@ rounds:
       \ e.g. seed threshold PFT12 0.35; eca_alpha_ptase forced to 0 \u2014 inactive\
       \ & guarded in api-43 ECA, dropped from the calibration list)"
     - 'CWDOut litter-flux fix enabled (2026-08-17, PI decision): use_fates_rootfinesfrag_fix=.true.
-      (site config use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh), fixing a bug where
-      CWDOut silently discarded the plant C/N/P efflux each day. R1 was still status=planned
-      (no cases created) when this landed, so it applies to the whole round. Single-parameterization
-      testing (phase_results/20260812a_.../leafroot_biomass_vs_obs_monthly.md) did
-      not show a biomass-vs-obs improvement, but PI judgment: that does not settle
+      (site config use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh), fixing
+      a bug where CWDOut silently discarded the plant C/N/P efflux each day. R1 was
+      still status=planned (no cases created) when this landed, so it applies to the
+      whole round. Single-parameterization testing (phase_results/20260812a_.../leafroot_biomass_vs_obs_monthly.md)
+      did not show a biomass-vs-obs improvement, but PI judgment: that does not settle
       whether the fix helps across the calibrated parameter space -- R1''s Morris
       sweep tests that directly. See memory/model_logs/20260817a_Root_Fines_Frag_Fix_Merged_To_Fork_Main.md.'
     rationale: 'First api-43-1 calibration round for Kougarok. Preceded by a base-file

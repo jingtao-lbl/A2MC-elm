@@ -101,6 +101,8 @@ def check_one(path):
     elif cp == "refinement":
         warnings.append("current_phase=refinement with no phase6_decision — pending the convergence gate")
 
+    warnings.extend(_check_decisions_current(path, d))
+
     errors_, warnings_ = _check_phase_logged(path, d)
     errors.extend(errors_)
     warnings.extend(warnings_)
@@ -110,6 +112,75 @@ def check_one(path):
 
 # Phase name -> the phase NUMBER that appears in an offline log stem
 # (stem = YYYYMMDDx_phase{N}_{name}_r{RR}[_c{EE}[_iter{II}]]_{descriptor}).
+#: How many commits touching a case since its newest decision before the record looks stale.
+DECISION_STALE_COMMITS = 8
+
+
+def _check_decisions_current(path, d):
+    """WARN when the case has moved but the state has recorded no findings.
+
+    Adopted from adapter-kit (re-authored). The state is not only a program counter: `PhaseLogger`
+    rebuilds its "Reasoning chain" block from `decisions` on every log write, so a finding that
+    never reaches the state is invisible to the next phase — which is the re-derivation the loop
+    exists to prevent.
+
+    Main's own instance, 2026-08-21/22: `workflow_state_offline_r01.json` sat at `updated_at`
+    2026-08-11, `phase: design`, `cycle 0` — ten days and an entire suplphos dose experiment behind
+    — so the ADRGnoneC0 collapse had to be RE-DERIVED after a context loss rather than recalled.
+    Nothing mechanical flagged it; the PI asked.
+
+    The signal is ACTIVITY vs RECORD: commits touching this case since the newest decision's date.
+    It cannot judge whether a finding was worth recording and deliberately does not try — it asks
+    the weaker, decidable question "has this case moved a lot with nothing written down", which is
+    the shape the failure actually takes.
+
+    WHAT WOULD MAKE THIS FAIL (named first, per `feedback_a_check_that_cannot_fail`):
+      1. many commits touching the case, newest decision older than all of them -> WARN
+      2. no decisions at all on an active round                                 -> WARN
+      3. git unavailable, or the case path unknown                              -> SILENT. An
+         unreadable history is not evidence of a missing finding.
+    """
+    import subprocess
+
+    warnings = []
+    decs = d.get("decisions") or []
+    if not isinstance(decs, list):
+        return warnings
+    if d.get("converged"):
+        return warnings                  # a closed round is not expected to keep recording
+
+    # Only the ACTIVE (highest-numbered) round. A superseded round's decisions are finished by
+    # definition, and warning about them forever is how a nudge becomes noise and gets tuned out —
+    # which would leave the round actually being worked unwatched.
+    here = Path(path).resolve()
+    siblings = sorted(here.parent.glob("workflow_state_offline_r*.json"))
+    if siblings and here != siblings[-1]:
+        return warnings
+
+    newest = max((x.get("date", "") for x in decs), default="")
+    case_dir = here.parent.parent        # <case>/memory/<state>.json -> <case>
+    try:
+        out = subprocess.run(
+            ["git", "log", "--since", newest or "30 days ago", "--format=%h", "--", str(case_dir)],
+            capture_output=True, text=True, timeout=30, cwd=str(ROOT))
+        if out.returncode != 0:
+            return warnings
+        n = len([x for x in out.stdout.split() if x])
+    except Exception:
+        return warnings                  # (3) silent
+
+    if not decs:
+        warnings.append(
+            f"no decisions recorded on an active round ({n} commit(s) touching this case) — "
+            f"findings belong in the state as they are established, not only at Phase 6")
+    elif n >= DECISION_STALE_COMMITS:
+        warnings.append(
+            f"{n} commit(s) touching this case since the newest decision ({newest}) — "
+            f"record findings with add_decision(finding, rationale) as they are established; "
+            f"next_action is the program counter, not the record")
+    return warnings
+
+
 _PHASE_NUM = {"design": 0, "exploration": 1, "screening": 2, "diagnosis": 3,
               "hypothesis": 4, "testing": 5, "refinement": 6, "converged": 7}
 

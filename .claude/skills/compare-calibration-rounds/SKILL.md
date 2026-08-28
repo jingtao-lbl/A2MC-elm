@@ -14,7 +14,7 @@ modes:
 
 Cross-round comparison of A2MC calibration rounds: best-achievable biomass per round vs the
 validation targets, and Morris μ* sensitivity per round. The canonical bundle lives under a
-site's analysis dir, `use_cases/<site>/analysis/multiround_*/` (self-locating scripts; figures
+site's scripts dir, `use_cases/<site>/scripts/multiround_*/` (self-locating scripts; figures
 versioned beside them; the Kougarok reference instance is `multiround_top50_sensitivity_20260606/`).
 Read `README.md` there + the originating dev/ana log (findings) and
 the originating dev/ana log (procedure) first.
@@ -90,4 +90,13 @@ Also: `tools/compare_rounds.py` for quantitative round-vs-round deltas.
 
 ## Changelog
 
-- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.
+- 2026-06-17: `## Comparability: two rounds that ran different binaries are not comparable
+
+Before overlaying rounds, read each round's `fates_source.binary` in the case's
+`config/calibration_rounds.yaml` and check whether they share an `archive_label`. If they do not,
+a model-source change sits between them, and a difference in the figures is not attributable to
+parameters alone — say so in the comparison rather than letting the overlay imply otherwise.
+`python tools/binary_archive_manifest.py --verify` confirms each round's checksum claim actually
+resolves.
+
+## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

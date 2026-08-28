@@ -124,7 +124,7 @@ setting a finite value in the experiment param file — **runtime-tunable, no re
   cap) — FATES commit `408a31ee` on the fork branch `exp/cohort-n-ceiling`; demo `memory/model_logs/20260707c`.
   The EDParamsMod recipe is model-version-general; only the param-file step (JSON vs `.nc`) differs on api-43.
 - Reproducibility contract + fork-push rule + model map: the model checkout's `CLAUDE.md` §1 (path recorded in [[feedback_model_source_push_fork_only]]).
-- Model-dev logging: `memory/model_logs/CLAUDE.md`. Source-comment rule: [[feedback_model_code_comment_jing_tao]].
+- Model-dev logging: the model-evolution folder under the case itself — contract in `use_cases/TEMPLATE/memory/model_evolution/README.md` (moved under the case 2026-08-26; `memory/model_logs/CLAUDE.md` documents the frozen pre-move archive). Source-comment rule: [[feedback_model_code_comment_jing_tao]].
 
 ## Changelog
 

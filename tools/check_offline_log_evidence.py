@@ -32,6 +32,22 @@ from pathlib import Path
 STEM_RE = re.compile(r"^(\d{8}[a-z])_phase(\d+)_[a-z]+_r(\d+)")
 ANALYSIS_PHASES = {3, 4, 6}
 
+# A cited artifact FOLDER: phase_results/<full stem>. The `_phase\d+` is load-bearing -- logs
+# routinely write `phase_results/20260820a_...` as prose shorthand for "the paired folder", and a
+# looser pattern turns every one of those into a blocking dead-pointer ERROR. Measured on main's
+# 17 offline logs: this pattern -> 0 matches on such prose; dropping `_phase\d+` -> 5.
+ARTIFACT_DIR_RE = re.compile(r"phase_results/(\d{8}[a-z]+_phase\d+_[A-Za-z0-9_]+)")
+# A markdown image embed: ![alt](path)
+EMBED_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
+
+# The "embed your figures" rule was adopted on main 2026-08-22 (from adapter-kit v2.273, where it
+# was ruled the same day). Logs written BEFORE it are grandfathered for the figure WARN only --
+# they could not have followed a rule that did not exist. Compared `stem[:8] < EFFECTIVE` so the
+# rule fires ON its own effective date; `<=` would silently exempt day zero.
+# A dead pointer is NOT dated: it stays an ERROR at any age, and grandfathered logs are still
+# checked for it.
+EMBED_RULE_EFFECTIVE = "20260822"
+
 # First-hand artifact extensions (NOT .md — logs/notes are not first-hand computation).
 ARTIFACT_EXT = {".py", ".png", ".pdf", ".csv", ".txt", ".nc", ".json", ".npy", ".npz"}
 # Evidence-section headers we recognize (from templates/logging/ + the offline convention).
@@ -163,6 +179,62 @@ def check_skill_citations(text, name, repo_root):
     return out
 
 
+def _dead_artifact_pointers(name, text, site_dir):
+    """ERROR on a cited phase_results/<stem>/ directory that does not exist.
+
+    A dead pointer is worse than a missing one: it reads as a citation, so a reader chases it
+    instead of disbelieving it.
+
+    The usual cause is an ordering bug, which is why the message says so: `PhaseLogger` bakes the
+    reasoning-chain block into the log at write time from workflow_state_offline_r{RR}.json, and
+    nothing rewrites a log afterwards. Writing the log and THEN repointing the state freezes the
+    superseded stem permanently. State first, log second.
+    """
+    out, seen = [], set()
+    pr = site_dir / "memory" / "phase_results"
+    for stem in ARTIFACT_DIR_RE.findall(text):
+        if stem in seen:
+            continue
+        seen.add(stem)
+        if not (pr / stem).is_dir():
+            out.append(
+                f"{name}: cites `phase_results/{stem}/` which does not exist — a dead artifact "
+                f"pointer. If the stem was renamed, the log must be REGENERATED after the state "
+                f"is repointed: PhaseLogger bakes the reasoning chain in at write time, so state "
+                f"first, log second.")
+    return out
+
+
+def _unembedded_figures(name, text, site_dir, stem):
+    """WARN when the paired folder holds figures the log never shows.
+
+    A phase log and its artifact folder are meant to review as ONE document. Naming a folder is not
+    showing a figure: `phase_results/{stem}/foo.png` in prose renders as text and the reader has to
+    go hunting. Embed as `![](../phase_results/{stem}/foo.png)`.
+
+    Dated: see EMBED_RULE_EFFECTIVE. Returns [] for a grandfathered stem.
+    """
+    if stem[:8] < EMBED_RULE_EFFECTIVE:
+        return []
+    topic = site_dir / "memory" / "phase_results" / stem
+    if not topic.is_dir():
+        return []
+    figs = sorted(f.name for f in topic.iterdir()
+                  if f.is_file() and f.suffix.lower() in (".png", ".pdf"))
+    if not figs:
+        return []
+    embedded = {Path(m).name for m in EMBED_RE.findall(text)}
+    missing = [f for f in figs if f not in embedded]
+    if not missing:
+        return []
+    return [f"{name}: {len(missing)} of {len(figs)} figure(s) in phase_results/{stem}/ are not "
+            f"EMBEDDED in the log ({', '.join(missing[:3])}"
+            f"{'…' if len(missing) > 3 else ''}) — embed each as "
+            f"`![](../phase_results/{stem}/<file>.png)` with a bold **Figure N.** caption, so the "
+            f"log and its evidence review as one document. Naming the folder in prose is not "
+            f"showing the figure."]
+
+
 def check_log(path, repo_root):
     """Return (errors, warnings) for one offline log file."""
     errors, warnings = [], []
@@ -174,13 +246,25 @@ def check_log(path, repo_root):
     phase = int(m.group(2))
     text0 = path.read_text(encoding="utf-8", errors="replace")
     skill_warns = check_skill_citations(text0, name, repo_root)
-    if phase not in ANALYSIS_PHASES:
-        return errors, skill_warns
     # site dir = parent of the logs/ dir the file lives in
     logs_dir = path.parent
     site_dir = logs_dir.parent.parent  # .../{site}/memory/logs/file -> .../{site}
+
+    # --- UNIVERSAL: run for EVERY offline phase log, above the analysis-phase early return. ---
+    # The restatement checks below are rightly analysis-only, but "the log's pointers must not be
+    # dead" and "the log must show its figures" are universal. This early return used to sit at the
+    # top of the function, so a phase-0/1/2/5/7 log got a clean bill from code that had inspected
+    # NOTHING -- and the summary line still counted it as checked.
+    universal_errors = _dead_artifact_pointers(name, text0, site_dir)
+    universal_warns = _unembedded_figures(name, text0, site_dir, stem)
+
+    if phase not in ANALYSIS_PHASES:
+        return universal_errors, skill_warns + universal_warns
+
+    errors.extend(universal_errors)
     text = text0
     warnings.extend(skill_warns)
+    warnings.extend(universal_warns)
 
     # --- ERROR: at least one resolvable first-hand artifact ---
     arts = cited_artifacts(text)
@@ -266,10 +350,17 @@ def main(argv):
     repo_root = Path(__file__).resolve().parent.parent
     files = gather(target)
     all_err, all_warn = [], []
+    n_analysis, n_grandfathered = 0, 0
     for f in files:
         e, w = check_log(f, repo_root)
         all_err += e
         all_warn += w
+        m = STEM_RE.match(f.name)
+        if m:
+            if int(m.group(2)) in ANALYSIS_PHASES:
+                n_analysis += 1
+            if m.group(1)[:8] < EMBED_RULE_EFFECTIVE:
+                n_grandfathered += 1
     for w in all_warn:
         print(f"  [warn] {w}")
     if all_err:
@@ -277,8 +368,18 @@ def main(argv):
         for e in all_err:
             print(f"  - {e}")
         return 1
-    print(f"✔ offline log evidence gate: {len(files)} analysis log(s) checked, "
+    # SCANNED vs CHECKED, deliberately: the old line said "N analysis log(s) checked" for every
+    # file it opened, including phases it returned from without inspecting. That green tick was
+    # quoted as evidence of quality for logs nothing had examined. Say what was actually done.
+    print(f"✔ offline log evidence gate: {len(files)} log(s) scanned "
+          f"(all checked for dead pointers + unembedded figures; "
+          f"{n_analysis} analysis log(s) additionally checked for restatement), "
           f"{len(all_warn)} warning(s), 0 errors")
+    if n_grandfathered:
+        # Counted and printed, never silent: a backlog that vanishes from the output stops being
+        # a decision anybody makes.
+        print(f"  ({n_grandfathered} log(s) predate {EMBED_RULE_EFFECTIVE} and are grandfathered "
+              f"for the figure-embed warning only — dead pointers still error at any age)")
     return 0
 
 

@@ -5,12 +5,12 @@
 #
 # Copy this file to your site's config directory and rename:
 #   cp use_cases/TEMPLATE/config/template_config.sh \
-#      use_cases/<YourSite>/config/<yoursite>_config.sh
+#      use_cases/{Model}_{Case}/config/<case>_config.sh
 #
 # Then edit the values below. Source it AFTER the machine config, always in
 # this order (feedback_source_config_order_and_round_selection):
 #   source a2mc_config.sh                                   # machine-level
-#   source use_cases/<YourSite>/config/<yoursite>_config.sh # this file
+#   source use_cases/{Model}_{Case}/config/<case>_config.sh # this file
 #
 # WHAT BELONGS HERE vs ELSEWHERE
 #   a2mc_config.sh ......... machine-level: A2MC_ROOT, A2MC_OUTPUT_ROOT,
@@ -61,10 +61,33 @@
 #   worth confirming on the first run), log headers, and the offline workflow state.
 #   What it does NOT touch: `A2MC_ENSEMBLE_NAME` and `A2MC_CASE_NAME_PATTERN` are
 #   set independently, so existing case names and outputs on disk keep their names.
-export A2MC_SITE_NAME="ELM-FATES_MySite"   # ← {Model}_{Site}; must equal use_cases/<dir>
+export A2MC_SITE_NAME="ELM-FATES_MySite"   # ← {Model}_{Case}; must equal the use_cases/ dir name
 
 # A2MC_ROOT comes from a2mc_config.sh, which is sourced FIRST. Fail loudly if not.
-: "${A2MC_ROOT:?A2MC_ROOT unset - source a2mc_config.sh BEFORE this site config}"
+# Since 2026-08-26 this file AUTO-SOURCES the machine config when it has not been sourced yet,
+# so one command is enough:  source use_cases/{Model}_{Case}/config/<case>_config.sh
+# Sourcing a2mc_config.sh first still works and makes this block a no-op.
+#
+# The bootstrap path locates a2mc_config.sh ONLY -- it never becomes A2MC_ROOT, which still comes
+# from a2mc_config.sh itself. BASH_SOURCE is a bash builtin and is EMPTY under zsh, so the
+# walk-up-from-$PWD branch is what runs there; if neither branch finds the file the `:?` guard
+# below still fails loudly rather than half-configuring the shell.
+if [ -z "${A2MC_ROOT:-}" ]; then
+    _a2mc_boot=""
+    if [ -n "${BASH_SOURCE:-}" ]; then
+        _a2mc_boot="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." 2>/dev/null && pwd)"
+    fi
+    if [ -z "$_a2mc_boot" ] || [ ! -f "$_a2mc_boot/a2mc_config.sh" ]; then
+        _a2mc_boot="$PWD"
+        while [ "$_a2mc_boot" != "/" ] && [ ! -f "$_a2mc_boot/a2mc_config.sh" ]; do
+            _a2mc_boot="$(dirname "$_a2mc_boot")"
+        done
+    fi
+    [ -f "$_a2mc_boot/a2mc_config.sh" ] && . "$_a2mc_boot/a2mc_config.sh"
+    unset _a2mc_boot
+fi
+
+: "${A2MC_ROOT:?A2MC_ROOT unset and a2mc_config.sh could not be located automatically - source a2mc_config.sh first}"
 
 export A2MC_USE_CASE_DIR="${A2MC_ROOT}/use_cases/${A2MC_SITE_NAME}"
 

@@ -96,15 +96,46 @@ choice, follow-ups ([[feedback_model_code_comment_jing_tao]]). This is the in-so
 **3. Switch-gate — DEFAULT-OFF = bit-for-bit baseline.** For a **reproducibility-sensitive or exploratory**
 change, make it **default-off**: a no-op value or a switch such that a switch-off build reproduces the
 baseline **bit-for-bit** (the *V0-at-equality* gate). If the change is a tunable/switchable knob, **promote
-it to a FATES parameter → follow `add-fates-parameter`** for the declare/register/retrieve + every-param-
-file wiring — a **scalar/global** knob goes in `EDParamsMod`, a **per-PFT** knob in `EDPftvarcon`
-(`EDParamsMod` has no clean array-retrieve). (A small keep-it change on the working branch need not be
+it to a FATES parameter → follow `add-fates-parameter`** for the declare + read + every-param-file
+wiring — a **scalar/global** knob goes in `EDParamsMod` (56 scalar `real(r8),protected,public` decls),
+a **per-PFT** knob in `EDPftvarcon` (116 allocatable per-PFT arrays, e.g. `freezetol(:)`).
+**Verified against the checkout 2026-08-26 — and note the api-43 read path is JSON, not netCDF:**
+`EDParamsMod` imports `JSONParameterUtilsMod` (`params_type`/`param_type`) and contains **zero**
+occurrences of `fates_params` or `Register`; the old netCDF `fates_params%Register/Retrieve` vocabulary
+is api-31 (demo-branch) only and does not exist in this tree. (A small keep-it change on the working branch need not be
 switch-gated — but you then can't V0-at-equality it against the anchor; build from the anchor for a clean
 baseline.)
 
 **4. Build.** Fresh build of the changed source (the code changed, so the executable must recompile). For a
 subsequent multi-variant experiment on that build, reuse it per `offline-testing-workflow` Step 5 (one
 build serves all param-file variants; `e3sm.exe` is phase-agnostic).
+
+**4.5. Archive the binary, then RECORD it.** A queued job resolves its executable at **RUN** time, and
+CIME's per-case `bld/` is not immutable — a rebuild, a cleaned scratch tree or a reused
+`PREBUILT_EXEROOT_TEMPLATE` can change what a pending job will execute. Archive the built executable
+under `$A2MC_BINARY_ARCHIVE_ROOT` (default `$A2MC_OUTPUT_ROOT/E3SM_build_archive`) as
+`<label>/e3sm.exe` beside a `PROVENANCE.txt` carrying `SHA256`, `Case` (the CIME case dir that
+built it), `Build dir` (its `EXEROOT`), `Source` (commit) and `Change` — one field per line — then:
+
+```bash
+python tools/binary_archive_manifest.py --generate   # record it in the case's manifest
+python tools/binary_archive_manifest.py --verify     # M1-M7, incl. the round-ledger cross-check
+```
+
+**Archiving without recording is the failure mode**, not archiving at all: the archives sit outside git,
+so an unrecorded one exists only as a directory nothing tracks, and every round citing it has provenance
+nobody can check. Fields in `PROVENANCE.txt` are parsed **one per line** — a wrapped value is silently
+truncated. Recover provenance rather than assert it: CIME writes the build's own
+`bld/GIT_DESCRIBE`, and a running case's `EXEROOT` says which build it is actually bound to.
+
+> **One resume mechanism, project-wide: `finidat` + `RUN_STARTDATE` + `STOP_N`. `CONTINUE_RUN` is not
+> used by A2MC at all — including here.** V0-at-equality is a *difference* test between two builds
+> started from identical state, so whatever re-initialisation `finidat` performs happens identically in
+> both arms and any nonzero diff is still attributable solely to the code change. The one thing
+> `CONTINUE_RUN` would uniquely exercise is the restart-read path — and a change touching restart layout
+> already requires a fresh COLD-START chain (step 5's first bullet), which is precisely when that matters. Keeping
+> a single mechanism also makes `CONTINUE_RUN` an unambiguous wrong-answer marker everywhere in this repo
+> ([[feedback_restart_via_finidat_not_continue_run]]).
 
 **5. Paired verification — ON vs OFF, before trusting anything.** For a switch-gated change, run it **ON**
 (does the intended thing) *and* **OFF** (reproduces baseline) — do not interpret any result until the OFF
@@ -130,8 +161,15 @@ run confirms V0-at-equality (build/env/seed drift otherwise masquerades as signa
     canonical `tools/create_case.sh`, so compset/res/domain/DATM_MODE/`ELM_USRDAT_NAME`/`ELM_BLDNML_OPTS`
     all come from the site config. Use for a V0-off vs. baseline chain.
   - `build_v0_case_via_clone.sh` — wraps the guard around `create_clone` **from an existing reference
-    case**, which inherits that case's entire configuration in one step. Use when the V0 check should
-    CONTINUE an existing case's restart (a short `CONTINUE_RUN` segment) rather than cold-start.
+    case**, inheriting that case's entire configuration in one step (PE layout, DATM streams,
+    `ELM_USRDAT_NAME`, `ELM_BLDNML_OPTS`, ...). **Choose it when the V0 case must match a reference case
+    exactly**, or when building against a different commit: `create_clone` has no SRCROOT override
+    (verified — its only flags are `--case --cime-output-root --clone --ensemble --keepexe --mach-dir
+    --project --user-mods-dir(s)`), so the checkout itself is guarded-switched before cloning
+    ([[reference_cime_create_clone_cannot_retarget_srcroot]]). Length is set by `--stop-n` /
+    `--stop-option`; a SHORT segment resumes from a reference restart via `--run-startdate` + `finidat`,
+    the same one mechanism the rest of this project uses. **`CONTINUE_RUN` is never used anywhere in
+    A2MC** — see the one-resume-mechanism note just above step 5.
 - **A scalar→per-PFT V0-off param broadcasts the baseline CASE's own value, not the code default.** If the
   promoted parameter is Morris-varied, the test case carries its *own* value — set **all PFTs to that
   scalar** so off = bit-baseline; the code default makes a *different* run, not a V0.
@@ -139,24 +177,45 @@ run confirms V0-at-equality (build/env/seed drift otherwise masquerades as signa
   *post-change* file, not the pristine ensemble/default file.** When experiment branches **stack**, the
   executable needs the *union* of all registered params added anywhere in the lineage. A V0 file built from
   the pristine Morris/default file silently drops them and the run **aborts at param read**
-  (`check_var: <name> is not on dataset` → `ENDRUN` — a runtime abort, NOT a build error, so it slips past
-  the compile gate). Build the V0/test file from the immediately-prior experiment's param file. This bites
+  (a runtime abort at param read, NOT a build error, so it slips past the compile gate). **The exact
+  signature is version-specific:** the cited api-31 failure aborted with the netCDF reader's
+  `check_var: <name> is not on dataset`, a string that does **not** exist in api-43 FATES (verified — it
+  lives in `sbetr`/`mosart` netCDF I/O); api-43 reads parameters through `JSONParameterUtilsMod`, so
+  match on the abort, not on that message. Build the V0/test file from the immediately-prior experiment's param file. This bites
   BOTH the OFF and the baseline file. (Driving failure: #17 phen-split V0 aborting on #16's missing
   `fates_max_plant_density`, demo `model_logs/20260709b`, `20260710a`.)
 - **Compare with `tools/model_evolution/compare_v0.py`** — auto-detects netCDF vs. log-diff mode: if both
   run dirs have `*.elm.h0.*.nc` monthly history (a chain long enough to cross a write boundary), it diffs
   key science variables for exact equality (`max|A−B| = 0`) plus a broad sweep over all shared non-`_PF`
-  variables; otherwise (e.g. a short `CONTINUE_RUN` segment with no history/restart output yet) it falls
+  variables; otherwise (e.g. a few-day segment with no history/restart output yet) it falls
   back to a gzip-aware, non-deterministic-line-stripped diff of `lnd.log`'s per-timestep prints — the only
   science-output stream a short run produces. For an HPC-run pair, `wait_and_compare_v0.sh` polls `squeue`
   for both case names (crash-detecting via `DependencyNeverSatisfied`) and invokes `compare_v0.py`
   automatically once both finish.
 
-**6. Log it — in BOTH streams, because model_logs is not public.** The code reasoning + mechanism goes in
-`memory/model_logs/` (see its `CLAUDE.md`) with the `!Jing Tao:` source comment. **AND restate the approach
-in the public-eligible `use_cases/<site>/memory/logs/` calibration log** — `memory/model_logs/` is
-**excluded from the public sync**, so the public record must be self-contained (define terms, restate the
-approach, don't just point at model_logs).
+**6. Log it — under the CASE, in one place.** (PI, 2026-08-26: model-evolution records now live with the
+case that runs them, so the mechanism and its effect on the calibration read together and both ship.)
+
+- **The change itself** — what you altered and why, the mechanism, the `!Jing Tao:` source comment, the
+  V0-at-equality result, the commit and branch — goes in
+  `use_cases/{Model}_{Case}/memory/model_evolution/{stem}.md`, stem
+  `YYYYMMDDx_model_evolution_r{RR}_{descriptor}.md`. That folder has its own README stating the
+  non-negotiables; read it before writing there.
+- **Which rounds ran it, and what that means for comparing them**, goes in the case's
+  `config/calibration_rounds.yaml` under that round's `fates_source` — `patches` for what the build
+  carries, and `binary: {archive_label, sha256_prefix}` for which archived executable it is bound to.
+  (main's schema; adapter-kit's top-level `model_change_ledger` does not exist here.) Written at the round close by `summarize-calibration-round`;
+  what this skill owes it is an accurate commit, branch, `kind` and V0 result to copy.
+- **Write it to be self-contained.** Define the terms, restate the approach, do not write a pointer and
+  call it a record. Whoever reads it will not have your session — and unlike an internal dev log, **this
+  one ships with the case**.
+
+> **Why this changed.** The step previously said to log in BOTH streams because the repo-root
+> `memory/model_logs/` is excluded from the public sync. That put the mechanism in a private file and a
+> restatement in a public one, and in practice made the public record a pointer more often than a record.
+> The repo-root stream is now a **frozen historical archive** — its 16 pre-2026-08-26 entries were copied
+> under the case and keep their original stems so existing citations still resolve. Do not write new
+> entries there.
 
 **7. Push — fork only, NEVER upstream.** Push to your **own fork** of the model repo (your fork of
 `NGEET/fates` for FATES, of `E3SM-Project/E3SM` for ELM), **never** the upstream repos themselves. On the
@@ -179,7 +238,10 @@ upstream is a separate, deliberate PR.
   routinely spans several files + a restart-format change. Mirror an existing template, don't invent.
 - **Pushing upstream** — a stray `git push origin`/`upstream` targets the community repo; the `DISABLE` guard
   blocks it, but keep the discipline.
-- **Leaving the approach only in `model_logs/`** — it won't ship publicly; restate it in the calibration log.
+- **Writing a pointer instead of a record.** The case's `model_evolution/` entry ships; a line saying
+  "see the dev log" does not travel with it, and the reader it was written for will not have your session.
+- **Writing a new entry into the repo-root `memory/model_logs/`** — that stream is frozen as of
+  2026-08-26. New records go under the case.
 
 ## Cross-references
 
@@ -205,6 +267,36 @@ upstream is a separate, deliberate PR.
   stricter on step 0 (always an experiment branch).
 
 ## Changelog
+
+- 2026-08-26 — **Removed `CONTINUE_RUN` from the model-evolution track entirely**, and corrected two
+  api-31 claims that a source check proved stale. Signal: PI review of the
+  `build_v0_case_via_clone.sh` bullet ("this doesn't read right"), then "just remove CONTINUE_RUN...
+  V0 equality doesn't need it either, right?".
+  - **The bullet named the wrong selection criterion.** It said to choose the clone builder when the
+    V0 check should "CONTINUE an existing case's restart (a short `CONTINUE_RUN` segment)". But
+    `--continue-run` was an optional pass-through (default empty, applied only if given, alongside
+    `--run-startdate`), so it never distinguished the two builders. The real axis is **configuration
+    provenance** — inherit a reference case's entire config vs. build fresh from site config — plus
+    `create_clone` having no SRCROOT override (verified: its only flags are `--case
+    --cime-output-root --clone --ensemble --keepexe --mach-dir --project --user-mods-dir(s)`).
+  - **`CONTINUE_RUN` removed, not just re-documented.** V0-at-equality is a DIFFERENCE test between
+    two builds from identical state, so `finidat`'s initialisation applies identically to both arms;
+    the only thing `CONTINUE_RUN` uniquely exercises is the restart-read path, and a change touching
+    restart layout already requires a fresh cold-start chain. Removing it gives A2MC ONE resume
+    mechanism and makes `CONTINUE_RUN` an unambiguous wrong-answer marker repo-wide — which retires
+    the hook carve-out that existed solely for this tooling (`dev_logs/20260820a`: "`CONTINUE_RUN`
+    alone is NOT a safe discriminator"). Changed together: the flag in
+    `build_v0_case_via_clone.sh`, headers in the three sibling tools,
+    `.claude/hooks/remind-restart-mechanism.py` (docstring, message, QUIET_RE comment), and
+    `tests/test_remind_restart_mechanism_hook.py` (carve-out test reframed + a regression guard that
+    fails if any V0 builder re-introduces the flag).
+  - **Two api-31 claims corrected against the checkout** (E3SM `938f765b` / FATES `6f61d423`):
+    the "declare/**register/retrieve**" vocabulary does not exist in api-43 — `EDParamsMod.F90` has
+    ZERO occurrences of `fates_params` or `Register` (at the anchor `e027a40` too) and imports
+    `JSONParameterUtilsMod`; and `check_var: <name> is not on dataset` is not a FATES string at all
+    (it lives in `sbetr`/`mosart` netCDF I/O), so the abort signature is now marked version-specific.
+    The **placement** guidance was confirmed correct: 56 scalar `real(r8),protected,public` decls in
+    `EDParamsMod`, 116 allocatable per-PFT arrays in `EDPftvarcon`.
 
 - 2026-08-18: **Step 5's guarded-branch-switch V0 recipe is now backed by promoted, generic tooling**
   (`tools/model_evolution/`) instead of prose-only instructions + demo-branch worked scripts. Also named

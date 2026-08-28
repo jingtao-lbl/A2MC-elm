@@ -287,9 +287,68 @@ def rechain_downstream_cascade(case_dir: Path, phase: str, new_jobid: str,
         print(f"# {downstream_case} resubmitted as job {current_jobid}\n", file=sys.stderr)
 
 
+def _check_restart_staleness(run_dir: str, case_name: str, years: list[int]) -> None:
+    """Refuse to restart from a leftover restart file belonging to a SUPERSEDED run segment.
+
+    `get_restart_files()` globs `*.elm.r.*.nc`, filters only on file SIZE, and returns years
+    sorted BY YEAR. It has no notion of which run segment wrote a file. So a stale
+    high-numbered restart left in `run/` by an earlier, abandoned attempt outranks every file
+    the CURRENT segment has written, and `years[-1]` silently selects it.
+
+    Motivating near-miss, 2026-08-21 (stated precisely, because the existing size filter DID
+    hold here): ADRGnone_RGSP had a year-0401 restart dated 2026-08-12 sitting beside
+    0211-0251 written 2026-08-20/21 by the live segment. It did NOT mis-select, because that
+    0401 file is 0 bytes -- an earlier attempt crashed mid-write -- and `get_restart_files`
+    drops sub-1KB placeholders. So this guard fixes nothing that was broken that day.
+
+    What it covers is the adjacent case the size filter cannot see: a stale restart that was
+    written SUCCESSFULLY by a superseded segment. Had that 08-12 attempt reached 0401 cleanly
+    instead of crashing, the file would have been a valid 4.7 MB restart, `years[-1]` would
+    have been 401, and the tool would have resumed from a 7-day-old state 145 model-years
+    ahead of the live run -- or aborted with a confusing "may already be complete" when STOP_N
+    went <= 0. Re-running a case to a shorter end year than a previous attempt reaches exactly
+    that state. This guard is therefore DEFENSIVE, not incident-driven.
+
+    The signal is unambiguous and needs no threshold tuning: within ONE segment, a higher
+    restart year is always written LATER. Year order and mtime order agreeing is an invariant;
+    a inversion means more than one segment's files are present.
+    """
+    stamped = {}
+    for y in years:
+        f = Path(f"{run_dir}/run/{case_name}.elm.r.{y:04d}-01-01-00000.nc")
+        if f.is_file():
+            stamped[y] = f.stat().st_mtime
+    if len(stamped) < 2:
+        return
+
+    newest_year = max(stamped)
+    latest_written = max(stamped, key=lambda y: stamped[y])
+    if newest_year == latest_written:
+        return  # year order and mtime order agree -- single coherent segment
+
+    import datetime as _dt
+
+    def _fmt(y):
+        return (f"    year {y:04d}  written "
+                f"{_dt.datetime.fromtimestamp(stamped[y]):%Y-%m-%d %H:%M}")
+
+    raise RuntimeError(
+        f"Restart files in {run_dir}/run/ come from MORE THAN ONE run segment -- refusing to "
+        f"guess which one to continue.\n"
+        f"  highest-numbered restart (what would have been picked):\n{_fmt(newest_year)}\n"
+        f"  most-recently-written restart (what the live segment actually reached):\n"
+        f"{_fmt(latest_written)}\n"
+        f"Within a single segment a higher year is always written later, so this inversion "
+        f"means year {newest_year:04d} is a leftover from a superseded attempt.\n"
+        f"Fix by either (a) re-running with --restart-year {latest_written} to continue the "
+        f"live segment, or (b) moving the stale file out of run/ if it is genuinely obsolete.\n"
+        f"Do NOT simply delete it without checking which segment it belongs to.")
+
+
 def build_restart_plan(case_dir: Path, phase: str | None, start_year: int | None,
                         end_year: int | None, dependency: str | None,
-                        queue: str, memory: str) -> list[str]:
+                        queue: str, memory: str,
+                        restart_year_override: int | None = None) -> list[str]:
     case_name = case_dir.name
     if phase is None:
         phase = _detect_phase(case_name)
@@ -301,7 +360,16 @@ def build_restart_plan(case_dir: Path, phase: str | None, start_year: int | None
     years = get_restart_files(run_dir)
     if not years:
         raise RuntimeError(f"No valid (non-placeholder) restart files found under {run_dir}/run/")
-    last_year = years[-1]
+
+    if restart_year_override is not None:
+        if restart_year_override not in years:
+            raise RuntimeError(
+                f"--restart-year {restart_year_override} has no restart file on disk "
+                f"(years present: {years})")
+        last_year = restart_year_override
+    else:
+        _check_restart_staleness(run_dir, case_name, years)
+        last_year = years[-1]
 
     phase_info = PHASES[phase]
     start = start_year if start_year is not None else phase_info["start_year"]
@@ -355,6 +423,7 @@ def build_restart_plan(case_dir: Path, phase: str | None, start_year: int | None
             f"(restart years actually on disk: {years})")
 
     sed_targets = ["/^finidat/d"]
+    dropped_note = None
     if phase == "ADSP":
         # Keep nyears_ad_carbon_only if the restart point is still WITHIN the carbon-only
         # window -- removing it would silently end carbon-only mode early on this segment.
@@ -365,6 +434,17 @@ def build_restart_plan(case_dir: Path, phase: str | None, start_year: int | None
         k = _read_nl_int(case_dir / "user_nl_elm", "nyears_ad_carbon_only")
         if k is None or restart_year > k:
             sed_targets.append("/^nyears_ad_carbon_only/d")
+            # Record the value being dropped. Dropping it is correct (see above), but the
+            # generated script is a durable artifact that a reader may consult on its own,
+            # and after the sed nothing in the case dir still says what the carbon-only
+            # window WAS. That matters here specifically: the carbon-only phase meets plant
+            # nutrient demand by supplement regardless of suplphos, so its length is part of
+            # the case's nutrient protocol, not an incidental spin-up knob
+            # (curated: ad_carbon_only_injects_phosphorus).
+            if k is not None:
+                dropped_note = (f"# NOTE: dropping nyears_ad_carbon_only = {k} (restart year "
+                                f"{restart_year} is past the carbon-only window). The case was RUN "
+                                f"with {k}; see its run_*.sh for the authoritative protocol.")
         else:
             print(f"# Keeping nyears_ad_carbon_only = {k} -- restart year {restart_year} is "
                   f"still within the carbon-only window.", file=sys.stderr)
@@ -376,6 +456,7 @@ def build_restart_plan(case_dir: Path, phase: str | None, start_year: int | None
         f"-> STOP_N={stop_n}, RUN_STARTDATE={restart_yearstr}-01-01",
         f"./xmlchange STOP_N={stop_n}",
         f"./xmlchange RUN_STARTDATE={restart_yearstr}-01-01",
+        *([dropped_note] if dropped_note else []),
         sed_cmd,
         f"echo \"finidat = '{restart_file}'\" >> user_nl_elm",
         "./case.setup",
@@ -433,6 +514,10 @@ def main() -> int:
                          "_ADSP/_RGSP/_TRANS suffix).")
     ap.add_argument("--start-year", type=int, help="Override the phase's start year.")
     ap.add_argument("--end-year", type=int, help="Override the phase's end year.")
+    ap.add_argument("--restart-year", type=int,
+                    help="Continue from THIS restart year instead of the highest one on disk. "
+                         "Required when run/ holds restart files from more than one segment "
+                         "(the staleness guard raises and names the year to pass).")
     ap.add_argument("--dependency", help="SLURM job ID for --dependency=afterok:<id>.")
     ap.add_argument("--queue", default=os.environ.get("A2MC_QUEUE", "shared"))
     ap.add_argument("--memory", default=os.environ.get("A2MC_MEMORY", "16G"))
@@ -469,7 +554,7 @@ def main() -> int:
     try:
         commands = build_restart_plan(
             case_dir, args.phase, args.start_year, args.end_year,
-            args.dependency, args.queue, args.memory)
+            args.dependency, args.queue, args.memory, args.restart_year)
     except RuntimeError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1

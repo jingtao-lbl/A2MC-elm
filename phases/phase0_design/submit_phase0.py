@@ -2,7 +2,7 @@
 """Submit a Phase 0 ensemble to HPC.
 
 Orchestrator for Stage 3 of Phase 0. Replaces `tools/submit_ensemble.sh`
-and the casetemplate `submit_full_morris_ADSPSupNP.sh` bundle script with
+and the case_template `submit_full_morris_ADSPSupNP.sh` bundle script with
 a single config-driven Python entry point.
 
 Workflow:

@@ -60,6 +60,73 @@ structure + discipline for that; the pieces (figures, PDF) come from sibling ski
    so every claim is traceable and the report is reproducible.
 7. **Cross-references** — link companion reports/logs; **cross-ref, don't duplicate** their content.
 
+## The two calibration deliverables this skill names
+
+Most reports here are one-off. Two are **recurring, structural and nested**, and both tend to be
+written thinner than the work behind them because nothing states what they must cover. Named here
+so their scope is a contract, not a judgement call.
+
+```
+phase logs + phase_results/{stem}/     one per phase, per inner-loop ITERATION
+        │  (the evidence: figures, captions, canonical scripts, data)
+        ▼
+CYCLE REPORT      one per experiment cycle (Phase 3→4→5→6)
+        │  synthesizes EVERY log and EVERY phase_results/ folder of that cycle
+        ▼
+ROUND REPORT      one per calibration round
+           synthesizes the CYCLE REPORTS, not the raw logs again
+```
+
+**The nesting is the point.** A cycle report that re-derives from raw logs duplicates them; a round
+report that re-derives from raw logs duplicates every cycle report. Each layer synthesizes the layer
+directly beneath it and **cites** the one below that.
+
+### The CYCLE report (one per experiment cycle)
+
+Written at cycle end (per-cycle checklist in `calibration-discipline`). It must carry all four of:
+
+1. **The whole inner loop, iteration by iteration — not just the last one.** Phase 3↔4 is the
+   skip-testing loop and runs up to `A2MC_MAX_SKIP_TESTING` times *within one cycle*, at no compute
+   cost. Those answers are what justify the experiment the cycle finally ran. A report naming only
+   the surviving hypothesis discards the reasoning that selected it, and leaves a reader unable to
+   distinguish a well-aimed experiment from a lucky one. **State per iteration:** what was
+   investigated, what the skip-test returned, and whether it confirmed, refuted or refined the
+   hypothesis. *(Measured on this branch: main's Phase-3/4 logs span `iter01`–`iter04` against a
+   cap of `A2MC_MAX_SKIP_TESTING`=10 — so the free loop WAS entered and run four times, and a
+   cycle report covering only "the iteration" would silently discard three of the four pieces of
+   reasoning that selected the experiment.)*
+2. **Every hypothesis tested, and with which simulations.** The hypothesis, its falsification bar as
+   Phase 4 recorded it, the variants that tested it *with their actual parameter values*, and the
+   job identifiers. A bar that is not restated cannot be ruled CONFIRMED or REFUTED in front of the
+   reader — they have to take the verdict on trust.
+3. **What the simulation results actually say** — per variant, per **scored target**, against the
+   measurements. Not a single composite and not one target of several: an experiment that raises the
+   target it aimed at while pushing two others out of band has failed, and a single-target figure
+   cannot show it.
+4. **The verdict and where the loop went next** — CONFIRMED / PARTIAL / REFUTED against the Phase-4
+   bar, the mechanism learned, and the routing (rethink 6→3, redesign 6→0, converge).
+
+### The ROUND report (one per calibration round)
+
+Written when the round closes — at the cycle limit or at convergence, per the per-round checklist.
+It covers what Phases 0, 1, 2 and the first Phase 3 established, then **synthesizes the cycle
+reports**: the arc across cycles, which levers were established and which retired, what each cycle's
+failure taught the next, and the residual gap. It does **not** re-narrate each cycle from raw logs —
+it cites the cycle reports for that.
+
+**Arc the round by lever CLASS, not only by lever.** Each cycle's rethink recorded which class it
+exhausted, so the round report can state what the campaign ruled out at the level the next round's
+parameter list actually needs. Several cycles refuting several parameters of **one** class is **one**
+refutation; reporting it as several overstates coverage while hiding the class that was never tried
+— which is exactly the input the next-round add/remove decision needs.
+
+It carries everything the per-round checklist requires, above all the **next-round work plan**
+(parameter add/remove, bounds recenter, base update, residual split). That item exists because a
+round summary without one is the most common omission in this workflow.
+
+> Distinct from `summarize-calibration-round`, which produces the round's *figures and evaluation*.
+> That skill's output is an **input** to this report, not a substitute for it.
+
 ## Recipe
 
 ### 1. Gather citation-backed facts FIRST (before writing a word)
@@ -181,6 +248,10 @@ artifacts (embargoed results stay in gitignored `phase_results/`).
 - **Branch fit:** generic report-writing conventions — applies on any branch and any model configuration.
 
 ## Changelog
+
+- 2026-08-23 — The CYCLE report's verdict item **carries the rethink** (class verdict + pathways, DRAWN from the Phase-6 log rather than re-derived — the protocol's first question has a write-once clause, so deriving twice guarantees drift), and the ROUND report **arcs by lever CLASS**. Adopted from `adapter-kit` (`bcdb3fa2`). A reader who cannot see why the next cycle attacks what it attacks cannot tell a redirected campaign from a stalled one.
+
+- 2026-08-23 — Named **the two calibration deliverables**: the CYCLE report (one per experiment cycle) and the ROUND report (one per round), with the nesting that keeps them from duplicating each other — each layer synthesizes the layer beneath and CITES the one below that. Adopted from `adapter-kit` (`6d8c16d7`), re-authored. Both were referenced by `calibration-discipline` on main without anything stating what they must contain. The cycle report's iteration-by-iteration requirement is the load-bearing one here: main's Phase-3/4 logs span iter01–iter04 against a cap of 10, so unlike the source branch main DID enter the free loop — which means a report covering only "the iteration" would discard three of four pieces of reasoning, not zero.
 
 - 2026-08-05: **Author line now REQUIRED in the header** (structure step 1 + a footgun): every report opens with
   exactly `**Author:** Jing Tao with A2MC`, no host suffix. The `with A2MC` form is report-SPECIFIC — these are

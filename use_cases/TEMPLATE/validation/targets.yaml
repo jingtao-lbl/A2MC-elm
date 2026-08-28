@@ -1,7 +1,7 @@
 # =============================================================================
 # Validation Targets — TEMPLATE
 # =============================================================================
-# Copy this file to use_cases/<YourSite>/validation/targets.yaml and edit.
+# Copy this file to use_cases/{Model}_{Case}/validation/targets.yaml and edit.
 #
 # This file is the SINGLE SOURCE for (a) the calibration targets, (b) how each
 # observation is matched to simulated output in time, and (c) the cost metric.

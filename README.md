@@ -10,6 +10,27 @@
 
 ---
 
+## Which A2MC do you want?
+
+A2MC is developed in **two lines**, split by **how your model is built and run**. Pick by that, not by which sounds newer.
+
+| | [**A2MC-elm**](https://github.com/jingtao-lbl/A2MC-elm) (this repo) | [**A2MC**](https://github.com/jingtao-lbl/A2MC) — the non-CIME line |
+|---|---|---|
+| **use it for** | **CIME-configured Earth system models** | **models that are not CIME-configured** |
+| models today | ELM, ELM-FATES | EcoSIM, PFLOTRAN, ATS |
+| how a case is built and run | CIME | each model's own backend under `models/<name>/` |
+| machine config to source | `a2mc_config.sh` | `a2mc_noncime_config.sh` |
+| adding a model | the built-in FATES path | a `models/` adapter registry + an `onboard-model` workflow |
+| worked reference case | `ELM-FATES_Kougarok` | `EcoSIM_BioCON` |
+
+**If your model runs under CIME, this is the repo you want.** The CIME workflow, the FATES adapter and the Kougarok reference case are developed here, and that is where this line is strongest.
+
+**If it does not, use `A2MC`.** The adapter layer there exists precisely for models with their own build and run path: describe the model once as a `ModelSpec` plus a backend, and the 7-phase workflow, the knowledge system and the agent skills all apply unchanged.
+
+**They converge later.** A2MC is intended to serve both, and this line will fold into `A2MC` once that repository is published. Until then the two are developed independently so neither waits on the other.
+
+---
+
 ## Motivation
 
 Earth system models like ELM-FATES contain hundreds of parameters that must be calibrated against observations at each study site. Traditional calibration is a months-long manual process of running ensembles on HPC, inspecting sensitivity analyses, and making expert decisions about which parameters to adjust. Black-box optimizers (genetic algorithms, gradient descent) work well when the parameter space already contains viable solutions, but for novel model configurations where no prior successful calibration exists (e.g., ELM-FATES CNP at Arctic sites), the initial ensemble may entirely miss observational ranges. In these cases, numerical optimization alone cannot identify the mechanistic barriers preventing calibration. A2MC addresses this by combining optimization with interpretable, hypothesis-driven reasoning that diagnoses *why* the model fails and proposes targeted fixes.

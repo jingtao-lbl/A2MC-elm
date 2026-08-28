@@ -47,7 +47,19 @@ banner on the old), don't quietly edit the old conclusion.
 
 ## Step 2 — root-cause (only after triage passes)
 
-Use the `phases/phase3_diagnosis/` tools (drive several via `run_diagnostics_scripts.py`
+**First, resolve the run configuration — before running a diagnosis tool or opening model source.** ELM/FATES branches on many axes at once (FATES on/off, PARTEH 1 vs 2, CN vs CNP, ECA vs RD, NOCOMP, SPITFIRE, hydraulics, prescribed vs coupled uptake), and each branch owns constants, parameters and history variables that are inert or differently-defined under the others. A constant read correctly from the run's own input files can still belong to a branch the run never executes — every provenance check passes and the answer is still wrong.
+
+```bash
+source use_cases/{Model}_{Case}/config/<case>_config.sh   # auto-sources the machine config
+python tools/describe_mode.py                             # e.g. "Competition: ON (ECA pathway)"
+CASE="$A2MC_E3SM_ROOT/cime/scripts/<case_name>"           # NOT co-located with the run dir
+cd "$CASE" && ./xmlquery -value RUNDIR                    # also how you LOCATE the run dir
+grep -nE "nu_com|use_fates|hlm_parteh_mode|suplphos|nyears_ad_carbon_only" "$RUNDIR/lnd_in"
+```
+
+The run dir's `lnd_in` is ground truth and the FATES parameter file does not substitute for it: namelist switches are absent from that file entirely (`nu_com` is one), so a parameter-file-only check returns an empty result for exactly the switch that selects the branch — and empty reads as "nothing to see". **Name the branch whenever you quote what you found** ("`smax`, the RD-path capacity", never "the capacity"). The mode-aware RAG filtering in `docs/a2mc_reference/mode_aware_howto.md` does not cover you here — it gates what the *online* agent retrieves into a Phase 3/4 prompt; reading source directly bypasses it. Full rule + verification chain: memory `feedback_resolve_run_config_before_reading_branched_source`.
+
+Then use the `phases/phase3_diagnosis/` tools (drive several via `run_diagnostics_scripts.py`
 / `dispatch.py`):
 
 | Question | Tool |
@@ -79,4 +91,5 @@ Cross-check the mechanism against RAG/GraphRAG / `docs/fates-knowledge-base/` be
 
 ## Changelog
 
+- 2026-08-27: Step 2 (root-cause). Added a **resolve-the-run-configuration step** — a constant read correctly from the run's own input files can still belong to a branch the run never executes, so provenance discipline alone does not catch it. Carries the three-step chain (site config → CIME case dir under `cime/scripts/` → the run dir's `lnd_in`), the note that namelist switches like `nu_com` are absent from the FATES parameter file entirely, and the requirement to name the branch when quoting a constant. Signal: `memory/dev_logs/reflection/20260827a_Reflection_A_Real_Value_From_The_Wrong_Branch.md` — a figure normalised `LABILEP` by the RD-path `smax` in an ECA run, inverting the reading; `git grep -c describe_mode` confirmed both skills mentioned mode resolution zero times, while `tools/describe_mode.py` ran only in the two setup-time skills. Applied under `refine-skill` after PI approval.
 - 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

@@ -16,6 +16,32 @@ Single-round deliverable: ensemble graphs + evaluation + sensitivity, tied into 
 report. The cross-round analog is `compare-calibration-rounds`; this is its per-round complement and
 shares the same footguns + tooling.
 
+## FIRST: this skill's output is INPUT to the round report
+
+**Two different artifacts close a round and they are easy to confuse.** Getting the relationship
+wrong produces either a round report that re-narrates every cycle from raw logs, or a standardized
+summary straining to be a narrative.
+
+```
+phase logs + phase_results/{stem}/     one per phase, per inner-loop iteration
+        ▼
+CYCLE REPORT      one per experiment cycle                          <- write-report
+        ▼
+ROUND REPORT      synthesizes the CYCLE REPORTS into an arc
+                  + the next-round work plan                        <- write-report
+        ▲
+THIS SKILL        supplies the round-wide FIGURES and TABLES
+                  that the round report cites                       <- you are here
+```
+
+**This skill is the standardized, FIXED deliverable**: whole-ensemble graphs, the screening
+evaluation, the Morris μ\* ranking. It answers *"what does the whole round's ensemble look like"*.
+It does **not** narrate what the cycles learned, and should not try to.
+
+**The round report is `write-report`'s** — see "the two calibration deliverables" there. It
+synthesizes the **cycle reports**, not the raw logs, and must end with a concrete next-round work
+plan. Producing this skill's figures does not discharge that.
+
 ## When to use
 
 - "Summarize round N", "make a report for R{N}", "how did R{N} do".
@@ -36,7 +62,7 @@ Round run dir = `$A2MC_ENSEMBLE_OUTPUT`; extract dir = `$A2MC_EXTRACTED_DATA`.
 ### 1. Whole-ensemble graphs (combined + TRANS)
 `tools/plot_ensemble_cases.py` (`--combined` for the 519-yr ADSP+RGSP+TRANS axis; default for the
 TRANS-only zoom) — or the round wrapper `regen_ensemble_milestone_plot.sh` /
-`use_cases/<site>/analysis/regen_milestone_plot.sh`. Combined needs ADSP(1-200)+RGSP(201-400)+TRANS
+`use_cases/<site>/scripts/regen_milestone_plot.sh`. Combined needs ADSP(1-200)+RGSP(201-400)+TRANS
 NCs per case (extract all 3 phases). Output: `R{N}_{combined,TRANS}_{count}cases_ensemble.png`.
 - **Per-round graphs are UNCAPPED**: include the round's own legitimate extra cases (e.g. R3 + its
   51 model-swap reruns = 4941, merged via offset case numbers). Do NOT pass a case cap here.
@@ -130,9 +156,21 @@ standard above throughout):
 
 ## Changelog
 
+- 2026-08-23 — Added **this skill's output is INPUT to the round report**, with the artifact nesting. Adopted from `adapter-kit` (`a730c5d6`), re-authored. This skill supplies the round-wide figures and tables; `write-report`'s ROUND report synthesizes the CYCLE reports into an arc plus the next-round plan. Producing these figures does not discharge that.
+
 - 2026-07-06: Added the **Report writing standard** (report is for a human with no project context:
   executive summary, define-or-avoid jargon, complete plain-finding→mechanism→evidence sentences, the
   stranger test, "stop→improve-model" as a valid outcome) + a git-tracked report-location note. Ported from
   demo (`d788bd1`/`2cb3056`/`3519a61`), scrubbed of Kougarok run-specific codenames. See memory
   `feedback_report_writing_self_contained`.
-- 2026-06-17: `## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.
+- 2026-06-17: `## Which binary did this round run?
+
+A round summary that omits the executable is not reproducible. At the round close, record it in the case's
+`config/calibration_rounds.yaml` at `rounds[N].fates_source.binary` as `{archive_label, sha256_prefix}`,
+taken from the case's `config/binary_archive_manifest.json`. (That is **this** branch's schema —
+adapter-kit uses a top-level `model_change_ledger`, which main has never had.) Then
+`python tools/binary_archive_manifest.py --verify` resolves that claim (check M7) instead of leaving it
+an assertion nobody re-checks. `archived_build: null` is a legitimate, stated fact for a round that
+predates the archive; a MISSING entry is not.
+
+## Changelog` convention adopted (see .claude/skills/README.md). Earlier history: git log + memory/dev_logs/.

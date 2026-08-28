@@ -75,15 +75,25 @@ def short_flag(letter):
     return re.compile(rf"(?<![\w-])-[a-zA-Z]*{letter}[a-zA-Z]*(?![\w=])")
 
 
-WALKERS = re.compile(r"(?:^|[|&;(]|\s)\s*(?:sudo\s+)?(find|bfs|fd|fdfind|tree)\b")
-GREP_CMD = re.compile(r"(?:^|[|&;(]|\s)\s*(?:sudo\s+)?(?:grep|egrep|fgrep|zgrep)\b")
+# COMMAND POSITION, not "anywhere a space precedes it". A bare `\s` prefix matches the word in
+# ordinary PROSE: adapter-kit measured this hook denying a command whose only trigger was the
+# English word "tree" inside `echo "=== main's working tree on those paths ==="`. A shell command
+# name appears at the start of the string or a line, after a separator (`|`, `&`, `;`, `(`, `&&`,
+# `||`), or behind a wrapper (`sudo`, `time`, `nohup`, `xargs`) -- nowhere else.
+# Adopted from adapter-kit 1bd690ab; three prose-as-code false positives preceded it there (a
+# commit message, an inline-python argument, and the echoed word "tree"), and main hit the same
+# class four times on 2026-08-22 before this landed.
+_CMD_POS = r"(?:^|\n|[|&;(]|&&|\|\||\b(?:sudo|time|nohup|xargs)\s+)\s*"
+
+WALKERS = re.compile(_CMD_POS + r"(?:find|bfs|fd|fdfind|tree)\b")
+GREP_CMD = re.compile(_CMD_POS + r"(?:grep|egrep|fgrep|zgrep)\b")
 GREP_R_SHORT = short_flag("[rR]")
 GREP_R_LONG = re.compile(r"--(?:recursive|dereference-recursive)\b")
-RG_FILES = re.compile(r"(?:^|[|&;(]|\s)\s*rg\b[^|;&]*?--files\b")
-RG_PLAIN = re.compile(r"(?:^|[|&;(]|\s)\s*rg\b")
-LS_CMD = re.compile(r"(?:^|[|&;(]|\s)\s*ls\b")
+RG_FILES = re.compile(_CMD_POS + r"rg\b[^|;&]*?--files\b")
+RG_PLAIN = re.compile(_CMD_POS + r"rg\b")
+LS_CMD = re.compile(_CMD_POS + r"ls\b")
 LS_R_FLAG = short_flag("R")
-DU_R = re.compile(r"(?:^|[|&;(]|\s)\s*du\b")
+DU_R = re.compile(_CMD_POS + r"du\b")
 DU_SUMMARY = short_flag("s")
 DU_DEPTH = re.compile(r"--max-depth[= ]\d|(?<![\w-])-d\s+\d")
 GLOBSTAR = re.compile(r"/\*\*/")
@@ -192,9 +202,25 @@ def main():
     if GIT_SAFE.search(cmd):
         sys.exit(0)
 
-    grep_recursive = GREP_CMD.search(cmd) and (
-        GREP_R_SHORT.search(cmd) or GREP_R_LONG.search(cmd))
-    ls_recursive = LS_CMD.search(cmd) and LS_R_FLAG.search(cmd)
+    def _flagged(cmd_re, flag_re, long_re=None):
+        """Does the flag appear in THIS command's own argument span?
+
+        Scoped from the command word to the next separator, because searching the whole line
+        associates a flag with a command it does not belong to. adapter-kit measured this denying
+        `python plot.py --tape <path> | grep -E "..." ; rm -rf ./tmp/x` -- the `-r` came from
+        `rm -rf` and made the unrelated `grep -E` look recursive.
+
+        Adopted from adapter-kit 7e53e3ba (its 4th false positive in this hook, after a commit
+        message, an inline-python argument, and the echoed word "tree").
+        """
+        for m in cmd_re.finditer(cmd):
+            seg = re.split(r"[|&;\n]", cmd[m.end():])[0]
+            if flag_re.search(seg) or (long_re and long_re.search(seg)):
+                return True
+        return False
+
+    grep_recursive = _flagged(GREP_CMD, GREP_R_SHORT, GREP_R_LONG)
+    ls_recursive = _flagged(LS_CMD, LS_R_FLAG)
 
     # An inline-python walk (os.walk / rglob) targets whatever path sits INSIDE its call. Pairing
     # it with any shared path elsewhere in the command is a false positive: `python - <<PY` that

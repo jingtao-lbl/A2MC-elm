@@ -31,21 +31,27 @@ gives the *data*; this skill is what you *do* with it.
    §"RAG/GraphRAG System" (+ `docs/a2mc_reference/rag_reference.md`) carries the full
    hybrid vector + two-layer knowledge graph + curated YAML detail.
 2. **Read the latest calibration log/report — the primary source for the application-agent (calibration)
-   role, and the one that exists in ANY clone, public or private.** The `Offline state:` / `► NEXT:` line
-   (Step 4 below) gives you a *pointer*; this step is where you actually read what it points into. Check,
-   newest first:
-   `ls -t use_cases/*/reports/*/*.md use_cases/*/memory/logs/**/*.md use_cases/*/memory/phase_results/*/*.md 2>/dev/null | head`
-   — narrow to the active site. A consolidated register/synthesis report (if one exists) is usually the
-   fastest single read; phase logs and phase_results stems carry the finer-grained trail. Read for open
-   threads + current state **before** treating a `next_action` pointer as something you already understand
-   — a pointer is not a substitute for having read what it points at.
-3. **If this clone also carries framework-development history** — i.e. `memory/dev_logs/` exists (true on
+   role, and the one that exists in ANY clone, public or private.** The SessionStart snapshot's
+   `Recent calibration logs + reports` block already lists the most recently CHANGED of both across every
+   case, so start from there; otherwise, newest-touched first:
+   `ls -t use_cases/*/memory/logs/*.md use_cases/*/reports/*/*.md 2>/dev/null | grep -v README | head`
+   — narrow to the active site. Sorting by mtime rather than by the filename date is deliberate: a file
+   revised today still surfaces even when its stem is older. A round or cycle **report** is usually the
+   fastest single read for where the campaign stands; the **phase logs** and their `phase_results/` stems
+   carry the finer-grained trail. The `Offline state:` / `► NEXT:` line (Step 4 below) gives you a
+   *pointer*; this step is where you actually read what it points into. Read for open threads + the
+   `## Next` section **before** treating a `next_action` pointer as something you already understand — a
+   pointer is not a substitute for having read what it points at.
+3. **If this clone also carries framework-development history** — i.e. `memory/dev_logs*/` exists (true on
    the private A2MC-dev repo; absent on a fresh public clone, since it's excluded from the public sync) —
    also read the latest handoff/session log there:
-   `ls -t memory/dev_logs/*Handoff* memory/dev_logs/*Session_Log* | head`. Skim the 2–3 most recent dated
-   dev_logs (and `memory/ana_logs/` if present) for anything still mid-flight. This step covers the
-   **developing-agent** role (framework code, RAG, skills) — skip it entirely if the directory doesn't
-   exist; don't treat its absence as an error.
+   `ls -t memory/dev_logs*/*Handoff* memory/dev_logs*/*Session_Log* 2>/dev/null | head`. **Glob
+   `dev_logs*`, not `dev_logs`** — every feature branch keeps its own stream (`memory/dev_logs_<branch>/`)
+   and writes only there, so the bare directory reports `main`'s newest file and silently misses the
+   branch's own; the snapshot names the stream alongside the filename for the same reason. Skim the 2–3
+   most recent dated dev_logs (and `memory/ana_logs/` if present) for anything still mid-flight. This step
+   covers the **developing-agent** role (framework code, RAG, skills) — skip it entirely if the directory
+   doesn't exist; don't treat its absence as an error.
 4. **Verify branch:** `git branch --show-current` → confirm it matches your intended working branch (`main` or your feature branch).
    `git status -s` for uncommitted work the previous session left.
 5. **Read the master state, then the round detail** — two files, and knowing which answers what

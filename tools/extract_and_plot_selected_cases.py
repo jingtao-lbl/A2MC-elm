@@ -55,7 +55,7 @@ Usage
   python tools/extract_and_plot_selected_cases.py plot \
       --base 1304 --suffixes clump00 clump01 ... clump07 \
       --extract-dir ~/<Exp>_Extract \
-      --output use_cases/<site>/analysis/<Exp>_overlay.png
+      --output use_cases/<site>/scripts/<Exp>_overlay.png
 
 Author: Jing Tao with Claude on Perlmutter
 """

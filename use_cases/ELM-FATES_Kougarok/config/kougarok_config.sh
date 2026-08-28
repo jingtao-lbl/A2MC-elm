@@ -22,11 +22,37 @@
 # A2MC_USE_CASE_DIR can no longer disagree with A2MC_SITE_NAME.
 # ---------------------------------------------------------------------------
 
-# A2MC_ROOT comes from a2mc_config.sh, which is sourced FIRST (see
-# feedback_source_config_order_and_round_selection). Fail loudly if it is not.
+# A2MC_ROOT comes from a2mc_config.sh. Since 2026-08-26 this file AUTO-SOURCES it when it
+# has not been sourced yet, so one command is enough:
+#
+#     source use_cases/{Model}_{Case}/config/<case>_config.sh
+#
+# Sourcing a2mc_config.sh first still works and makes this block a no-op. Order is unchanged:
+# machine defaults, then case overrides, then a round wrapper's overrides.
+#
+# The bootstrap path is used ONLY to locate a2mc_config.sh -- it never becomes A2MC_ROOT, which
+# still comes from a2mc_config.sh itself. That distinction is deliberate: BASH_SOURCE is a bash
+# builtin and is EMPTY under zsh, and a previous version that derived paths from it silently
+# collapsed them to $PWD's parent. Under zsh the walk-up branch below is what runs, and if
+# neither branch finds the file the `:?` guard still fails loudly rather than half-configuring.
 export A2MC_SITE_NAME="ELM-FATES_Kougarok"
 
-: "${A2MC_ROOT:?A2MC_ROOT unset - source a2mc_config.sh BEFORE this site config}"
+if [ -z "${A2MC_ROOT:-}" ]; then
+    _a2mc_boot=""
+    if [ -n "${BASH_SOURCE:-}" ]; then                      # bash: derive from this file
+        _a2mc_boot="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." 2>/dev/null && pwd)"
+    fi
+    if [ -z "$_a2mc_boot" ] || [ ! -f "$_a2mc_boot/a2mc_config.sh" ]; then
+        _a2mc_boot="$PWD"                                  # zsh / anything else: walk up from cwd
+        while [ "$_a2mc_boot" != "/" ] && [ ! -f "$_a2mc_boot/a2mc_config.sh" ]; do
+            _a2mc_boot="$(dirname "$_a2mc_boot")"
+        done
+    fi
+    [ -f "$_a2mc_boot/a2mc_config.sh" ] && . "$_a2mc_boot/a2mc_config.sh"
+    unset _a2mc_boot
+fi
+
+: "${A2MC_ROOT:?A2MC_ROOT unset and a2mc_config.sh could not be located automatically - source a2mc_config.sh first}"
 
 export A2MC_USE_CASE_DIR="${A2MC_ROOT}/use_cases/${A2MC_SITE_NAME}"
 

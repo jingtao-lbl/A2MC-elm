@@ -299,7 +299,13 @@ class PhaseLogger:
         s = descriptor.strip().lower().replace('/', ' ').replace('-', ' ')
         s = ''.join(c if (c.isalnum() or c == ' ') else '' for c in s)
         s = '_'.join(s.split())
-        return s[:60] or 'topic'
+        # Trim to 60, then strip a TRAILING separator. A bare s[:60] can cut exactly on the '_'
+        # between two words, producing a stem that ends in a separator. The stem's whole job is to
+        # pair logs/{stem}.md with phase_results/{stem}/, and a caller that builds the folder name
+        # from a differently-derived string gets a silently different stem — the pairing failure
+        # `_existing_offline_letter` was added to prevent, reintroduced one layer down.
+        # (Adopted from adapter-kit f9f4828f.)
+        return s[:60].rstrip('_') or 'topic'
 
     @staticmethod
     def _offline_letter_candidates(max_levels: int = 4):
@@ -354,7 +360,6 @@ class PhaseLogger:
         if key in self._offline_stems:
             return self._offline_stems[key]
         today = datetime.now().strftime("%Y%m%d")
-        letter = self._offline_letter(today)
         phase_name = PHASES.get(phase, "unknown")
         phase_tok = f"phase{phase}_{phase_name}"
         rr = f"r{self.calibration_round:02d}"
@@ -364,9 +369,35 @@ class PhaseLogger:
             loop = f"_c{self.experiment_count:02d}"
         else:
             loop = ""
-        stem = f"{today}{letter}_{phase_tok}_{rr}{loop}_{desc}"
+        suffix = f"_{phase_tok}_{rr}{loop}_{desc}"
+        # REUSE an existing stem for this exact (date, phase, round, loop, descriptor) before
+        # allocating a new letter. The cache above is PER-PROCESS, and _offline_letter() returns
+        # the next FREE letter -- so in the ordinary two-process shape (one run writes figures into
+        # phase_results/, a later run writes the log) the second process sees the first's folder
+        # occupying 'c', allocates 'd', and the log silently stops matching its own artifact
+        # folder. No error; the log looks entirely normal.
+        existing = self._existing_offline_letter(today, suffix)
+        letter = existing if existing else self._offline_letter(today)
+        stem = f"{today}{letter}{suffix}"
         self._offline_stems[key] = stem
         return stem
+
+    def _existing_offline_letter(self, today: str, suffix: str):
+        """Letter of an already-written log / artifact dir with this exact stem suffix, or None.
+
+        Matches on the FULL suffix (phase, round, loop counters, descriptor), never on the date
+        alone. Matching loosely would be a WORSE bug than the one this fixes: two different topics
+        on the same day would collapse onto one letter and overwrite each other's logs.
+        """
+        for base, pattern in ((self.log_dir, f"{today}*{suffix}.md"),
+                              (self.site_dir / "memory" / "phase_results", f"{today}*{suffix}")):
+            if not base.exists():
+                continue
+            for cand in sorted(base.glob(pattern)):
+                name = cand.name[:-3] if cand.name.endswith(".md") else cand.name
+                if name.endswith(suffix):
+                    return self._offline_seq(name)
+        return None
 
     def topic_artifact_dir(self, phase: int, descriptor: str, create: bool = True) -> Path:
         """Offline per-topic artifact folder use_cases/{site}/memory/phase_results/{stem}/.
@@ -1367,10 +1398,29 @@ class PhaseLogger:
 ## Parameters to Modify
 
 """
+        # Accept the alternate spellings a caller may reasonably use. The canonical contract is
+        # `{name, current, proposed, rationale}` (reasoning/schemas.py:53) and main's callers honour
+        # it — but a renderer that reads ONE spelling and silently substitutes
+        # "Unknown / N/A / N/A" destroys the parameter name and BOTH values, and the log is the only
+        # record once the source dict is gone.
+        #
+        # DEFENSIVE here, not corrective: main has 0 such logs (verified with
+        # check_log_placeholders' own patterns across all 18 offline logs). adapter-kit had 20
+        # phase-4 logs that had lost every proposed parameter's name and values this way, latent for
+        # five weeks. Adopted from adapter-kit 49f195e2.
+        def _first(d, *keys):
+            for k in keys:
+                if d.get(k) is not None:
+                    return d[k]
+            return None
+
         for param in parameters_to_modify:
-            name = param.get('name', 'Unknown')
-            current = param.get('current', 'N/A')
-            proposed = param.get('proposed', 'N/A')
+            name = _first(param, 'name', 'parameter', 'param')
+            current = _first(param, 'current', 'current_value', 'from', 'base')
+            proposed = _first(param, 'proposed', 'proposed_value', 'to', 'new')
+            name = 'Unknown' if name is None else name
+            current = 'N/A' if current is None else current
+            proposed = 'N/A' if proposed is None else proposed
             rationale = param.get('rationale', '')
             pft = param.get('pft')
             organ = param.get('organ')

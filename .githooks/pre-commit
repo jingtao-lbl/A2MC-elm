@@ -170,4 +170,303 @@ if git diff --cached --name-only --diff-filter=ACMR \
     fi
 fi
 
+# (8) tools/config_graph.py — when a commit INTRODUCES a new A2MC_* variable, show its
+# name-cluster so a duplicate of an existing variable is visible before it acquires readers.
+# Prints; never blocks. (Adopted from adapter-kit v2.271.)
+#
+# WHY HERE. The failure this addresses is answering a question about a variable without tracing
+# its consumers. On main that cost a hand search during the v2.269 adoption: the sobol ensemble
+# size was hardcoded in a2mc_config.sh AND tools/config.py while a third surface honoured a flag
+# no config set. That failure is CONVERSATIONAL and has no commit-time moment, so it cannot be
+# hooked. What CAN be hooked is the moment the underlying class is created: a NEW variable
+# entering the repo. If it duplicates one that exists, --like shows the cluster right here, while
+# it still has zero readers.
+#
+# Deliberately narrow: only ADDED lines naming an A2MC_* identifier absent from HEAD. A commit
+# that merely uses existing variables is silent — a hook that speaks on every config edit gets
+# scrolled past, which is how it stops being read.
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -vE '^tests/' | grep -qE '\.(sh|py)$'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        # tests/ is EXCLUDED: fixtures invent A2MC_* names on purpose. On adapter-kit this check
+        # fired seven times on its own test file at its first real commit — a check that cries
+        # wolf on its own suite gets scrolled past.
+        NEWVARS="$(git diff --cached -U0 -- '*.sh' '*.py' ':(exclude)tests/*' 2>/dev/null \
+                   | grep -E '^\+' | grep -oE '\bA2MC_[A-Z0-9_]+\b' | sort -u || true)"
+        for v in $NEWVARS; do
+            # Scope the "does it already exist" probe to CODE. Searching all of HEAD means merely
+            # NAMING a variable in a dev log marks it pre-existing forever after — this repo's
+            # own audit log names A2MC_SOBOL_N_SAMPLES, which would blind the check to it. Docs
+            # describe variables; they do not define them.
+            git grep -q "$v" HEAD -- '*.sh' '*.py' 2>/dev/null && continue
+            # The useful --like key is the TAIL of the name, not the whole thing: a whole-name
+            # query matches only itself and can never surface a sibling.
+            STEM="$(echo "${v#A2MC_}" | awk -F_ '{ if (NF>=2) print $(NF-1)"_"$NF; else print $NF }')"
+            # Capture rather than redirect: a bare `2>/dev/null >&2` sends stdout to /dev/null
+            # too, so a broken check is indistinguishable from a clean one.
+            set +e
+            CG_OUT="$("$PY" "$ROOT/tools/config_graph.py" --like "$STEM" 2>&1)"
+            CG_RC=$?
+            set -e
+            echo "" >&2
+            echo "pre-commit: NEW config variable $v" >&2
+            # A cluster of ONE is the variable finding itself: it is already staged, so
+            # `git ls-files` sees it. That makes adapter-kit's "no variable name contains"
+            # branch unreachable for a newly-ADDED name, and without this the hook prints
+            # "if one of these is the SAME quantity" about a list containing only itself.
+            CG_N="$(echo "$CG_OUT" | sed -n 's/^=== \([0-9]\+\) variable(s).*/\1/p')"
+            if [[ "$CG_OUT" == *"no variable name contains"* || "$CG_N" == "1" ]]; then
+                # A legitimate empty result. config_graph exits 1 for the no-match case AND for
+                # a crash, so distinguish on the MESSAGE, not the status — conflating them
+                # reports "could not consult" for a clean answer.
+                echo "  no existing variable shares its name-tail — nothing to merge." >&2
+            elif [[ $CG_RC -ne 0 || -z "$CG_OUT" ]]; then
+                echo "  (could not consult the config graph — rc=$CG_RC)" >&2
+                [[ -n "$CG_OUT" ]] && echo "$CG_OUT" | sed 's/^/  /' >&2
+            else
+                echo "$CG_OUT" | sed 's/^/  /' >&2
+                echo "  ^ if one of these is the SAME quantity under another name, merge them NOW." >&2
+                echo "    It is cheap to fix before the second name has readers." >&2
+            fi
+            echo "" >&2
+        done
+    fi
+fi
+
+# (9) tools/check_offline_log_evidence.py on a staged OFFLINE PHASE log — the presentation gate
+# for the two `calibration-log` rules (embed your figures; state before log).
+# (Adopted from adapter-kit v2.273.)
+#
+# TWO SEVERITIES, and only one blocks:
+#   ERROR  a cited `phase_results/<stem>/` does not exist — a dead artifact pointer. BLOCKS.
+#          It reads as a citation, so a reader chases it instead of disbelieving it. The usual
+#          cause is ordering: PhaseLogger bakes the reasoning chain in at WRITE time, so a stem
+#          renamed after the log was written stays frozen in it. State first, log second.
+#   WARN   the paired folder holds a figure the log does not EMBED. Prints, never blocks — the
+#          log/folder split is a judgement about presentation, and gating a commit on it is how
+#          gates get bypassed wholesale. Grandfathered before EMBED_RULE_EFFECTIVE.
+#
+# STAGED-ONLY, for the same reason as check (7): a whole-corpus gate would block unrelated work,
+# including another session's, on someone else's log. Uses `|| _rc=$?` so a warn-only exit does
+# not trip this script's own `set -e`.
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '^use_cases/.+/memory/logs/[0-9]{8}[a-z]+_phase[0-9]+_.+\.md$'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        for f in $(git diff --cached --name-only --diff-filter=ACMR \
+                     | grep -E '^use_cases/.+/memory/logs/[0-9]{8}[a-z]+_phase[0-9]+_.+\.md$'); do
+            _ole_rc=0
+            _ole_out="$("$PY" "$ROOT/tools/check_offline_log_evidence.py" "$ROOT/$f" 2>&1)" || _ole_rc=$?
+            if [[ $_ole_rc -ne 0 ]]; then
+                echo "" >&2
+                echo "$_ole_out" | sed 's/^/  /' >&2
+                echo "pre-commit: offline phase log has a DEAD artifact pointer — see above." >&2
+                echo "  If a stem was renamed, REGENERATE the log after repointing the state:" >&2
+                echo "  PhaseLogger bakes the reasoning chain in at write time, so editing the" >&2
+                echo "  state afterwards does not reach the file. Bypass with --no-verify only" >&2
+                echo "  if you know why." >&2
+                exit 1
+            fi
+            # surface the WARN lines without blocking
+            echo "$_ole_out" | grep -E '^\s*\[warn\]' | sed 's/^/  /' >&2 || true
+        done
+    fi
+fi
+
+# (10) tools/check_workflow_state_offline.py — the offline state is valid, and its FINDINGS are
+# current. main HAD this checker and never gated on it: a corrupt state could be committed, and a
+# state used only as a program counter (position updated, findings never recorded) drew no
+# attention at all. Measured here 2026-08-22 on the FIRST run of the ported staleness check:
+# 26 commits touching the Kougarok case and ZERO decisions recorded. PhaseLogger rebuilds its
+# "Reasoning chain" from `decisions`, so the next phase stands on nothing.
+# (Adopted from adapter-kit check (9).)
+#
+# THE TRIGGER IS CASE WORK, NOT THE STATE FILE. Firing when a state file is staged would fire
+# exactly when someone is already updating it — i.e. when they are NOT making this mistake. Firing
+# when anything under use_cases/<site>/ is staged catches the real case: committing a day of case
+# work with nothing recorded.
+#
+# ERRORS block (a corrupt state misdrives the whole loop). WARNINGS print but do not block: the
+# stale-findings signal is a habit nudge, and a gate on a bookkeeping artifact is how gates get
+# bypassed wholesale.
+if git diff --cached --name-only --diff-filter=ACMRD | grep -qE '^use_cases/[^/]+/'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        # A bare command substitution that exits non-zero would abort this script under `set -e`,
+        # blocking the commit with no diagnostic — indistinguishable from a hook crash. Disable
+        # errexit across the capture only.
+        set +e
+        STATE_OUT="$("$PY" "$ROOT/tools/check_workflow_state_offline.py" 2>&1)"
+        STATE_RC=$?
+        set -e
+        if [[ $STATE_RC -ne 0 ]]; then
+            echo "$STATE_OUT" >&2
+            echo "" >&2
+            echo "pre-commit: offline workflow state is INVALID — fix before committing case work." >&2
+            exit 1
+        fi
+        # These two strings are a CONTRACT with check_workflow_state_offline.py's warning text.
+        # adapter-kit shipped this grep against a checker that emitted neither, so the branch could
+        # never fire and the gate reported clean (its own v2.277 lesson). Verified against main's
+        # checker before wiring: both strings are produced by _check_decisions_current().
+        if grep -q "commit(s) touching this case\|no decisions recorded" <<< "$STATE_OUT"; then
+            echo "" >&2
+            grep -E "commit\(s\) touching this case|no decisions recorded" <<< "$STATE_OUT" >&2
+            echo "  ^ not blocking. But findings belong in the state as they are ESTABLISHED," >&2
+            echo "    not only at Phase 6: PhaseLogger rebuilds the reasoning chain from them," >&2
+            echo "    and next_action is the program counter, not the record." >&2
+            echo "    Record with: st.add_decision(finding, rationale=why)" >&2
+            echo "" >&2
+        fi
+    fi
+fi
+
+# (11) tools/check_rag_index_committed.py — the COMMITTED RAG index must match the COMMITTED
+# expected_counts. Runs only when something under rag/ is staged, which is the moment the mismatch
+# is CREATED: a rebuild arms expected_counts in rag/milestones.json (plain JSON, commits fine)
+# while chroma.sqlite3 carries --skip-worktree and is silently NOT staged.
+#
+# main is exposed to exactly this: its CLAUDE.md documents the per-clone
+# `git update-index --skip-worktree` on both profiles' chroma.sqlite3, and warns that a rebuild
+# needs `--no-skip-worktree` first "otherwise git silently ignores the rebuild". That warning was
+# prose with no mechanism behind it until now. Baseline verified clean at adoption: api-43-1
+# 6328/3178/2772 and api-31-0 2581/1295/2197 both match.
+#
+# --staged, not HEAD: at pre-commit time HEAD lacks the change being made, so checking HEAD would
+# validate the PREVIOUS commit and pass exactly when it must not.
+# (Adopted from adapter-kit check (8).)
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^rag/'; then
+    PY="$(pick_py)"
+    _rag_rc=0
+    if [[ -n "$PY" ]]; then
+        # `|| _rc=$?` so a warn-level exit does not trip this script's own `set -e`.
+        "$PY" "$ROOT/tools/check_rag_index_committed.py" --staged || _rag_rc=$?
+    fi
+    if [[ $_rag_rc -ge 2 ]]; then
+        echo "" >&2
+        echo "pre-commit: a committed RAG index does not match its expected_counts — see above." >&2
+        echo "  A rebuild almost certainly did not reach the repo. See the \`rebuild-rag\` skill," >&2
+        echo "  and CLAUDE.md's chroma.sqlite3 note: it carries --skip-worktree, so \`git add\`" >&2
+        echo "  stages nothing until you run \`git update-index --no-skip-worktree\` first." >&2
+        exit 1
+    fi
+fi
+
+# (12) tools/check_skill_claims.py — a staged log's "Skills and memory invoked" list must match
+# what was ACTUALLY invoked, verified against the coding-agent transcript.
+#
+# WHY. That section exists to expose work done without consulting the source of truth. An untrue
+# entry converts a MISSING check into a PASSED one, which is strictly worse than leaving it blank.
+# It is the one claim in a log that can be mechanically verified, because the transcript records
+# each Skill invocation.
+#
+# BLOCKS on a claimed-but-never-invoked skill; the fix is to invoke the skill and redo the step it
+# governs, or to drop the name. (Adopted from adapter-kit check (12).)
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '^(use_cases/.+/memory/logs/|memory/(dev_logs|model_logs|ana_logs))'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        SKC_OUT="$("$PY" "$ROOT/tools/check_skill_claims.py" --staged 2>&1)"
+        SKC_RC=$?
+        set -e
+        if [[ $SKC_RC -ge 2 ]]; then
+            echo "" >&2
+            echo "$SKC_OUT" | sed 's/^/  /' >&2
+            echo "pre-commit: a staged log claims a skill it never invoked — see above." >&2
+            exit 1
+        elif [[ $SKC_RC -eq 1 ]]; then
+            # "cannot verify" is NOT a pass, but it must not block either: a different harness
+            # legitimately has no transcript. Say so out loud rather than printing nothing.
+            echo "$SKC_OUT" | sed 's/^/  /' >&2
+        fi
+    fi
+fi
+
+# (13) tools/check_deferred_work_queued.py — a staged log that DEFERS work must route it into
+# TODO.md, the queue that is actually read.
+#
+# WHY IT IS STRUCTURAL. A dev log is APPEND-ONLY and nobody re-reads it; TODO.md is the checklist
+# the root CLAUDE.md says to read at session start and update at every step transition. Nothing
+# routed between them, so "documented" silently substituted for "queued".
+#
+# WARN, never block: whether a deferred item is worth queueing is a judgement, and gating a commit
+# on a judgement is how gates get bypassed wholesale. What it removes is the ability to defer
+# SILENTLY. (Adopted from adapter-kit check (13).)
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '^memory/(dev_logs|model_logs)'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        DFR_OUT="$("$PY" "$ROOT/tools/check_deferred_work_queued.py" --staged 2>&1)"
+        DFR_RC=$?
+        set -e
+        [[ $DFR_RC -ne 0 ]] && echo "$DFR_OUT" | sed 's/^/  /' >&2
+    fi
+fi
+
+# (14) tools/check_log_placeholders.py — a staged log must not render a PLACEHOLDER where a
+# finding belongs.
+#
+# An empty section is honest and visible. A section rendering "#N/A" converts a MISSING finding
+# into an ANSWERED one — the same defect shape as check (12)'s false skill claim, one level up.
+#
+# BLOCKS, unlike (13): this is not a judgement call. A machine-emitted stub means data the caller
+# passed did not reach the log, and committing it makes the loss permanent — the source dict is
+# gone and the log is the only record.
+#
+# NOTE main sets PLACEHOLDER_RULE_EFFECTIVE EARLIER than adapter-kit did (20260101 vs 20260822),
+# because main measured 0 placeholders across all 18 offline logs and so has no backlog to
+# grandfather. The rule therefore covers main's whole corpus. (Adopted from adapter-kit check (14).)
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE '(/memory/logs/|^memory/(dev_logs|model_logs|ana_logs))'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        PLH_OUT="$("$PY" "$ROOT/tools/check_log_placeholders.py" --staged 2>&1)"
+        PLH_RC=$?
+        set -e
+        if [[ $PLH_RC -ne 0 ]]; then
+            echo "$PLH_OUT" | sed 's/^/  /' >&2
+            echo "pre-commit: a staged log renders a placeholder where a finding belongs." >&2
+            exit 1
+        fi
+    fi
+fi
+
+# (15) tools/validate_knowledge_affects.py — a staged gained_knowledge/discoveries.json names only
+# variables the MODEL actually registers in its `affects` lists. A name that does not resolve cannot
+# match a failing target, so MemoryManager passes the entry over in silence: nothing fails, nothing
+# warns, the curated knowledge is simply never surfaced. STAGED-ONLY, and it reads the staged BLOB
+# rather than the working tree — validating the file on disk would let a broken staged version
+# through in exactly the case a gate is for.
+# Exit codes are distinguished deliberately: 1 = a real finding (block); 2 = SETUP (A2MC_MODEL_PATH
+# unset, model checkout unreadable) which SKIPS with a note, because a commit must never fail
+# because the author has not sourced the site config.
+# Wired 2026-08-25 only AFTER the eight pre-existing bad entries were repaired
+# (memory/dev_logs/20260825c_Repair_Generic_KB_Affects_And_Add_Parameters_Involved.md) — a gate that
+# is red on arrival gets disabled, so it earns its place by starting green.
+if git diff --cached --name-only --diff-filter=ACMR \
+     | grep -qE 'gained_knowledge/discoveries\.json$'; then
+    PY="$(pick_py)"
+    if [[ -n "$PY" ]]; then
+        set +e
+        VKA_OUT="$("$PY" "$ROOT/tools/validate_knowledge_affects.py" --staged 2>&1)"
+        VKA_RC=$?
+        set -e
+        if [[ $VKA_RC -eq 1 ]]; then
+            echo "$VKA_OUT" | sed 's/^/  /' >&2
+            echo "pre-commit: a staged discovery names a variable the model does not register." >&2
+            echo "  Such an entry can never match a target — it is invisible to retrieval, silently." >&2
+            echo "  Parameter names belong in parameters_involved, not affects. See the KB's own" >&2
+            echo "  _affects_convention. Bypass with --no-verify only if you know why." >&2
+            exit 1
+        elif [[ $VKA_RC -eq 2 ]]; then
+            echo "pre-commit: skipping the knowledge-affects gate (A2MC_MODEL_PATH unset or model" >&2
+            echo "  checkout unreadable) — not blocking the commit on a setup condition." >&2
+        fi
+    fi
+fi
+
 exit 0

@@ -30,9 +30,68 @@ first; come here to diagnose the round.
 > honor failed approaches, log it), then go past it — follow the surprising thread with
 > `scientific-analysis` rather than forcing the finding back into the phase box.
 
-**Inputs (handoff from Phase 2 `screen-ensemble`):** the ranked ensemble — `best_case`,
-`lowest_cost_case`, per-target errors, which targets are met/missed, Morris μ* rankings from
-Phase 1. **Deliverable:** a diagnosis (logged as a phase log) naming the ranked root causes and
+## What this phase INHERITS, and what it must do with it
+
+Up to **three** upstream sources hand Phase 3 its raw material, and a diagnosis that uses only part
+of it is re-deriving what the round already knows.
+
+| from | what arrives | what it lets you ask |
+|---|---|---|
+| **Phase 1** (exploration) | the **top parameters** by whichever sensitivity index the round computed (Morris μ\* here; read the artifact, do not assume the metric) | which knobs actually move each target, so a proposed cause is checked against the sensitivity rather than against intuition |
+| **Phase 2** (screening) | the **top-N CASES**, per-target errors, which targets each case meets and misses, the whole-ensemble figure | what the leaders have in COMMON, how they DIFFER from each other, and where they differ from the rest |
+| **Phase 6** (only on a 6→3 rethink) | the **NEW PATHWAYS** the rethink protocol emitted, each with its lever CLASS and its falsifier, plus that cycle's synthesis and the base / binding-target re-examination behind them | which pathway to test FIRST, and which lever class the round has already exhausted — so the cycle neither re-derives the diagnosis that produced the pathway nor re-enters a class earlier cycles refuted |
+
+**On a rethink, the third row is where you start.** Cycles 1 and 2 of a round have no third row;
+every later cycle does, and ignoring it is how a round runs several cycles on one base attacking one
+target. A rethink cycle is **neither a fresh start nor a repeat**: your first job is to test the
+pathway, not to re-derive the diagnosis that produced it. `experiment_count` was incremented on the
+6→3 route and this cycle's `skip_testing_count` starts fresh — confirm both in
+`workflow_state_offline_r{RR}.json`. See `phase6-refinement`'s rethink protocol for what the
+pathways must carry.
+
+### DIAGNOSE THE LEADER SET, NOT THE BEST CASE
+
+**The single best case is the least informative member of the set.** It is best by a composite that
+averages the targets, so by construction it is the case whose failure is most evenly spread. The
+signal is in how the leaders fail *differently*: one holds production and misses standing carbon,
+another the reverse. That contrast identifies the constraint, and it is invisible in any one case.
+
+Concretely:
+
+- **Pull the top-N as a SET** (`--top-n 100`, per `phase2-screening` Step 1), not `best_case` alone.
+- **Group the leaders by MISS PATTERN.** Each distinct pattern is a different failure mode and
+  deserves its own line of the diagnosis.
+- **Name at least one case per miss pattern in the log**, with its values. A diagnosis quoting one
+  case cannot support a claim about the round.
+- **The best case is the BASE for Phase 4, not the SUBJECT of Phase 3.** Different jobs: the base is
+  where an experiment starts; the subject is what the diagnosis explains.
+
+### The four questions, answered explicitly in the log
+
+1. **Do the top cases share characteristics?** Compare the leaders' parameter vectors against the
+   rest of the alive set, ranked by **SEPARATION** (rank-biserial or equivalent), never by
+   correlation with a single target — a single-target ranking marks a budget-inflating runaway as a
+   strong lever.
+2. **Does a case predict one target well and another badly, and why?** The highest-value question in
+   the phase, invisible in a composite score and answerable only across the set.
+3. **Do the μ\* rankings agree with what separates the leaders?** Disagreement is a finding: a highly
+   sensitive parameter that does NOT distinguish the leaders is being cancelled by something; a
+   parameter that separates them without ranking as sensitive means the index was computed for a
+   different target than the one now binding.
+4. **Where does the current best case sit relative to the leaders?** Inside their range on the
+   separating parameters means the gap is not a parameter-value problem, and no lever inside that
+   range will close it.
+
+> **Status on this branch, stated so the section is not misread as a rebuke.** Main's four Phase-3
+> logs cite the Phase-1 sensitivity rankings **zero times** and discuss a leader set essentially
+> never — but that is *explained*, not a lapse: Round 1's 5100-case Morris ensemble is still
+> `status: planned`, so there has been no leader set to diagnose. Phase-3 work here has run on a
+> single base case (`En2939`) by necessity. **This section becomes binding the moment that ensemble
+> lands**, which is exactly when the habit is easiest to skip.
+
+**Inputs (handoff from Phase 2 `screen-ensemble`):** the ranked ensemble — the **top-N set**,
+`best_case`, `lowest_cost_case`, per-target errors, which targets are met/missed, Morris μ* rankings
+from Phase 1. **Deliverable:** a diagnosis (logged as a phase log) naming the ranked root causes and
 the parameters/base-cases Phase 4 should act on.
 
 ## Step 1 — gather diagnostic data (reads existing outputs — no new simulations)
@@ -215,6 +274,10 @@ skip-testing inner loop: hand the hypothesis to `phase4-hypothesis`, which decid
 - **Next:** `phase4-hypothesis` (turn the diagnosis into testable experiments).
 
 ## Changelog
+
+- 2026-08-23 — The INHERITS table gains a **third row: the Phase-6 rethink's PATHWAYS**, and on a rethink that row is where the cycle STARTS. Adopted from `adapter-kit` (`2849b4d2`). A rethink cycle is neither a fresh start nor a repeat: the first job is to test the pathway, not re-derive the diagnosis that produced it.
+
+- 2026-08-23 — Added **What this phase INHERITS**: the Phase-1/Phase-2 handoff table, *diagnose the leader SET not the best case*, and the four questions that inheritance makes askable. Adopted from `adapter-kit` (`da586da7`, as corrected by `d6519703`), re-authored. Taken at the corrected state deliberately: the first commit claimed Phase 3 used the sensitivity rankings zero times, and the second withdrew it — the grep had used Morris vocabulary against a Sobol round, so it matched nothing and reported a confident zero. Main's own measurement was re-run with a validated matcher for that reason. Marked as becoming binding when Round 1's held ensemble lands, since main has had no leader set to diagnose.
 
 - 2026-08-03: Diagnosis-writing step now requires **verifying every mechanism claim in the model SOURCE**
   (`file:line`), not just RAG/`long_name`, with three FATES cases where the description misleads

@@ -59,6 +59,46 @@ loop, capped at `--max-skip-testing` (default 10). On each skip-test, **incremen
 → Phase 5). `skip_testing_count` **counts within the current experiment cycle only — it resets to 0 when
 Phase 5 begins.**
 
+### THE EXIT IS PER-HYPOTHESIS, NOT PER-CYCLE — and that is how this loop dies
+
+`test_with_existing=false` is a property of **one hypothesis**, not a verdict on the cycle. Taking it
+as the cycle's exit means: frame one hypothesis, skip-test it, discover its *experiment* needs new
+simulations, and leave — spending the **expensive** loop while the **free** one still had questions.
+
+**So before routing to Phase 5, ask explicitly and answer in the log:**
+
+> *Is there another question about this cycle's mechanism that the EXISTING ensemble can answer?*
+
+If yes, that is the next iteration — increment `skip_testing_count` and run it. Only when the honest
+answer is no does the cycle route to Phase 5. The asymmetry is the argument: a skip-test is minutes
+of arithmetic over data already on disk; a Phase-5 cycle is hours of compute plus scoring and
+analysis.
+
+**And keep asking while Phase 5 RUNS.** An in-flight experiment is not a reason to idle — the
+existing ensemble is still there, and a skip-test run during those hours costs nothing and can
+redirect the next cycle before this one even lands.
+
+> **Where this branch actually stands** (measured 2026-08-23, so the rule is calibrated rather than
+> assumed): main's Phase-3/4 logs span `iter01`–`iter04` against `A2MC_MAX_SKIP_TESTING`=10. Main
+> **does** enter the free loop — unlike the branch this rule came from, where 46 logs sat at `iter01`
+> and 4 at `iter02`. The rule is therefore a guard here, not a correction: four iterations is real
+> use, and still four of ten.
+
+### A conditioned claim must be checked for the cost it conditions AWAY
+
+A skip-test that computes its statistic over a **filtered** population — cases where one target is
+already in band, cases that are "alive", the top-N — is making a claim about that population, and is
+**silent about whether the lever takes cases out of it**.
+
+**Conditioning on a variable the intervention itself moves hides exactly the cost that matters.** So
+whenever a screen is conditioned, pair it with the membership check:
+
+> *Does this lever preserve membership in the set I conditioned on, over the range I intend to move
+> it?*
+
+Same error class as reading a group contrast on a *downstream* variable as a mechanism. Both produce
+a result that is true as computed and wrong as used.
+
 > **Footgun — untestable in range.** If the hypothesis needs parameter values *outside* the Morris
 > sampled range, existing data can't test it — go straight to Phase 5. Don't force a skip-test that
 > the ensemble can't actually answer.
@@ -167,6 +207,9 @@ Phase-5 test confirms it — do not promote it to the curated KB from here (that
 - **Next:** `phase5-testing` (new simulations) or `phase3-diagnosis` (skip-test loop).
 
 ## Changelog
+
+- 2026-08-23 — Added **a conditioned claim must be checked for the cost it conditions AWAY**. Adopted from `adapter-kit` (`94b2a784`), re-authored. A skip-test computed over a filtered population (already-in-band, alive, top-N) is silent about whether the lever takes cases OUT of that population; conditioning on a variable the intervention moves hides the cost that matters. Generic reasoning trap, not model-specific.
+- 2026-08-23 — Added **THE EXIT IS PER-HYPOTHESIS, NOT PER-CYCLE**. Adopted from `adapter-kit` (`659d0498`), re-authored. `test_with_existing=false` is a property of one hypothesis, not the cycle's exit; taking it as the exit spends the expensive loop while the free one still had questions. Calibrated to this branch rather than inherited: main's Phase-3/4 logs span `iter01`–`iter04` against a cap of 10, so main DOES enter the inner loop — unlike the source branch (46 logs at `iter01`, 4 at `iter02`). Stated as a guard here, not a correction.
 
 - 2026-08-03: New **Step 2b — every hypothesis carries its own test plan and falsification bar**.
   Online, `design_experiments()` mechanically gives each hypothesis a `success_threshold`; offline

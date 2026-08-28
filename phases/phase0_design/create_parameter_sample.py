@@ -492,8 +492,16 @@ def main() -> int:
                              "LHS has no such requirement.")
     parser.add_argument('--seed', type=int, default=123,
                         help="Random seed (default: 123)")
+    # Defaults from A2MC_SOBOL_SECOND_ORDER so the sampler, a2mc_config.sh's
+    # calculate_ensemble_size() and tools/config.py's TOTAL_ENSEMBLE cannot disagree about the
+    # sample count -- before 2026-08-22 the other two hardcoded N(2P+2) and a first-order design
+    # was sized ~2x too large silently. Passing the flag still forces first-order regardless of
+    # the env var; store_true means the env var is the only way to force second-order ON.
     parser.add_argument('--no-second-order', action='store_true',
-                        help="[sobol] Skip second-order indices (smaller sample: N*(P+2) instead of N*(2P+2))")
+                        default=os.environ.get('A2MC_SOBOL_SECOND_ORDER', '1')
+                        in ('0', 'false', 'False'),
+                        help="[sobol] Skip second-order indices (smaller sample: N*(P+2) instead "
+                             "of N*(2P+2)). Defaults from A2MC_SOBOL_SECOND_ORDER.")
     parser.add_argument('--screened-params', type=Path, default=None,
                         help="[sobol/lhs] File listing parameter names (one per line) to keep active. "
                              "Non-listed parameters take their Default_Value (or midpoint if no default).")

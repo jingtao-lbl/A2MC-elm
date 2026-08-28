@@ -17,7 +17,7 @@ Detailed companion to the top-level [`README.md`](../../README.md). The README i
 11. [Integration with existing tools](#11-integration-with-existing-tools)
 12. [Error handling](#12-error-handling)
 13. [Cost management](#13-cost-management)
-14. [Session reports and presentations](#14-session-reports-and-presentations)
+14. [Calibration logs, cycle reports, and round reports](#14-calibration-logs-cycle-reports-and-round-reports)
 15. [Directory structure](#15-directory-structure)
 
 ---
@@ -825,9 +825,23 @@ A2MC wraps existing well-tested tools rather than reimplementing:
 
 ## 12. Error handling
 
+What the workflow handles on its own:
+
 - **Job failures:** automatic retry with exponential backoff, max 3 retries per job, failed jobs logged for manual inspection.
 - **API errors:** rate limiting with automatic backoff, fallback to rule-based reasoning if the API is unavailable, repeated queries cached to reduce cost.
 - **Missing data:** verify expected files before proceeding, clear error messages with suggested fixes, option to skip incomplete cases.
+
+### 12.1 Past the automatic paths — the recovery skills
+
+Beyond those, recovery is the offline agent's job (Section 3), and each failure shape has a skill that carries the traps rather than leaving you to rediscover them. What makes each worth invoking is the judgment it encodes, not the commands it runs:
+
+- **`arm-hpc-monitoring` — arm this when you launch, not when you suspect trouble.** It detects the live long-running processes (submitter, extractor, watcher) and arms a watch on each log with an event *and* error filter. The rule it exists to enforce is that **silence is not success**: a log that stops growing is byte-identical whether the job is running quietly or died, so a watch needs a progress signal, error patterns, *and* an independent liveness check on the watcher itself. That last one is the one most often skipped, and it is why the skill insists on three layers — the nohup'd watcher, a watch on its log, and a third watch that queries `squeue` directly and so depends on neither. A watcher that has died looks exactly like a watcher with nothing to report.
+- **`restart-failed-jobs` — the restart skill for this CIME / ELM-family line.** Its central judgment is that **infrastructure failures are restart-eligible and model failures are not**: a node failure or a down partition can simply be resubmitted, while a mass-balance abort or a runaway-recruitment crash will reproduce exactly until a parameter or the model changes. It also carries this project's resume mechanics — `finidat` + `RUN_STARTDATE` + `STOP_N`, never `CONTINUE_RUN` — and repairs the downstream phase chain a restart leaves dangling.
+- **`diagnose-forensics` — for a result that looks wrong rather than a job that failed.** Establishes first whether the anomaly is real or an artifact of extraction, units, configuration, or the plot, and only then root-causes it. Worth reaching for before you change a parameter in response to something that may not be in the model at all.
+
+Run a crashed case's recovery *before* any sensitivity analysis: a crashed case is a **hole in the sampling design**, which is a different problem from a case that finished with a degenerate answer, and Morris or Sobol indices computed over holes are not trustworthy.
+
+`tools/diagnose_ensemble_status.py` underlies the completion census the restart skill reads, and is worth running directly whenever you just want to know how many cases finished.
 
 ---
 
@@ -839,38 +853,61 @@ A2MC wraps existing well-tested tools rather than reimplementing:
 
 ---
 
-## 14. Session reports and presentations
+## 14. Calibration logs, cycle reports, and round reports
 
-A2MC includes offline tools for generating session reports, presentation slides, and narrated videos from calibration session logs. These are not part of the automated workflow and can run at any time (even while Phase 5 simulations are still running).
+Calibration work is recorded at three nested timescales, each with an owning skill and its own audience. Getting these right is what lets a round be picked up months later, by you or by someone else, without re-deriving why it went the way it did.
 
-The orchestrator automatically generates a Markdown session report at the end of Phase 6 via `tools/session_report.py`, saved to `use_cases/{site}/memory/logs/{session_id}/session_report_{session_id}.md`.
+| record | one per | lives in | written by | read by |
+|---|---|---|---|---|
+| **phase log** + paired artifact folder | phase | `use_cases/{Model}_{Case}/memory/logs/` + `memory/phase_results/` | `calibration-log` | you, the next session, the agent |
+| **cycle report** | experiment cycle (Phase 3→4→5→6) | `use_cases/{Model}_{Case}/reports/<stem>/` | `write-report` | the project team |
+| **round report** | calibration round (Phase 0→7) | `use_cases/{Model}_{Case}/reports/<stem>_R{N}_ROUND_SUMMARY/` | `write-report`, after two required skills | the project team, the next round's design |
 
-`tools/reports/generate_presentation.py` provides a complete pipeline from session logs to narrated video:
+Logs are the internal working record and may use shorthand. Reports are written for a reader with **zero project context** and must define their own terms.
 
-```
-Session logs + report + figures
-  -> AI-generated manuscript-style technical report (.md)
-  -> AI-generated Marp slides (.md)
-  -> AI-generated narration script (.json)
-  -> PDF + PPTX (marp-cli)
-  -> Narrated MP4 video (TTS + ffmpeg)
-```
+### 14.1 The phase log and its paired artifact folder
 
-Stages 1-4 (collect, report, slides, narration) run on Perlmutter (AI API only). Stages 5-6 (PDF, video) require marp-cli, ffmpeg, and poppler, available locally only. Use `--stop-after narration` on Perlmutter, then `--start-from pdf` on your local machine.
+The interactive agent writes a **flat, date-led stem** — `memory/logs/{stem}.md` where `stem = YYYYMMDDx_phase{N}_{name}_r{RR}[_c{EE}[_iter{II}]]_{descriptor}` — with `RR` the calibration round, `EE` the experiment cycle and `II` the skip-testing iteration. Set `A2MC_AGENT_MODE=offline` to select it (`tools/phase_logger.py:171`). The autonomous orchestrator uses a different layout for the same content, nesting under `memory/logs/{session_id}/phase{N}_{name}/`; both are folded together for synthesis, so the two agents' records read as one history.
 
-```bash
-# On Perlmutter: generate report + slides + narration
-python tools/reports/generate_presentation.py --session-id 20260330_135435 \
-    --author "Dr. Jing Tao (Lawrence Berkeley National Laboratory)" \
-    --stop-after narration
+Every log has a paired artifact folder at `memory/phase_results/{stem}/` (`PhaseLogger.topic_artifact_dir()`, `tools/phase_logger.py:402`), and **the two have different jobs**:
 
-# On local machine: build PDF + video
-source ~/a2mc_env/bin/activate  # for openai TTS
-python tools/reports/generate_presentation.py --session-id 20260330_135435 \
-    --start-from pdf
-```
+- **The log carries the ANALYSIS** — the reasoning, the numbers with their interpretation, the conclusion, and the next action. Not a caption dump: the argument a cold reader has to be able to reconstruct.
+- **The artifact folder is SELF-DOCUMENTING** — for each figure it ships four things: the figure, a caption or `NOTES.md` (what it shows, how to read it, and which script produced it from what data), the generating `.py` script saved into the folder, and the underlying data file. A future reader must be able to regenerate and interpret the figure without you.
 
-Local prerequisites: marp-cli (`npm install -g @marp-team/marp-cli`), poppler (`brew install poppler`), ffmpeg (`brew install ffmpeg`), openai Python package (in `~/a2mc_env`). Detailed workflow: `tools/reports/WORKFLOW.md`.
+Two mechanics that are easy to get wrong:
+
+- **The log must EMBED its figures, not merely name their folder.** A path in backticks renders as text and sends the reader hunting. Use `![](../phase_results/{stem}/figure.png)` with empty alt text and a bold `**Figure N.**` caption beneath that states the finding rather than the axes; the relative path resolves in-repo. `python3 tools/check_offline_log_evidence.py` warns when the folder holds a figure the log does not embed.
+- **The log and the folder pair only if both derive from the same string.** Pass the same `TITLE` to `topic_artifact_dir()` and to `log_<phase>()`; two different descriptors produce two stems and a log that does not match its own artifacts.
+
+Conformance is checked by `python3 tools/check_calibration_log_conformance.py`, which is a different contract from the framework-development log checker (`tools/check_log_conformance.py`) and refuses the other's stream rather than mis-checking it.
+
+### 14.2 The cycle report
+
+Written when an experiment cycle closes, into `reports/<stem>/`, alongside the figures it cites. Four things it must carry, each of which was added because a real report omitted it:
+
+1. **The whole inner loop, iteration by iteration** — Phase 3↔4 skip-testing runs several times within one cycle, each iteration asking something and answering it on existing data at no compute cost. Those answers are what justify the experiment the cycle finally ran, so a report naming only the surviving hypothesis leaves a reader unable to tell a well-aimed experiment from a lucky one.
+2. **Every hypothesis, with its falsification bar** — the bar as Phase 4 recorded it, the variants that tested it with their actual parameter values, and the job identifiers. A verdict whose bar is not restated has to be taken on trust.
+3. **What the results say per variant and per SCORED target**, against the measurements — not one composite score, and not one target out of several. An experiment that hits the target it aimed at while pushing two others out of band has failed, and a single-target figure cannot show that.
+4. **The verdict and where the loop goes next, with the reasoning that sends it there** — CONFIRMED / PARTIAL / REFUTED against the Phase-4 bar, the mechanism learned, and the routing (rethink 6→3, redesign 6→0, or converge). On a rethink, carry the lever-class verdict, any direction still untested, and the new pathways with their falsifiers: a reader who cannot see why the next cycle attacks what it attacks cannot distinguish a redirected campaign from a stalled one.
+
+### 14.3 The round report
+
+Written when the round closes, at the cycle limit or at convergence. It covers what Phases 0, 1, 2 and the first diagnosis established, then **synthesizes the cycle reports** into the round's arc: which levers were established and which retired, what each cycle's failure taught the next, and the residual gap. It cites the cycle reports rather than re-narrating them from raw logs, and it ends with the **next round's work plan** — parameters to add or drop, bounds to revisit, whether the base case should be updated.
+
+**Two skills run before it is written, and they are steps rather than suggestions:**
+
+1. **`summarize-calibration-round`** — the standardized single-round bundle: the whole-ensemble figure per scored target, an evaluation report (best case, how many targets met, per-target simulated versus observed against each target's own band), and the round's sensitivity screen. Its output is the round report's figure and evaluation input.
+2. **`compare-calibration-rounds`** — the cross-round **parameter ledger**: what every round did with each parameter, whether calibrated, refuted with a named mechanism, baked into the base, never present, or still carrying provisional bounds. **This is the step that gets skipped and must not be.** A round report written from this round's artifacts alone will re-propose a lever an earlier round already refuted, and every checker passes because nothing in the round-close path opens a prior round.
+
+**A sensitivity figure and its discussion are required whatever the sampling method used.** A round whose designed estimator failed to converge does not get to omit the section; it falls back to the controlled comparisons the round actually produced.
+
+A third stream shares the same stem convention: `use_cases/{Model}_{Case}/memory/model_evolution/{stem}.md` records which model binary a round ran and what changed since the previous round, plus any change made to the model source for this case (Section 8 of `CLAUDE.md`; the repo-root `memory/model_logs/` is a frozen archive of entries predating the move). It is written at the round close, so the round report carries only a compact pointer instead of putting engineering provenance in the middle of a science narrative.
+
+### 14.4 Anything that is not a round close
+
+Use **`write-report`** for an integrated report on any other topic (an investigation, a mechanism study, a cross-cutting result), **`scientific-analysis`** or **`diagnose-forensics`** for an anomaly, **`plotting`** for every figure in any of them, and **`markdown-to-pdf`** to send one outside the repo. Each case's `reports/README.md` carries this routing table for the folder you are standing in.
+
+For session reports, slide decks, and narrated video built from session logs, the offline presentation pipeline (`tools/session_report.py`, `tools/reports/generate_presentation.py`) is documented separately in `tools/reports/WORKFLOW.md`.
 
 ---
 

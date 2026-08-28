@@ -299,7 +299,8 @@ class A2MCConfig:
         Formulas:
         - morris: n_trajectories × (n_params + 1)
         - lhs: n_samples
-        - sobol: n_samples × (2 × n_params + 2)
+        - sobol: n_samples × (2 × n_params + 2)  [A2MC_SOBOL_SECOND_ORDER truthy, the default]
+                 n_samples × (n_params + 2)      [A2MC_SOBOL_SECOND_ORDER in {0,false,False}]
         """
         explicit = os.environ.get('A2MC_TOTAL_ENSEMBLE', '')
         if explicit:
@@ -311,7 +312,10 @@ class A2MCConfig:
         elif scheme == 'lhs':
             return self.N_SAMPLES
         elif scheme == 'sobol':
-            return self.N_SAMPLES * (2 * self.N_PARAMS + 2)
+            # Must agree with a2mc_config.sh's calculate_ensemble_size() and with
+            # create_parameter_sample.py; all three read A2MC_SOBOL_SECOND_ORDER.
+            return self.N_SAMPLES * ((2 * self.N_PARAMS + 2) if self.SOBOL_SECOND_ORDER
+                                     else (self.N_PARAMS + 2))
         else:
             return 0  # custom or unknown
 
@@ -319,6 +323,16 @@ class A2MCConfig:
     def SAMPLING_SCHEME(self) -> str:
         """Sampling scheme (morris, lhs, sobol, custom)"""
         return os.environ.get('A2MC_SAMPLING_SCHEME', 'morris')
+
+    @property
+    def SOBOL_SECOND_ORDER(self) -> bool:
+        """[sobol] Whether to compute second-order (S_ij) indices.
+
+        The ONE parse of A2MC_SOBOL_SECOND_ORDER on the Python side, so TOTAL_ENSEMBLE and
+        create_parameter_sample.py cannot disagree on what "0" means. Matches the shell's
+        `case` in a2mc_config.sh: only 0/false/False are false.
+        """
+        return os.environ.get('A2MC_SOBOL_SECOND_ORDER', '1') not in ('0', 'false', 'False')
 
     # ========================
     # PHASE CONFIGURATION

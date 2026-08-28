@@ -11,7 +11,7 @@
 #
 # Use this for a FRESH cold-start chain (ADSP[/RGSP/TRANS]) baseline — the case-num /
 # case-suffix pattern from tools/create_case.sh. For a V0 check that continues an EXISTING
-# diagnostic case's restart (e.g. a short CONTINUE_RUN segment), use
+# reference case's configuration exactly (or a different commit), use
 # build_v0_case_via_clone.sh instead — it inherits a reference case's full config via
 # create_clone rather than building a fresh case from scratch.
 #

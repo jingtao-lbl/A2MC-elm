@@ -85,6 +85,12 @@ export A2MC_RAG_AUTO_REBUILD="false"
 # Output root for simulation results
 export A2MC_OUTPUT_ROOT="~"
 
+# Where archived model binaries live. Model-evolution step 4.5 archives the built executable here
+# with a PROVENANCE.txt, and tools/binary_archive_manifest.py records + verifies them, so a
+# completed round can say WHICH executable it ran. Kept out of the repo: hundreds of MB each, and
+# not regenerable (a recompile can perturb floating point, so a rebuild is a different artifact).
+export A2MC_BINARY_ARCHIVE_ROOT="${A2MC_BINARY_ARCHIVE_ROOT:-${A2MC_OUTPUT_ROOT}/E3SM_build_archive}"
+
 # Scripts directory (where case scripts are generated)
 export A2MC_SCRIPTS_DIR="~/CaseScripts/Kougarok_FATESapi43"
 
@@ -195,6 +201,14 @@ export A2MC_N_PARAMS=${A2MC_N_PARAMS:-100}
 export A2MC_N_TRAJECTORIES=${A2MC_N_TRAJECTORIES:-30}
 export A2MC_N_SAMPLES=${A2MC_N_SAMPLES:-1000}
 
+# [sobol] Compute second-order (S_ij) indices. 1 => N(2P+2) samples, 0 => N(P+2).
+# Exported so the SHELL sizing below, tools/config.py's TOTAL_ENSEMBLE, and
+# phases/phase0_design/create_parameter_sample.py all read ONE switch. Before 2026-08-22 the
+# first two hardcoded the second-order layout while the sampler honoured --no-second-order,
+# so a first-order design was sized ~2x too large with nothing to signal the disagreement.
+# Accepted false values: 0, false, False (anything else is true).
+export A2MC_SOBOL_SECOND_ORDER=${A2MC_SOBOL_SECOND_ORDER:-1}
+
 # Function to calculate total ensemble size based on sampling scheme
 calculate_ensemble_size() {
     local scheme="${1:-$A2MC_SAMPLING_SCHEME}"
@@ -210,7 +224,11 @@ calculate_ensemble_size() {
             echo "$n_samp"
             ;;
         sobol)
-            echo $((n_samp * (2 * n_params + 2)))
+            # Honour the second-order switch -- see A2MC_SOBOL_SECOND_ORDER above.
+            case "${A2MC_SOBOL_SECOND_ORDER:-1}" in
+                0|false|False) echo $((n_samp * (n_params + 2))) ;;
+                *)             echo $((n_samp * (2 * n_params + 2))) ;;
+            esac
             ;;
         custom)
             echo "${A2MC_TOTAL_ENSEMBLE:-0}"

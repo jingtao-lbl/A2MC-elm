@@ -2,8 +2,8 @@
 
 **Project:** A2MC (Agentic Adaptive Multi-target Calibration)
 **Purpose:** Fully autonomous multi-target calibration of ELM (with or without FATES) using AI API + HPC + Adaptive Memory
-**Status:** Implementation Complete (v2.264)
-**Last Updated:** August 21, 2026
+**Status:** Implementation Complete (v2.297)
+**Last Updated:** August 28, 2026
 ---
 
 
@@ -617,8 +617,13 @@ Detailed documentation for A2MC tools: cost functions, phase logger, workflow st
 
 ### Command Line Usage
 
+**Source order (v2.295, 2026-08-26): the site config AUTO-SOURCES the machine config**, so one command is enough. Sourcing `a2mc_config.sh` first still works and makes the bootstrap a no-op — every existing two-step example in this file and in the skills remains correct, just no longer necessary. The layering is unchanged: machine defaults → case overrides → round-wrapper overrides. The bootstrap uses a discovered path only to *locate* `a2mc_config.sh`; `A2MC_ROOT` still comes from that file, and if it cannot be found the site config fails loudly rather than half-configuring the shell.
+
 ```bash
-# IMPORTANT: Always source config files first!
+# One command — the site config bootstraps the machine config (which also activates a2mc_env Py3.11)
+source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
+
+# Equivalent, and still fine:
 source a2mc_config.sh
 source use_cases/ELM-FATES_Kougarok/config/kougarok_config.sh
 
@@ -833,7 +838,7 @@ grep -r "use_fates_nocomp" docs/fates-knowledge-base/
 
 ## Version History
 
-Current version: **v2.264** (2026-08-21)
+Current version: **v2.297** (2026-08-28)
 
 ### Git Tags (Stable Checkpoints)
 

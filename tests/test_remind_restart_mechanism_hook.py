@@ -53,10 +53,24 @@ class TestFires(unittest.TestCase):
 
 
 class TestQuiet(unittest.TestCase):
-    def test_v0_continuation_is_legitimate(self):
-        """build_v0_case_via_clone.sh really does set CONTINUE_RUN -- must not fire."""
+    def test_v0_builder_is_the_correct_tool(self):
+        """The V0 builders are the right tool for their job -- the restart reminder
+        would be wrong there, so the hook must stay quiet.
+
+        NOTE (2026-08-26): this used to assert the hook tolerated
+        `--continue-run` on this script, because the V0 tooling was the one
+        legitimate CONTINUE_RUN user. That flag was REMOVED -- A2MC now has a
+        single resume mechanism (finidat + RUN_STARTDATE + STOP_N) and
+        CONTINUE_RUN is an unambiguous wrong-answer marker everywhere."""
         self.assertEqual("", run("bash tools/model_evolution/build_v0_case_via_clone.sh "
-                                 "--continue-run 5 --case-dir foo"))
+                                 "--run-startdate 0201-01-01 --stop-n 5 --case-dir foo"))
+
+    def test_continue_run_flag_is_gone_from_the_v0_builder(self):
+        """The removal must stay removed: no V0 builder may accept --continue-run."""
+        import pathlib
+        for f in pathlib.Path("tools/model_evolution").glob("build_v0_case_via_*.sh"):
+            self.assertNotIn("--continue-run) ", f.read_text(),
+                             f"{f.name} re-introduced the --continue-run flag")
 
     def test_reading_docs_about_the_rule(self):
         """A read is not an act: grepping for CONTINUE_RUN must stay silent."""

@@ -1818,27 +1818,41 @@
   },
   "soil_phosphorus_chemistry_bottleneck": {
     "source": "auto_discovered",
-    "confidence": 0.95,
+    "confidence": 0.7,
     "verified": false,
+    "verified_by": "",
     "date_added": "2026-01-18T08:32:32.570722",
-    "description": "ELM soil order parameters create P trap where 98.9% of soil P (202 g P m\u207b\u00b3) is locked in mineral-adsorbed pool while only 0.00002% is plant-available (4\u00d710\u207b\u2075 g P m\u207b\u00b3)",
-    "mechanism": "Desorption rate is 23\u00d7 slower than adsorption rate for Gelisols (r_desorp=0.00022 vs r_adsorp=0.005), creating equilibrium heavily favoring adsorbed state despite abundant total P",
+    "revised": "2026-08-25T00:00:00",
+    "description": "For soil orders whose adsorption rate greatly exceeds their desorption rate, ELM's rate-based labile<->secondary exchange biases the equilibrium toward the SECONDARY mineral pool: P drains out of the labile pool faster than desorption returns it, so a site can hold a large total soil P stock while the labile pool stays small. This is a statement about the RATIO of the two rate constants for the site's soil order, not about any particular pool size.",
+    "mechanism": "PhosphorusDynamicsMod.F90 PhosphorusAdsportion moves labilep -> secondp at r_adsorp(isoilorder) and PhosphorusDesoprtion returns secondp -> labilep at r_desorp(isoilorder), both from the soil-order parameter file. Neither routine is nu_com-gated, so this exchange runs under BOTH RD and ECA. When r_adsorp >> r_desorp the steady state favours secondp. NOTE this is a DIFFERENT transfer step from the solution<->labile partition, which under ECA is an equilibrium Langmuir isotherm rather than a rate process -- see labilep_langmuir_sorption_ceiling.",
     "affects": [
       "LABILEP_vr",
       "SECONDP_vr",
       "FATES_PUPTAKE_SZPF",
-      "FATES_FROOTC_PF",
+      "FATES_FROOTC_SZPF",
       "FATES_LEAFC_PF"
     ],
     "affects_pfts": [
-      7,
-      9,
-      10
+      10,
+      11,
+      12
     ],
-    "implications": [],
-    "parameters_involved": [],
+    "implications": [
+      "Whether this drain actually depletes the labile pool depends on what REFILLS it. Under ECA the solution<->labile Langmuir partition can hold labile at its sorption ceiling if solution P is far past saturation, in which case the drain shows up only as a slow decline rather than depletion (observed in the api-43 lineage; see labilep_langmuir_sorption_ceiling).",
+      "The rate constants are per soil order in the soil-order parameter file, and the site's soil order comes from the surface dataset -- so this IS adjustable, though from a different input file than the FATES parameter list.",
+      "Check the r_adsorp / r_desorp ratio for the site's soil order before attributing a small labile pool to plant uptake or to supply."
+    ],
+    "parameters_involved": [
+      "r_adsorp",
+      "r_desorp",
+      "SOIL_ORDER"
+    ],
     "do_not_repeat": [],
-    "references": []
+    "references": [
+      "components/elm/src/biogeochem/PhosphorusDynamicsMod.F90 (PhosphorusAdsportion / PhosphorusDesoprtion; not nu_com-gated)",
+      "CNP_parameters (soil-order r_adsorp / r_desorp)"
+    ],
+    "provenance_caveat": "ORIGIN: auto_discovered 2026-01-18, before the v2.90 curated write gate; it carried no references. Its original PFT ids (7/9/10) place the observation in the api-31 lineage; ids here are remapped to the api-43 arctic PFTs by functional type. REVISED 2026-08-25: configuration-specific magnitudes removed (they depended on the parameter file, soil order and run state, and a retrieved entry carries no date to warn that they have gone stale), and the mechanism separated from the solution<->labile step it was conflated with. Still UNVERIFIED -- no run has been cited that confirms it."
   },
   "morris_optimization_parameter_domain_limitation": {
     "source": "auto_discovered",
@@ -1864,25 +1878,38 @@
   },
   "phosphorus_desorption_supply_demand_imbalance": {
     "source": "auto_discovered",
-    "confidence": 0.9,
+    "confidence": 0.6,
     "verified": false,
+    "verified_by": "",
     "date_added": "2026-01-18T08:32:32.575723",
-    "description": "Plant P demand (6\u00d710\u207b\u00b3 g P m\u207b\u00b3 day\u207b\u00b9) exceeds desorption supply (1.5\u00d710\u207b\u00b3 g P m\u207b\u00b3 day\u207b\u00b9) by 4\u00d7, causing LABILEP depletion",
-    "mechanism": "Desorption can't keep up with plant uptake despite large SECONDP pool, resulting in mass-action limitation where uptake becomes proportional to near-zero LABILEP concentration",
+    "revised": "2026-08-25T00:00:00",
+    "description": "A regime in which plant P demand exceeds the rate at which desorption resupplies the labile pool, so uptake becomes limited by the labile CONCENTRATION rather than by total soil P. Whether a run is in this regime is a property of its state, not a fixed property of the site: it requires the labile pool to be drawable-down, which in turn requires that nothing else is holding it up.",
+    "mechanism": "Mass-action limitation: when secondp -> labilep desorption cannot match uptake, labile falls and uptake follows it down. IMPORTANT SCOPE: this competes with two saturating mechanisms that can prevent it entirely -- under ECA the Langmuir partition refills labile from solution, and plant uptake itself saturates in solution P (labilep_langmuir_sorption_ceiling). If solution P sits far past both half-saturation constants, uptake is pinned at its maximum and this depletion regime cannot occur.",
     "affects": [
       "LABILEP_vr",
       "FATES_PUPTAKE_SZPF",
       "FATES_L2FR"
     ],
     "affects_pfts": [
-      7,
-      9,
-      10
+      10,
+      11,
+      12
     ],
-    "implications": [],
-    "parameters_involved": [],
+    "implications": [
+      "Before invoking this as an explanation, establish where the run sits relative to km_minsurf_p_vr and km_plant_p. Past saturation it is ruled out, and an unchanged or pinned labile pool is expected rather than diagnostic.",
+      "A low labile pool alone does not establish this regime -- the labile<->secondary drain (soil_phosphorus_chemistry_bottleneck) produces a low labile pool for an unrelated reason."
+    ],
+    "parameters_involved": [
+      "r_desorp",
+      "r_adsorp",
+      "km_plant_p",
+      "vmax_plant_p"
+    ],
     "do_not_repeat": [],
-    "references": []
+    "references": [
+      "components/elm/src/biogeochem/PhosphorusDynamicsMod.F90 (PhosphorusDesoprtion)"
+    ],
+    "provenance_caveat": "ORIGIN: auto_discovered 2026-01-18, pre-write-gate, no references. Original PFT ids (7/9/10) place it in the api-31 lineage; remapped here to api-43 arctic PFTs by functional type. REVISED 2026-08-25: magnitudes removed and the claim scoped, because the api-43 ECA measurement shows the OPPOSITE state -- a labile pool held near its sorption ceiling with uptake saturated -- so the original unconditional phrasing would mislead a future diagnosis. Confidence lowered accordingly. Still UNVERIFIED."
   },
   "cross_pft_sensitivity_pervasive": {
     "source": "auto_discovered",
@@ -1966,7 +1993,7 @@
     "description": "Expanded Morris ensemble from 138 to 162 parameters by adding 24 new parameters targeting Arctic PFTs #7, #9, and #10",
     "mechanism": "Added turnover rates, root distribution, PID control, and nutrient storage parameters for specific Arctic plant functional types to capture previously uncharacterized mechanisms",
     "affects": [
-      "FATES_FROOTC_PF",
+      "FATES_FROOTC_SZPF",
       "FATES_LEAFC_PF"
     ],
     "affects_pfts": [
@@ -1977,7 +2004,8 @@
     "implications": [],
     "parameters_involved": [],
     "do_not_repeat": [],
-    "references": []
+    "references": [],
+    "provenance_caveat": "CORRECTED 2026-08-25: affects listed FATES_FROOTC_PF, which FATES does not register, so that entry could never match. Replaced with FATES_FROOTC_SZPF."
   },
   "pft_netcdf_indexing": {
     "source": "auto_discovered",
@@ -2196,5 +2224,226 @@
     "parameters_involved": [],
     "do_not_repeat": [],
     "references": []
+  },
+  "labilep_langmuir_sorption_ceiling": {
+    "source": "curated",
+    "confidence": 0.95,
+    "verified": true,
+    "verified_by": "20260825a_labilep_sorption_ceiling_makes_suplphos_dose_inert",
+    "date_added": "2026-08-25T00:00:00",
+    "description": "Under nu_com='ECA', LABILEP is the ADSORBED phase, not a free reservoir: total P is re-partitioned between dissolved and adsorbed every timestep by a Langmuir isotherm whose maximum is a fixed parameter. Once the sorption sites approach saturation, added phosphorus cannot enter the labile pool -- it accumulates in solution instead. Plant uptake saturates independently on the same quantity. When BOTH are past their knee, supplemental P becomes biologically inert: solution P diverges while the labile pool and plant uptake do not respond.",
+    "mechanism": "PhosphorusStateUpdate3Mod.F90 (ECA branch) solves sorbp = smax*solutionp/(ks+solutionp) as a quadratic and sets labilep = total - solutionp, with smax = vmax_minsurf_p_vr(isoilorder,j) and ks = km_minsurf_p_vr(isoilorder,j). AllocationMod.F90 states the same ceiling as remaining capacity max(0, vmax_minsurf_p_vr - labilep_vr). The isotherm saturates at smax, so the sorbed fraction becomes insensitive to solution P once solutionp >> ks. Compounding it, ECA plant uptake is Michaelis-Menten on solution P with half-saturation km_plant_p, so uptake pins at vmax_plant_p once solutionp >> km_plant_p. Two saturating nonlinearities in series; whether either binds is a property of the STATE relative to its half-saturation constants, not of the model form.",
+    "affects": [
+      "SOLUTIONP",
+      "SOLUTIONP_vr",
+      "LABILEP",
+      "LABILEP_vr",
+      "SECONDP_vr",
+      "FATES_PUPTAKE",
+      "FATES_PUPTAKE_SZPF",
+      "FATES_VEGP",
+      "FATES_LEAFC_SZPF",
+      "FATES_FROOTC_SZPF"
+    ],
+    "affects_pfts": [
+      10,
+      11,
+      12
+    ],
+    "implications": [
+      "BEFORE interpreting any P-supply experiment, check where the state sits relative to the two half-saturation constants (km_minsurf_p_vr and km_plant_p). Far past both, the experiment cannot produce a dose response and an observed insensitivity says nothing about whether P limits the site.",
+      "Supplemental P in a saturated state changes which code path runs, not plant nutrition -- see suplphos_is_a_performance_switch.",
+      "The sorption capacity IS calibratable, but NOT from the FATES parameter file: vmax_minsurf_p_vr / km_minsurf_p_vr live in the ELM parameter file and are selected per soil order, and the site's soil order comes from the surface dataset. Changing P availability therefore means editing the ELM parameter file or the surface data -- a different class of edit from a FATES parameter sweep, and one a Morris list over FATES parameters cannot reach.",
+      "Sorption capacity is vertically resolved and typically collapses with depth, so unfilled capacity can sit entirely below the rooting zone. Judge saturation per layer, weighted by where roots and P actually are -- a column total can hide a saturated rooting zone.",
+      "The runaway that drives the system past saturation is driven by the AD spin-up protocol ACTING ON A CLOSED nutrient cycle -- not by suplphos, and not by the protocol alone: see ad_carbon_only_window_supplements_both_nutrients. An earlier version of this entry attributed it to supplementation; that was wrong and is corrected here."
+    ],
+    "parameters_involved": [
+      "vmax_minsurf_p_vr",
+      "km_minsurf_p_vr",
+      "km_plant_p",
+      "vmax_plant_p",
+      "SOIL_ORDER",
+      "suplphos"
+    ],
+    "do_not_repeat": [
+      "Do not read an unchanged LABILEP as evidence that a P treatment was not applied -- a saturated sorption pool is unchanged BY CONSTRUCTION regardless of what was added.",
+      "Do not compute a column P capacity by multiplying volumetric pools by the levdcmp coordinate: levdcmp is a node DEPTH, not a layer thickness. Prefer the model's own column diagnostic, or per-layer ratios, which need no thickness."
+    ],
+    "references": [
+      "use_cases/ELM-FATES_Kougarok/memory/logs/20260825a_labilep_sorption_ceiling_makes_suplphos_dose_inert.md",
+      "use_cases/ELM-FATES_Kougarok/memory/phase_results/20260825a_labilep_sorption_ceiling_makes_suplphos_dose_inert/labilep_sorption_ceiling.md",
+      "components/elm/src/biogeochem/PhosphorusStateUpdate3Mod.F90 (ECA branch, Langmuir quadratic)",
+      "components/elm/src/biogeochem/AllocationMod.F90 (remaining-capacity form of the same ceiling)"
+    ],
+    "revised": "2026-08-26T00:00:00",
+    "provenance_caveat": "REVISED 2026-08-25 (same day): the original text listed the unbounded solution-P growth as an OPEN DEFECT 'observed with supplementation active', which implied suplphos drove it. Measured with suplphos='NONE' the runaway is identical, and the 0-year carbon-only control does not run away at all. Cause reattributed to the carbon-only AD spin-up period."
+  },
+  "suplphos_is_a_performance_switch": {
+    "source": "curated",
+    "confidence": 0.9,
+    "verified": true,
+    "verified_by": "20260820b_phase5_testing_r01_c01_perf_wrong_configuration_and_slowness_root_cause",
+    "date_added": "2026-08-25T00:00:00",
+    "description": "suplphos is a RUNTIME switch as much as a nutrient treatment: supplying an element bypasses the N-P co-limitation solve entirely, so an unsupplemented run does substantially more work per model year than a supplemented one. The cost tracks two conditions together -- the co-limitation solve being active AND live plants competing for the element. Remove either and the cost collapses, so a configuration whose vegetation dies also runs fast, and speed alone must never be read as health.",
+    "mechanism": "The np_bothactive guard in AllocationMod.F90 runs the co-limitation solve only when NEITHER element is supplemented; suplphos='ALL' skips it. Cost therefore scales with the competition solve and its loop over plant competitors, not with elapsed model years -- the per-year cost is flat within a run, so a slow unsupplemented run is the model doing work it previously skipped, not a regression or a progressive drift.",
+    "affects": [
+      "SOLUTIONP",
+      "SOLUTIONP_vr",
+      "LABILEP",
+      "LABILEP_vr",
+      "FATES_VEGC",
+      "FATES_LEAFC_SZPF",
+      "FATES_FROOTC_SZPF"
+    ],
+    "affects_pfts": [
+      10,
+      11,
+      12
+    ],
+    "implications": [
+      "The cost RATIO is site-, configuration- and machine-specific -- it depends on PFT load, competitor count and node. Measure it for the case at hand; do not carry a number over. Measured values for this site and round are in the referenced logs.",
+      "The effect can be large enough to change feasibility, not just wall-clock: an unsupplemented spin-up leg may not fit a single walltime window when the supplemented one does. Check the projected leg cost against the queue ceiling before submitting, and split the leg if it does not fit.",
+      "Choosing a supplemented spin-up is only defensible if the supplement is also shown to be biologically inert for the targets in that state -- see labilep_langmuir_sorption_ceiling for when that holds and how to check it.",
+      "A phase left unsupplemented (commonly the transient) stays in the expensive regime regardless of how the spin-up is configured."
+    ],
+    "parameters_involved": [
+      "suplphos",
+      "suplnitro",
+      "nu_com"
+    ],
+    "do_not_repeat": [
+      "Do not measure a P-side code change under suplphos='ALL': the code path under test is switched off, so the measurement bounds nothing.",
+      "Do not benchmark simulation speed across jobs on different nodes or queues. Node placement alone has produced differences of the same order as the effects being sought; use a same-node paired test with identical segment length and queue."
+    ],
+    "references": [
+      "use_cases/ELM-FATES_Kougarok/memory/logs/20260820b_phase5_testing_r01_c01_perf_wrong_configuration_and_slowness_root_cause.md",
+      "use_cases/ELM-FATES_Kougarok/memory/logs/20260821a_phase5_testing_r01_c01_perf_measured_where_the_code_actually_runs.md",
+      "use_cases/ELM-FATES_Kougarok/memory/logs/20260825a_labilep_sorption_ceiling_makes_suplphos_dose_inert.md",
+      "components/elm/src/biogeochem/AllocationMod.F90 (np_bothactive guard)"
+    ]
+  },
+  "ad_carbon_only_window_supplements_both_nutrients": {
+    "source": "curated",
+    "confidence": 0.9,
+    "verified": true,
+    "verified_by": "20260825b_ad_carbon_only_injects_the_phosphorus_that_saturates_the_system",
+    "date_added": "2026-08-25T12:00:00",
+    "revised": "2026-08-26T00:00:00",
+    "description": "THE DOMINANT INJECTOR behind a whole family of CNP spin-up symptoms -- though injection alone is not sufficient; it must meet a nutrient cycle that RETAINS what is injected (see supplement_is_a_pump_once_the_nutrient_cycle_is_closed). During the carbon-only phase of an accelerated-decomposition spin-up, ELM meets plant demand for BOTH nitrogen and phosphorus by supplement, REGARDLESS of what suplnitro and suplphos are set to. The supplied nutrient accumulates in the soil mineral/solution pools, the sinks do not keep pace, and nothing removes it when the carbon-only phase ends. A run configured as a strict CNP cold start is therefore NOT one for the first nyears_ad_carbon_only years, in either element, and the resulting nutrient-replete state persists for the rest of the simulation.",
+    "mechanism": "AllocationMod.F90. (1) TRIGGER: for yr <= nyears_ad_carbon_only while spinup_state==1, carbon_only is forced TRUE *ahead of and independently of* the suplnitro/suplphos select-case block, so the namelist settings are bypassed entirely inside the window. (2) BOTH ELEMENTS: the P supplement is guarded by (carbon_only .or. carbonnitrogen_only) and the N supplement by (carbon_only .or. carbonphosphorus_only) -- carbon_only is the UNION, so it supplies both, while suplphos='ALL' supplies only P and suplnitro='ALL' only N. Under it, demand is met by fiat each timestep (sminX_to_plant_vr and supplement_to_sminX_vr both set to col_plant_Xdemand_vr). (3) NO EXIT -- CONDITIONAL, and this is the part an earlier version of this entry missed: accumulation requires the supplied nutrient to be RETAINED. If a pathway silently discards it (a mass-balance defect can act as an unintended sink), the same window produces no runaway at all. With the cycle closed, the P side cannot be absorbed by the labile pool, which is capped by its Langmuir ceiling (see labilep_langmuir_sorption_ceiling); leaching and the labile->secondary drain do not keep pace; and no term removes the excess when the window closes. (4) CONSEQUENCE CHAIN: solution pools end far above their half-saturation constants -> uptake saturates at vmax and the sorbed pool pins at its ceiling -> plant nutrient stores fill to their cap while the carbon store does not -> the fine-root PID, which is driven by log(max(cp_ratio, cn_ratio)) of storage fill fractions, sees a persistently NEGATIVE driver -> l2fr is decremented every step and clamped at l2fr_min -> fine-root biomass collapses to the allometric floor.",
+    "affects": [
+      "SOLUTIONP",
+      "SOLUTIONP_vr",
+      "LABILEP",
+      "LABILEP_vr",
+      "SMINP_vr",
+      "SMINN",
+      "SMIN_NO3_vr",
+      "SMIN_NH4_vr",
+      "FATES_PUPTAKE",
+      "FATES_PUPTAKE_SZPF",
+      "FATES_NO3UPTAKE",
+      "FATES_NH4UPTAKE",
+      "FATES_STOREP_TF_CANOPY_SZPF",
+      "FATES_STOREN_TF_CANOPY_SZPF",
+      "FATES_STOREC_TF_CANOPY_SZPF",
+      "FATES_L2FR",
+      "FATES_FROOTC_SZPF",
+      "FATES_LEAFC_SZPF"
+    ],
+    "affects_pfts": [
+      10,
+      11,
+      12
+    ],
+    "implications": [
+      "DIAGNOSTIC SIGNATURE, check this before attributing a CNP result to parameters: solution N and P far above their half-saturation constants; the labile P pool pinned at its sorption ceiling; plant N and P storage fill fractions at their cap while the carbon store sits below it; and a fine-root:leaf ratio at its floor across all PFTs regardless of their l2fr parameter values.",
+      "IT AFFECTS BOTH ELEMENTS. Setting suplnitro='NONE' and suplphos='NONE' does NOT produce an unsupplemented spin-up if the carbon-only window is non-zero -- both elements are supplied inside it. Verify nyears_ad_carbon_only, not just the suplX switches.",
+      "THE NUTRIENT PARAMETERS GO INERT. Past saturation a half-saturation constant is irrelevant, an uptake vmax raises a ceiling already above realized uptake, and the allometric l2fr parameter is overridden by the PID within a few dozen years. A sensitivity study over those parameters in this state measures nothing, and their apparent insensitivity is an artifact of the spin-up protocol.",
+      "THE ALLOCATION SYMPTOM IS DOWNSTREAM, NOT A DEFECT. The l2fr floor is the CORRECT PID response to a plant holding surplus nutrient and insufficient carbon. Do not look for the fine-root shortfall in allocation parameters; look at why the plant is nutrient-replete.",
+      "BOTH EXTREMES OF THE WINDOW ARE UNPHYSICAL. A long window leaves the system permanently saturated; a zero window can leave the vegetation with no nutrient at all and kill it. The window length is a protocol design decision that needs its own justification, and whether a short window exists that establishes vegetation without saturating is an open question.",
+      "A restart may legitimately drop nyears_ad_carbon_only from user_nl_elm once the restart year is past the window. That is correct for the restart, but it means the case directory no longer records the protocol -- the authoritative value lives in the case's own run script.",
+      "THE WINDOW IS NECESSARY BUT NOT SUFFICIENT. The identical window, parameter file and switches produce no runaway when a defect elsewhere is discarding the supplied nutrient, and a runaway once that defect is repaired. Never attribute a nutrient accumulation to the spin-up protocol without establishing that the cycle retains what is supplied.",
+      "MAGNITUDE, NOT JUST PRESENCE: suplphos='ALL' outside the window fires the SAME code path but delivers far less, because the supplement is proportional to plant demand and carbon_only inflates that demand by also removing N limitation. Same mechanism, different driver. It is still a pump, only a slower one -- solution P continues to rise after the window closes."
+    ],
+    "parameters_involved": [
+      "nyears_ad_carbon_only",
+      "spinup_state",
+      "suplnitro",
+      "suplphos",
+      "nu_com"
+    ],
+    "do_not_repeat": [
+      "Do not treat suplnitro='NONE' / suplphos='NONE' as evidence that a spin-up was unsupplemented -- the carbon-only window bypasses both.",
+      "Do not attribute a nutrient runaway to the suplX switches without running the zero-carbon-only control; the two are separable and only the control is decisive.",
+      "Do not compare two runs across the carbon-only window to test a suplX setting -- inside the window that setting is bypassed, so the runs agree for a reason that has nothing to do with it. Compare only the post-window segment.",
+      "Do not read an unchanged labile pool or a floored l2fr as a model defect before checking the nutrient storage fill fractions; both are expected downstream of a saturated state."
+    ],
+    "references": [
+      "use_cases/ELM-FATES_Kougarok/memory/logs/20260825b_ad_carbon_only_injects_the_phosphorus_that_saturates_the_system.md",
+      "use_cases/ELM-FATES_Kougarok/memory/logs/20260825a_labilep_sorption_ceiling_makes_suplphos_dose_inert.md",
+      "use_cases/ELM-FATES_Kougarok/memory/phase_results/20260825b_ad_carbon_only_injects_the_phosphorus_that_saturates_the_system/ad_carbon_only_runaway.md",
+      "use_cases/ELM-FATES_Kougarok/memory/phase_results/20260825a_labilep_sorption_ceiling_makes_suplphos_dose_inert/labilep_sorption_ceiling.md",
+      "components/elm/src/biogeochem/AllocationMod.F90 (carbon-only branch ahead of the suplX select-case; the two supplement guards; demand-met-by-fiat)",
+      "components/elm/src/external_models/fates/parteh/PRTAllometricCNPMod.F90 (storage-fill PID and the l2fr floor clamp)",
+      "components/elm/src/main/elm_varctl.F90 (nyears_ad_carbon_only default)"
+    ],
+    "provenance_caveat": "Established 2026-08-25 for phosphorus by a three-run control (carbon-only 30 vs 0 with suplphos held at NONE), then extended the same day to nitrogen by the same control on SMINN, with suplnitro AND suplphos both NONE in each run -- so the window is the only variable in both demonstrations. Renamed from ad_carbon_only_injects_phosphorus once the nitrogen half was measured rather than inferred; the earlier name understated the scope to one element. REVISED 2026-08-26: 'THE ROOT CAUSE' was an overclaim. A pre-fix baseline with the identical 30-year window does NOT run away, so the window is the injector and cycle-retention is the enabling condition."
+  },
+  "supplement_is_a_pump_once_the_nutrient_cycle_is_closed": {
+    "source": "curated",
+    "confidence": 0.9,
+    "verified": true,
+    "verified_by": "20260826b_the_rootfinesfrag_fix_closed_the_loop_that_makes_the_supplement_a_pump",
+    "date_added": "2026-08-26T00:00:00",
+    "description": "ELM's nutrient supplement is defined as 'meet plant demand this timestep' and is recomputed from scratch every timestep, with no accounting for nutrient it already supplied. That is stable ONLY while the supplied nutrient leaves the system. Once the cycle retains it -- plant uptake returning to litter, decomposing, and mineralising back to solution -- the supplement becomes a PUMP: retained nutrient raises the solution pool, a higher solution pool drives the competition term toward its maximum, higher competition raises computed plant demand, and the supplement is proportional to that demand. The loop compounds until the sorption and uptake saturation points are passed.",
+    "mechanism": "AllocationMod.F90 sets supplement_to_sminX_vr = col_plant_Xdemand_vr under the supplement branch, and col_plant_Xdemand_vr is itself proportional to the ECA competition term solution/(km + solution + competitors), which rises toward 1 as solution concentration grows. Nothing subtracts previously supplied nutrient. The return leg is the plant-efflux -> litter -> decomposition -> mineralisation pathway; if any step of it silently discards the flux, the loop is OPEN and the supplement behaves as designed. Repairing such a discard CLOSES the loop and converts the same supplement into positive feedback.",
+    "affects": [
+      "SOLUTIONP",
+      "SOLUTIONP_vr",
+      "LABILEP",
+      "LABILEP_vr",
+      "SMINN",
+      "TOTLITP",
+      "GROSS_PMIN",
+      "FATES_PEFFLUX",
+      "FATES_PUPTAKE",
+      "FATES_PUPTAKE_SZPF",
+      "FATES_VEGC",
+      "TOTLITN",
+      "SMIN_NH4_vr",
+      "SMIN_NO3_vr",
+      "FATES_NEFFLUX",
+      "FATES_VEGN"
+    ],
+    "affects_pfts": [
+      10,
+      11,
+      12
+    ],
+    "implications": [
+      "A MASS-BALANCE REPAIR CAN DESTABILISE A SUPPLEMENT THAT PREVIOUSLY LOOKED FINE. The repair is still correct -- the discarded flux was a real defect -- but the supplement logic silently depended on that discard. Evaluate the two together, never the repair alone.",
+      "DIAGNOSTIC: compare litter nutrient pool and gross mineralisation before and after any change to the efflux/litter pathway. If they jump by orders of magnitude, the return leg has just been connected and any supplement in the configuration is now a pump.",
+      "The supplement's instability is independent of which switch enables it: the carbon-only window and suplX='ALL' feed the same branch and both compound once the cycle is closed. They differ in magnitude because the window also removes the OTHER element's limitation and so inflates demand.",
+      "The stable form of a demand-met supplement would have to account for nutrient it has already supplied, or be bounded by a physical stock. Neither is present, so any configuration that supplements into a closed cycle should be treated as unbounded until shown otherwise.",
+      "CONFIRMED FOR BOTH ELEMENTS, and nitrogen is the worse case. Phosphorus has a Langmuir sorption ceiling that pins the labile pool and buffers part of the injection; nitrogen has no analogous cap, so its mineral pool grows without bound. Plant nutrient content barely responds in either element -- the injection accumulates in the soil, not the plant."
+    ],
+    "parameters_involved": [
+      "suplphos",
+      "suplnitro",
+      "nyears_ad_carbon_only",
+      "spinup_state"
+    ],
+    "do_not_repeat": [
+      "Do not evaluate a supplement setting without establishing whether the nutrient cycle it feeds retains or discards the supplied nutrient -- the same setting is benign in one case and unbounded in the other.",
+      "Do not treat a pre-repair baseline as a valid control for post-repair behaviour when the repair touched a mass-balance pathway; the control and the treatment differ in more than the variable under study."
+    ],
+    "references": [
+      "use_cases/ELM-FATES_Kougarok/memory/logs/20260826b_the_rootfinesfrag_fix_closed_the_loop_that_makes_the_supplement_a_pump.md",
+      "use_cases/ELM-FATES_Kougarok/memory/logs/20260825b_ad_carbon_only_injects_the_phosphorus_that_saturates_the_system.md",
+      "memory/model_logs/20260811b_Root_Fines_Frag_Overwrite_Confirmed_JTVERIFY.md",
+      "memory/model_logs/20260811d_Root_Fines_Frag_Overwrite_Fix_Redesign.md",
+      "components/elm/src/biogeochem/AllocationMod.F90 (supplement = col_plant_Xdemand; ECA competition term)"
+    ]
   }
 }

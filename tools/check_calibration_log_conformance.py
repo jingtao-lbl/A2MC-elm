@@ -50,6 +50,26 @@ REPO = Path(__file__).resolve().parent.parent
 # (its changelog: "2026-08-01: Added 'Skills and memory invoked' (both log types)").
 CAPABILITY_SECTION_SINCE = "20260801"
 
+#: C11 — a Phase-6 log that ROUTES 6->3 must carry the rethink, not just the routing decision.
+#: `phase6-refinement` owns the protocol and `calibration-log`'s Enrichment contract states the
+#: logging obligation; this is the ENFORCEMENT, because the requirement was prose only.
+#:
+#: THE GAP THIS CLOSES: a Phase-6 log routing `rethink_6to3` can contain zero occurrences of
+#: "Rethink" and pass this checker clean. The next cycle reads the LOG, not the state enum, so a
+#: rethink recorded nowhere is a cycle that starts blind — and on the branch this came from, three
+#: consecutive rethinks then carried one base and one target framing forward unexamined.
+#:
+#: Non-retroactive, and preventive on main: no 6->3 rethink has run here yet
+#: (`experiment_count=1`, `phase6_decision=None`), so this lands before the first one.
+RETHINK_SECTION_SINCE = "20260823"
+
+#: How a phase-6 log announces it is routing 6->3 rather than converging or redesigning.
+#: `PhaseLogger.log_refinement(next_action=...)` emits this heading verbatim.
+_ITERATE = re.compile(r"^##\s*Next Action:\s*iterate\s*$", re.M | re.I)
+#: The section that must then be present. Accept ANY heading containing "Rethink", so a log may
+#: title it "The Rethink (6->3)" or "Rethink protocol" without tripping a spelling gate.
+_RETHINK_HDR = re.compile(r"^##+\s*.*\bRethink\b.*$", re.M | re.I)
+
 # The day `PhaseLogger._EXPECTED_SECTIONS` entered the generator (v2.215, "offline phase logs
 # carry the reasoning chain", `26a51f91`). Logs written before it had no per-phase section
 # contract to meet. Measured before setting this — see the module's own dev log for the number.
@@ -233,6 +253,37 @@ def check_file(path, expected_sections=None):
             "%s ('None' is a valid answer)" % CAPABILITY_SECTION_SINCE
             + (" (boundary day, so it may predate the rule reaching this branch)"
                if boundary else "")))
+
+    # C11: a Phase-6 log that ROUTES 6->3 must carry the rethink, not just the routing decision.
+    if is_phase and date and date >= RETHINK_SECTION_SINCE and "_phase6_" in path.name \
+            and _ITERATE.search(text):
+        boundary6 = date == RETHINK_SECTION_SINCE
+        hdr = _RETHINK_HDR.search(text)
+        if not hdr:
+            out.append(Finding(
+                path, "C11", "warn" if boundary6 else "error",
+                "routes 6->3 but carries no Rethink section — required since %s. The next cycle "
+                "reads the LOG, not the state enum, so a rethink recorded nowhere is a cycle that "
+                "starts blind. Record the six questions and the NEW PATHWAYS (phase6-refinement)."
+                % RETHINK_SECTION_SINCE
+                + (" (boundary day, so it may predate the rule)" if boundary6 else "")))
+        else:
+            # Present but hollow. A placeholder is a finding, not a state.
+            body = text[hdr.end():]
+            nxt = re.search(r"^##\s", body, re.M)
+            body = body[:nxt.start()] if nxt else body
+            words = len(re.findall(r"\w+", body))
+            if words < 60:
+                out.append(Finding(
+                    path, "C11", "warn",
+                    "the rethink section is present but thin (%d words) — it must carry the six "
+                    "questions and the NEW PATHWAYS, each with its lever class and falsifier"
+                    % words))
+            elif not re.search(r"\bpathway", body, re.I):
+                out.append(Finding(
+                    path, "C11", "warn",
+                    "the rethink section names no PATHWAY — its deliverable is candidate pathways "
+                    "handed to Phase 3, not a narrative of the cycle"))
     return out
 
 

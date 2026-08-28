@@ -12,7 +12,7 @@ site-agnostic tool with two comparison modes:
 
   log     Compare the per-timestep lnd.log stream directly (gzip-aware — CIME compresses a
           COMPLETED run's logs). Use this when the run is too short to write history/restart
-          output (e.g. a 5-day CONTINUE_RUN segment) — lnd.log's periodic diagnostic prints
+          output (e.g. a 5-day segment) — lnd.log's periodic diagnostic prints
           are the only science-output stream available. Strips known non-deterministic lines
           (wall-clock timestamps, memory highwater/usage, DATE/TIME banners) before diffing,
           since those legitimately differ run-to-run without indicating a science difference.

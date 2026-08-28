@@ -1,0 +1,27 @@
+{
+  "_comment": "EXAMPLE ONLY -- this is the TEMPLATE copy, showing the shape a real case's manifest takes. Do NOT hand-edit a real one: generate it with `python tools/binary_archive_manifest.py --generate`, which reads each archive directory's PROVENANCE.txt, and check it with `--verify` (M1-M7). The binaries themselves are NOT in git -- hundreds of MB each, and not regenerable, since a recompile can perturb floating point and a rebuilt binary is a different artifact. This file is the record that they existed and the checksum to prove one has not been altered or swapped.",
+  "_how_to_use": [
+    "1. Archive the built executable under $A2MC_BINARY_ARCHIVE_ROOT/<label>/ beside a PROVENANCE.txt.",
+    "2. PROVENANCE.txt fields are parsed ONE PER LINE -- a wrapped value is silently truncated. Recognised: SHA256, Case, Build dir, Source, Change, Archived, Why, V0 pair.",
+    "3. Run --generate to write this file, then --verify before trusting the ledger.",
+    "4. Record the claim in calibration_rounds.yaml at rounds[N].fates_source.binary = {archive_label, sha256_prefix}; check M7 cross-checks it and PRINTS how many claims it checked, so a pass over zero claims is visible."
+  ],
+  "_archive_root": "<A2MC_BINARY_ARCHIVE_ROOT>/E3SM_build_archive",
+  "_generated": "<YYYY-MM-DD, written by the tool>",
+  "_tool": "tools/binary_archive_manifest.py",
+  "archives": [
+    {
+      "label": "R1_<descriptor>_<short_commit>",
+      "model": "elm-fates",
+      "binary": "e3sm.exe",
+      "bytes": 271009688,
+      "sha256": "<64 hex chars, computed from the archived file>",
+      "provenance_sha256": "<the SHA256 line inside PROVENANCE.txt; must equal sha256, or M3 errors>",
+      "built_in_case": "<the CIME case directory the build ran in>",
+      "build_dir": "<that case's EXEROOT>",
+      "source": "<what the code was: model version / commit, and the branch or patch it carries>",
+      "change": "<what this build changes, and whether the switch is default-off>",
+      "archived": "<when, and by whom or what>"
+    }
+  ]
+}

@@ -85,7 +85,11 @@ AUTHORED_KEYS = {
 # records the model-build dependency a round needs (e.g. the #17 per-PFT phen split for para169)
 # and no config exports it.
 AUTHORED_SUBKEYS = {
-    "fates_source": {"patches", "branch", "base_commit", "patched_commit"},
+    # `binary` = {archive_label, sha256_prefix}: which archived executable this round is bound to.
+    # AUTHORED, because it is written after the build is archived (model-evolution step 4.5) and
+    # nothing about the checkout tells the generator which archive label was chosen. Cross-checked
+    # by `tools/binary_archive_manifest.py --verify` (M7).
+    "fates_source": {"patches", "branch", "base_commit", "patched_commit", "binary"},
     "ecosim_source": {"patches", "branch", "fork", "binary"},
     "overrides": None,                       # None = preserve the whole block if present
 }
@@ -276,7 +280,9 @@ def main() -> None:
         kept = sorted(k for k in existing if k in AUTHORED_KEYS)
         print(f"NOTE: round {args.round} already exists in {yaml_path.name} — refreshing only the "
               f"DERIVED fields. Preserved: {', '.join(kept) or '(none)'}"
-              f"{' + <model>_source.patches' if 'patches' in str(existing) else ''}", file=sys.stderr)
+              f"{' + <model>_source.patches' if 'patches' in str(existing) else ''}"
+              # name `binary` too, or a round-trip looks like it dropped the round's build claim
+              f"{' + <model>_source.binary' if 'binary' in str(existing) else ''}", file=sys.stderr)
     changes: list = []
     doc["rounds"][args.round] = merge_round(existing, rnd, changes)
     if changes:

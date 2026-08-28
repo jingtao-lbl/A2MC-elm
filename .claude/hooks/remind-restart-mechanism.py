@@ -34,8 +34,10 @@ inline. Requiring an xmlquery/xmlchange invocation is what keeps a plain
 
 Deliberately NOT matched:
   - `tools/model_evolution/build_v0_case_via_*.sh` and anything under
-    `model_evolution/` -- `build_v0_case_via_clone.sh:114` legitimately runs
-    `./xmlchange CONTINUE_RUN="$CONTINUE_RUN"` for a short V0 continuation
+    `model_evolution/` -- these are the CORRECT tool for a V0 build, so the
+    restart reminder would be wrong there. (Until 2026-08-26 they also took a
+    `--continue-run` flag; it was REMOVED, so CONTINUE_RUN is now an
+    unambiguous wrong-answer marker everywhere -- no legitimate
     segment. That is a real, recurring workflow and must stay silent.
   - `restart_experiment_case.py` -- the correct tool.
   - `bash restart_*.sh` -- a generated restart script doing the finidat/
@@ -55,7 +57,7 @@ HANDROLL_RE = re.compile(r"\bRUN_STARTDATE\b", re.I)
 FINIDAT_RE = re.compile(r"\bfinidat\b", re.I)
 
 QUIET_RE = re.compile(
-    r"model_evolution"                 # V0 tooling legitimately uses CONTINUE_RUN
+    r"model_evolution"                 # V0 builders are the correct tool for their job
     r"|build_v0_case_via"
     r"|restart_experiment_case\.py"    # the correct tool
     r"|restart_[A-Za-z0-9_]*\.sh"      # replaying a generated restart script
@@ -80,8 +82,9 @@ MESSAGE = (
     "    the SAME experiment are the authoritative precedent.\n"
     "See `restart-failed-jobs` Step 1 (ad-hoc fork) and the memory\n"
     "feedback_restart_via_finidat_not_continue_run.\n"
-    "IF INSTEAD this is a model-evolution V0 continuation segment, CONTINUE_RUN is correct "
-    "there -- carry on; prefer tools/model_evolution/build_v0_case_via_clone.sh."
+    "This covers model-evolution V0 checks too: as of 2026-08-26 they use the SAME finidat\n"
+    "mechanism (build_v0_case_via_clone.sh no longer takes --continue-run), so CONTINUE_RUN\n"
+    "is not used anywhere in A2MC."
 )
 
 

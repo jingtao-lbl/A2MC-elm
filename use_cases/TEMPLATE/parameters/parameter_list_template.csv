@@ -1,6 +1,6 @@
 # =============================================================================
 # A2MC PARAMETER LIST — TEMPLATE
-# Copy to use_cases/<YourSite>/parameters/, replace the example rows, keep the schema.
+# Copy to use_cases/{Model}_{Case}/parameters/, replace the example rows, keep the schema.
 # Point $A2MC_PARAM_LIST_FILE at it; everything downstream derives from it.
 # =============================================================================
 #

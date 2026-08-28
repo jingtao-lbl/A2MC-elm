@@ -52,6 +52,55 @@ disown                                      # layer 1
 # same node as the thing being checked, defeating layer 2's independence (anti-pattern #11).
 ```
 
+### The `pgrep -f` / `pkill -f` self-match — use a PID, never a pattern
+
+**A `pkill -f <script>` kills your own shell**, and **a loop that terminates on `! pgrep -f <script>`
+never terminates** — both because the command line running the match *contains the pattern*, and
+`-f` matches full command lines. The pattern always finds at least one process: itself.
+
+Two costumes, same trap:
+- `pkill -f watch_x.sh` → your shell dies mid-command (exit 144), so whatever came after it never
+  ran. Hit twice on 2026-08-22 while re-pointing a watcher at a new job id; the `sed` that was
+  meant to follow never executed, and the watcher kept the *old* job id.
+- a wait loop on `! pgrep -f build.sh` → runs forever, re-emitting a result that finished hours ago.
+  A monitor that keeps firing on completed work is noise, and gets tuned out along with the real
+  events.
+
+**Use a PID.** The watcher scripts in this skill already do; copy them rather than hand-roll a
+pattern match:
+
+```bash
+nohup bash watcher.sh >> watcher.events.log 2>> watcher.log &
+disown
+# `$!` is NOT reliably the watcher: `nohup` forks, so it can be the wrapper, not the script.
+# Measured 2026-08-23: `$!` gave 2110138 while the live `bash watcher.sh` was 2110139, so a
+# `kill -0` on the recorded PID would have reported a healthy watcher DEAD. Resolve the real
+# one from `ps` and record THAT — a PID file that lies is worse than no PID file.
+sleep 1
+ps -eo pid,args | awk '$2=="bash" && /watcher\.sh/ {print $1; exit}' > watcher.pid
+
+kill -0 "$(cat watcher.pid)" 2>/dev/null     # liveness: unambiguous, no self-match
+kill "$(cat watcher.pid)"                    # stop: that process and nothing else
+```
+
+The `awk` form is also the safe way to *find* a watcher you did not record: it matches the
+command **word** (`$2=="bash"`) plus the script name, so it cannot match the `ps` pipeline itself
+the way `pgrep -f` matches its own command line.
+
+If you must match on a pattern, exclude yourself (`pgrep -f pat | grep -v $$`), or match the
+command word rather than the whole line (`ps -eo pid,args | awk '$2=="bash" && /watcher\.sh/'`).
+The PID file is simpler and cannot be fooled.
+
+**Prefer a file-based terminal signal over a process check.** A watcher that decides "the work is
+done" by asking whether a process still exists is asking the wrong question: a process can die
+without finishing. Gate on the artifact the work produces — a final restart file, a terminal line
+the job itself wrote — cross-checked against `sacct`, per Step 5's allow-list rule.
+
+> This rule also appears in `offline-testing-workflow` (its anti-pattern list). It is repeated here
+> because **this** is the skill you are reading when you build a watcher, and a rule kept only in
+> the other one is a rule you will not see at the moment you need it — which is exactly how it was
+> hit twice on 2026-08-22 despite already being written down.
+
 ### Verify the actual SLURM job name before filtering by it
 
 CIME's `case.submit` names every submitted job `run.<case_name>`, **not** the bare case name. A
@@ -102,7 +151,7 @@ Concrete reaction table:
 |---|---|
 | `QUEUE_BELOW_1000` / `QUEUE_BELOW_500` | Compute headroom: `current_queue + N_new_cases × 3 ≤ 5000`. Propose next batch (combined vs split). |
 | `TRANS_DONE` + `STARTING_EXTRACTION` in normal cadence | Silent acknowledgment (use "Normal" or omit). These arrive every poll cycle. |
-| Milestone-crossing extracted count (e.g., 2750, 3000) | The auto-monitor's `regen_milestone_plot.sh` should fire automatically. Confirm `REGEN_LAUNCHED` events follow. If not, manually invoke `bash use_cases/ELM-FATES_Kougarok/analysis/regen_milestone_plot.sh`. |
+| Milestone-crossing extracted count (e.g., 2750, 3000) | The auto-monitor's `regen_milestone_plot.sh` should fire automatically. Confirm `REGEN_LAUNCHED` events follow. If not, manually invoke `bash use_cases/ELM-FATES_Kougarok/scripts/regen_milestone_plot.sh`. |
 | `QUEUE_ABOVE_500` (after a submission launches) | Acknowledge as expected; sentinel re-arms for next downcross. |
 | `R5_TERMINAL` / `EXTRACTION_FINISHED` (round complete) | Propose Phase 1 (extraction + Morris sensitivity analysis) per the round-completion runbook. |
 | `FAILED` / `Traceback` / `MaxJobsExceeded` / `Killed` / `OOM` | **Stop. Investigate.** Pull recent log context, identify the source process, propose remediation (often: cancel the zombie/dead-dependency chain per **Step 7**, restart submitter, or invoke the `restart-failed-jobs` skill). |
@@ -129,7 +178,12 @@ Layer 1 (the nohup'd `ensemble_auto_monitor.sh` or a per-run watcher) is a singl
 empty stream. So a monitor that only tails is trusting an unverified process to keep telling the truth.
 
 **Requirement: layer 2 must verify layer 1 independently of what layer 1 says.** The log file's mtime is
-the check — it is written by the poll loop itself, so it cannot be faked by a hung process:
+the check — it is written by the poll loop itself, so it cannot be faked by a hung process.
+**This only works if the poll loop touches that file EVERY poll**, which is why layer 1 keeps a poll log
+separate from its events log. Point this check at a file the watcher writes only when it has something to
+report and it inverts: a quiet-but-healthy watcher looks hours dead. And the mtime answers *liveness only* —
+a watcher can be alive, polling on schedule, and still blind to the transition you care about
+(anti-pattern #14). Age tells you whether it is running, never whether it would have noticed:
 
 ```bash
 age=$(( $(date +%s) - $(stat -c %Y "$POLL_LOG" 2>/dev/null || echo 0) ))
@@ -141,8 +195,11 @@ fi
 
 Two properties that make the event actionable rather than alarming:
 
-- **Edge-triggered, not level-triggered.** Emit once on entering the stalled state and once on recovery;
-  re-emitting every tick trains you to ignore it (anti-pattern #4 in another form).
+- **Edge-triggered, not level-triggered — for the STALL EVENT specifically.** Emit once on entering the
+  stalled state and once on recovery; re-emitting every tick trains you to ignore it (anti-pattern #4 in
+  another form). This is advice about an *alarm*, which has two states and is usually in neither. Do NOT
+  generalise it to the queue poll itself: a job list edge-triggered on a signature that omits the job ID is
+  silent across a crash-and-resubmit (anti-pattern #14). Alarms edge-trigger; inventories do not.
 - **It says what it does *not* imply.** A dead watcher is not a dead run. Conflating them invites
   cancelling healthy jobs, which is the expensive direction of this mistake.
 
@@ -166,6 +223,8 @@ If a Monitor produces > ~20 events in 10 minutes, it will likely auto-stop (the 
 3. Keep all error signals in the new filter
 
 Document the tightening in the active dev_log so the next session uses the cleaner filter.
+
+> **Tightening a LOG filter drops lines; tightening a QUEUE poll to emit-on-change drops *transitions*.** These are not the same trade. Before making a `squeue` watcher edge-triggered, check that its signature contains the job ID — without it the watcher is silent across a crash-and-resubmit (anti-pattern #14).
 
 ## Step 7 — Cancel zombie / dead-dependency jobs (unblocks completion monitors)
 
@@ -310,6 +369,7 @@ cascade run is needed in the first place, for the case where nothing already not
 11. **Do NOT default a watcher's launch node to wherever a pre-existing, unrelated process happens to already be running, and do NOT arm layer 2 (`Monitor`) via SSH to that same specific node.** There is no way to predict which login node will get drained for scheduled maintenance next — no status API, no advance notice observed in practice. Minimize exposure instead of guessing at "stability": launch layer 1 on the node your own session already executes on (its outage fails your next command visibly and immediately, so you never depend on a separate mechanism to notice), and arm layer 2 as a **local** `Monitor` command reading the shared-filesystem log — never `ssh <node> "bash monitor_feed.sh"` to the same node layer 1 runs on — concrete recipe in **Step 1**. Both mistakes were made together in one incident: a new watcher was launched on a node purely because an unrelated, pre-existing watcher happened to already be there, and layer 2 was armed over SSH to that same node — so when the node was drained for maintenance, both layers died together, and layer 2's own stall-detection (**Step 5**) never got the chance to fire, because the process meant to run it was dead too. The whole point of two layers is that they can't fail together. **This matters more, not less, at ensemble scale:** a multi-day 5000+-job campaign makes a mid-campaign login-node maintenance event near-certain rather than an unlucky coincidence, so the auto-monitor script driving that campaign (**Step 1**) and its `Monitor` both need this same discipline, not just a small offline-test watcher.
 12. **Do NOT** assume a submitted job's SLURM name equals its case name when writing a `squeue -n`/`sacct --name` filter. CIME's `case.submit` names every job `run.<case_name>` (confirmed via `squeue -u $USER -h -o "%j"`), not the bare case name. A watcher filtered on the bare name matches nothing and silently logs `NOT_IN_QUEUE` on every poll — indistinguishable from "not yet submitted" or "terminal," while the job is actually running. Hit two independently-written watchers the same way in one session (2026-08-12) — one new, one armed a day earlier and silently non-functional the whole time — caught by a direct cross-check, not by the watcher itself. Verify the real name once via `squeue -o "%j"` before writing the filter (Step 1).
 13. **Do NOT** rely on Step 7's `DependencyNeverSatisfied` recipe being re-run manually after every restart, and do NOT assume Steps 2-5's watcher-mediated monitoring will ever surface a dependency zombie — no watcher filter in this skill checks for one. Arm Step 8's independent check whenever a chain is in flight, the same trigger condition as the rest of this skill, not only when you already suspect a problem. Found live 2026-08-16: a zombie left by a restart sat undetected for ~30 hours until a routine PI status check caught it — see the reflection log Step 8 cites.
+14. **Do NOT** build an edge-triggered queue watcher whose change-signature omits the **job ID**. The natural way to keep a polling watcher quiet (Step 6's pressure) is to hash the queue and emit only on change — but a signature built from job *name*, state and reason (`squeue -o "%j %T %r"`) is **identical either side of a crash-and-resubmit**: the case name does not change, and the new job is `RUNNING` with reason `None` exactly like the old one. Only the ID changes, and the signature threw it away. So the watcher goes silent for precisely the transition it exists to catch, and the silence is indistinguishable from a healthy uneventful run. Include `%i` in the signature, or emit level-triggered (print every tracked job with its ID every tick, as **Step 8**'s recipe does) and accept the volume — at a 30-minute interval that is two lines an hour, which is not the noise Step 6 is about. Found 2026-08-23: a hand-rolled layer-3 watcher polling at 1800 s straddled a 9-minute restart window (`ADRGnone_RGSP` died 05:13, resubmitted 05:22 as a new ID); its name/state/reason tuple was unchanged across the gap, so it emitted nothing and its last output stayed 10 hours old while it was still polling correctly. It was first misread as a **dead** watcher on that stale-output evidence — the wrong diagnosis, and the more dangerous one, because "dead" invites restarting a watcher that is in fact running and wrong. Distinguishing *blind* from *dead* requires checking what the watcher is designed to emit on, not how long it has been quiet — Step 5's mtime check answers liveness, never coverage.
 
 ## Cross-references
 
@@ -317,10 +377,19 @@ cascade run is needed in the first place, for the case where nothing already not
 - `tools/restart_experiment_case.py` — Step 8's fix command; its own docstring documents the automated multi-hop downstream cascade `--execute` triggers.
 - **`calibration-goal`** — the run-to-convergence driver: when it hits a phase with an in-flight ensemble it takes a WAIT stop and relies on the `Monitor` events armed here as its **cross-wait re-invocation trigger** (the completion/milestone event resumes the driver loop).
 - The interactive-agent operating contract: `AGENTS.md`.
-- A site's live auto-monitor script (if any) lives under `use_cases/<site>/analysis/`.
+- A site's live auto-monitor script (if any) lives under `use_cases/<site>/scripts/`.
 
 ## Changelog
 
+- 2026-08-23 (third, from a live misdiagnosis in the same session) — **anti-pattern #14: an edge-triggered queue watcher whose signature omits the job ID is blind to a crash-and-resubmit.** A layer-3 watcher polling at 1800 s hashed `%j %T %r`; when `ADRGnone_RGSP` died at 05:13 and was resubmitted at 05:22, name/state/reason were identical either side, so it emitted nothing and its last output sat 10 hours stale while it polled correctly. I first called it **dead** on that stale-output evidence — the wrong and more dangerous diagnosis, since "dead" invites restarting a watcher that is actually running and wrong. Two reconciliations in the same pass, both surfaced by the new item rather than by the incident: **Step 5's mtime check now states the precondition it silently depended on** (the poll loop must touch that file every poll — aimed at an emission-only log it inverts, reading quiet-but-healthy as hours dead) and now says explicitly that age answers *liveness*, never *coverage*; and **Step 5's "edge-triggered, not level-triggered" is now scoped to the stall ALARM**, which otherwise reads as contradicting #14 — alarms edge-trigger, inventories do not. Signal: an explicit user request to record the trap, on a defect reproduced live.
+- 2026-08-23 (same day, from using it) — **the PID-file recipe was wrong as first written.** `echo $! > watcher.pid` records `nohup`'s fork, not the script: measured `$!`=2110138 against a live `bash watcher.sh` at 2110139, so `kill -0` on the recorded PID would have reported a healthy watcher DEAD — a PID file that lies is worse than none. Now resolves the real PID from `ps` and records that, and notes the same `awk` form is the safe way to FIND an unrecorded watcher.
+- 2026-08-23 — Added **the `pgrep -f` / `pkill -f` self-match** to Step 1, with the PID-file recipe
+  and the preference for a file-based terminal signal over a process check. Adopted from
+  `adapter-kit` (`da1655c4`), re-authored. The rule already existed on main — in
+  `offline-testing-workflow`'s anti-pattern list — and was still hit twice on 2026-08-22 (exit 144,
+  a shell killed mid-command so the `sed` that followed never ran and a watcher kept a stale job
+  id). Placement was the whole defect: this is the skill you read when building a watcher, so the
+  rule has to be here. Signal: adapter-kit recorded three instances in one day; main added two.
 - 2026-08-16 — Added **Step 8 — arm an independent `DependencyNeverSatisfied` check** + anti-pattern
   #13. Steps 2-5's watcher-mediated monitoring never surfaces a dependency zombie unless the watcher
   script explicitly checks for one, and Step 7's zombie-detection recipe is manual — nothing here

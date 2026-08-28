@@ -47,11 +47,30 @@ targets met.
 
 ## Step 1b — extract the FULL results + comparison plots (experiment Phase 6; esp. TIME SERIES)
 
+### The requirement — what the figure must cover, before the verdict is written
+
+**Produce a sim-vs-obs TIME-SERIES overlay covering EVERY SCORED TARGET, before writing the verdict,
+and include it in the cycle report.** Concretely:
+
+- **One panel per scored target**, not one panel for the target the experiment aimed at. An
+  intervention that moves its own target while pushing two others out of band has **failed**, and a
+  single-target figure cannot show that. This branch scores six targets (leaf + fine root × three
+  PFTs), so a one-panel verdict is showing one sixth of the result.
+- **The observation drawn as it was measured.** If the record is a series, plot the series — per-year
+  points with their spread, and **gaps left as gaps**. A flat line at the multi-year mean is a
+  *summary* of the observation, not the observation, and it hides both the spread and the years
+  nobody measured. (Relevant here: the Kougarok targets carry field standard deviations *larger than
+  the mean* for PFT#10 — 29.1 vs 24.6 — which a flat line erases.)
+- **The control on top**, so V0-tracks-its-base is visually confirmed rather than asserted.
+
+Pairs with [[feedback_timeseries_plots_during_diagnosis]] (trajectory shape often IS the diagnosis)
+and [[feedback_figures_over_tables_over_words]].
+
 For an **experiment** (N variants on a base case), Step 1's `evaluate_results.py` gives the per-target
 *numbers at the observation month*, but Phase 6 also needs the **full extracted series and the visual
 comparison vs observations** to judge honestly and to report. Use the generic tool
 **`tools/extract_and_plot_selected_cases.py`** — the promoted successor to the retired
-`use_cases/{site}/analysis/` one-off overlay scripts; **do NOT resurrect those**, and do not edit the
+`use_cases/{site}/scripts/` one-off overlay scripts; **do NOT resurrect those**, and do not edit the
 `_exp`-gated production extractor ([[feedback_do_not_change_extractor_case_naming]]):
 
 - **`extract`** — pull the full monthly target variables (e.g. `FATES_LEAFC_SZPF` / `FATES_FROOTC_SZPF`)
@@ -112,6 +131,62 @@ The online orchestrator enforces this fork in **code** (`orchestrator.py` state 
 vs `max_experiments`), so it physically cannot skip a cycle. **Offline you must enforce the SAME gate by
 hand** — the offline agent matches or exceeds the online loop discipline, it never rushes past it. **Read
 `experiment_count` / `skip_testing_count` from `workflow_state_offline_r{RR}.json` before deciding.**
+
+### A rethink is a SYNTHESIS, not a routing decision
+
+`rethink_6to3` is the default route and — everywhere else in this skill — only a counter increment.
+**A cycle that re-enters Phase 3 carrying the previous cycle's base, binding target and lever class
+forward unexamined is not a new cycle; it is the same cycle with one parameter changed.**
+
+Answer all six **in the log** before recording the decision. Every one is settled by existing data
+at zero compute.
+
+1. **Synthesize THIS cycle, Phases 3–6.** What was hypothesized and on what mechanism; what each
+   inner-loop iteration asked and returned, *including the ones that refuted the cycle's own earlier
+   iterations*; what was run and what it scored per target; the verdict against the pre-registered
+   bar. State what the cycle **ESTABLISHED** separately from what it merely tried — a refuted
+   hypothesis that localized a cost is a finding, and carrying only "it failed" forward loses it.
+   **Write this once**: it is the same synthesis the CYCLE report needs (`write-report`), so produce
+   it here and let the report draw on it rather than deriving it twice from raw logs.
+2. **Re-read Phase 1 and Phase 2 AGAINST that synthesis, not for citation.** The μ\* ranking and the
+   screening leaders were computed before the round learned what it now knows; the question is what
+   they say that this cycle's result makes newly relevant. Check the artifacts' own caveats too — a
+   ranking computed over a population containing runaway cases ranks levers by their behaviour in a
+   regime the calibration never occupies.
+3. **Is the BASE still right for the question now being asked?** A base is chosen to fix one target;
+   the binding target moves. Check whether it still has headroom on the targets it already holds. A
+   base sitting at a band edge on the target the next experiment would move is the wrong base,
+   however good its overall score.
+4. **Has the BINDING TARGET moved?** Re-derive it from the current best configuration rather than
+   inheriting the previous cycle's framing.
+5. **What CLASS of lever has the round exhausted, and what class is untried?** Group refuted cycles
+   by **mechanism class, not by parameter**. Three cycles refuting three parameters in one class is
+   *one* refutation, and the next cycle should leave the class.
+6. **For each refuted lever: which DIRECTION was moved, from a base with which SIGN of miss, and
+   does that still apply?** A refutation is a property of a **(parameter, direction, base)** triple,
+   not of a parameter — and question 5 does not catch this, because it groups by mechanism rather
+   than by direction. A lever refuted for failing to *lower* a target at a base where it was too
+   *high* has never been tested for *raising* it at a base where it is too *low*; a dose response
+   that moved monotonically the wrong way is **positive evidence for the opposite direction**, not a
+   closed door. Tabulate: parameter, direction moved, the base's miss sign at the time, and whether
+   the opposite direction has ever been run. Then check the only two ways "no, and it still cannot
+   be" holds — the opposite direction is **out of bounds or past a physical ceiling** (extrapolate
+   the dose against both the calibrated bound and any structural limit, e.g. a fraction that cannot
+   exceed 1), or the base has **no headroom left** in that parameter. Where neither holds, the
+   opposite direction is an untested experiment the round has been treating as refuted.
+
+**Deliverable: NEW PATHWAYS, plural, handed to Phase 3.** Each names **what kind of move it is** and
+what would falsify it, rather than continuing the refuted hypothesis. The kind is usually a lever
+class (Q5), but Q6 makes two others first-class: a **DIRECTION** on a lever the round believes it
+refuted, and a **BASE CHANGE**, which is not a lever at all. A pathway that only says "change the
+base" is weak — say what to rank by, since a criterion is actionable and "look again" is not. And a
+**diagnostic pathway that costs no compute outranks an experiment** when its outcome would decide
+which experiment to run. Record them with `st.add_decision(...)` and name them in
+`set_phase_handshake(handed_to=...)` so Phase 3 receives them instead of re-deriving them.
+
+> **Preventive on this branch.** Main is at `experiment_count=1` with `phase6_decision=None` — no
+> rethink has run here yet. The protocol is adopted before the first one, not after a round spent
+> three cycles on one base. (Adopted from `adapter-kit` `2849b4d2` + `924b7b56`.)
 
 **Structural objective gate (docs/34) — fill it, don't skip it.** Before recording a decision, populate the
 `phase6_decision` block and run the validator; a failing check **blocks** the escalation (it cannot be the
@@ -187,6 +262,10 @@ session (the biomass/target extraction + figure in `phase_results/{stem}/`); run
 - **Next:** converged (Phase 7), or loop to `phase3-diagnosis` (rethink) / `phase0-design` (redesign).
 
 ## Changelog
+
+- 2026-08-23 — Added **the 6→3 RETHINK PROTOCOL**: six questions answered in the log before the decision is recorded, deliverable NEW PATHWAYS (plural) with lever class and falsifier. Adopted from `adapter-kit` (`2849b4d2` + `924b7b56`), re-authored. `rethink_6to3` was the default route and only a counter increment here too — a cycle could re-enter Phase 3 carrying the previous cycle's base, binding target and lever class forward unexamined. Q6 (a refutation is a (parameter, DIRECTION, base-miss-sign) triple, not a property of a parameter) is the one Q5 cannot catch. PREVENTIVE on main: `experiment_count=1`, `phase6_decision=None` — no rethink has run here yet.
+
+- 2026-08-23 — Added **the figure requirement** to Step 1b: a sim-vs-obs time-series overlay covering EVERY scored target before the verdict is written. Adopted from `adapter-kit` (`518af9c8`), re-authored — its model-neutral half only, since main IS the FATES implementation that half was being separated from. One panel per scored target, the observation drawn as measured with gaps left as gaps, and the control on top. This branch scores six targets, so a one-panel verdict shows one sixth of the result.
 
 - 2026-08-03: Log step now states the **living-record** contract (start at phase start, enrich as it
   runs — the operational detail is unrecoverable later), names **this phase's expected sections** so an

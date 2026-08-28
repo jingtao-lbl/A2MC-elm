@@ -7,6 +7,25 @@
 
 ---
 
+## Folder map — and which skill governs each
+
+**Every folder has its own `README.md` naming the skills to use when working in it.** Read that one before touching anything in the folder; this table is only the index.
+
+| folder | purpose | skills that govern it |
+|---|---|---|
+| [`config/`](config/README.md) | what a session **sources** — case + round configs, the round ledger | `phase0-design` · `onboard-case` · `model-evolution` |
+| [`parameters/`](parameters/README.md) | per-round parameter lists and sampled design matrices | `phase0-design` · `literature-review` |
+| [`validation/`](validation/README.md) | `targets.yaml` — everything scored, and what is deliberately not | `onboard-case` · `phase6-refinement` · `plotting` |
+| [`case_template/`](case_template/README.md) | the reference case scripts a case is built from | `phase0-design` · `offline-testing-workflow` |
+| [`scripts/`](scripts/README.md) | the case's long-lived scripts and script **templates** | `plotting` · `scientific-analysis` · `compare-calibration-rounds` |
+| [`memory/logs/`](memory/logs/README.md) | the phase logs — the 3→4→5→6→3 reasoning chain | **`calibration-log`** · the phase skills |
+| [`memory/phase_results/`](memory/phase_results/README.md) | self-documenting artifact folders, one per phase, sharing the log's stem | `plotting` · `calibration-log` |
+| [`memory/model_evolution/`](memory/model_evolution/README.md) | changes to the MODEL's source, and which round ran which binary | **`model-evolution`** · `add-fates-parameter` · `summarize-calibration-round` |
+| [`memory/gained_knowledge/`](memory/gained_knowledge/README.md) | the curated KB — and the human gate in front of it | **`curate-knowledge`** · `inject-knowledge` |
+| [`reports/`](reports/README.md) | project-team-facing synthesis, tracing back to the logs and artifacts | **`write-report`** · `summarize-calibration-round` |
+
+**Above all of them:** `calibration-goal` drives the loop, and `calibration-discipline` says when a phase is actually finished rather than merely done.
+
 ## Overview
 
 Brief description of the site and calibration goals.

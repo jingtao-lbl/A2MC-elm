@@ -68,13 +68,27 @@ def memory_checkup_due(root, lines):
     import datetime
     stamp = os.path.join(root, ".claude_memory", ".last_checkup")
     today = datetime.date.today()
+    # strptime, NOT date.fromisoformat: the latter is Python 3.7+, and settings.json invokes
+    # this hook as a bare `python3`, which on this machine resolves to 3.6 unless a2mc_config.sh
+    # has been sourced. Under 3.6 fromisoformat raised AttributeError, the blanket `except`
+    # swallowed it, and the trigger reported "never run here" FOREVER regardless of the stamp --
+    # a check that could not fire (feedback_a_check_that_cannot_fail). Found 2026-08-26.
+    last, days, malformed = None, None, False
     try:
         with open(stamp) as f:
-            last = datetime.date.fromisoformat(f.read().strip())
-        days = (today - last).days
-    except Exception:
-        days, last = None, None
-    if days is None:
+            raw = f.read().strip()
+    except OSError:
+        raw = None                      # genuinely never run here
+    if raw:
+        try:
+            last = datetime.datetime.strptime(raw, "%Y-%m-%d").date()
+            days = (today - last).days
+        except ValueError:
+            malformed = True            # a bad stamp is a FINDING, not "never run"
+    if malformed:
+        lines.append("⏰ memory checkup: stamp .claude_memory/.last_checkup is unparseable "
+                     "(%r) — rewrite it with: date -I > .claude_memory/.last_checkup" % raw)
+    elif days is None:
         lines.append("⏰ memory checkup: never run here — run the `memory-checkup` skill "
                      "(then: date -I > .claude_memory/.last_checkup)")
     elif days >= 7:
@@ -188,20 +202,56 @@ def main():
     n_dirty = len([l for l in dirty.splitlines() if l.strip()])
     lines.append("Uncommitted files: %d" % n_dirty)
 
-    def latest(pattern):
+    def latest(pattern, with_stream=False):
         # Newest by the YYYYMMDDx naming convention (basename lexical sort).
         hits = glob.glob(pattern)
-        return os.path.basename(sorted(hits, key=os.path.basename)[-1]) if hits else ""
+        if not hits:
+            return ""
+        best = sorted(hits, key=os.path.basename)[-1]
+        if with_stream:
+            return "%s / %s" % (os.path.basename(os.path.dirname(best)),
+                                os.path.basename(best))
+        return os.path.basename(best)
+
+    # Calibration logs AND round/cycle reports -- the application-agent record, and the only
+    # such stream that exists in EVERY clone (memory/dev_logs*/ is excluded from the public
+    # sync, so on a public clone the block below this one prints nothing). Emitted first for
+    # that reason. Reports are included because a round or cycle report is often the fastest
+    # single read for "where does this stand", while the phase logs carry the finer trail.
+    # Newest by MTIME (what was actually touched last), not by the filename date, so a log
+    # revised today surfaces even when its stem is older -- which is what "where did we leave
+    # off" actually asks. READMEs are excluded: the TEMPLATE case carries one and it would
+    # otherwise lead the list.
+    cal = [f for f in
+           glob.glob(os.path.join(root, "use_cases", "*", "memory", "logs", "*.md"))
+           + glob.glob(os.path.join(root, "use_cases", "*", "reports", "*", "*.md"))
+           if os.path.basename(f) != "README.md"]
+    if cal:
+        cal.sort(key=os.path.getmtime, reverse=True)
+        lines.append("Recent calibration logs + reports (newest first):")
+        for f in cal[:4]:
+            parts = f.split(os.sep + "use_cases" + os.sep)[-1].split(os.sep)
+            kind = "report" if "reports" in parts else "log"
+            lines.append("  %s (%s) / %s" % (parts[0], kind, os.path.basename(f)))
 
     # Narrow cold-start pointer: latest Handoff/Session log specifically.
-    hs = (glob.glob(os.path.join(root, "memory", "dev_logs", "*Handoff*")) +
-          glob.glob(os.path.join(root, "memory", "dev_logs", "*Session_Log*")))
+    # `dev_logs*` -- NOT `dev_logs`. Every feature branch keeps its own stream
+    # (`memory/dev_logs_<branchname>/`) and writes only there, so globbing the bare directory
+    # reports main's newest file and silently misses the branch's own. Nine such directories
+    # exist here today. The failure is silent by construction: the line still prints and still
+    # names a real file. The stream is printed alongside the filename for the same reason --
+    # with nine directories feeding one lexical sort, the newest basename can legitimately
+    # come from a branch you are not on, and a bare filename does not say whose history it is.
+    hs = (glob.glob(os.path.join(root, "memory", "dev_logs*", "*Handoff*")) +
+          glob.glob(os.path.join(root, "memory", "dev_logs*", "*Session_Log*")))
     if hs:
-        lines.append("Latest handoff/session log: %s"
-                     % os.path.basename(sorted(hs, key=os.path.basename)[-1]))
+        _h = sorted(hs, key=os.path.basename)[-1]
+        lines.append("Latest handoff/session log: %s / %s"
+                     % (os.path.basename(os.path.dirname(_h)), os.path.basename(_h)))
 
     # Latest of ANY type in each stream, so no recent work is missed.
-    dev = latest(os.path.join(root, "memory", "dev_logs", "20*.md"))
+    # ana_logs is deliberately NOT widened: there is one such directory, so a glob adds nothing.
+    dev = latest(os.path.join(root, "memory", "dev_logs*", "20*.md"), with_stream=True)
     if dev:
         lines.append("Latest dev_log (any type): %s" % dev)
     ana = latest(os.path.join(root, "memory", "ana_logs", "20*.md"))

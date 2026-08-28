@@ -74,7 +74,7 @@ while true; do
     fi
     if ! echo "$q" | grep -qE "$CASE_A_PATTERN|$CASE_B_PATTERN"; then
         # Both gone from queue — confirm SOME output exists before declaring done. A run
-        # too short for history output (a short CONTINUE_RUN) still writes lnd.log; only
+        # too short for history output (a few-day segment) still writes lnd.log; only
         # a genuinely empty run dir means "crashed before producing anything."
         if [ -n "$(ls -A "$RUN_DIR_A" 2>/dev/null)" ] && [ -n "$(ls -A "$RUN_DIR_B" 2>/dev/null)" ]; then
             echo "=== BOTH V0 jobs done — comparing ==="

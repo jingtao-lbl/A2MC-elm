@@ -494,7 +494,7 @@ The KB injection plan should be a companion dev_log that documents WHAT to add t
 
 Per A2MC convention, the experiment's scientific outcome lives in `memory/ana_logs/<date>_<exp_name>_Results_<Confirms|Refutes>_<Hypothesis>.md`. Include:
 - Quantitative results table (one row per variant, all pre-committed metrics)
-- Comparison plot (use `use_cases/<site>/analysis/<plot_script>.py`)
+- Comparison plot (use `use_cases/<site>/scripts/<plot_script>.py`)
 - Decision outcome + which KB injection (if any) was triggered
 - Manuscript implications (how this changes the methods/discussion framing)
 

@@ -55,6 +55,83 @@ round summary with no next-round plan. Each omission is individually small and i
 together they make performance uneven. This skill is the **invariant checklist** that makes every cycle
 look like every other good cycle. It is the *definition of done*, not a new procedure.
 
+## The loop limits are CONFIG, not literals in this file
+
+**Read them from the machine config before running any check below.** All three live there and
+nowhere else — a site or round config does not set them:
+
+```bash
+source a2mc_config.sh            # CIME model (ELM, ELM-FATES) — this branch
+```
+
+| variable | default | governs |
+|---|---|---|
+| `A2MC_MAX_EXPERIMENTS` | 10 | the middle loop — how many Phase 3→6 experiment cycles before redesign |
+| `A2MC_MAX_SKIP_TESTING` | 10 | the inner loop — Phase 3↔4 iterations on existing data |
+| `A2MC_CONFIDENCE_THRESHOLD` | 0.95 | the skip-testing early exit |
+
+Any "max 10" written in prose here (including the summary above) is a **restatement of the default,
+not the authority**. Change the config and this file does not follow; quote the config when the
+number matters to a decision.
+
+## ARM THE REVIEW AT SESSION START — it is a mechanism or it is nothing
+
+**This checklist only works if it actually fires.** If it fires because the PI types the next step,
+that is not a mechanism — it is the PI doing the agent's bookkeeping. Running the checks *from
+recollection of this skill* instead of invoking it is the same failure one level up, and is exactly
+what `check_skill_claims.py` (pre-commit check 12) now catches.
+
+**When a campaign is live, arm the recurring self-review before doing anything else:**
+
+```
+CronCreate(cron="23 * * * *", recurring=true, prompt=<the self-review prompt>)
+```
+
+Pick an off-:00/:30 minute. The prompt must (a) say **INVOKE the skill**, not "check against it",
+(b) carry the per-cycle checks, and (c) end with **DRIVE THE LOOP THROUGH** — a review that stops at
+reporting leaves the loop parked, which is the drift this skill exists to prevent.
+
+**Two limits, worth stating rather than discovering.** A cron job is **session-only** and dies with
+the session, so re-arming belongs to session start, not one-time setup; and it fires only while the
+REPL is idle, so it will not interrupt long work. Neither makes it worthless — an armed cron that
+survives an hour of quiet beats a checklist nobody runs. See
+[[feedback_schedule_periodic_reviews_with_a_real_mechanism]].
+
+**Nothing in the loop is the PI's decision except the Phase-6 converge / redesign / stop fork.**
+`rethink_6to3` is auto-taken — meaning it needs **no PI approval, NOT that it needs no work**.
+Auto-taken is about the *gate*, not the *effort*: the routing is automatic and the rethink protocol
+behind it (below) is mandatory. A model-evolution item queued in `TODO.md` (a parameter bound, a
+source defect) is **not** a loop gate. Ending a turn by surfacing one as though it blocks is a
+premature stop wearing politeness instead of a verdict.
+
+**On a 6→3 routing, ANSWER the rethink protocol in the Phase-6 log.** The route is the default and
+was, until the protocol existed, only a counter increment — nothing said what a rethink should DO,
+so a cycle could re-enter Phase 3 carrying the previous cycle's base, binding target and lever class
+forward unexamined. The protocol is in `phase6-refinement`, and its questions are all settled by
+existing data at **zero compute**. The deliverable is **NEW PATHWAYS, plural**, each with its class
+and falsifier, named in `set_phase_handshake(handed_to=...)` so Phase 3 starts from them.
+**Where it must be written:** the Phase-6 log — the next cycle reads the log, not the state enum
+(`calibration-log`, Enrichment contract). **Carried onward:** the class verdict and pathways go into
+the cycle report too (`write-report`), drawn from this synthesis rather than derived again.
+
+## SEARCH BEFORE YOU RECORD — the case has usually been here already
+
+**Before recording a finding as NEW, a premise as UNVERIFIED, or a question as OPEN, search the
+case's own logs.**
+
+**A plain `git grep` is not enough, and that is the interesting part.** A grep shows you the log you
+found, not the log that *supersedes* it — and this project's convention puts the correction banner
+at the top of the superseded log precisely so a reader can follow the chain. A keyword search does
+not surface them, so a settled-then-corrected question reads as still open.
+
+```bash
+python3 tools/prior_art.py <keyword> [...] --site <Site> [--all-streams]
+```
+
+It searches the case's logs **and reports each hit's correction status**, so a withdrawn finding
+announces itself instead of being re-derived. Verified on this branch: searching `l2fr` returns four
+logs, one of them carrying a `withdrawn` banner that a grep would have shown as a plain hit.
+
 ## When to use (vs. calibration-goal vs. a phase skill)
 
 ```
@@ -99,6 +176,21 @@ discipline drifts; the discipline without the driver does not move.
    `workflow_state_offline_r{RR}.json` (`tools/workflow_state_offline.py`), then
    `python tools/check_workflow_state_offline.py` must exit 0. A corrupt/stale state misdrives the whole
    loop; validating after *every* write is the lesson from the mid-campaign state-format crash.
+5b. **COMMIT AND PUSH at the same boundary.** The phase is not done when the state validates; it is
+   done when the work has **left the machine**. An unpushed commit exists on **exactly one node** —
+   on an HPC login node a session can lose it with no offsite copy — **and it is invisible to the PI
+   until it lands**, which removes their ability to redirect the work while redirecting is still
+   cheap. Both costs grow with the size of the pile.
+
+   Push after each completed phase, each finished skill edit, each fix with its test; if several
+   commits land on one thread, push once as that thread closes. The gap should be minutes and a
+   handful of commits, never hours and dozens.
+
+   > **Measured on this branch, 2026-08-23:** pushes happened only when the PI typed "push it",
+   > in batches of up to **14** commits. That is the same shape as the source branch's 30-commit
+   > pile — the PI doing the agent's bookkeeping, which is what the review-arming section above is
+   > about, one level down. Push at the boundary, unprompted.
+
 6. **Track the objective, not the loudest crash — and NEVER self-declare exhaustion below the loop limit.**
    The goal is the fit to the validation targets. When a crash and a calibration signal compete for
    attention, the targeted performance experiment is the objective
@@ -213,6 +305,11 @@ so they happen **at / after** the gate, not before — item 8):
   back, `docs/38`).
 
 ## Changelog
+
+- 2026-08-23 — New per-cycle item **5b: COMMIT AND PUSH at the same boundary**. Adopted from `adapter-kit` (`17664824`). A phase is done when the work has LEFT THE MACHINE: an unpushed commit lives on one login node and is invisible to the PI, removing their ability to redirect while redirecting is cheap. Numbered 5b rather than 6 following this file's inserted-item convention (cf. 2b, 3b) and because the per-round list continues the same sequence. Measured here: pushes happened only on a typed "push it", in batches of up to 14 — the same shape as the source branch's 30-commit pile.
+- 2026-08-23 — **On a 6→3 routing, ANSWER the rethink protocol in the Phase-6 log**, and a correction to the line ported this morning: `rethink_6to3` being *auto-taken* is about the GATE, not the EFFORT — no PI approval needed, protocol still mandatory. As written it read as "automatic, nothing to do" and contradicted the protocol once one existed. Adopted from `adapter-kit` (`73007487`).
+
+- 2026-08-23 — Adopted three sections from `adapter-kit` (`08b2675c`, `6f6af175`), re-authored: **the loop limits are CONFIG** (main's `a2mc_config.sh` already sets `A2MC_MAX_EXPERIMENTS`, `A2MC_MAX_SKIP_TESTING`, `A2MC_CONFIDENCE_THRESHOLD`, while this file stated a bare 'max 10' — the prose is now marked a restatement, not the authority); **ARM THE REVIEW AT SESSION START**, because a checklist that fires only when the PI types the next step is the PI doing the agent's bookkeeping; and **SEARCH BEFORE YOU RECORD** via the newly ported `tools/prior_art.py`, which reports each hit's correction status — a plain grep shows the log you found, not the one that supersedes it.
 
 - 2026-08-01: **Closed the premature-stop loophole** (adapter-kit lineage: `stop_model_dev` declared at
   `experiment_count 0/10` while a source-verified lever remained; the periodic check rubber-stamped it because

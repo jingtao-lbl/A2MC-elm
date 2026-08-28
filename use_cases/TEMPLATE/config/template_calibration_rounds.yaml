@@ -2,7 +2,7 @@
 # =============================================================================
 # Copy to your site and drop the "template_" prefix:
 #   cp use_cases/TEMPLATE/config/template_calibration_rounds.yaml \
-#      use_cases/<YourSite>/config/calibration_rounds.yaml
+#      use_cases/{Model}_{Case}/config/calibration_rounds.yaml
 #
 # WHAT THIS FILE IS
 #   One record per calibration ROUND (the outermost Phase 0->7 loop). A round is
@@ -15,7 +15,7 @@
 #   [DERIVED]  Reproducible from the sourced configs. DO NOT hand-type these.
 #              Generate them, so the record cannot drift from what actually runs:
 #                source a2mc_config.sh
-#                source use_cases/<YourSite>/config/<yoursite>_config.sh
+#                source use_cases/{Model}_{Case}/config/<case>_config.sh
 #                python tools/generate_calibration_rounds.py --round 1 --write
 #                python tools/check_calibration_rounds.py --round 1
 #              --write REFRESHES derived fields in place and reports any that

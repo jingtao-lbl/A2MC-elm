@@ -1,0 +1,21 @@
+{
+  "_comment": "Manifest of ARCHIVED model binaries. The binaries themselves are NOT in git -- hundreds of MB each, and not regenerable (a recompile can perturb floating point, so a rebuild is a different artifact). This file is the record that they existed and the checksum to prove one has not been altered or swapped. Regenerate and verify with tools/binary_archive_manifest.py. Losing the archive directory breaks the provenance of every completed round that cites one of these labels.",
+  "_archive_root": "/global/cfs/cdirs/<your_project>/<your_user>/E3SM_build_archive",
+  "_generated": "2026-08-26",
+  "_tool": "tools/binary_archive_manifest.py",
+  "archives": [
+    {
+      "label": "R1_rootfinesfragfix_32d95784",
+      "model": "elm-fates",
+      "binary": "e3sm.exe",
+      "bytes": 271009688,
+      "sha256": "aba28526811b15d216483836642d39fab36fd6f159bf4448e446b6c726fd06ab",
+      "provenance_sha256": "aba28526811b15d216483836642d39fab36fd6f159bf4448e446b6c726fd06ab",
+      "built_in_case": "/global/cfs/cdirs/<your_project>/<your_user>/E3SM_FATES_api43/cime/scripts/Kougarok_ELM-FATES_PtCNPEn2939_p169v6rffix_ADSP",
+      "build_dir": "/global/cfs/cdirs/<your_project>/<your_user>/R1rootfinesfragfix_20260811/Kougarok_ELM-FATES_PtCNPEn2939_p169v6rffix_ADSP/bld",
+      "source": "E3SM v3.2.0-alpha-137-g32d95784be -- commit 32d95784be \"Thread use_fates_rootfinesfrag_fix namelist switch to FATES\"; FATES submodule carries the root_fines_frag/CWDOut overwrite fix",
+      "change": "root_fines_frag overwrite fix, switch-gated on use_fates_rootfinesfrag_fix (default-off in the model; ON in every run bound to this binary)",
+      "archived": "2026-08-26 retroactively -- the build itself dates from 2026-08-11 20:25, predating this manifest mechanism"
+    }
+  ]
+}

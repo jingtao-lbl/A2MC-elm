@@ -94,10 +94,67 @@ folds these flat logs into synthesis alongside session-scoped ones.
   and **(4) the underlying data file**. A future reader (or you next month) must be able to regenerate and
   interpret the figure without you. A lone figure with no caption / script / data is under-documented.
 
-**Evidence gate (docs/33).** After writing an analysis-phase log run `python tools/check_offline_log_evidence.py
-<log.md>` — it must **exit 0** (ERROR = no resolvable first-hand artifact = a restatement). It now also
-**WARNs** when `phase_results/{stem}/` has a figure but is missing its caption `.md` / generating `.py` /
-data file — clear those warnings too (the self-documenting-folder discipline above), don't just pass on exit 0.
+**Pass the TITLE as the descriptor to `topic_artifact_dir()`.** The artifact folder is keyed on a
+descriptor you choose; the log is keyed on the `title=` you pass to `log_<phase>()`. They pair only if
+both derive from the same string:
+
+```python
+TITLE = "R1 Screening Of The Alive Sub-Ensemble: One Target Fails, Not All Three"
+d = logger.topic_artifact_dir(2, TITLE)     # <- the TITLE, not a separate phrase
+...                                          # write figures + NOTES.md into d
+logger.log_screening(title=TITLE, ...)       # same string -> same stem
+```
+
+Give them different strings and you get two stems and a log that does not match its own folder.
+`topic_stem()` reuses an existing stem found on disk, which fixes the **process-boundary** case — one
+run creates the folder, a later one writes the log — but it cannot rescue two genuinely different
+descriptors, because the suffixes legitimately differ.
+
+**The log must SHOW its figures, not just name their folder** (effective 2026-08-22). The log and
+`phase_results/{stem}/` are meant to be read as ONE document: a reader opens `logs/{stem}.md` and
+expects the evidence to be there. `` `phase_results/{stem}/plot.png` `` in prose renders as a text
+path, so a log that discusses "Figure 1" while displaying nothing sends the reader hunting. **Embed
+every figure the paired folder holds:**
+
+```markdown
+![](../phase_results/{stem}/r01_leafroot_biomass_vs_obs_4variants.png)
+
+**Figure 1. State the finding, not the axes.** What it shows, how to read it, and its provenance
+(which script, from what data).
+```
+
+Empty alt text, bold `**Figure N.**` caption beneath — `feedback_report_figure_empty_alt_text`. The path
+is relative from `logs/` (`../phase_results/{stem}/…`), so it resolves in-repo. Close the log with an
+**Artifacts** table indexing every file in the folder and how to regenerate it.
+
+The rule is **dated**: logs stamped before `EMBED_RULE_EFFECTIVE` (`20260822`) are grandfathered — they
+could not follow a rule that did not exist, and a checker that is always red is a checker nobody reads.
+The exempted count is **printed**, so the backlog stays a visible decision rather than a silent one.
+
+**Update the STATE before you write the log — the order is load-bearing.** `PhaseLogger` **bakes the
+`## Reasoning chain` block into the file at write time**, rebuilding it from
+`workflow_state_offline_r{RR}.json`. Nothing rewrites a log afterwards, so:
+
+```
+1. st.add_decision(...) / add_evidence(...) / save()     <- state correct FIRST
+2. logger.log_<phase>(...)                               <- chain baked in correct
+```
+
+Do it the other way and every stale pointer is frozen in the log permanently.
+
+**Evidence gate (docs/33).** After writing an offline phase log run `python tools/check_offline_log_evidence.py
+<log.md>` — it must **exit 0**. What it checks, and at which severity:
+
+| | severity | applies to |
+|---|---|---|
+| a cited `phase_results/<stem>/` that does not exist | **ERROR** (blocks) | **every** offline phase log, at any age |
+| no resolvable first-hand artifact (a restatement) | **ERROR** | analysis phases (3/4/6) |
+| a figure the paired folder holds and the log never embeds | WARN | every log, **dated** (see above) |
+| a figure missing its caption `.md` / generating `.py` / data file | WARN | every log |
+
+Clear the warnings too (the self-documenting-folder discipline above); don't just pass on exit 0. The
+first two rows run for **every** phase, not only analysis phases — a phase-0/1/2/5/7 log used to be
+returned clean by code that had inspected nothing.
 
 ## Type B — session log (free-form)
 
@@ -173,6 +230,18 @@ On a **6→3 re-entry** also say which hypothesis was disproven and what changed
 as a fresh start.
 
 ## Enrichment contract — the template is a floor, not a form
+
+**A Phase-6 log that routes 6→3 must carry the RETHINK, not just the decision.** `phase6-refinement`
+owns the protocol; the log is where its output has to land, **because the next cycle reads the log,
+not the state enum**. Record all six answers — this cycle's synthesis (Phases 3–6, separating what it
+ESTABLISHED from what it merely tried), Phases 1 and 2 re-read against that synthesis, whether the
+BASE is still right for the question now being asked, whether the BINDING TARGET has moved, which
+lever CLASS the round has exhausted, and for each refuted lever the (parameter, direction, base-miss-
+sign) triple. Then record the **NEW PATHWAYS**, each with its class and falsifier, and name them in
+`set_phase_handshake(handed_to=...)` so Phase 3 starts from them.
+
+A log that records `rethink_6to3` and nothing else has documented a counter increment — which is
+exactly what the route was before the protocol existed.
 
 `PhaseLogger` writes the skeleton; **you fill it.** In offline mode it also appends a
 `## Sections not provided` list naming every expected section left empty, because each section is
@@ -254,6 +323,16 @@ that has since gone stale.
 
 ## Changelog
 
+- 2026-08-23 — **A Phase-6 log routing 6→3 must carry the RETHINK, not just the decision** (Enrichment contract). Adopted from `adapter-kit` (`28076e11`). The log is where the protocol's output lands, because the next cycle reads the LOG, not the state enum. Enforced by `check_calibration_log_conformance.py` **C11** (renumbered from adapter's C9 — C9 and C10 are already taken on main).
+
+- 2026-08-22: **Three rules adopted from `adapter-kit` (v2.272–v2.274), re-authored.** (a) *Embed your
+  figures* — the log and its `phase_results/{stem}/` review as one document; naming the folder in prose
+  is not showing the figure. Dated via `EMBED_RULE_EFFECTIVE=20260822`, with the grandfathered count
+  printed rather than silent. (b) *State before log* — `PhaseLogger` bakes the reasoning chain in at
+  write time, so repointing state afterwards freezes a superseded stem permanently. (c) *Pass the TITLE
+  as the descriptor* to `topic_artifact_dir()`, since the folder is keyed on the descriptor and the log
+  on the title. `check_offline_log_evidence.py` now runs its dead-pointer ERROR and figure WARN for
+  **every** offline phase log, not only analysis phases; pre-commit check (9) gates staged ones.
 - 2026-08-14: **New mechanical conformance checker**, `tools/check_calibration_log_conformance.py`
   — both types (phase log's per-phase sections read via `ast` from `PhaseLogger._EXPECTED_SECTIONS`,
   never a second hardcoded copy; free-form's lighter header + Cross-references), wired into

@@ -41,6 +41,29 @@ framing intact. Do not reimplement experiment execution here.
    `monitor_experiments.py`.
 2. **Monitor** the in-flight experiment → `arm-hpc-monitoring`. **Failed jobs** → distinguish
    infrastructure (restart-eligible) from model failures via `restart-failed-jobs`.
+2b. **ARCHIVE THIS PHASE'S JOB SCRIPTS** into `phase_results/{stem}/` (a `submit_scripts/`
+   subfolder once there are more than a couple), and **record which BINARY each run was bound to**.
+   **Copy, never move** — the scheduler reads the operative copy from the run directory. Do it as
+   soon as the scripts are final, not at Phase 6.
+
+   **Why this is a step, not housekeeping.** The run directory is untracked scratch that gets
+   cleaned, and the submit script is the only durable record of what actually ran. A case's
+   `EXEROOT` lives in its `env_build.xml` under `CIME_OUTPUT_ROOT` — also scratch — so a log stating
+   "V0 gate PASS" with no archived script and no binary identity **cannot show which executable
+   produced the number**. Record the `md5sum` of each `e3sm.exe`, not just its path: the path is the
+   part that disappears.
+
+   Worked example on this branch: `phase_results/20260820a_*/BINARY_PROVENANCE.md`, written for the
+   `PhosphorusBiochemMin_balance` perf pairs. That whole result rests on `v0base`/`v0fix` being
+   different builds; `cmp` confirmed it at submission, but the confirmation lived only in a session
+   transcript until the md5s were written down.
+
+   > **Phase 0 is deliberately EXEMPT.** Its job scripts are generated from the machine + round
+   > config by the materializer, and an ensemble is thousands of cases — archiving them would be
+   > enormous and redundant, since the config plus the generator reproduces them exactly. Phase 5
+   > differs in kind, not degree: its handful of variants are hand-designed and hand-repointed onto
+   > a specific binary, so nothing else records what ran.
+
 3. **Log** via `calibration-log` (phase log → `PhaseLogger.log_testing` /
    `log_experiment_design`).
 4. **Advance the driver state** once results are extracted: `st.set_position(current_phase="refinement")`;
@@ -85,6 +108,8 @@ logger.set_phase_handshake(
 - **Next:** `phase6-refinement` (evaluate results, extract lessons, decide convergence).
 
 ## Changelog
+
+- 2026-08-23 — Added **Step 2b: archive this phase's job scripts, and record which BINARY each run was bound to**. Adopted from `adapter-kit` (`74e81e88` as corrected by `d77950da`), re-authored. Taken at the corrected state: the rule first covered Phase 0 too and was withdrawn for it within the hour, because an ensemble's scripts are config-generated and number in the tens of thousands. Main already archived its `run_*.sh` by habit but had no rule and, more importantly, **no record of binary identity** — `EXEROOT` lives in scratch, so the `PhosphorusBiochemMin` perf verdict rested on a `cmp` that existed only in a session transcript. Fixed retroactively in `phase_results/20260820a_*/BINARY_PROVENANCE.md`.
 
 - 2026-08-03: Log step now states the **living-record** contract (start at phase start, enrich as it
   runs — the operational detail is unrecoverable later), names **this phase's expected sections** so an

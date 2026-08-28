@@ -87,6 +87,27 @@ Naming: `use_cases/<Case>/` — a short, unambiguous case name. Check `ls use_ca
 
 Populate from the interview, never by hand-copying values that live in config ([[feedback_case_template_should_source_config]]). **Never invent a target value or a data path** — placeholders marked `TODO` are correct, fabricated numbers are not.
 
+**Then turn the approved plan into tracked tasks — do not skip this because the clone is already set up.**
+Approval is the only moment the plan exists as a *commitment* rather than prose, and this is the step
+that makes it survive the session:
+
+```bash
+python3 tools/agent_state.py --init                  # idempotent: prints "already exists" and returns 0
+python3 tools/agent_state.py --import-plan "$CASE"   # reads use_cases/$CASE/research_plan.md
+python3 tools/agent_state.py                         # read the task list back
+```
+
+`--import-plan` picks up `- [ ]` / `- [x]` checkboxes and numbered steps as tasks (`todo`/`done`).
+Add anything the plan implies but does not spell out with `--add-task "$CASE" "…"`, and an optional
+`--phase N` for work the 7-phase loop will tick off (most of setup is not a phase — leave it off).
+
+**Why this is called out here.** `a2mc-init` has always done this; `onboard-case` never did, so until
+2026-08-21 **only the first case in a clone ever got tracked tasks** — every case added afterwards
+produced a research plan at this gate and then dropped it. That is backwards: this is the *repeatable*
+path, so it is the one that matters more as a campaign grows. `onboard-session` and the SessionStart
+snapshot read `agent_state.json` to decide the default next action, so a case with no imported tasks
+silently falls back to whatever the round state happens to say.
+
 ## Step 3b — Build or vet the parameter list ★ GATE 2
 
 Follow `a2mc-init` Step 4b. Bounds come from the sourcing pipeline, not from a default ±50% ([[reference_param_bounds_sourcing_pipeline]]). Verify PFT identity against the base parameter file rather than trusting ids from another case ([[feedback_verify_pft_identity_across_versions]]) — **a second case is exactly where a copied PFT id goes wrong**, since the ids are not stable across model versions and the new case may not share the first one's.
@@ -153,5 +174,17 @@ through the human-gated review path, never hand-written ([[feedback_no_case_stat
 - **Multi-point and regional scoping** — `docs/39_MultiPoint_And_Regional_Case_Scoping.md` is the scoping behind Step 2's HARD STOP — what blocks it, what does not, and the four open questions. Until those are answered, transect and regional cases have no supported path.
 
 ## Changelog
+
+- 2026-08-21: **Step 3 (GATE 1) now imports the approved plan into tracked tasks**
+  (`tools/agent_state.py --import-plan`). `a2mc-init` has always done this at its own GATE 1; this
+  skill never did, so **only the first case in a clone ever got tracked tasks** — every case added
+  afterwards produced a `research_plan.md` at approval and then dropped it. Backwards, since this is
+  the *repeatable* path and matters more as a campaign grows: `main` is explicitly expected to host
+  many cases (see the 2026-08-19 entry). `onboard-session` and the SessionStart snapshot both read
+  `agent_state.json` to pick a default next action, so an unimported case silently falls back to
+  whatever the round state says. Signal: PI review of the setup surface, 2026-08-21 — "check if we
+  have a step to generate a to-do list and add tasks into planner and make agent keep tracking
+  them". Verified `--init` is idempotent (prints "already exists", returns 0) before including it,
+  since Step 0 has already established the clone is configured.
 
 - 2026-08-19: Initial version. Split out of `a2mc-init` once the PI confirmed `main` will host many cases — additional sites, transect-scale, and regional. Reuses `a2mc-init`'s interview and scaffolding rather than forking them, drops the once-per-clone machine setup, and adds **Step 2, the scale gate**, which is new to both branches: `main` is single-point end to end (scalar `A2MC_SITE_LAT`/`LON`, one `observed` per target, single-location extraction and scoring), so transect and regional are a hard stop rather than an unstated assumption. Structure follows `adapter-kit`'s `onboard-case`; the model axis (`<Model>_<Case>` naming, per-model templates) is deliberately dropped, since this branch is FATES-family only.
